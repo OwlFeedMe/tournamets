@@ -1,0 +1,94 @@
+﻿import os
+from typing import Generator
+
+from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlmodel import SQLModel, create_engine, Session
+
+load_dotenv()
+
+MAX_TEAM_SIZE = 10
+
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost/loyalty_race")
+
+engine = create_engine(DATABASE_URL, echo=False)
+
+
+def get_session() -> Generator[Session, None, None]:
+    with Session(engine) as session:
+        yield session
+
+
+def init_db():
+    SQLModel.metadata.create_all(engine)
+
+    # Column migrations for tables that may already exist
+    _migrations = [
+        "ALTER TABLE competition_participants ADD COLUMN IF NOT EXISTS categoria TEXT",
+        "ALTER TABLE results ADD COLUMN IF NOT EXISTS phase_id INTEGER REFERENCES competition_phases(id) ON DELETE SET NULL",
+        "ALTER TABLE results ADD COLUMN IF NOT EXISTS marca INTEGER",
+        "ALTER TABLE results DROP COLUMN IF EXISTS notas",
+        "ALTER TABLE competition_participants ADD COLUMN IF NOT EXISTS estado TEXT NOT NULL DEFAULT 'confirmado'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_open INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS show_individual_leaderboard INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS show_team_all_by_category_option INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS show_team_all_global_option INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_show_qr INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_show_timer INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_include_total_slide INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_only_finalized_phases INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_rotation_interval_seconds INTEGER NOT NULL DEFAULT 24",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_data_refresh_interval_seconds INTEGER NOT NULL DEFAULT 5",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_mode TEXT NOT NULL DEFAULT 'cyclic'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_static_view TEXT NOT NULL DEFAULT 'individual'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_static_phase_id INTEGER",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_static_individual_category TEXT",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_static_team_category_mode TEXT NOT NULL DEFAULT '__by_category__'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_start TIMESTAMPTZ",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_end TIMESTAMPTZ",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS scoring_rules TEXT",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS winner_rule TEXT NOT NULL DEFAULT 'higher_wins'",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS measurement_method TEXT NOT NULL DEFAULT 'unidades'",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS points_mode TEXT NOT NULL DEFAULT 'manual'",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS allow_multiple_results INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS team_result_mode TEXT NOT NULL DEFAULT 'sum_two'",
+        "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS estado TEXT NOT NULL DEFAULT 'pendiente'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_duration INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_started_at TIMESTAMPTZ",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_elapsed_before_pause INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_mode TEXT NOT NULL DEFAULT 'countdown'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_format TEXT NOT NULL DEFAULT 'mm:ss'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS scoring_mode TEXT NOT NULL DEFAULT 'highest_wins'",
+        "ALTER TABLE results DROP COLUMN IF EXISTS evento",
+        "UPDATE competition_phases SET tipo = 'cantidad' WHERE tipo IS NULL OR LOWER(TRIM(tipo)) IN ('', 'puntos', 'peso')",
+        "UPDATE competition_phases SET tipo = 'posicion' WHERE LOWER(TRIM(tipo)) = 'posición'",
+        "UPDATE competition_phases SET winner_rule = 'higher_wins' WHERE winner_rule IS NULL OR LOWER(TRIM(winner_rule)) NOT IN ('higher_wins', 'lower_wins')",
+        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method IS NULL OR TRIM(measurement_method) = ''",
+        "UPDATE competition_phases SET measurement_method = LOWER(TRIM(measurement_method))",
+        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method NOT IN ('unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion')",
+        "UPDATE competition_phases SET measurement_method = 'posicion' WHERE LOWER(TRIM(tipo)) = 'posicion'",
+        "UPDATE competition_phases SET measurement_method = 'tiempo_hms' WHERE LOWER(TRIM(tipo)) = 'tiempo' AND LOWER(TRIM(measurement_method)) = 'unidades'",
+        "UPDATE competition_phases SET winner_rule = 'lower_wins' WHERE LOWER(TRIM(tipo)) IN ('tiempo', 'posicion')",
+        "UPDATE competition_phases SET winner_rule = 'higher_wins' WHERE LOWER(TRIM(tipo)) = 'cantidad'",
+        "UPDATE competition_phases SET team_result_mode = 'sum_two' WHERE team_result_mode IS NULL OR LOWER(TRIM(team_result_mode)) NOT IN ('sum_two', 'single_member', 'total')",
+        "UPDATE competition_phases SET points_mode = 'manual' WHERE points_mode IS NULL OR LOWER(TRIM(points_mode)) NOT IN ('manual', 'position_direct', 'position_rules')",
+        "UPDATE competition_phases SET estado = 'pendiente' WHERE estado IS NULL OR LOWER(TRIM(estado)) NOT IN ('pendiente', 'en_progreso', 'finalizada')",
+        "UPDATE competitions SET scoring_mode = 'highest_wins' WHERE scoring_mode IS NULL OR LOWER(TRIM(scoring_mode)) NOT IN ('highest_wins', 'lowest_wins')",
+        "UPDATE competitions SET tv_show_qr = 1 WHERE tv_show_qr IS NULL OR tv_show_qr NOT IN (0,1)",
+        "UPDATE competitions SET tv_show_timer = 1 WHERE tv_show_timer IS NULL OR tv_show_timer NOT IN (0,1)",
+        "UPDATE competitions SET tv_include_total_slide = 1 WHERE tv_include_total_slide IS NULL OR tv_include_total_slide NOT IN (0,1)",
+        "UPDATE competitions SET tv_only_finalized_phases = 1 WHERE tv_only_finalized_phases IS NULL OR tv_only_finalized_phases NOT IN (0,1)",
+        "UPDATE competitions SET tv_rotation_interval_seconds = 24 WHERE tv_rotation_interval_seconds IS NULL OR tv_rotation_interval_seconds < 5 OR tv_rotation_interval_seconds > 120",
+        "UPDATE competitions SET tv_data_refresh_interval_seconds = 5 WHERE tv_data_refresh_interval_seconds IS NULL OR tv_data_refresh_interval_seconds < 2 OR tv_data_refresh_interval_seconds > 60",
+        "UPDATE competitions SET tv_mode = 'cyclic' WHERE tv_mode IS NULL OR LOWER(TRIM(tv_mode)) NOT IN ('cyclic', 'static')",
+        "UPDATE competitions SET tv_static_view = 'individual' WHERE tv_static_view IS NULL OR LOWER(TRIM(tv_static_view)) NOT IN ('individual', 'teams')",
+        "UPDATE competitions SET tv_static_team_category_mode = '__by_category__' WHERE tv_static_team_category_mode IS NULL OR TRIM(tv_static_team_category_mode) = ''",
+        "ALTER TABLE teams ADD COLUMN IF NOT EXISTS captain_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
+    ]
+    with engine.connect() as conn:
+        for sql in _migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                conn.rollback()

@@ -1,0 +1,1103 @@
+import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import api from '../api/axios'
+import {
+  Trophy, LogOut, ClipboardList, Eye, EyeOff, PlusCircle, Medal,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog,
+} from 'lucide-react'
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function statusBadge(estado) {
+  if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
+  if (estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
+  if (estado === 'rechazado') return { label: 'Rechazado', cls: 'badge-rechazado' }
+  return { label: estado || 'Sin estado', cls: 'badge-default' }
+}
+
+function formatDate(iso) {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleString()
+}
+
+function enrollmentWindow(competition) {
+  if (!competition.enrollment_open) return { canEnroll: false, text: 'Inscripciones cerradas' }
+  const now = new Date()
+  const start = competition.enrollment_start ? new Date(competition.enrollment_start) : null
+  const end = competition.enrollment_end ? new Date(competition.enrollment_end) : null
+  if (start && now < start) return { canEnroll: false, text: `Abre: ${formatDate(start.toISOString())}` }
+  if (end && now > end) return { canEnroll: false, text: `Cerro: ${formatDate(end.toISOString())}` }
+  return { canEnroll: true, text: 'Inscripciones abiertas' }
+}
+
+function parseTimeToSeconds(value) {
+  const raw = (value ?? '').toString().trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return Number(raw)
+  const parts = raw.split(':').map(p => p.trim())
+  if (parts.length !== 2 && parts.length !== 3) return null
+  const nums = parts.map(Number)
+  if (nums.some(n => !Number.isFinite(n) || n < 0)) return null
+  let h = 0, m = 0, s = 0
+  if (nums.length === 2) { [m, s] = nums } else { [h, m, s] = nums }
+  if (m > 59 || s > 59) return null
+  return (h * 3600) + (m * 60) + s
+}
+
+function normalizeMeasurementMethod(raw, tipo) {
+  const value = (raw || '').toString().trim().toLowerCase()
+  if (value === 'tiempo_hms' || value === 'hh:mm:ss' || value === 'hms') return 'tiempo_hms'
+  if (value === 'posicion' || value === 'posición') return 'posicion'
+  if (value) return value
+  const t = (tipo || '').toString().trim().toLowerCase()
+  if (t === 'tiempo') return 'tiempo_hms'
+  if (t === 'posicion') return 'posicion'
+  return 'unidades'
+}
+
+function phaseTypeFromMethod(method) {
+  const m = normalizeMeasurementMethod(method)
+  if (m === 'tiempo_hms') return 'tiempo'
+  if (m === 'posicion') return 'posicion'
+  return 'cantidad'
+}
+
+// ── Competition Detail Modal ──────────────────────────────────────────────────
+
+function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile }) {
+  const [team, setTeam] = useState(null)
+  const [teamLoading, setTeamLoading] = useState(true)
+  const [pendingInvites, setPendingInvites] = useState([])
+  const [renameValue, setRenameValue] = useState('')
+  const [showRename, setShowRename] = useState(false)
+  const [inviteCedula, setInviteCedula] = useState('')
+  const [inviteMsg, setInviteMsg] = useState(null)
+  const [renameMsg, setRenameMsg] = useState(null)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [renameBusy, setRenameBusy] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(null)
+  const [transferBusy, setTransferBusy] = useState(null)
+  const [transferMsg, setTransferMsg] = useState(null)
+
+  const compResults = allResults.filter(r => r.competition_id === comp.id)
+
+  const loadTeam = useCallback(async () => {
+    setTeamLoading(true)
+    try {
+      const res = await api.get(`/teams?competition_id=${comp.id}`)
+      const myTeam = (res.data || []).find(t => (t.members || []).some(m => m.id === participantId))
+      setTeam(myTeam || null)
+      if (myTeam) setRenameValue(myTeam.nombre)
+    } catch {
+      setTeam(null)
+    } finally {
+      setTeamLoading(false)
+    }
+  }, [comp.id, participantId])
+
+  const loadPendingInvites = useCallback(async (teamId) => {
+    try {
+      const res = await api.get(`/teams/${teamId}/invitations`)
+      setPendingInvites(res.data || [])
+    } catch {
+      setPendingInvites([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadTeam()
+  }, [loadTeam])
+
+  useEffect(() => {
+    if (team && team.captain_id === participantId) {
+      loadPendingInvites(team.id)
+    }
+  }, [team, participantId, loadPendingInvites])
+
+  const isCaptain = team?.captain_id === participantId
+
+  const handleRename = async (e) => {
+    e.preventDefault()
+    if (!renameValue.trim()) return
+    setRenameBusy(true)
+    setRenameMsg(null)
+    try {
+      await api.put(`/teams/${team.id}/rename`, { nombre: renameValue.trim() })
+      setRenameMsg({ type: 'success', text: 'Nombre actualizado' })
+      setShowRename(false)
+      await loadTeam()
+    } catch (err) {
+      setRenameMsg({ type: 'error', text: err.response?.data?.detail || 'Error al renombrar' })
+    } finally {
+      setRenameBusy(false)
+    }
+  }
+
+  const handleInvite = async (e) => {
+    e.preventDefault()
+    if (!inviteCedula.trim()) return
+    setInviteBusy(true)
+    setInviteMsg(null)
+    try {
+      const res = await api.post(`/teams/${team.id}/invite`, { invitee_cedula: inviteCedula.trim() })
+      const name = res.data?.invitee ? `${res.data.invitee.nombre} ${res.data.invitee.apellido}` : inviteCedula
+      setInviteMsg({ type: 'success', text: `Invitacion enviada a ${name}` })
+      setInviteCedula('')
+      await loadPendingInvites(team.id)
+    } catch (err) {
+      setInviteMsg({ type: 'error', text: err.response?.data?.detail || 'Error al enviar invitacion' })
+    } finally {
+      setInviteBusy(false)
+    }
+  }
+
+  const handleCancelInvite = async (invId) => {
+    setCancelBusy(invId)
+    try {
+      await api.delete(`/teams/${team.id}/invitations/${invId}`)
+      await loadPendingInvites(team.id)
+    } catch {
+      // silent
+    } finally {
+      setCancelBusy(null)
+    }
+  }
+
+  const handleTransferCaptain = async (newCaptainId) => {
+    if (!window.confirm('¿Seguro que quieres transferir la capitanía?')) return
+    setTransferBusy(newCaptainId)
+    setTransferMsg(null)
+    try {
+      await api.put(`/teams/${team.id}/transfer-captain`, { captain_id: newCaptainId })
+      setTransferMsg({ type: 'success', text: 'Capitanía transferida' })
+      await loadTeam()
+    } catch (err) {
+      setTransferMsg({ type: 'error', text: err.response?.data?.detail || 'Error al transferir' })
+    } finally {
+      setTransferBusy(null)
+    }
+  }
+
+  const badge = statusBadge(comp.enrollment_estado)
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+      display: 'flex', alignItems: isMobile ? 'flex-end' : 'center',
+      justifyContent: 'center', zIndex: 1000,
+      padding: isMobile ? 0 : 16,
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: isMobile ? '16px 16px 0 0' : 14,
+        width: '100%', maxWidth: isMobile ? '100%' : 600,
+        maxHeight: isMobile ? '90vh' : '85vh',
+        display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+        boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: isMobile ? '16px 16px 12px' : '20px 24px 14px',
+          borderBottom: '1px solid #e8ede7',
+          background: '#284017',
+          borderRadius: isMobile ? '16px 16px 0 0' : '14px 14px 0 0',
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+              <div style={{ fontWeight: 800, fontSize: isMobile ? 17 : 20, color: '#fff', lineHeight: 1.2 }}>{comp.nombre}</div>
+              {comp.descripcion && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 4 }}>{comp.descripcion}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <span className={`badge ${badge.cls}`} style={{ fontSize: 11 }}>{badge.label}</span>
+                {comp.activa === 1 && <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>ACTIVA</span>}
+                {comp.enrollment_categoria && (
+                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Cat: <b style={{ color: '#fff' }}>{comp.enrollment_categoria}</b></span>
+                )}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: 'auto', flex: 1, padding: isMobile ? '14px 16px' : '18px 24px' }}>
+
+          {/* Team section */}
+          {teamLoading ? (
+            <div style={{ color: '#647063', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
+          ) : team ? (
+            <div style={{ marginBottom: 18 }}>
+              {/* Team header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Users size={15} color="#284017" />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#284017' }}>Tu equipo</span>
+                {isCaptain && (
+                  <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 7px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <Crown size={10} /> CAPITAN
+                  </span>
+                )}
+              </div>
+
+              {/* Team name + rename */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                {showRename ? (
+                  <form onSubmit={handleRename} style={{ display: 'flex', gap: 6, flex: 1 }}>
+                    <input
+                      value={renameValue}
+                      onChange={e => setRenameValue(e.target.value)}
+                      style={{ flex: 1, fontSize: 14, padding: '6px 10px' }}
+                      placeholder="Nuevo nombre..."
+                      autoFocus
+                    />
+                    <button type="submit" className="btn-primary btn-sm" disabled={renameBusy}>
+                      {renameBusy ? '...' : <Check size={14} />}
+                    </button>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowRename(false); setRenameMsg(null) }}>
+                      <X size={14} />
+                    </button>
+                  </form>
+                ) : (
+                  <>
+                    <span style={{ fontWeight: 700, fontSize: 16, color: '#1a2e0a' }}>{team.nombre}</span>
+                    {isCaptain && (
+                      <button className="btn-secondary btn-sm" onClick={() => setShowRename(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <Pencil size={12} /> Renombrar
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+              {renameMsg && <div className={`alert alert-${renameMsg.type}`} style={{ marginBottom: 8, fontSize: 12 }}>{renameMsg.text}</div>}
+
+              {/* Members list */}
+              {transferMsg && <div className={`alert alert-${transferMsg.type}`} style={{ marginBottom: 8, fontSize: 12 }}>{transferMsg.text}</div>}
+              <div style={{ display: 'grid', gap: 6, marginBottom: 12 }}>
+                {(team.members || []).map(m => (
+                  <div key={m.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                    borderRadius: 8, border: `1px solid ${m.is_captain ? '#ffe08a' : '#d5ddd3'}`,
+                    background: m.is_captain ? '#fffbef' : m.id === participantId ? '#f0f7ee' : '#fafbfa',
+                  }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+                      background: m.is_captain ? '#fff3cd' : '#e8ede7',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#664d03' : '#284017',
+                    }}>
+                      {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
+                      {m.id === participantId && <span style={{ fontSize: 11, color: '#284017', marginLeft: 6 }}>(tú)</span>}
+                    </div>
+                    {m.is_captain ? (
+                      <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                        <Crown size={9} /> Capitán
+                      </span>
+                    ) : isCaptain && (
+                      <button
+                        className="btn-secondary btn-sm"
+                        title="Transferir capitanía a este miembro"
+                        onClick={() => handleTransferCaptain(m.id)}
+                        disabled={transferBusy === m.id}
+                        style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
+                      >
+                        <Crown size={11} /> {transferBusy === m.id ? '...' : 'Dar capitanía'}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Captain: invite section */}
+              {isCaptain && (
+                <div style={{ background: '#f8faf7', borderRadius: 10, padding: '12px 14px', border: '1px solid #d5ddd3' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#284017', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <UserPlus size={14} /> Invitar participante
+                  </div>
+                  <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      value={inviteCedula}
+                      onChange={e => setInviteCedula(e.target.value)}
+                      placeholder="Cedula del participante..."
+                      style={{ flex: 1, fontSize: 14 }}
+                    />
+                    <button type="submit" className="btn-primary btn-sm" disabled={inviteBusy || !inviteCedula.trim()}>
+                      {inviteBusy ? '...' : 'Invitar'}
+                    </button>
+                  </form>
+                  {inviteMsg && <div className={`alert alert-${inviteMsg.type}`} style={{ marginTop: 8, fontSize: 12 }}>{inviteMsg.text}</div>}
+
+                  {/* Pending invites sent */}
+                  {pendingInvites.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#647063', marginBottom: 6 }}>Invitaciones pendientes:</div>
+                      <div style={{ display: 'grid', gap: 4 }}>
+                        {pendingInvites.map(inv => (
+                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: '#fff', borderRadius: 6, border: '1px solid #e8ede7' }}>
+                            <span>{inv.invitee_nombre || inv.invitee_cedula}</span>
+                            <button className="btn-secondary btn-sm" onClick={() => handleCancelInvite(inv.id)} disabled={cancelBusy === inv.id} style={{ fontSize: 11, padding: '2px 8px' }}>
+                              {cancelBusy === inv.id ? '...' : 'Cancelar'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          {/* Results section */}
+          {compResults.length > 0 && (
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#284017', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Trophy size={14} /> Tus resultados
+              </div>
+              <div style={{ display: 'grid', gap: 6 }}>
+                {compResults.map(r => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid #d5ddd3', background: '#fafbfa' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r.fase || 'Sin fase'}</div>
+                      {r.equipo && <div style={{ fontSize: 11, color: '#647063', marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                      {r.posicion ? (
+                        <>
+                          <div style={{ fontWeight: 800, color: '#284017', fontSize: 20 }}>#{r.posicion}</div>
+                          <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 800, color: '#284017', fontSize: 22 }}>{r.puntos}</div>
+                          <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!teamLoading && !team && compResults.length === 0 && (
+            <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 13 }}>
+              Aun no hay resultados registrados para esta competencia
+            </div>
+          )}
+
+          {/* Leaderboard link */}
+          <a
+            href={`/leaderboard/${comp.id}`}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, padding: '12px', borderRadius: 10, border: '1px solid #d5ddd3', background: '#f8faf7', color: '#284017', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+          >
+            <Medal size={16} /> Ver Leaderboard <ChevronRight size={14} />
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function ParticipantProfile() {
+  const navigate = useNavigate()
+  const participantId = Number(localStorage.getItem('participant_id'))
+  const nombre = localStorage.getItem('nombre') || 'Participante'
+
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  const [results, setResults] = useState([])
+  const [competitions, setCompetitions] = useState([])
+  const [myComps, setMyComps] = useState([])
+  const [categoriesByComp, setCategoriesByComp] = useState({})
+  const [selectedCategory, setSelectedCategory] = useState({})
+  const [publicListByComp, setPublicListByComp] = useState({})
+  const [expandedPublic, setExpandedPublic] = useState({})
+  const [phasesByComp, setPhasesByComp] = useState({})
+  const [myTeamByComp, setMyTeamByComp] = useState({})
+  const [form, setForm] = useState({ competition_id: '', phase_id: '', puntos: '', posicion: '' })
+  const [msg, setMsg] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [busyCompId, setBusyCompId] = useState(null)
+
+  // Modal state
+  const [selectedComp, setSelectedComp] = useState(null)
+
+  // Pending invitations received
+  const [pendingInvitations, setPendingInvitations] = useState([])
+  const [invBusy, setInvBusy] = useState(null)
+  const [invMsg, setInvMsg] = useState(null)
+
+  // Edit profile
+  const [myProfile, setMyProfile] = useState(null)
+  const [showEditProfile, setShowEditProfile] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [editMsg, setEditMsg] = useState(null)
+  const [editBusy, setEditBusy] = useState(false)
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  const loadResults = () => api.get('/results').then(r => setResults(r.data))
+  const loadCompetitions = async () => { const res = await api.get('/competitions'); setCompetitions(res.data) }
+  const loadMyCompetitions = async () => { const res = await api.get(`/participants/${participantId}/competitions`); setMyComps(res.data) }
+  const loadMyInvitations = async () => {
+    try {
+      const res = await api.get('/teams/my-invitations')
+      setPendingInvitations(res.data || [])
+    } catch { setPendingInvitations([]) }
+  }
+  const loadMyProfile = async () => {
+    try {
+      const res = await api.get('/participants/me')
+      setMyProfile(res.data)
+      setEditForm({
+        nombre: res.data.nombre || '',
+        apellido: res.data.apellido || '',
+        cedula: res.data.cedula || '',
+        email: res.data.email || '',
+        celular: res.data.celular || '',
+        sexo: res.data.sexo || '',
+        categoria: res.data.categoria || '',
+      })
+    } catch { /* silent */ }
+  }
+
+  useEffect(() => {
+    if (!participantId) return
+    Promise.all([loadResults(), loadCompetitions(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile()]).catch(() => {})
+  }, [participantId])
+
+  useEffect(() => {
+    if (!competitions.length) return
+    Promise.all(
+      competitions.map(c =>
+        api.get(`/competitions/${c.id}/categories`)
+          .then(r => [c.id, r.data]).catch(() => [c.id, []])
+      )
+    ).then(entries => {
+      const byComp = Object.fromEntries(entries)
+      setCategoriesByComp(byComp)
+      setSelectedCategory(prev => {
+        const next = { ...prev }
+        for (const [compId, cats] of entries) {
+          if (!next[compId] && cats.length > 0) next[compId] = cats[0].nombre
+        }
+        return next
+      })
+    })
+  }, [competitions])
+
+  const enrollmentByComp = useMemo(() => {
+    const map = {}
+    for (const c of myComps) map[c.id] = c
+    return map
+  }, [myComps])
+
+  const confirmedComps = useMemo(
+    () => competitions.filter(c => enrollmentByComp[c.id]?.enrollment_estado === 'confirmado'),
+    [competitions, enrollmentByComp]
+  )
+
+  const resultEnabledComps = useMemo(
+    () => confirmedComps.filter(c => c.activa && c.allow_user_results),
+    [confirmedComps]
+  )
+
+  useEffect(() => {
+    if (!resultEnabledComps.length) { setForm(f => ({ ...f, competition_id: '', phase_id: '' })); return }
+    const current = Number(form.competition_id)
+    const exists = resultEnabledComps.some(c => c.id === current)
+    if (!exists) setForm(f => ({ ...f, competition_id: resultEnabledComps[0].id, phase_id: '' }))
+  }, [resultEnabledComps, form.competition_id])
+
+  useEffect(() => {
+    if (!showForm || !resultEnabledComps.length) return
+    resultEnabledComps.forEach(async (c) => {
+      if (!(c.id in phasesByComp)) {
+        try {
+          const res = await api.get(`/competitions/${c.id}/phases?estado=en_progreso`)
+          setPhasesByComp(prev => ({ ...prev, [c.id]: res.data }))
+        } catch { setPhasesByComp(prev => ({ ...prev, [c.id]: [] })) }
+      }
+      if (!(c.id in myTeamByComp)) {
+        try {
+          const res = await api.get(`/teams?competition_id=${c.id}`)
+          const myTeam = res.data.find(t => t.members.some(m => m.id === participantId))
+          setMyTeamByComp(prev => ({ ...prev, [c.id]: myTeam || null }))
+        } catch { setMyTeamByComp(prev => ({ ...prev, [c.id]: null })) }
+      }
+    })
+  }, [showForm, resultEnabledComps])
+
+  const saveProfile = async (e) => {
+    e.preventDefault()
+    setEditBusy(true)
+    setEditMsg(null)
+    const payload = {}
+    for (const [k, v] of Object.entries(editForm)) {
+      const trimmed = v.trim()
+      if (trimmed) payload[k] = trimmed
+    }
+    try {
+      const res = await api.patch('/participants/me', payload)
+      setMyProfile(res.data)
+      localStorage.setItem('nombre', `${res.data.nombre} ${res.data.apellido}`)
+      setEditMsg({ type: 'success', text: 'Datos actualizados correctamente' })
+      setShowEditProfile(false)
+    } catch (err) {
+      setEditMsg({ type: 'error', text: err.response?.data?.detail || 'Error al guardar' })
+    } finally {
+      setEditBusy(false)
+    }
+  }
+
+  const submitResult = async (e) => {
+    e.preventDefault()
+    setMsg(null)
+    const compId = Number(form.competition_id)
+    const phaseObj = (phasesByComp[compId] || []).find(p => p.id === Number(form.phase_id))
+    const measurementMethod = normalizeMeasurementMethod(phaseObj?.measurement_method, phaseObj?.tipo)
+    const isPosition = phaseTypeFromMethod(measurementMethod) === 'posicion'
+    const isTime = measurementMethod === 'tiempo_hms'
+    const metricValue = isPosition ? null : (isTime ? parseTimeToSeconds(form.puntos) : Number(form.puntos || 0))
+    if (!isPosition && (metricValue == null || Number.isNaN(metricValue))) {
+      setMsg({ type: 'error', text: isTime ? 'Tiempo invalido. Usa HH:MM:SS' : 'Valor invalido' })
+      return
+    }
+    const payload = {
+      participant_id: participantId,
+      competition_id: compId,
+      marca: isPosition ? undefined : metricValue,
+      puntos: isPosition ? 0 : metricValue,
+    }
+    if (form.phase_id) payload.phase_id = Number(form.phase_id)
+    if (isPosition) payload.posicion = Number(form.posicion)
+    try {
+      await api.post('/results', payload)
+      setMsg({ type: 'success', text: 'Resultado cargado correctamente' })
+      setShowForm(false)
+      loadResults()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'Error al cargar resultado' })
+    }
+  }
+
+  const requestEnrollment = async (competition) => {
+    setMsg(null)
+    setBusyCompId(competition.id)
+    try {
+      const category = selectedCategory[competition.id] || null
+      await api.post(`/competitions/${competition.id}/enroll`, { categoria: category })
+      setMsg({ type: 'success', text: `Solicitud enviada para ${competition.nombre}` })
+      await loadMyCompetitions()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo solicitar inscripcion' })
+    } finally { setBusyCompId(null) }
+  }
+
+  const cancelPending = async (competition) => {
+    setMsg(null)
+    setBusyCompId(competition.id)
+    try {
+      await api.delete(`/competitions/${competition.id}/enroll`)
+      setMsg({ type: 'success', text: `Solicitud cancelada en ${competition.nombre}` })
+      await loadMyCompetitions()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cancelar la solicitud' })
+    } finally { setBusyCompId(null) }
+  }
+
+  const togglePublicList = async (competitionId) => {
+    setExpandedPublic(prev => ({ ...prev, [competitionId]: !prev[competitionId] }))
+    if (publicListByComp[competitionId]) return
+    try {
+      const res = await api.get(`/competitions/${competitionId}/enrolled-list`)
+      setPublicListByComp(prev => ({ ...prev, [competitionId]: res.data }))
+    } catch { setPublicListByComp(prev => ({ ...prev, [competitionId]: [] })) }
+  }
+
+  const acceptInvitation = async (invId) => {
+    setInvBusy(invId)
+    setInvMsg(null)
+    try {
+      await api.post(`/teams/invitations/${invId}/accept`)
+      setInvMsg({ type: 'success', text: 'Te has unido al equipo' })
+      await loadMyInvitations()
+    } catch (err) {
+      setInvMsg({ type: 'error', text: err.response?.data?.detail || 'Error al aceptar' })
+    } finally { setInvBusy(null) }
+  }
+
+  const rejectInvitation = async (invId) => {
+    setInvBusy(invId)
+    setInvMsg(null)
+    try {
+      await api.delete(`/teams/invitations/${invId}`)
+      await loadMyInvitations()
+    } catch (err) {
+      setInvMsg({ type: 'error', text: err.response?.data?.detail || 'Error al rechazar' })
+    } finally { setInvBusy(null) }
+  }
+
+  const totalPuntos = results.reduce((acc, r) => acc + (r.puntos || 0), 0)
+  const initial = nombre.trim().charAt(0).toUpperCase() || 'P'
+
+  const compId = Number(form.competition_id)
+  const phasesRaw = phasesByComp[compId]
+  const phasesLoading = phasesRaw === undefined
+  const phasesEmpty = Array.isArray(phasesRaw) && phasesRaw.length === 0
+  const phasesForComp = phasesRaw || []
+  const phaseObj = phasesForComp.find(p => p.id === Number(form.phase_id))
+  const measurementMethod = normalizeMeasurementMethod(phaseObj?.measurement_method, phaseObj?.tipo)
+  const isPosition = phaseTypeFromMethod(measurementMethod) === 'posicion'
+  const isTime = measurementMethod === 'tiempo_hms'
+  const myTeam = myTeamByComp[compId]
+  const teamMode = phaseObj?.team_result_mode
+
+  // Open modal with enriched comp (merge enrollment data)
+  const openModal = (c) => {
+    const enrolled = enrollmentByComp[c.id]
+    setSelectedComp({ ...c, enrollment_estado: enrolled?.enrollment_estado, enrollment_categoria: enrolled?.enrollment_categoria })
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f6f7f5' }}>
+
+      {/* Modal */}
+      {selectedComp && (
+        <CompetitionDetailModal
+          comp={selectedComp}
+          participantId={participantId}
+          allResults={results}
+          onClose={() => setSelectedComp(null)}
+          isMobile={isMobile}
+        />
+      )}
+
+      {/* Nav */}
+      <nav style={{
+        background: '#fff', borderBottom: '1px solid #d7ddd7',
+        padding: isMobile ? '10px 14px' : '12px 24px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        position: 'sticky', top: 0, zIndex: 100,
+      }}>
+        <span style={{ fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1, fontWeight: 800, fontSize: isMobile ? 22 : 28, color: '#284017', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Trophy size={isMobile ? 18 : 22} /> Loyalty Race
+        </span>
+        <div style={{ display: 'flex', gap: isMobile ? 8 : 12, alignItems: 'center' }}>
+          {!isMobile && <span style={{ color: '#647063', fontSize: 14 }}>{nombre}</span>}
+          <a href="/leaderboard" style={{ color: '#284017', fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Medal size={14} />{isMobile ? '' : ' Leaderboard'}
+          </a>
+          <button className="btn-secondary btn-sm" onClick={() => { localStorage.clear(); navigate('/login') }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <LogOut size={14} /> Salir
+          </button>
+        </div>
+      </nav>
+
+      <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
+
+        {/* Profile hero */}
+        <div style={{
+          background: '#284017', borderRadius: 14,
+          padding: isMobile ? '18px 16px' : '24px',
+          marginBottom: 16, display: 'flex', alignItems: 'center', gap: isMobile ? 14 : 20,
+        }}>
+          <div style={{
+            width: isMobile ? 50 : 62, height: isMobile ? 50 : 62, flexShrink: 0,
+            borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: isMobile ? 20 : 26, fontWeight: 800, color: '#fff',
+          }}>
+            {initial}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${myProfile.cedula}` : ''}</div>
+            {myProfile?.categoria && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>{myProfile.categoria}</div>}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: '#e491ac' }}>{totalPuntos}</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+            </div>
+            <button
+              onClick={() => { setShowEditProfile(v => !v); setEditMsg(null) }}
+              style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '5px 10px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            >
+              <UserCog size={13} /> {showEditProfile ? 'Cerrar' : 'Editar datos'}
+            </button>
+          </div>
+        </div>
+
+        {msg && <div className={`alert alert-${msg.type}`} style={{ marginBottom: 12 }}>{msg.text}</div>}
+
+        {/* Edit profile form */}
+        {showEditProfile && (
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <UserCog size={15} /> Mis datos
+            </h3>
+            {editMsg && <div className={`alert alert-${editMsg.type}`} style={{ marginBottom: 12 }}>{editMsg.text}</div>}
+            <form onSubmit={saveProfile}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Nombre</label>
+                  <input value={editForm.nombre || ''} onChange={e => setEditForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre" required />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Apellido</label>
+                  <input value={editForm.apellido || ''} onChange={e => setEditForm(f => ({ ...f, apellido: e.target.value }))} placeholder="Apellido" required />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Cédula</label>
+                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value }))} placeholder="Cédula" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Celular</label>
+                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value }))} placeholder="Celular" inputMode="tel" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Email</label>
+                  <input value={editForm.email || ''} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" inputMode="email" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Sexo</label>
+                  <select value={editForm.sexo || ''} onChange={e => setEditForm(f => ({ ...f, sexo: e.target.value }))}>
+                    <option value="">Sin especificar</option>
+                    <option value="M">Masculino</option>
+                    <option value="F">Femenino</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                  <label>Categoría</label>
+                  <input value={editForm.categoria || ''} onChange={e => setEditForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Ej: Rx, Scaled, Masters..." />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowEditProfile(false); setEditMsg(null) }}>Cancelar</button>
+                <button type="submit" className="btn-primary" disabled={editBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Check size={14} /> {editBusy ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Pending invitations */}
+        {pendingInvitations.length > 0 && (
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20, border: '2px solid #fff3cd' }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#664d03' }}>
+              <Bell size={15} />
+              Invitaciones de equipo
+              <span style={{ background: '#e8a800', color: '#fff', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                {pendingInvitations.length}
+              </span>
+            </h3>
+            {invMsg && <div className={`alert alert-${invMsg.type}`} style={{ marginBottom: 10, fontSize: 13 }}>{invMsg.text}</div>}
+            <div style={{ display: 'grid', gap: 8 }}>
+              {pendingInvitations.map(inv => (
+                <div key={inv.id} style={{ padding: '12px', borderRadius: 8, border: '1px solid #ffe08a', background: '#fffbef', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 10 : 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {inv.team?.nombre || 'Equipo'}
+                    </div>
+                    {inv.captain_nombre && (
+                      <div style={{ fontSize: 12, color: '#647063', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Crown size={11} color="#e8a800" /> Capitán: {inv.captain_nombre}
+                      </div>
+                    )}
+                    {inv.team?.members?.length > 0 && (
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>
+                        {inv.team.members.map(m => m.nombre).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexDirection: isMobile ? 'column' : 'row' }}>
+                    <button className="btn-primary btn-sm" onClick={() => acceptInvitation(inv.id)} disabled={invBusy === inv.id} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, flex: isMobile ? 1 : undefined }}>
+                      <Check size={13} /> Aceptar
+                    </button>
+                    <button className="btn-secondary btn-sm" onClick={() => rejectInvitation(inv.id)} disabled={invBusy === inv.id} style={{ flex: isMobile ? 1 : undefined }}>
+                      Rechazar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Load result CTA */}
+        {resultEnabledComps.length > 0 && !showForm && (
+          <button
+            className="btn-primary"
+            onClick={() => setShowForm(true)}
+            style={{ width: '100%', padding: '14px', fontSize: 15, borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+          >
+            <PlusCircle size={18} /> Cargar resultado
+          </button>
+        )}
+
+        {/* Result form */}
+        {showForm && (
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Cargar resultado</h3>
+              <button className="btn-secondary btn-sm" onClick={() => setShowForm(false)}>✕ Cancelar</button>
+            </div>
+            <form onSubmit={submitResult}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Competencia</label>
+                  <select value={form.competition_id} onChange={e => setForm({ ...form, competition_id: e.target.value, phase_id: '', puntos: '', posicion: '' })}>
+                    {resultEnabledComps.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fase en progreso</label>
+                  {phasesLoading
+                    ? <div style={{ padding: '10px 0', color: '#647063', fontSize: 13 }}>Cargando fases...</div>
+                    : phasesEmpty
+                      ? <div style={{ padding: '10px 0', color: '#c0392b', fontSize: 13, fontWeight: 600 }}>Sin fases en progreso</div>
+                      : (
+                        <select value={form.phase_id} onChange={e => setForm({ ...form, phase_id: e.target.value, puntos: '', posicion: '' })} required>
+                          <option value="">Seleccionar fase...</option>
+                          {phasesForComp.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                        </select>
+                      )
+                  }
+                </div>
+              </div>
+
+              {phaseObj && (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                    <span style={{ fontSize: 12, background: '#f0f4ef', color: '#284017', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
+                      {isPosition ? 'Por posicion' : isTime ? 'Por tiempo' : 'Por cantidad'}
+                    </span>
+                    {teamMode && (
+                      <span style={{ fontSize: 12, background: '#e8f0fe', color: '#1a4da3', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
+                        {teamMode === 'sum_two' ? 'Equipo: suma' : 'Equipo: individual'}
+                      </span>
+                    )}
+                    {myTeam && (
+                      <span style={{ fontSize: 12, background: '#fff3cd', color: '#664d03', borderRadius: 6, padding: '4px 10px' }}>
+                        Equipo: <b>{myTeam.nombre}</b>
+                      </span>
+                    )}
+                  </div>
+                  <div className="form-group">
+                    <label>{isPosition ? 'Posicion obtenida' : isTime ? 'Tiempo (HH:MM:SS)' : 'Valor'}</label>
+                    <input
+                      type={isPosition ? 'number' : (isTime ? 'text' : 'number')}
+                      min={isPosition ? 1 : (isTime ? undefined : 0)}
+                      placeholder={isPosition ? 'Ej: 1, 2, 3...' : isTime ? 'Ej: 00:03:05' : 'Ej: 42'}
+                      value={isPosition ? form.posicion : form.puntos}
+                      onChange={e => setForm({ ...form, [isPosition ? 'posicion' : 'puntos']: e.target.value })}
+                      style={{ fontSize: 20, padding: '14px', textAlign: 'center' }}
+                      required
+                    />
+                    {phaseObj.descripcion && <div style={{ fontSize: 12, color: '#647063', marginTop: 6 }}>{phaseObj.descripcion}</div>}
+                  </div>
+                </>
+              )}
+
+              <button
+                type="submit" className="btn-primary"
+                disabled={phasesLoading || phasesEmpty || !form.phase_id}
+                style={{ width: '100%', padding: '14px', fontSize: 15, marginTop: 4 }}
+              >
+                Guardar resultado
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Competition catalog */}
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+          <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ClipboardList size={16} /> Competencias
+          </h3>
+          {competitions.length === 0 ? (
+            <p style={{ color: '#647063', textAlign: 'center', padding: 20, fontSize: 14 }}>No hay competencias disponibles</p>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {competitions.map(c => {
+                const mine = enrollmentByComp[c.id]
+                const estado = mine?.enrollment_estado
+                const badge = statusBadge(estado)
+                const windowState = enrollmentWindow(c)
+                const cats = categoriesByComp[c.id] || []
+                const canRequest = !estado && windowState.canEnroll
+                const isBusy = busyCompId === c.id
+                const isExpanded = !!expandedPublic[c.id]
+                const list = publicListByComp[c.id] || []
+
+                return (
+                  <div key={c.id} style={{ border: '1px solid #d5ddd3', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
+                    {/* Header — clickable if enrolled */}
+                    <div
+                      style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, cursor: estado === 'confirmado' ? 'pointer' : 'default' }}
+                      onClick={() => estado === 'confirmado' && openModal(c)}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, fontSize: 15 }}>{c.nombre}</span>
+                          {c.activa === 1 && (
+                            <span style={{ fontSize: 10, background: '#e9f5e7', color: '#284017', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>ACTIVA</span>
+                          )}
+                        </div>
+                        {c.descripcion && <div style={{ color: '#647063', fontSize: 12 }}>{c.descripcion}</div>}
+                        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span className={`badge ${badge.cls}`} style={{ fontSize: 11 }}>{badge.label}</span>
+                          <span style={{ fontSize: 11, color: windowState.canEnroll ? '#284017' : '#888' }}>{windowState.text}</span>
+                        </div>
+                        {mine?.enrollment_categoria && (
+                          <div style={{ marginTop: 4, fontSize: 11, color: '#647063' }}>Cat: <b style={{ color: '#284017' }}>{mine.enrollment_categoria}</b></div>
+                        )}
+                      </div>
+                      {estado === 'confirmado' && (
+                        <div style={{ flexShrink: 0, color: '#284017', display: 'flex', alignItems: 'center' }}>
+                          <ChevronRight size={16} />
+                        </div>
+                      )}
+                    </div>
+                    {/* Actions */}
+                    <div style={{ padding: '10px 14px', borderTop: '1px solid #f0f0f0', background: '#fafbfa', display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isMobile && (canRequest || estado === 'pendiente') ? 'column' : 'row' }}>
+                      {canRequest && cats.length > 0 && (
+                        <select value={selectedCategory[c.id] || ''} onChange={e => setSelectedCategory(prev => ({ ...prev, [c.id]: e.target.value }))} style={{ width: isMobile ? '100%' : undefined, flex: isMobile ? undefined : 1, minWidth: 110, fontSize: 14 }}>
+                          {cats.map(cat => <option key={cat.id} value={cat.nombre}>{cat.nombre}</option>)}
+                        </select>
+                      )}
+                      {canRequest && (
+                        <button className="btn-primary btn-sm" onClick={() => requestEnrollment(c)} disabled={isBusy} style={{ flex: 1 }}>
+                          {isBusy ? 'Enviando...' : 'Solicitar inscripcion'}
+                        </button>
+                      )}
+                      {estado === 'pendiente' && (
+                        <button className="btn-secondary btn-sm" onClick={() => cancelPending(c)} disabled={isBusy} style={{ flex: 1 }}>
+                          {isBusy ? 'Procesando...' : 'Cancelar solicitud'}
+                        </button>
+                      )}
+                      {!estado && !windowState.canEnroll && (
+                        <span style={{ fontSize: 12, color: '#aaa', alignSelf: 'center' }}>No disponible</span>
+                      )}
+                      <button className="btn-secondary btn-sm" onClick={() => togglePublicList(c.id)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, flex: isMobile ? 1 : undefined, flexShrink: 0 }}>
+                        {isExpanded ? <EyeOff size={13} /> : <Eye size={13} />}
+                        {isExpanded ? 'Ocultar' : 'Inscritos'}
+                      </button>
+                    </div>
+                    {/* Enrolled list */}
+                    {isExpanded && (
+                      <div style={{ padding: '10px 14px', borderTop: '1px solid #f0f0f0' }}>
+                        {list.length === 0 ? (
+                          <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center' }}>Sin inscritos confirmados</div>
+                        ) : (
+                          <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
+                            {list.map((p, idx) => (
+                              <div key={`${c.id}-${idx}`} style={{ fontSize: 13, color: '#4d564b', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{p.apellido}, {p.nombre}</span>
+                                <span style={{ color: '#888', fontSize: 12 }}>{p.categoria || '-'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* My enrollments */}
+        {myComps.length > 0 && (
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {myComps.map(c => {
+                const badge = statusBadge(c.enrollment_estado)
+                const isConfirmed = c.enrollment_estado === 'confirmado'
+                return (
+                  <div
+                    key={c.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #d5ddd3', background: '#fff', justifyContent: 'space-between', cursor: isConfirmed ? 'pointer' : 'default', minHeight: isMobile ? 56 : undefined }}
+                    onClick={() => isConfirmed && openModal(c)}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
+                      {c.enrollment_categoria && <div style={{ fontSize: 11, color: '#647063', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <span className={`badge ${badge.cls}`}>{badge.label}</span>
+                      {isConfirmed && <ChevronRight size={14} color="#647063" />}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* My results */}
+        <div className="card" style={{ padding: isMobile ? 14 : 20 }}>
+          <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Mis resultados</h3>
+          {results.length === 0 ? (
+            <p style={{ color: '#647063', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
+          ) : isMobile ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {results.map(r => (
+                <div key={r.id} style={{ border: '1px solid #e7ece6', borderRadius: 8, padding: '12px 14px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.competencia}</div>
+                    <div style={{ fontSize: 12, color: '#647063', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
+                    {r.posicion ? (
+                      <>
+                        <div style={{ fontWeight: 700, color: '#284017', fontSize: 18 }}>#{r.posicion}</div>
+                        <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ fontWeight: 700, color: '#284017', fontSize: 22 }}>{r.puntos}</div>
+                        <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <table>
+              <thead>
+                <tr><th>Competencia</th><th>Fase</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th></tr>
+              </thead>
+              <tbody>
+                {results.map(r => (
+                  <tr key={r.id}>
+                    <td>{r.competencia}</td>
+                    <td style={{ color: '#647063', fontSize: 13 }}>{r.fase || '-'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#284017' }}>{r.posicion ? '-' : r.puntos}</td>
+                    <td style={{ textAlign: 'right' }}>{r.posicion || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
+}

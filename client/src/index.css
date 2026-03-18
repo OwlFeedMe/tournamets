@@ -1,0 +1,248 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Poppins:wght@400;500;600;700;800&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --lty-blush: #e491ac;
+  --lty-mist: #c7cbc8;
+  --lty-forest: #284017;
+  --lty-olive: #738063;
+  --lty-ink: #222121;
+  --lty-paper: #f6f7f5;
+  --lty-card: #ffffff;
+  --lty-line: #d5ddd3;
+}
+
+body {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--lty-paper);
+  color: var(--lty-ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+html, #root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+a { color: inherit; text-decoration: none; }
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+button:hover { opacity: 0.85; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary   { background: var(--lty-forest); color: #fff; }
+.btn-secondary { background: #fff; color: #435041; border: 1px solid var(--lty-line); }
+.btn-success   { background: var(--lty-olive); color: #fff; }
+.btn-danger    { background: var(--lty-blush); color: #fff; }
+.btn-sm        { padding: 5px 10px; font-size: 12px; }
+
+input, select, textarea {
+  background: #fff;
+  border: 1px solid #cfd8ce;
+  border-radius: 6px;
+  color: var(--lty-ink);
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+  max-width: 100%;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--lty-forest); }
+
+label { font-size: 13px; color: #647063; display: block; margin-bottom: 4px; }
+
+.form-group { margin-bottom: 16px; }
+
+.card {
+  background: var(--lty-card);
+  border: 1px solid var(--lty-line);
+  border-radius: 10px;
+  padding: 20px;
+  overflow-x: clip;
+}
+
+.badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.badge-rx          { background: #e4ede0; color: #1c3310; border: 1px solid #8aaa78; }
+.badge-scaled      { background: #fce8f0; color: #7a1f3e; border: 1px solid #d4789a; }
+.badge-masters     { background: #e8ebe6; color: #1e2d14; border: 1px solid #738063; }
+.badge-confirmado  { background: #284017; color: #ffffff; border: 1px solid #1a2e0a; }
+.badge-pendiente   { background: #fff3cd; color: #664d03; border: 1px solid #ffca2c; }
+.badge-rechazado   { background: #f8d7da; color: #58151c; border: 1px solid #f1aeb5; }
+.badge-default     { background: #ecefed; color: #333d31; border: 1px solid #b8bfb6; }
+
+.alert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.alert-error   { background: #fdeff4; border: 1px solid #efbfd0; color: #8a3f5b; }
+.alert-success { background: #e9f2e7; border: 1px solid #bdd0b6; color: #284017; }
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  background: #fff;
+  border: 1px solid var(--lty-line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+th {
+  background: #eef2ed;
+  color: #495348;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--lty-line);
+}
+td { padding: 10px 12px; border-bottom: 1px solid #e7ece6; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8fbf8; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--lty-line); padding-bottom: 0; }
+.tab {
+  padding: 10px 20px;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5f685e;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.tab.active { color: var(--lty-forest); border-bottom-color: var(--lty-forest); }
+.tab:hover:not(.active) { color: var(--lty-ink); background: #edf3eb; }
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.page-header h1 { font-size: 22px; font-weight: 700; }
+
+.rank-1 { color: #ffd700; font-weight: 800; }
+.rank-2 { color: #c0c0c0; font-weight: 700; }
+.rank-3 { color: #cd7f32; font-weight: 700; }
+
+@media (max-width: 768px) {
+  body {
+    font-size: 15px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .app-nav {
+    padding: 10px 12px !important;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center !important;
+  }
+
+  .app-container {
+    max-width: 100% !important;
+    padding: 14px 12px !important;
+  }
+
+  .auth-shell {
+    padding: 12px !important;
+  }
+
+  .auth-card-wrap {
+    max-width: 100% !important;
+  }
+
+  .card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  /* Touch targets */
+  button, a[class*="btn"] {
+    min-height: 40px;
+  }
+  .btn-sm {
+    padding: 7px 12px;
+    font-size: 13px;
+    min-height: 36px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    flex-wrap: nowrap;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    padding: 7px 12px;
+    font-size: 13px;
+    flex: 0 0 auto;
+  }
+
+  input, select, textarea {
+    font-size: 16px; /* prevent iOS zoom */
+    padding: 10px 12px;
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 3px 9px;
+  }
+
+  .responsive-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="grid-template-columns: repeat(3, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  table {
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  th, td {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+  }
+
+  /* Profile cards — full tap area on inscripciones */
+  .profile-enroll-card {
+    min-height: 56px;
+  }
+}
