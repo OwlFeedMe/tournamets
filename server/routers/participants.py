@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from auth import get_effective_participant_id, is_end_user, require_admin, require_auth
 from database import get_session
-from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantSelfUpdate, CompetitionParticipant
+from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
 
 
 def _normalize(s: str) -> str:
@@ -109,7 +109,7 @@ def _process_profile_photo(file: UploadFile, participant_id: int) -> str:
     return f"/uploads/profile_photos/{filename}"
 
 
-@router.get("/me", response_model=Participant)
+@router.get("/me", response_model=ParticipantProfile)
 def get_my_profile(session: Session = Depends(get_session), user=Depends(require_auth)):
     participant_id = get_effective_participant_id(user)
     if not is_end_user(user) or participant_id is None:
@@ -120,7 +120,7 @@ def get_my_profile(session: Session = Depends(get_session), user=Depends(require
     return p
 
 
-@router.patch("/me", response_model=Participant)
+@router.patch("/me", response_model=ParticipantProfile)
 def update_my_profile(
     body: ParticipantSelfUpdate,
     session: Session = Depends(get_session),
@@ -146,7 +146,7 @@ def update_my_profile(
         raise HTTPException(409, "Ya existe un participante con esa cédula")
 
 
-@router.post("/me/photo", response_model=Participant)
+@router.post("/me/photo", response_model=ParticipantProfile)
 def upload_my_profile_photo(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),

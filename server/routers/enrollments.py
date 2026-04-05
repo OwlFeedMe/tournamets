@@ -1,6 +1,11 @@
+import json
+import io
 from datetime import datetime, timezone
+from pathlib import Path
+import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from PIL import Image, UnidentifiedImageError
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -13,6 +18,96 @@ from models import (
 )
 
 router = APIRouter(tags=["enrollments"])
+ENROLLMENT_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "enrollment_answers"
+ENROLLMENT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_ENROLLMENT_IMAGE_SIDE = 1600
+
+
+def _parse_enrollment_questions(raw: str | None) -> list[dict]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out = []
+    for idx, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        out.append({
+            "id": str(item.get("id") or f"q_{idx + 1}").strip() or f"q_{idx + 1}",
+            "label": label,
+            "field_type": str(item.get("field_type") or "text").strip().lower() or "text",
+            "required": 1 if item.get("required") else 0,
+            "placeholder": str(item.get("placeholder") or "").strip() or None,
+        })
+    return out
+
+
+def _process_enrollment_image(file: UploadFile, participant_id: int) -> str:
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "El archivo debe ser una imagen")
+    try:
+        raw = file.file.read()
+        image = Image.open(io.BytesIO(raw)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "No se pudo procesar la imagen")
+
+    width, height = image.size
+    max_side = max(width, height)
+    if max_side > MAX_ENROLLMENT_IMAGE_SIDE:
+        scale = MAX_ENROLLMENT_IMAGE_SIDE / max_side
+        image = image.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.LANCZOS)
+
+    filename = f"enrollment_{participant_id}_{uuid.uuid4().hex}.jpg"
+    image.save(ENROLLMENT_UPLOAD_DIR / filename, format="JPEG", quality=86, optimize=True)
+    return f"/uploads/enrollment_answers/{filename}"
+
+
+def _serialize_enrollment_answers(questions: list[dict], answers: list | None) -> str | None:
+    if not questions:
+        return None
+    answer_map = {}
+    for item in answers or []:
+        if item is None:
+            continue
+        question_id = str(getattr(item, "question_id", None) or "").strip()
+        value = str(getattr(item, "answer", "") or "").strip()
+        if question_id:
+            answer_map[question_id] = value
+
+    normalized = []
+    missing_required = []
+    for question in questions:
+        question_id = question["id"]
+        value = answer_map.get(question_id, "").strip()
+        if question.get("required") and not value:
+            missing_required.append(question["label"])
+        normalized.append({
+            "question_id": question_id,
+            "question_label": question["label"],
+            "question_type": question.get("field_type") or "text",
+            "answer": value,
+        })
+    if missing_required:
+        raise HTTPException(400, f"Responde las preguntas obligatorias: {', '.join(missing_required)}")
+    return json.dumps(normalized, ensure_ascii=False)
+
+
+@router.post("/api/enrollment-answers/upload")
+def upload_enrollment_answer_image(
+    file: UploadFile = File(...),
+    user=Depends(require_auth),
+):
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
+    return {"url": _process_enrollment_image(file, participant_id)}
 
 
 @router.get("/api/competitions/{competition_id}/participants")
@@ -27,7 +122,7 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
     ).all()
 
     return [
-        {**p.model_dump(), "categoria_competencia": cp.categoria, "estado": cp.estado}
+        {**p.model_dump(), "categoria_competencia": cp.categoria, "estado": cp.estado, "enrollment_answers": cp.enrollment_answers}
         for cp, p in rows
     ]
 
@@ -128,15 +223,25 @@ def self_enroll(
         raise HTTPException(403, "El período de inscripción ha finalizado")
 
     existing = session.get(CompetitionParticipant, (competition_id, participant_id))
-    if existing:
+    if existing and existing.estado != "rechazado":
         raise HTTPException(409, f"Ya tienes una inscripción con estado: {existing.estado}")
 
-    session.add(CompetitionParticipant(
-        competition_id=competition_id,
-        participant_id=participant_id,
-        categoria=body.categoria,
-        estado="pendiente",
-    ))
+    questions = _parse_enrollment_questions(comp.enrollment_questions)
+    serialized_answers = _serialize_enrollment_answers(questions, body.answers)
+
+    if existing and existing.estado == "rechazado":
+        existing.categoria = body.categoria
+        existing.estado = "pendiente"
+        existing.enrollment_answers = serialized_answers
+        session.add(existing)
+    else:
+        session.add(CompetitionParticipant(
+            competition_id=competition_id,
+            participant_id=participant_id,
+            categoria=body.categoria,
+            estado="pendiente",
+            enrollment_answers=serialized_answers,
+        ))
     session.commit()
     return {"ok": True, "estado": "pendiente"}
 
@@ -151,9 +256,10 @@ def cancel_self_enroll(
     if not is_end_user(user) or participant_id is None:
         raise HTTPException(403, "Solo usuarios")
     cp = session.get(CompetitionParticipant, (competition_id, participant_id))
-    if cp and cp.estado == "pendiente":
-        session.delete(cp)
-        session.commit()
+    if not cp:
+        return
+    session.delete(cp)
+    session.commit()
 
 
 @router.get("/api/competitions/{competition_id}/enrolled-list")
@@ -179,7 +285,7 @@ def participant_competitions(
         raise HTTPException(403, "Sin permiso")
 
     rows = session.execute(text("""
-        SELECT c.*, cp.estado AS enrollment_estado, cp.categoria AS enrollment_categoria
+        SELECT c.*, cp.estado AS enrollment_estado, cp.categoria AS enrollment_categoria, cp.enrollment_answers
         FROM competitions c
         JOIN competition_participants cp ON cp.competition_id = c.id
         WHERE cp.participant_id = :pid

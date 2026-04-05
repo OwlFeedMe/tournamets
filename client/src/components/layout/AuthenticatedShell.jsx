@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bell, ChevronRight, LogOut } from 'lucide-react'
-import { Link, Outlet, useNavigate } from 'react-router-dom'
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BottomDock } from './BottomDock'
+import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 
 function NotificationSheet({ open, onClose, session, displayName }) {
@@ -52,69 +53,80 @@ function NotificationSheet({ open, onClose, session, displayName }) {
         aria-label="Notificaciones"
         style={{
           position: 'fixed',
-          top: 'calc(62px + env(safe-area-inset-top, 0px))',
-          right: 12,
-          left: 12,
+          inset: 0,
           zIndex: 70,
-          borderRadius: 24,
-          border: '1px solid rgba(37, 42, 51, 0.96)',
-          background: 'rgba(23, 27, 33, 0.98)',
-          backdropFilter: 'blur(20px)',
-          boxShadow: '0 28px 80px rgba(0, 0, 0, 0.38)',
-          padding: 18,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 14 }}>
-          <div>
-            <div style={{ color: 'var(--oa-text)', fontWeight: 800, fontSize: 18 }}>Notificaciones</div>
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4 }}>
-              {session ? 'Avisos de tu cuenta y de las competencias activas.' : 'Novedades generales y acceso personal.'}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 460,
+            borderRadius: 24,
+            border: '1px solid rgba(37, 42, 51, 0.96)',
+            background: 'rgba(23, 27, 33, 0.98)',
+            backdropFilter: 'blur(20px)',
+            boxShadow: '0 28px 80px rgba(0, 0, 0, 0.38)',
+            padding: 18,
+            maxHeight: '100%',
+            overflowY: 'auto',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+            <div>
+              <div style={{ color: 'var(--oa-text)', fontWeight: 800, fontSize: 18 }}>Notificaciones</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4 }}>
+                {session ? 'Avisos de tu cuenta y de las competencias activas.' : 'Novedades generales y acceso personal.'}
+              </div>
             </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              border: '1px solid rgba(37,42,51,0.96)',
-              background: 'transparent',
-              color: 'var(--oa-text)',
-              borderRadius: 12,
-              padding: '8px 10px',
-              fontWeight: 700,
-            }}
-          >
-            Cerrar
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gap: 10 }}>
-          {items.map((item) => (
-            <div key={item.title} style={{ borderRadius: 18, border: '1px solid rgba(37,42,51,0.92)', background: 'rgba(13,15,18,0.5)', padding: 14 }}>
-              <div style={{ color: 'var(--oa-text)', fontWeight: 700 }}>{item.title}</div>
-              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>{item.text}</div>
-            </div>
-          ))}
-        </div>
-
-        {!session && (
-          <div style={{ marginTop: 14 }}>
-            <Link
-              to="/login"
+            <button
+              type="button"
               onClick={onClose}
               style={{
-                textDecoration: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                color: '#FF9A3D',
-                fontWeight: 800,
+                border: '1px solid rgba(37,42,51,0.96)',
+                background: 'transparent',
+                color: 'var(--oa-text)',
+                borderRadius: 12,
+                padding: '8px 10px',
+                fontWeight: 700,
               }}
             >
-              Ir a ingresar
-              <ChevronRight size={16} />
-            </Link>
+              Cerrar
+            </button>
           </div>
-        )}
+
+          <div style={{ display: 'grid', gap: 10 }}>
+            {items.map((item) => (
+              <div key={item.title} style={{ borderRadius: 18, border: '1px solid rgba(37,42,51,0.92)', background: 'rgba(13,15,18,0.5)', padding: 14 }}>
+                <div style={{ color: 'var(--oa-text)', fontWeight: 700 }}>{item.title}</div>
+                <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>{item.text}</div>
+              </div>
+            ))}
+          </div>
+
+          {!session && (
+            <div style={{ marginTop: 14 }}>
+              <Link
+                to="/login"
+                onClick={onClose}
+                style={{
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: '#FF9A3D',
+                  fontWeight: 800,
+                }}
+              >
+                Ir a ingresar
+                <ChevronRight size={16} />
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
     </>
   )
@@ -122,10 +134,19 @@ function NotificationSheet({ open, onClose, session, displayName }) {
 
 export function AuthenticatedShell() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { session, displayName, signOut } = useAuth()
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
+  const isLoginRoute = location.pathname === '/login'
+  const topInset = isMobile
+    ? 'calc(68px + env(safe-area-inset-top, 0px))'
+    : '72px'
+  const bottomInset = isMobile ? 'calc(112px + env(safe-area-inset-bottom, 0px))' : '0px'
+  const contentMinHeight = isMobile
+    ? `calc(100dvh - ${topInset} - ${bottomInset})`
+    : `calc(100vh - ${topInset})`
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768)
@@ -160,13 +181,17 @@ export function AuthenticatedShell() {
   return (
     <div
       style={{
-        minHeight: '100vh',
+        minHeight: '100dvh',
+        ...(isLoginRoute ? { height: '100dvh', overflow: 'hidden' } : {}),
         background:
           'radial-gradient(circle at top, rgba(255,107,0,0.10), transparent 26%), radial-gradient(circle at bottom right, rgba(0,194,168,0.08), transparent 24%), var(--oa-bg)',
-        paddingTop: isMobile ? 'calc(68px + env(safe-area-inset-top, 0px))' : 0,
-        paddingBottom: isMobile ? 'calc(112px + env(safe-area-inset-bottom, 0px))' : 0,
+        paddingTop: topInset,
+        paddingBottom: bottomInset,
       }}
     >
+      {!isMobile && (
+        <DesktopHeader onOpenNotifications={() => setNotificationsOpen(true)} />
+      )}
       {isMobile && (
         <header
           style={{
@@ -243,18 +268,17 @@ export function AuthenticatedShell() {
           </div>
         </header>
       )}
-      <div style={{ minHeight: '100vh' }}>
+      <div style={isLoginRoute ? { height: contentMinHeight, overflow: 'hidden' } : { minHeight: contentMinHeight }}>
         <Outlet />
       </div>
       {isMobile && !modalVisible && <BottomDock />}
-      {isMobile && (
-        <NotificationSheet
-          open={notificationsOpen}
-          onClose={() => setNotificationsOpen(false)}
-          session={session}
-          displayName={displayName}
-        />
-      )}
+      <NotificationSheet
+        open={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        session={session}
+        displayName={displayName}
+      />
+
       {isMobile && !modalVisible && (
         <div
           aria-hidden="true"

@@ -63,6 +63,14 @@ class Competition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nombre: str
     descripcion: Optional[str] = None
+    lugar: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website_url: Optional[str] = None
+    social_links: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    banner_desktop_url: Optional[str] = None
+    banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = Field(default=0)
     allow_user_results: int = Field(default=0)
@@ -87,6 +95,16 @@ class Competition(SQLModel, table=True):
     enrollment_end: Optional[datetime] = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    competition_start: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    competition_end: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    schedule_items: Optional[str] = None
+    enrollment_intro_text: Optional[str] = None
+    enrollment_payment_methods: Optional[str] = None
+    enrollment_questions: Optional[str] = None
     # Timer fields
     timer_duration: int = Field(default=0)            # total seconds; 0 = no timer configured
     timer_started_at: Optional[datetime] = Field(
@@ -202,6 +220,7 @@ class CompetitionParticipant(SQLModel, table=True):
         default="confirmado",
         sa_column=Column(String, nullable=False, server_default="confirmado"),
     )
+    enrollment_answers: Optional[str] = None
     inscrito_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -309,6 +328,24 @@ class ParticipantUpdate(SQLModel):
     estado: Optional[str] = None
 
 
+class ParticipantProfile(SQLModel):
+    id: Optional[int] = None
+    cedula: str
+    nombre: str
+    apellido: str
+    email: Optional[str] = None
+    celular: Optional[str] = None
+    sexo: Optional[str] = None
+    genero: Optional[str] = None
+    categoria: Optional[str] = None
+    box: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    ciudad_pais: Optional[str] = None
+    estado: str = "activo"
+    created_at: Optional[datetime] = None
+
+
 class ParticipantSelfUpdate(SQLModel):
     """Participants updating their own profile — no estado field."""
     cedula: Optional[str] = None
@@ -320,7 +357,6 @@ class ParticipantSelfUpdate(SQLModel):
     genero: Optional[str] = None
     categoria: Optional[str] = None
     box: Optional[str] = None
-    talla_camiseta: Optional[str] = None
     profile_photo_url: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     ciudad_pais: Optional[str] = None
@@ -331,6 +367,14 @@ class ParticipantSelfUpdate(SQLModel):
 class CompetitionCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    lugar: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website_url: Optional[str] = None
+    social_links: Optional[List["CompetitionSocialLinkItem"]] = None
+    profile_image_url: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    banner_desktop_url: Optional[str] = None
+    banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = 0
     allow_user_results: int = 0
@@ -351,12 +395,26 @@ class CompetitionCreate(SQLModel):
     enrollment_open: int = 0
     enrollment_start: Optional[datetime] = None
     enrollment_end: Optional[datetime] = None
+    competition_start: Optional[datetime] = None
+    competition_end: Optional[datetime] = None
+    schedule_items: Optional[List["CompetitionDateItem"]] = None
+    enrollment_intro_text: Optional[str] = None
+    enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
+    enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     scoring_mode: str = "highest_wins"
 
 
 class CompetitionUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    lugar: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website_url: Optional[str] = None
+    social_links: Optional[List["CompetitionSocialLinkItem"]] = None
+    profile_image_url: Optional[str] = None
+    banner_image_url: Optional[str] = None
+    banner_desktop_url: Optional[str] = None
+    banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: Optional[int] = None
     allow_user_results: Optional[int] = None
@@ -377,6 +435,12 @@ class CompetitionUpdate(SQLModel):
     enrollment_open: Optional[int] = None
     enrollment_start: Optional[datetime] = None
     enrollment_end: Optional[datetime] = None
+    competition_start: Optional[datetime] = None
+    competition_end: Optional[datetime] = None
+    schedule_items: Optional[List["CompetitionDateItem"]] = None
+    enrollment_intro_text: Optional[str] = None
+    enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
+    enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     scoring_mode: Optional[str] = None
 
 
@@ -470,8 +534,46 @@ class PhaseUpdate(SQLModel):
 
 # ── Self-enrollment schemas ────────────────────────────────────────────────────
 
+class EnrollmentQuestionItem(SQLModel):
+    id: Optional[str] = None
+    label: str
+    field_type: str = "text"
+    required: int = 0
+    placeholder: Optional[str] = None
+
+
+class EnrollmentPaymentMethodItem(SQLModel):
+    id: Optional[str] = None
+    label: str
+    account_name: Optional[str] = None
+    account_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class CompetitionDateItem(SQLModel):
+    id: Optional[str] = None
+    label: str
+    kind: str = "custom"  # enrollment_start | enrollment_end | competition_start | competition_end | competition_day | custom
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
+    note: Optional[str] = None
+
+
+class CompetitionSocialLinkItem(SQLModel):
+    id: Optional[str] = None
+    label: str
+    url: str
+
+
+class EnrollmentAnswerItem(SQLModel):
+    question_id: str
+    question_label: Optional[str] = None
+    question_type: Optional[str] = None
+    answer: str
+
 class SelfEnrollRequest(SQLModel):
     categoria: Optional[str] = None
+    answers: Optional[List[EnrollmentAnswerItem]] = None
 
 
 class EnrollStatusUpdate(SQLModel):

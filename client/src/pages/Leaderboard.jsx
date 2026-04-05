@@ -1053,30 +1053,6 @@ export default function Leaderboard() {
         }
       `}</style>
 
-      {!isMobile && (
-        <nav style={{ padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="lb-brand">FinalRep</span>
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            {!tvMode && timerData && <CountdownClock timerData={timerData} tvMode={false} serverOffsetMs={timerClockOffsetMs || 0} />}
-            <span className="pulse-dot" style={{ opacity: pulse ? 1 : 0.3 }} title="Live" />
-            {lastUpdate && !isMobile && <span style={{ fontSize: 12, color: THEME.muted }}>{lastUpdate.toLocaleTimeString()}</span>}
-
-            {loggedRole === 'admin' && (
-              <a href="/admin" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Admin</a>
-            )}
-            {loggedRole === 'organizer' && (
-              <a href="/organizer" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Organizador</a>
-            )}
-            {loggedRole === 'user' && (
-              <a href="/profile" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Mi perfil</a>
-            )}
-            {!loggedRole && (
-              <a href="/login" style={{ color: THEME.muted, fontSize: 12, borderBottom: '1px solid rgba(170,178,192,0.35)', paddingBottom: 1 }}>ingresar</a>
-            )}
-          </div>
-        </nav>
-      )}
-
       <div style={{ maxWidth: tvMode ? '100%' : 960, margin: '0 auto', padding: tvMode ? '24px 28px' : (isMobile ? '14px 12px' : '24px 20px') }}>
         {/* Competition selector */}
         {!tvMode && (

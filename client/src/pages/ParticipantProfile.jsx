@@ -3,7 +3,7 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { useAuth } from '../context/AuthContext'
 import {
-  Trophy, ClipboardList, Eye, EyeOff, PlusCircle, Medal,
+  Trophy, PlusCircle, Medal,
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog,
 } from 'lucide-react'
 
@@ -13,7 +13,7 @@ function statusBadge(estado) {
   if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
   if (estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
   if (estado === 'rechazado') return { label: 'Rechazado', cls: 'badge-rechazado' }
-  return { label: estado || 'Sin estado', cls: 'badge-default' }
+  return { label: estado || 'No inscrito', cls: 'badge-default' }
 }
 
 function formatDate(iso) {
@@ -62,16 +62,6 @@ function centerCropToBlob(image, zoom = 1, outputSize = 512) {
   })
 }
 
-function enrollmentWindow(competition) {
-  if (!competition.enrollment_open) return { canEnroll: false, text: 'Inscripciones cerradas' }
-  const now = new Date()
-  const start = competition.enrollment_start ? new Date(competition.enrollment_start) : null
-  const end = competition.enrollment_end ? new Date(competition.enrollment_end) : null
-  if (start && now < start) return { canEnroll: false, text: `Abre: ${formatDate(start.toISOString())}` }
-  if (end && now > end) return { canEnroll: false, text: `Cerro: ${formatDate(end.toISOString())}` }
-  return { canEnroll: true, text: 'Inscripciones abiertas' }
-}
-
 function parseTimeToSeconds(value) {
   const raw = (value ?? '').toString().trim()
   if (!raw) return null
@@ -105,6 +95,57 @@ function phaseTypeFromMethod(method) {
 }
 
 // ── Competition Detail Modal ──────────────────────────────────────────────────
+
+function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm }) {
+  if (!competition) return null
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.68)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 440,
+        borderRadius: 22,
+        background: '#171B21',
+        border: '1px solid #252A33',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+        overflow: 'hidden',
+      }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #252A33', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+          <div>
+            <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 18 }}>Cancelar inscripcion</div>
+            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{competition.nombre}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ width: 34, height: 34, borderRadius: 12, border: '1px solid #252A33', background: 'transparent', color: '#F5F7FA', display: 'grid', placeItems: 'center' }}>
+            <X size={16} />
+          </button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
+            Esta accion retirara tu inscripcion de la competencia, sin importar si esta pendiente o confirmada.
+          </div>
+          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(255,107,0,0.24)', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))', color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
+            {competition.nombre}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Volver</button>
+            <button type="button" className="btn-danger" onClick={() => onConfirm(competition)} disabled={busy}>
+              {busy ? 'Cancelando...' : 'Confirmar cancelacion'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile }) {
   const [team, setTeam] = useState(null)
@@ -225,14 +266,14 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
-      display: 'flex', alignItems: isMobile ? 'flex-end' : 'center',
+      display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: 1000,
-      padding: isMobile ? 0 : 16,
+      padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
     }}>
       <div style={{
-        background: '#fff', borderRadius: isMobile ? '16px 16px 0 0' : 14,
-        width: '100%', maxWidth: isMobile ? '100%' : 600,
-        maxHeight: isMobile ? '90vh' : '85vh',
+        background: '#fff', borderRadius: 16,
+        width: '100%', maxWidth: 600,
+        maxHeight: '100%',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
         boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
@@ -240,9 +281,9 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
         {/* Header */}
         <div style={{
           padding: isMobile ? '16px 16px 12px' : '20px 24px 14px',
-          borderBottom: '1px solid #e8ede7',
+          borderBottom: '1px solid var(--oa-border)',
           background: '#171B21',
-          borderRadius: isMobile ? '16px 16px 0 0' : '14px 14px 0 0',
+          borderRadius: '16px 16px 0 0',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
@@ -267,7 +308,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 
           {/* Team section */}
           {teamLoading ? (
-            <div style={{ color: '#647063', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
           ) : team ? (
             <div style={{ marginBottom: 18 }}>
               {/* Team header */}
@@ -301,7 +342,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   </form>
                 ) : (
                   <>
-                    <span style={{ fontWeight: 700, fontSize: 16, color: '#1a2e0a' }}>{team.nombre}</span>
+                    <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--oa-text)' }}>{team.nombre}</span>
                     {isCaptain && (
                       <button className="btn-secondary btn-sm" onClick={() => setShowRename(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <Pencil size={12} /> Renombrar
@@ -318,14 +359,14 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                 {(team.members || []).map(m => (
                   <div key={m.id} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                    borderRadius: 8, border: `1px solid ${m.is_captain ? '#ffe08a' : '#d5ddd3'}`,
-                    background: m.is_captain ? '#fffbef' : m.id === participantId ? '#f0f7ee' : '#fafbfa',
+                    borderRadius: 8, border: `1px solid ${m.is_captain ? 'rgba(245, 158, 11, 0.32)' : 'var(--oa-border)'}`,
+                    background: m.is_captain ? 'rgba(245, 158, 11, 0.12)' : m.id === participantId ? 'rgba(0, 194, 168, 0.12)' : 'rgba(255,255,255,0.03)',
                   }}>
                     <div style={{
                       width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                      background: m.is_captain ? '#fff3cd' : '#e8ede7',
+                      background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255,255,255,0.06)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#664d03' : '#FF6B00',
+                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#fbbf24' : '#FF6B00',
                     }}>
                       {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
                     </div>
@@ -354,7 +395,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 
               {/* Captain: invite section */}
               {isCaptain && (
-                <div style={{ background: '#f8faf7', borderRadius: 10, padding: '12px 14px', border: '1px solid #d5ddd3' }}>
+                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--oa-border)' }}>
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#FF6B00', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <UserPlus size={14} /> Invitar participante
                   </div>
@@ -374,10 +415,10 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   {/* Pending invites sent */}
                   {pendingInvites.length > 0 && (
                     <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#647063', marginBottom: 6 }}>Invitaciones pendientes:</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--oa-text-secondary)', marginBottom: 6 }}>Invitaciones pendientes:</div>
                       <div style={{ display: 'grid', gap: 4 }}>
                         {pendingInvites.map(inv => (
-                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: '#fff', borderRadius: 6, border: '1px solid #e8ede7' }}>
+                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid var(--oa-border)' }}>
                             <span>{inv.invitee_nombre || inv.invitee_cedula}</span>
                             <button className="btn-secondary btn-sm" onClick={() => handleCancelInvite(inv.id)} disabled={cancelBusy === inv.id} style={{ fontSize: 11, padding: '2px 8px' }}>
                               {cancelBusy === inv.id ? '...' : 'Cancelar'}
@@ -400,21 +441,21 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
                 {compResults.map(r => (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid #d5ddd3', background: '#fafbfa' }}>
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)' }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{r.fase || 'Sin fase'}</div>
-                      {r.equipo && <div style={{ fontSize: 11, color: '#647063', marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                      {r.equipo && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Equipo: {r.equipo}</div>}
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
                         <>
                           <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 20 }}>#{r.posicion}</div>
-                          <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                         </>
                       ) : (
                         <>
                           <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 22 }}>{r.puntos}</div>
-                          <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                         </>
                       )}
                     </div>
@@ -425,7 +466,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           )}
 
           {!teamLoading && !team && compResults.length === 0 && (
-            <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 13 }}>
+            <div style={{ color: 'var(--oa-text-muted)', textAlign: 'center', padding: '20px 0', fontSize: 13 }}>
               Aun no hay resultados registrados para esta competencia
             </div>
           )}
@@ -451,18 +492,14 @@ export default function ParticipantProfile() {
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [results, setResults] = useState([])
-  const [competitions, setCompetitions] = useState([])
   const [myComps, setMyComps] = useState([])
-  const [categoriesByComp, setCategoriesByComp] = useState({})
-  const [selectedCategory, setSelectedCategory] = useState({})
-  const [publicListByComp, setPublicListByComp] = useState({})
-  const [expandedPublic, setExpandedPublic] = useState({})
   const [phasesByComp, setPhasesByComp] = useState({})
   const [myTeamByComp, setMyTeamByComp] = useState({})
   const [form, setForm] = useState({ competition_id: '', phase_id: '', puntos: '', posicion: '' })
   const [msg, setMsg] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [busyCompId, setBusyCompId] = useState(null)
+  const [cancelEnrollmentBusy, setCancelEnrollmentBusy] = useState(null)
+  const [cancelEnrollmentTarget, setCancelEnrollmentTarget] = useState(null)
 
   // Modal state
   const [selectedComp, setSelectedComp] = useState(null)
@@ -512,7 +549,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile)
+    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -538,7 +575,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -553,7 +590,6 @@ export default function ParticipantProfile() {
   }, [editForm.countryCode])
 
   const loadResults = () => api.get('/results').then(r => setResults(r.data))
-  const loadCompetitions = async () => { const res = await api.get('/competitions'); setCompetitions(res.data) }
   const loadMyCompetitions = async () => { const res = await api.get(`/participants/${participantId}/competitions`); setMyComps(res.data) }
   const loadMyInvitations = async () => {
     try {
@@ -574,7 +610,6 @@ export default function ParticipantProfile() {
         genero: res.data.genero || res.data.sexo || '',
         categoria: res.data.categoria || '',
         box: res.data.box || '',
-        talla_camiseta: res.data.talla_camiseta || '',
         fecha_nacimiento: res.data.fecha_nacimiento || '',
         ciudad_pais: res.data.ciudad_pais || '',
         ...(() => {
@@ -597,28 +632,8 @@ export default function ParticipantProfile() {
 
   useEffect(() => {
     if (!participantId) return
-    Promise.all([loadResults(), loadCompetitions(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile()]).catch(() => {})
+    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile()]).catch(() => {})
   }, [participantId])
-
-  useEffect(() => {
-    if (!competitions.length) return
-    Promise.all(
-      competitions.map(c =>
-        api.get(`/competitions/${c.id}/categories`)
-          .then(r => [c.id, r.data]).catch(() => [c.id, []])
-      )
-    ).then(entries => {
-      const byComp = Object.fromEntries(entries)
-      setCategoriesByComp(byComp)
-      setSelectedCategory(prev => {
-        const next = { ...prev }
-        for (const [compId, cats] of entries) {
-          if (!next[compId] && cats.length > 0) next[compId] = cats[0].nombre
-        }
-        return next
-      })
-    })
-  }, [competitions])
 
   const enrollmentByComp = useMemo(() => {
     const map = {}
@@ -627,8 +642,8 @@ export default function ParticipantProfile() {
   }, [myComps])
 
   const confirmedComps = useMemo(
-    () => competitions.filter(c => enrollmentByComp[c.id]?.enrollment_estado === 'confirmado'),
-    [competitions, enrollmentByComp]
+    () => myComps.filter(c => c.enrollment_estado === 'confirmado'),
+    [myComps]
   )
 
   const resultEnabledComps = useMemo(
@@ -791,40 +806,6 @@ export default function ParticipantProfile() {
     }
   }
 
-  const requestEnrollment = async (competition) => {
-    setMsg(null)
-    setBusyCompId(competition.id)
-    try {
-      const category = selectedCategory[competition.id] || null
-      await api.post(`/competitions/${competition.id}/enroll`, { categoria: category })
-      setMsg({ type: 'success', text: `Solicitud enviada para ${competition.nombre}` })
-      await loadMyCompetitions()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo solicitar inscripcion' })
-    } finally { setBusyCompId(null) }
-  }
-
-  const cancelPending = async (competition) => {
-    setMsg(null)
-    setBusyCompId(competition.id)
-    try {
-      await api.delete(`/competitions/${competition.id}/enroll`)
-      setMsg({ type: 'success', text: `Solicitud cancelada en ${competition.nombre}` })
-      await loadMyCompetitions()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cancelar la solicitud' })
-    } finally { setBusyCompId(null) }
-  }
-
-  const togglePublicList = async (competitionId) => {
-    setExpandedPublic(prev => ({ ...prev, [competitionId]: !prev[competitionId] }))
-    if (publicListByComp[competitionId]) return
-    try {
-      const res = await api.get(`/competitions/${competitionId}/enrolled-list`)
-      setPublicListByComp(prev => ({ ...prev, [competitionId]: res.data }))
-    } catch { setPublicListByComp(prev => ({ ...prev, [competitionId]: [] })) }
-  }
-
   const acceptInvitation = async (invId) => {
     setInvBusy(invId)
     setInvMsg(null)
@@ -870,10 +851,37 @@ export default function ParticipantProfile() {
     setSelectedComp({ ...c, enrollment_estado: enrolled?.enrollment_estado, enrollment_categoria: enrolled?.enrollment_categoria })
   }
 
+  const cancelEnrollment = async (competition) => {
+    setCancelEnrollmentBusy(competition.id)
+    setMsg(null)
+    try {
+      await api.delete(`/competitions/${competition.id}/enroll`)
+      if (selectedComp?.id === competition.id) {
+        setSelectedComp(null)
+      }
+      setCancelEnrollmentTarget(null)
+      setMsg({ type: 'success', text: `Inscripcion cancelada en ${competition.nombre}` })
+      await loadMyCompetitions()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cancelar la inscripcion' })
+    } finally {
+      setCancelEnrollmentBusy(null)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: '#0D0F12' }}>
 
       {/* Modal */}
+      {cancelEnrollmentTarget && (
+        <ConfirmCancelEnrollmentModal
+          competition={cancelEnrollmentTarget}
+          busy={cancelEnrollmentBusy === cancelEnrollmentTarget.id}
+          onClose={() => !cancelEnrollmentBusy && setCancelEnrollmentTarget(null)}
+          onConfirm={cancelEnrollment}
+        />
+      )}
+
       {selectedComp && (
         <CompetitionDetailModal
           comp={selectedComp}
@@ -885,8 +893,8 @@ export default function ParticipantProfile() {
       )}
 
       {photoEditorOpen && photoDraftUrl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ width: '100%', maxWidth: 420, borderRadius: 22, background: '#171B21', border: '1px solid #252A33', padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.35)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.35)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <div>
                 <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 18 }}>Ajustar foto</div>
@@ -976,12 +984,11 @@ export default function ParticipantProfile() {
         <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Ficha del atleta</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Box</div><div style={{ fontWeight: 600 }}>{myProfile?.box || '-'}</div></div>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Talla camiseta</div><div style={{ fontWeight: 600 }}>{myProfile?.talla_camiseta || '-'}</div></div>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
-            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Box</div><div style={{ fontWeight: 600 }}>{myProfile?.box || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
           </div>
         </div>
 
@@ -989,8 +996,8 @@ export default function ParticipantProfile() {
 
         {/* Edit profile form */}
         {showEditProfile && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '12px 12px calc(12px + env(safe-area-inset-bottom, 0px))' : 16 }}>
-            <div style={{ width: '100%', maxWidth: 760, height: isMobile ? 'min(88dvh, 88vh)' : 'min(86dvh, 86vh)', maxHeight: isMobile ? 'min(88dvh, 88vh)' : 'min(86dvh, 86vh)', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+            <div style={{ width: '100%', maxWidth: 760, height: 'min(86dvh, 86vh)', maxHeight: '100%', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '16px 18px', background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
                 <div style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: '#F5F7FA' }}>
                   <UserCog size={15} /> Mis datos
@@ -1001,7 +1008,7 @@ export default function ParticipantProfile() {
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
                 {(editMsg || photoMsg) && <div className={`alert alert-${(editMsg || photoMsg).type}`} style={{ marginBottom: 12 }}>{(editMsg || photoMsg).text}</div>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
-                  <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: '#e8ede7', border: '3px solid #f3f5f3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#FF6B00' }}>
+                  <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.05)', border: '3px solid var(--oa-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#FF6B00' }}>
                     {profilePhotoUrl ? (
                       <img src={profilePhotoUrl} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : initial}
@@ -1053,18 +1060,6 @@ export default function ParticipantProfile() {
                   <input value={editForm.box || ''} onChange={e => setEditForm(f => ({ ...f, box: e.target.value }))} placeholder="Lugar donde entrenas" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Talla camiseta</label>
-                  <select value={editForm.talla_camiseta || ''} onChange={e => setEditForm(f => ({ ...f, talla_camiseta: e.target.value }))}>
-                    <option value="">Sin definir</option>
-                    <option value="XS">XS</option>
-                    <option value="S">S</option>
-                    <option value="M">M</option>
-                    <option value="L">L</option>
-                    <option value="XL">XL</option>
-                    <option value="XXL">XXL</option>
-                  </select>
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Fecha nacimiento</label>
                   <input type="date" value={editForm.fecha_nacimiento || ''} onChange={e => setEditForm(f => ({ ...f, fecha_nacimiento: e.target.value }))} />
                 </div>
@@ -1108,29 +1103,29 @@ export default function ParticipantProfile() {
 
         {/* Pending invitations */}
         {pendingInvitations.length > 0 && (
-          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20, border: '2px solid #fff3cd' }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#664d03' }}>
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20, border: '1px solid rgba(245, 158, 11, 0.35)' }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: '#fbbf24' }}>
               <Bell size={15} />
               Invitaciones de equipo
-              <span style={{ background: '#e8a800', color: '#fff', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ background: 'var(--oa-warning)', color: '#0D0F12', borderRadius: '50%', width: 20, height: 20, fontSize: 11, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 {pendingInvitations.length}
               </span>
             </h3>
             {invMsg && <div className={`alert alert-${invMsg.type}`} style={{ marginBottom: 10, fontSize: 13 }}>{invMsg.text}</div>}
             <div style={{ display: 'grid', gap: 8 }}>
               {pendingInvitations.map(inv => (
-                <div key={inv.id} style={{ padding: '12px', borderRadius: 8, border: '1px solid #ffe08a', background: '#fffbef', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 10 : 10 }}>
+                <div key={inv.id} style={{ padding: '12px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.32)', background: 'rgba(245, 158, 11, 0.12)', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 10 : 10 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
                       {inv.team?.nombre || 'Equipo'}
                     </div>
                     {inv.captain_nombre && (
-                      <div style={{ fontSize: 12, color: '#647063', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Crown size={11} color="#e8a800" /> Capitán: {inv.captain_nombre}
                       </div>
                     )}
                     {inv.team?.members?.length > 0 && (
-                      <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>
+                      <div style={{ fontSize: 11, color: 'var(--oa-text-muted)', marginTop: 3 }}>
                         {inv.team.members.map(m => m.nombre).join(', ')}
                       </div>
                     )}
@@ -1178,9 +1173,9 @@ export default function ParticipantProfile() {
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Fase en progreso</label>
                   {phasesLoading
-                    ? <div style={{ padding: '10px 0', color: '#647063', fontSize: 13 }}>Cargando fases...</div>
+                    ? <div style={{ padding: '10px 0', color: 'var(--oa-text-secondary)', fontSize: 13 }}>Cargando fases...</div>
                     : phasesEmpty
-                      ? <div style={{ padding: '10px 0', color: '#c0392b', fontSize: 13, fontWeight: 600 }}>Sin fases en progreso</div>
+                      ? <div style={{ padding: '10px 0', color: 'var(--oa-error)', fontSize: 13, fontWeight: 600 }}>Sin fases en progreso</div>
                       : (
                         <select value={form.phase_id} onChange={e => setForm({ ...form, phase_id: e.target.value, puntos: '', posicion: '' })} required>
                           <option value="">Seleccionar fase...</option>
@@ -1194,11 +1189,11 @@ export default function ParticipantProfile() {
               {phaseObj && (
                 <>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                    <span style={{ fontSize: 12, background: '#f0f4ef', color: '#284017', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
+                    <span style={{ fontSize: 12, background: 'rgba(255, 107, 0, 0.14)', color: '#FF9A3D', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
                       {isPosition ? 'Por posicion' : isTime ? 'Por tiempo' : 'Por cantidad'}
                     </span>
                     {teamMode && (
-                      <span style={{ fontSize: 12, background: '#e8f0fe', color: '#1a4da3', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
+                      <span style={{ fontSize: 12, background: 'rgba(0, 194, 168, 0.14)', color: 'var(--oa-accent)', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
                         {teamMode === 'sum_two' ? 'Equipo: suma' : 'Equipo: individual'}
                       </span>
                     )}
@@ -1219,7 +1214,7 @@ export default function ParticipantProfile() {
                       style={{ fontSize: 20, padding: '14px', textAlign: 'center' }}
                       required
                     />
-                    {phaseObj.descripcion && <div style={{ fontSize: 12, color: '#647063', marginTop: 6 }}>{phaseObj.descripcion}</div>}
+                    {phaseObj.descripcion && <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 6 }}>{phaseObj.descripcion}</div>}
                   </div>
                 </>
               )}
@@ -1235,104 +1230,6 @@ export default function ParticipantProfile() {
           </div>
         )}
 
-        {/* Competition catalog */}
-        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-          <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <ClipboardList size={16} /> Competencias
-          </h3>
-          {competitions.length === 0 ? (
-            <p style={{ color: '#647063', textAlign: 'center', padding: 20, fontSize: 14 }}>No hay competencias disponibles</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {competitions.map(c => {
-                const mine = enrollmentByComp[c.id]
-                const estado = mine?.enrollment_estado
-                const badge = statusBadge(estado)
-                const windowState = enrollmentWindow(c)
-                const cats = categoriesByComp[c.id] || []
-                const canRequest = !estado && windowState.canEnroll
-                const isBusy = busyCompId === c.id
-                const isExpanded = !!expandedPublic[c.id]
-                const list = publicListByComp[c.id] || []
-
-                return (
-                  <div key={c.id} style={{ border: '1px solid #d5ddd3', borderRadius: 10, background: '#fff', overflow: 'hidden' }}>
-                    {/* Header — clickable if enrolled */}
-                    <div
-                      style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, cursor: estado === 'confirmado' ? 'pointer' : 'default' }}
-                      onClick={() => estado === 'confirmado' && openModal(c)}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 700, fontSize: 15 }}>{c.nombre}</span>
-                          {c.activa === 1 && (
-                            <span style={{ fontSize: 10, background: '#e9f5e7', color: '#284017', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>ACTIVA</span>
-                          )}
-                        </div>
-                        {c.descripcion && <div style={{ color: '#647063', fontSize: 12 }}>{c.descripcion}</div>}
-                        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                          <span className={`badge ${badge.cls}`} style={{ fontSize: 11 }}>{badge.label}</span>
-                          <span style={{ fontSize: 11, color: windowState.canEnroll ? '#284017' : '#888' }}>{windowState.text}</span>
-                        </div>
-                        {mine?.enrollment_categoria && (
-                          <div style={{ marginTop: 4, fontSize: 11, color: '#647063' }}>Cat: <b style={{ color: '#284017' }}>{mine.enrollment_categoria}</b></div>
-                        )}
-                      </div>
-                      {estado === 'confirmado' && (
-                        <div style={{ flexShrink: 0, color: '#284017', display: 'flex', alignItems: 'center' }}>
-                          <ChevronRight size={16} />
-                        </div>
-                      )}
-                    </div>
-                    {/* Actions */}
-                    <div style={{ padding: '10px 14px', borderTop: '1px solid #f0f0f0', background: '#fafbfa', display: 'flex', gap: 8, flexWrap: 'wrap', flexDirection: isMobile && (canRequest || estado === 'pendiente') ? 'column' : 'row' }}>
-                      {canRequest && cats.length > 0 && (
-                        <select value={selectedCategory[c.id] || ''} onChange={e => setSelectedCategory(prev => ({ ...prev, [c.id]: e.target.value }))} style={{ width: isMobile ? '100%' : undefined, flex: isMobile ? undefined : 1, minWidth: 110, fontSize: 14 }}>
-                          {cats.map(cat => <option key={cat.id} value={cat.nombre}>{cat.nombre}</option>)}
-                        </select>
-                      )}
-                      {canRequest && (
-                        <button className="btn-primary btn-sm" onClick={() => requestEnrollment(c)} disabled={isBusy} style={{ flex: 1 }}>
-                          {isBusy ? 'Enviando...' : 'Solicitar inscripcion'}
-                        </button>
-                      )}
-                      {estado === 'pendiente' && (
-                        <button className="btn-secondary btn-sm" onClick={() => cancelPending(c)} disabled={isBusy} style={{ flex: 1 }}>
-                          {isBusy ? 'Procesando...' : 'Cancelar solicitud'}
-                        </button>
-                      )}
-                      {!estado && !windowState.canEnroll && (
-                        <span style={{ fontSize: 12, color: '#aaa', alignSelf: 'center' }}>No disponible</span>
-                      )}
-                      <button className="btn-secondary btn-sm" onClick={() => togglePublicList(c.id)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, flex: isMobile ? 1 : undefined, flexShrink: 0 }}>
-                        {isExpanded ? <EyeOff size={13} /> : <Eye size={13} />}
-                        {isExpanded ? 'Ocultar' : 'Inscritos'}
-                      </button>
-                    </div>
-                    {/* Enrolled list */}
-                    {isExpanded && (
-                      <div style={{ padding: '10px 14px', borderTop: '1px solid #f0f0f0' }}>
-                        {list.length === 0 ? (
-                          <div style={{ color: '#aaa', fontSize: 13, textAlign: 'center' }}>Sin inscritos confirmados</div>
-                        ) : (
-                          <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 4 }}>
-                            {list.map((p, idx) => (
-                              <div key={`${c.id}-${idx}`} style={{ fontSize: 13, color: '#4d564b', display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{p.apellido}, {p.nombre}</span>
-                                <span style={{ color: '#888', fontSize: 12 }}>{p.categoria || '-'}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-
         {/* My enrollments */}
         {myComps.length > 0 && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
@@ -1341,19 +1238,22 @@ export default function ParticipantProfile() {
               {myComps.map(c => {
                 const badge = statusBadge(c.enrollment_estado)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
+                const isBusy = cancelEnrollmentBusy === c.id
                 return (
                   <div
                     key={c.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #d5ddd3', background: '#fff', justifyContent: 'space-between', cursor: isConfirmed ? 'pointer' : 'default', minHeight: isMobile ? 56 : undefined }}
-                    onClick={() => isConfirmed && openModal(c)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)', justifyContent: 'space-between', minHeight: isMobile ? 56 : undefined }}
                   >
-                    <div style={{ minWidth: 0 }}>
+                    <div style={{ minWidth: 0, flex: 1, cursor: isConfirmed ? 'pointer' : 'default' }} onClick={() => isConfirmed && openModal(c)}>
                       <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
-                      {c.enrollment_categoria && <div style={{ fontSize: 11, color: '#647063', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
+                      {c.enrollment_categoria && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      {isConfirmed && <ChevronRight size={14} color="#647063" />}
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => setCancelEnrollmentTarget(c)} disabled={isBusy}>
+                        {isBusy ? 'Cancelando...' : 'Cancelar'}
+                      </button>
+                      {isConfirmed && <ChevronRight size={14} color="var(--oa-text-secondary)" />}
                     </div>
                   </div>
                 )
@@ -1366,25 +1266,25 @@ export default function ParticipantProfile() {
         <div className="card" style={{ padding: isMobile ? 14 : 20 }}>
           <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Mis resultados</h3>
           {results.length === 0 ? (
-            <p style={{ color: '#647063', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
+            <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
           ) : isMobile ? (
             <div style={{ display: 'grid', gap: 8 }}>
               {results.map(r => (
-                <div key={r.id} style={{ border: '1px solid #e7ece6', borderRadius: 8, padding: '12px 14px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={r.id} style={{ border: '1px solid var(--oa-border)', borderRadius: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.competencia}</div>
-                    <div style={{ fontSize: 12, color: '#647063', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                     {r.posicion ? (
                       <>
-                        <div style={{ fontWeight: 700, color: '#284017', fontSize: 18 }}>#{r.posicion}</div>
-                        <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 18 }}>#{r.posicion}</div>
+                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                       </>
                     ) : (
                       <>
-                        <div style={{ fontWeight: 700, color: '#284017', fontSize: 22 }}>{r.puntos}</div>
-                        <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 22 }}>{r.puntos}</div>
+                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                       </>
                     )}
                   </div>
@@ -1400,8 +1300,8 @@ export default function ParticipantProfile() {
                 {results.map(r => (
                   <tr key={r.id}>
                     <td>{r.competencia}</td>
-                    <td style={{ color: '#647063', fontSize: 13 }}>{r.fase || '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#284017' }}>{r.posicion ? '-' : r.puntos}</td>
+                    <td style={{ color: 'var(--oa-text-secondary)', fontSize: 13 }}>{r.fase || '-'}</td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--oa-accent)' }}>{r.posicion ? '-' : r.puntos}</td>
                     <td style={{ textAlign: 'right' }}>{r.posicion || '-'}</td>
                   </tr>
                 ))}

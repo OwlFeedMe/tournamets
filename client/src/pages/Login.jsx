@@ -73,23 +73,32 @@ function RegisterModal({ open, onClose, onRegistered }) {
         }}
       />
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Registro"
         style={{
           position: 'fixed',
-          inset: 'auto 0 0 0',
+          inset: 0,
           zIndex: 80,
-          borderTopLeftRadius: 28,
-          borderTopRightRadius: 28,
-          border: '1px solid #252A33',
-          background: '#171B21',
-          padding: '18px 16px calc(18px + env(safe-area-inset-bottom, 0px))',
-          maxHeight: '88vh',
-          overflowY: 'auto',
-          boxShadow: '0 -24px 80px rgba(0,0,0,0.42)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
         }}
       >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Registro"
+          style={{
+            width: '100%',
+            maxWidth: 420,
+            borderRadius: 28,
+            border: '1px solid #252A33',
+            background: '#171B21',
+            padding: '18px 16px 18px',
+            maxHeight: '100%',
+            overflowY: 'auto',
+            boxShadow: '0 24px 80px rgba(0,0,0,0.42)',
+          }}
+        >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <button
             type="button"
@@ -163,6 +172,7 @@ function RegisterModal({ open, onClose, onRegistered }) {
             {loading ? 'Creando cuenta...' : 'Registrarme'}
           </button>
         </form>
+        </div>
       </div>
     </>
   )
@@ -197,7 +207,7 @@ export default function Login() {
   }
 
   return (
-    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 'calc(100vh - 180px)', padding: '20px 20px 8px', background: 'radial-gradient(circle at top, rgba(255,107,0,0.14), transparent 32%), transparent' }}>
+    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: '20px 20px 8px', background: 'radial-gradient(circle at top, rgba(255,107,0,0.14), transparent 32%), transparent' }}>
       <div className="auth-card-wrap" style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <h1 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 42, fontWeight: 800, color: '#FF6B00', letterSpacing: '0.8px' }}>

@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import AdminDashboard from './pages/AdminDashboard'
+import CompetitionLanding from './pages/CompetitionLanding'
 import { EventsPage, NotificationsPage, WorkoutsPage } from './pages/ExplorePages'
 import Home from './pages/Home'
 import Leaderboard from './pages/Leaderboard'
@@ -45,6 +46,7 @@ export default function App() {
         <Routes>
           <Route element={<AuthenticatedShell />}>
             <Route path="/" element={<Home />} />
+            <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/workouts" element={<WorkoutsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />

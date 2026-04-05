@@ -1,18 +1,23 @@
 import io
+import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+from PIL import Image, UnidentifiedImageError
 import qrcode
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, require_competition_access
 from auth import get_current_user_optional, require_staff
 from database import get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
+from phase_status import compute_phase_status_map
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -22,6 +27,204 @@ TV_REFRESH_MIN_SECONDS = 2
 TV_REFRESH_MAX_SECONDS = 60
 TV_MODE_VALIDOS = {"cyclic", "static"}
 TV_VIEW_VALIDOS = {"individual", "teams"}
+COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "competition_assets"
+COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+COMPETITION_ASSET_SPECS = {
+    "profile": {"field": "profile_image_url", "width": 512, "height": 512, "mode": "cover"},
+    "banner": {"field": "banner_image_url", "width": 1920, "height": 1080, "mode": "contain"},
+}
+
+
+def _serialize_enrollment_questions(payload: dict):
+    if "enrollment_questions" not in payload:
+        return
+    questions = payload.get("enrollment_questions")
+    if not questions:
+        payload["enrollment_questions"] = None
+        return
+    normalized = []
+    for idx, raw in enumerate(questions):
+        label = str((raw or {}).get("label") or "").strip()
+        if not label:
+            continue
+        question_id = str((raw or {}).get("id") or f"q_{idx + 1}").strip() or f"q_{idx + 1}"
+        placeholder = str((raw or {}).get("placeholder") or "").strip() or None
+        field_type = str((raw or {}).get("field_type") or "text").strip().lower() or "text"
+        if field_type not in {"text", "image"}:
+            field_type = "text"
+        normalized.append({
+            "id": question_id,
+            "label": label,
+            "field_type": field_type,
+            "required": 1 if (raw or {}).get("required") else 0,
+            "placeholder": placeholder,
+        })
+    payload["enrollment_questions"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _serialize_enrollment_payment_methods(payload: dict):
+    if "enrollment_payment_methods" not in payload:
+        return
+    methods = payload.get("enrollment_payment_methods")
+    if not methods:
+        payload["enrollment_payment_methods"] = None
+        return
+    normalized = []
+    for idx, raw in enumerate(methods):
+        label = str((raw or {}).get("label") or "").strip()
+        account_name = str((raw or {}).get("account_name") or "").strip() or None
+        account_number = str((raw or {}).get("account_number") or "").strip() or None
+        notes = str((raw or {}).get("notes") or "").strip() or None
+        if not label and not account_name and not account_number and not notes:
+            continue
+        normalized.append({
+            "id": str((raw or {}).get("id") or f"pm_{idx + 1}").strip() or f"pm_{idx + 1}",
+            "label": label or f"Metodo {idx + 1}",
+            "account_name": account_name,
+            "account_number": account_number,
+            "notes": notes,
+        })
+    payload["enrollment_payment_methods"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _serialize_schedule_items(payload: dict):
+    if "schedule_items" not in payload:
+        return
+    items = payload.get("schedule_items")
+    if not items:
+        payload["schedule_items"] = None
+        return
+    normalized = []
+    for idx, raw in enumerate(items):
+        label = str((raw or {}).get("label") or "").strip()
+        kind = str((raw or {}).get("kind") or "custom").strip().lower() or "custom"
+        start_at = (raw or {}).get("start_at")
+        end_at = (raw or {}).get("end_at")
+        note = str((raw or {}).get("note") or "").strip() or None
+        if not label and not start_at and not end_at and not note:
+            continue
+        normalized.append({
+            "id": str((raw or {}).get("id") or f"date_{idx + 1}").strip() or f"date_{idx + 1}",
+            "label": label or f"Fecha {idx + 1}",
+            "kind": kind,
+            "start_at": start_at.isoformat() if isinstance(start_at, datetime) else start_at,
+            "end_at": end_at.isoformat() if isinstance(end_at, datetime) else end_at,
+            "note": note,
+        })
+    payload["schedule_items"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _serialize_social_links(payload: dict):
+    if "social_links" not in payload:
+        return
+    links = payload.get("social_links")
+    if not links:
+        payload["social_links"] = None
+        return
+    normalized = []
+    for idx, raw in enumerate(links):
+        label = str((raw or {}).get("label") or "").strip()
+        url = str((raw or {}).get("url") or "").strip()
+        if not label and not url:
+            continue
+        normalized.append({
+            "id": str((raw or {}).get("id") or f"social_{idx + 1}").strip() or f"social_{idx + 1}",
+            "label": label or f"Red {idx + 1}",
+            "url": url,
+        })
+    payload["social_links"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _normalize_date_boundary(value, *, end_of_day: bool = False):
+    if not value or not isinstance(value, datetime):
+        return value
+    if value.tzinfo is not None:
+        value = value.replace(tzinfo=None)
+    boundary = time(23, 59, 59, 999999) if end_of_day else time(0, 0, 0)
+    return datetime.combine(value.date(), boundary)
+
+
+def _normalize_competition_dates(payload: dict):
+    if "enrollment_start" in payload:
+        payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False)
+    if "enrollment_end" in payload:
+        payload["enrollment_end"] = _normalize_date_boundary(payload.get("enrollment_end"), end_of_day=True)
+    if "competition_start" in payload:
+        payload["competition_start"] = _normalize_date_boundary(payload.get("competition_start"), end_of_day=False)
+    if "competition_end" in payload:
+        payload["competition_end"] = _normalize_date_boundary(payload.get("competition_end"), end_of_day=True)
+
+
+def _validate_competition_dates(payload: dict):
+    enrollment_start = payload.get("enrollment_start")
+    enrollment_end = payload.get("enrollment_end")
+    competition_start = payload.get("competition_start")
+    competition_end = payload.get("competition_end")
+    if enrollment_start and enrollment_end and enrollment_start > enrollment_end:
+        raise HTTPException(400, "La fecha de inicio de inscripciones no puede ser mayor a la de cierre")
+    if competition_start and competition_end and competition_start > competition_end:
+        raise HTTPException(400, "La fecha de inicio de competencia no puede ser mayor a la fecha final")
+
+
+def _delete_local_competition_asset(asset_url: Optional[str]) -> None:
+    if not asset_url or not asset_url.startswith("/uploads/competition_assets/"):
+        return
+    target = COMPETITION_ASSET_DIR / asset_url.rsplit("/", 1)[-1]
+    try:
+        if target.exists():
+            target.unlink()
+    except OSError:
+        pass
+
+
+def _resize_contain(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    img = image.copy()
+    img.thumbnail((target_width, target_height), Image.Resampling.LANCZOS)
+    background = Image.new("RGB", (target_width, target_height), (13, 15, 18))
+    x = int((target_width - img.size[0]) / 2)
+    y = int((target_height - img.size[1]) / 2)
+    background.paste(img, (x, y))
+    return background
+
+
+def _resize_cover(image: Image.Image, target_width: int, target_height: int) -> Image.Image:
+    src_ratio = image.width / image.height if image.height else 1
+    target_ratio = target_width / target_height if target_height else 1
+    if src_ratio > target_ratio:
+        crop_height = image.height
+        crop_width = int(crop_height * target_ratio)
+        left = int((image.width - crop_width) / 2)
+        top = 0
+    else:
+        crop_width = image.width
+        crop_height = int(crop_width / target_ratio)
+        left = 0
+        top = int((image.height - crop_height) / 2)
+    cropped = image.crop((left, top, left + crop_width, top + crop_height))
+    return cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
+
+
+def _process_competition_asset(file: UploadFile, competition_id: int, asset_type: str) -> str:
+    if asset_type not in COMPETITION_ASSET_SPECS:
+        raise HTTPException(400, "asset_type invalido")
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "El archivo debe ser una imagen")
+    try:
+        raw = file.file.read()
+        image = Image.open(io.BytesIO(raw)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "No se pudo procesar la imagen")
+
+    spec = COMPETITION_ASSET_SPECS[asset_type]
+    if spec["mode"] == "cover":
+        output = _resize_cover(image, spec["width"], spec["height"])
+    else:
+        output = _resize_contain(image, spec["width"], spec["height"])
+
+    filename = f"competition_{competition_id}_{asset_type}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}.jpg"
+    output_path = COMPETITION_ASSET_DIR / filename
+    output.save(output_path, format="JPEG", quality=86, optimize=True)
+    return f"/uploads/competition_assets/{filename}"
 
 
 def _validate_tv_settings(payload: dict):
@@ -81,6 +284,70 @@ def get_competition(
     return require_competition_access(session, competition_id, user)
 
 
+@router.get("/{competition_id}/public")
+def get_public_competition_detail(
+    competition_id: int,
+    session: Session = Depends(get_session),
+):
+    competition = session.get(Competition, competition_id)
+    if not competition:
+        raise HTTPException(404, "Competencia no encontrada")
+
+    categories = session.execute(
+        text("""
+            SELECT id, nombre, orden
+            FROM competition_categories
+            WHERE competition_id = :cid
+            ORDER BY orden, nombre
+        """),
+        {"cid": competition_id},
+    ).mappings().all()
+
+    phases = session.execute(
+        text("""
+            SELECT id, nombre, descripcion, tipo, measurement_method, winner_rule, estado, orden
+            FROM competition_phases
+            WHERE competition_id = :cid
+            ORDER BY orden, id
+        """),
+        {"cid": competition_id},
+    ).mappings().all()
+    auto_status = compute_phase_status_map(session, competition_id)
+    normalized_phases = []
+    for phase in phases:
+        item = dict(phase)
+        phase_id = item.get("id")
+        if phase_id in auto_status:
+            item["estado"] = auto_status[phase_id]
+        normalized_phases.append(item)
+
+    stats = session.execute(
+        text("""
+            SELECT
+                COUNT(*) FILTER (WHERE estado = 'confirmado') AS inscritos_confirmados,
+                COUNT(*) FILTER (WHERE estado = 'pendiente') AS solicitudes_pendientes,
+                COUNT(*) FILTER (WHERE estado = 'rechazado') AS solicitudes_rechazadas
+            FROM competition_participants
+            WHERE competition_id = :cid
+        """),
+        {"cid": competition_id},
+    ).mappings().first() or {}
+
+    return {
+        "competition": competition.model_dump(),
+        "categories": [dict(item) for item in categories],
+        "phases": normalized_phases,
+        "stats": {
+            "inscritos_confirmados": int(stats.get("inscritos_confirmados") or 0),
+            "solicitudes_pendientes": int(stats.get("solicitudes_pendientes") or 0),
+            "solicitudes_rechazadas": int(stats.get("solicitudes_rechazadas") or 0),
+            "fases_total": len(normalized_phases),
+            "categorias_total": len(categories),
+        },
+        "leaderboard_url": _leaderboard_public_url(competition_id),
+    }
+
+
 @router.get("/{competition_id}/leaderboard-qr")
 def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_session)):
     c = session.get(Competition, competition_id)
@@ -105,6 +372,20 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     _validate_tv_settings(payload)
+    if "lugar" in payload:
+        payload["lugar"] = str(payload.get("lugar") or "").strip() or None
+    if "contact_phone" in payload:
+        payload["contact_phone"] = str(payload.get("contact_phone") or "").strip() or None
+    if "website_url" in payload:
+        payload["website_url"] = str(payload.get("website_url") or "").strip() or None
+    if "enrollment_intro_text" in payload:
+        payload["enrollment_intro_text"] = str(payload.get("enrollment_intro_text") or "").strip() or None
+    _normalize_competition_dates(payload)
+    _validate_competition_dates(payload)
+    _serialize_schedule_items(payload)
+    _serialize_social_links(payload)
+    _serialize_enrollment_payment_methods(payload)
+    _serialize_enrollment_questions(payload)
     if user.get("role") == "organizer":
         payload["organizer_user_id"] = user.get("app_user_id")
     competition = Competition.model_validate(payload)
@@ -125,6 +406,20 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     if user.get("role") != "admin":
         data.pop("organizer_user_id", None)
     _validate_tv_settings(data)
+    if "lugar" in data:
+        data["lugar"] = str(data.get("lugar") or "").strip() or None
+    if "contact_phone" in data:
+        data["contact_phone"] = str(data.get("contact_phone") or "").strip() or None
+    if "website_url" in data:
+        data["website_url"] = str(data.get("website_url") or "").strip() or None
+    if "enrollment_intro_text" in data:
+        data["enrollment_intro_text"] = str(data.get("enrollment_intro_text") or "").strip() or None
+    _normalize_competition_dates(data)
+    _validate_competition_dates(data)
+    _serialize_schedule_items(data)
+    _serialize_social_links(data)
+    _serialize_enrollment_payment_methods(data)
+    _serialize_enrollment_questions(data)
     for field, value in data.items():
         setattr(c, field, value)
 
@@ -139,6 +434,59 @@ def delete_competition(competition_id: int, session: Session = Depends(get_sessi
     c = require_competition_access(session, competition_id, user)
     session.delete(c)
     session.commit()
+
+
+@router.post("/{competition_id}/assets")
+def upload_competition_asset(
+    competition_id: int,
+    asset_type: str,
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    spec = COMPETITION_ASSET_SPECS.get(asset_type)
+    if not spec:
+        raise HTTPException(400, "asset_type invalido")
+    field_name = spec["field"]
+    previous_asset = getattr(competition, field_name, None)
+    new_asset = _process_competition_asset(file, competition_id, asset_type)
+    setattr(competition, field_name, new_asset)
+    session.add(competition)
+    session.commit()
+    session.refresh(competition)
+    _delete_local_competition_asset(previous_asset)
+    return {
+        "ok": True,
+        "asset_type": asset_type,
+        "url": new_asset,
+        "competition": competition.model_dump(),
+    }
+
+
+@router.delete("/{competition_id}/assets")
+def delete_competition_asset(
+    competition_id: int,
+    asset_type: str,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    spec = COMPETITION_ASSET_SPECS.get(asset_type)
+    if not spec:
+        raise HTTPException(400, "asset_type invalido")
+    field_name = spec["field"]
+    previous_asset = getattr(competition, field_name, None)
+    setattr(competition, field_name, None)
+    session.add(competition)
+    session.commit()
+    session.refresh(competition)
+    _delete_local_competition_asset(previous_asset)
+    return {
+        "ok": True,
+        "asset_type": asset_type,
+        "competition": competition.model_dump(),
+    }
 
 
 # ── Timer ──────────────────────────────────────────────────────────────────────

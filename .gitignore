@@ -39,3 +39,4 @@ npm-debug.log*
 test/*.xlsx
 test/*.pdf
 test/*.csv
+server/uploads/

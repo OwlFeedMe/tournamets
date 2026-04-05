@@ -1,8 +1,7 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
-import { House, LogOut, X, Trash2, Pencil, ChevronDown, ChevronRight, Trophy, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const CATEGORIAS = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro']
@@ -14,41 +13,306 @@ function orderCategories(data) {
   return CATEGORY_ORDER.filter(c => keys.includes(c)).concat(keys.filter(c => !CATEGORY_ORDER.includes(c)))
 }
 
-function NavBar({ onLogout, title = 'Admin' }) {
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+function parseEnrollmentQuestions(raw) {
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item, idx) => ({
+        id: String(item?.id || `q_${idx + 1}`),
+        label: String(item?.label || '').trim(),
+        field_type: String(item?.field_type || 'text').trim().toLowerCase() || 'text',
+        required: Number(item?.required) ? 1 : 0,
+        placeholder: String(item?.placeholder || '').trim(),
+      }))
+      .filter(item => item.label)
+  } catch {
+    return []
+  }
+}
+
+function parseEnrollmentPaymentMethods(raw) {
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item, idx) => ({
+        id: String(item?.id || `pm_${idx + 1}`),
+        label: String(item?.label || '').trim(),
+        account_name: String(item?.account_name || '').trim(),
+        account_number: String(item?.account_number || '').trim(),
+        notes: String(item?.notes || '').trim(),
+      }))
+      .filter(item => item.label || item.account_name || item.account_number || item.notes)
+  } catch {
+    return []
+  }
+}
+
+function toLocalDateTimeInput(value) {
+  return value ? String(value).slice(0, 16) : ''
+}
+
+function toDateInput(value) {
+  return value ? String(value).slice(0, 10) : ''
+}
+
+function dateInputToStartOfDay(value) {
+  return value ? `${value}T00:00:00` : null
+}
+
+function dateInputToEndOfDay(value) {
+  return value ? `${value}T23:59:59` : null
+}
+
+function resolveCompetitionAsset(competition, asset, isMobile = false) {
+  if (!competition) return ''
+  const profile = competition.profile_image_url || ''
+  const banner = competition.banner_image_url || ''
+  const desktop = competition.banner_desktop_url || ''
+  const mobile = competition.banner_mobile_url || ''
+  const legacy = competition.imagen_url || ''
+  if (asset === 'profile') return profile || legacy
+  if (asset === 'banner') return banner || desktop || mobile || legacy
+  return legacy
+}
+
+function parseScheduleItems(raw) {
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item, idx) => ({
+        id: String(item?.id || `date_${idx + 1}`),
+        label: String(item?.label || '').trim(),
+        kind: String(item?.kind || 'custom').trim().toLowerCase() || 'custom',
+        start_at: toDateInput(item?.start_at),
+        end_at: toDateInput(item?.end_at),
+        note: String(item?.note || '').trim(),
+      }))
+      .filter(item => item.label || item.start_at || item.end_at || item.note)
+  } catch {
+    return []
+  }
+}
+
+function parseSocialLinks(raw) {
+  const knownPlatforms = {
+    instagram: 'Instagram',
+    whatsapp: 'WhatsApp',
+    youtube: 'YouTube',
+    facebook: 'Facebook',
+    tiktok: 'TikTok',
+    x: 'X',
+  }
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item, idx) => ({
+        id: String(item?.id || `social_${idx + 1}`),
+        platform: Object.entries(knownPlatforms).find(([, label]) => label.toLowerCase() === String(item?.label || '').trim().toLowerCase())?.[0] || 'other',
+        custom_label: Object.values(knownPlatforms).some(label => label.toLowerCase() === String(item?.label || '').trim().toLowerCase())
+          ? ''
+          : String(item?.label || '').trim(),
+        url: String(item?.url || '').trim(),
+      }))
+      .filter(item => item.custom_label || item.url || item.platform !== 'other')
+  } catch {
+    return []
+  }
+}
+
+const COMPETITION_ASSET_RECOMMENDATIONS = {
+  profile: 'Recomendado 512 x 512 px. Formato cuadrado.',
+  banner: 'Recomendado 1920 x 1080 px. Banner horizontal.',
+}
+
+function parseEnrollmentAnswers(raw) {
+  if (!raw) return []
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(item => ({
+        question_id: String(item?.question_id || '').trim(),
+        question_label: String(item?.question_label || '').trim(),
+        question_type: String(item?.question_type || 'text').trim().toLowerCase() || 'text',
+        answer: String(item?.answer || '').trim(),
+      }))
+      .filter(item => item.question_label || item.answer)
+  } catch {
+    return []
+  }
+}
+
+function ImagePreviewModal({ item, onClose }) {
+  const [zoom, setZoom] = useState(1)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const pinchStateRef = useRef({ active: false, distance: 0, zoom: 1, offset: { x: 0, y: 0 } })
+  const panStateRef = useRef({ active: false, x: 0, y: 0, offset: { x: 0, y: 0 } })
+
+  const touchDistance = (touches) => {
+    if (!touches || touches.length < 2) return 0
+    const [a, b] = touches
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
+  }
+
   useEffect(() => {
-    const h = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', h)
-    return () => window.removeEventListener('resize', h)
+    setZoom(1)
+    setOffset({ x: 0, y: 0 })
+  }, [item?.url])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const { body, documentElement } = document
+    const prevBodyOverflow = body.style.overflow
+    const prevBodyTouchAction = body.style.touchAction
+    const prevHtmlOverflow = documentElement.style.overflow
+    const prevHtmlOverscroll = documentElement.style.overscrollBehavior
+
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+    documentElement.style.overflow = 'hidden'
+    documentElement.style.overscrollBehavior = 'none'
+
+    return () => {
+      body.style.overflow = prevBodyOverflow
+      body.style.touchAction = prevBodyTouchAction
+      documentElement.style.overflow = prevHtmlOverflow
+      documentElement.style.overscrollBehavior = prevHtmlOverscroll
+    }
   }, [])
+
+  if (!item?.url) return null
+
+  const handleTouchStart = (event) => {
+    if (event.touches.length === 2) {
+      pinchStateRef.current = {
+        active: true,
+        distance: touchDistance(event.touches),
+        zoom,
+        offset,
+      }
+      panStateRef.current = { active: false, x: 0, y: 0, offset }
+      return
+    }
+    if (event.touches.length === 1 && zoom > 1) {
+      const touch = event.touches[0]
+      panStateRef.current = {
+        active: true,
+        x: touch.clientX,
+        y: touch.clientY,
+        offset,
+      }
+    }
+  }
+
+  const handleTouchMove = (event) => {
+    if (event.touches.length === 2 && pinchStateRef.current.active) {
+      const nextDistance = touchDistance(event.touches)
+      if (!nextDistance || !pinchStateRef.current.distance) return
+      event.preventDefault()
+      const ratio = nextDistance / pinchStateRef.current.distance
+      const nextZoom = Math.min(4, Math.max(1, Number((pinchStateRef.current.zoom * ratio).toFixed(2))))
+      setZoom(nextZoom)
+      if (nextZoom <= 1) {
+        setOffset({ x: 0, y: 0 })
+      }
+      return
+    }
+    if (event.touches.length === 1 && panStateRef.current.active && zoom > 1) {
+      event.preventDefault()
+      const touch = event.touches[0]
+      const deltaX = touch.clientX - panStateRef.current.x
+      const deltaY = touch.clientY - panStateRef.current.y
+      setOffset({
+        x: panStateRef.current.offset.x + deltaX,
+        y: panStateRef.current.offset.y + deltaY,
+      })
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (pinchStateRef.current.active) {
+      pinchStateRef.current = { active: false, distance: 0, zoom, offset }
+    }
+    if (panStateRef.current.active) {
+      panStateRef.current = { active: false, x: 0, y: 0, offset }
+    }
+  }
+
   return (
-    <nav className="app-nav" style={{ background: '#fff', borderBottom: '1px solid #d7ddd7', padding: isMobile ? '10px 12px' : '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1, fontWeight: 800, fontSize: isMobile ? 20 : 28, color: '#FF6B00', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <Trophy size={isMobile ? 18 : 24} />{isMobile ? title : `FinalRep - ${title}`}
-      </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <a href="/" className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><House size={14} />{!isMobile && 'Inicio'}</a>
-        <button className="btn-secondary btn-sm" onClick={onLogout} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><LogOut size={14} />{!isMobile && 'Salir'}</button>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)', zIndex: 1300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+      <div style={{ width: '100%', maxWidth: 980, maxHeight: '100%', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '16px 18px', borderBottom: '1px solid #252A33' }}>
+          <div style={{ minWidth: 0, flex: '1 1 220px' }}>
+            <div style={{ color: 'var(--oa-text)', fontWeight: 800, fontSize: 16 }}>{item.label || 'Imagen adjunta'}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, minWidth: 52, textAlign: 'center' }}>{Math.round(zoom * 100)}%</div>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>Reset</button>
+            <a href={item.url} download target="_blank" rel="noreferrer" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>Descargar</a>
+            <button type="button" className="btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
+          </div>
+        </div>
+        <div
+          style={{ padding: 16, overflow: 'hidden', background: '#0D0F12', flex: 1, touchAction: 'none', display: 'grid', placeItems: 'center' }}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+        >
+          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', overflow: 'hidden' }}>
+            <img
+              src={item.url}
+              alt={item.label || 'Imagen adjunta'}
+              style={{ maxWidth: '100%', maxHeight: '100%', height: 'auto', borderRadius: 16, boxShadow: '0 12px 40px rgba(0,0,0,0.35)', transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transformOrigin: 'center center', transition: pinchStateRef.current.active || panStateRef.current.active ? 'none' : 'transform 0.12s ease-out' }}
+            />
+          </div>
+        </div>
       </div>
-    </nav>
+    </div>
+  )
+}
+
+function EnrollmentAnswersBlock({ raw, compact = false, onPreviewImage = null }) {
+  const answers = parseEnrollmentAnswers(raw)
+  if (!answers.length) return null
+  return (
+    <div style={{ marginTop: compact ? 6 : 8, display: 'grid', gap: 4 }}>
+      {answers.map((item) => (
+        <div key={`${item.question_id}-${item.question_label}`} style={{ fontSize: compact ? 11 : 12, color: 'var(--oa-text-secondary)' }}>
+          <b style={{ color: 'var(--oa-text)' }}>{item.question_label || 'Respuesta'}:</b>{' '}
+          {item.question_type === 'image' && item.answer ? (
+            <button
+              type="button"
+              onClick={() => onPreviewImage?.({ url: item.answer, label: item.question_label || 'Imagen adjunta' })}
+              style={{ background: 'transparent', border: 'none', padding: 0, color: '#00c2a8', cursor: 'pointer', fontSize: compact ? 11 : 12 }}
+            >
+              Ver imagen
+            </button>
+          ) : (
+            item.answer || '-'
+          )}
+        </div>
+      ))}
+    </div>
   )
 }
 
 // ── Generic small modal ───────────────────────────────────────────────────────
-function Modal({ title, onClose, width = 480, children }) {
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
-  useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
-  }, [])
-
+function Modal({ title, onClose, width = 480, children, panelStyle = null, titleStyle = null, closeButtonStyle = null }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'center', zIndex: 1000, padding: isMobile ? 8 : 0 }}>
-      <div style={{ background: '#fff', border: '1px solid #d5ddd3', borderRadius: isMobile ? 10 : 12, padding: isMobile ? 14 : 24, width: isMobile ? 'calc(100vw - 16px)' : width, maxWidth: isMobile ? 'calc(100vw - 16px)' : width, maxHeight: isMobile ? '92vh' : '80vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+      <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 24, width: '100%', maxWidth: width, maxHeight: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', color: 'var(--oa-text)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', ...panelStyle }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 15, paddingRight: 8 }}>{title}</h3>
-          <button style={{ background: 'none', border: 'none', color: '#607060', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} onClick={onClose}><X size={18} /></button>
+          <h3 style={{ margin: 0, fontSize: 15, paddingRight: 8, color: 'var(--oa-text)', ...titleStyle }}>{title}</h3>
+          <button style={{ background: 'transparent', border: '1px solid #252A33', borderRadius: 10, color: 'var(--oa-text-secondary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, ...closeButtonStyle }} onClick={onClose}><X size={18} /></button>
         </div>
         {children}
       </div>
@@ -84,10 +348,10 @@ function CategoriesModal({ competition, onClose }) {
         <button type="submit" className="btn-primary btn-sm">Agregar</button>
       </form>
       <div style={{ overflowY: 'auto', flex: 1 }}>
-        {cats.length === 0 && <p style={{ color: '#647063', textAlign: 'center', padding: 20 }}>Sin categorias definidas</p>}
+        {cats.length === 0 && <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 20 }}>Sin categorias definidas</p>}
         {cats.map(c => (
-          <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 6, border: '1px solid #d5ddd3', marginBottom: 6 }}>
-            <span style={{ fontSize: 14 }}>{c.nombre}</span>
+          <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', marginBottom: 8 }}>
+            <span style={{ fontSize: 14, color: 'var(--oa-text)' }}>{c.nombre}</span>
             <button className="btn-danger btn-sm" onClick={() => remove(c.id)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
           </div>
         ))}
@@ -506,11 +770,10 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
 // ── Enrollment Dates Modal ────────────────────────────────────────────────────
 function EnrollDatesModal({ competition, onClose, onSaved }) {
-  const toLocal = (iso) => iso ? iso.slice(0, 16) : ''
   const [form, setForm] = useState({
     enrollment_open: competition.enrollment_open || 0,
-    enrollment_start: toLocal(competition.enrollment_start),
-    enrollment_end: toLocal(competition.enrollment_end),
+    enrollment_start: toDateInput(competition.enrollment_start),
+    enrollment_end: toDateInput(competition.enrollment_end),
   })
   const [saving, setSaving] = useState(false)
 
@@ -520,8 +783,8 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
     try {
       await api.put(`/competitions/${competition.id}`, {
         enrollment_open: form.enrollment_open,
-        enrollment_start: form.enrollment_start || null,
-        enrollment_end: form.enrollment_end || null,
+        enrollment_start: dateInputToStartOfDay(form.enrollment_start),
+        enrollment_end: dateInputToEndOfDay(form.enrollment_end),
       })
       onSaved()
       onClose()
@@ -533,21 +796,35 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
   return (
     <Modal title={`Inscripciones - ${competition.nombre}`} onClose={onClose} width={420}>
       <form onSubmit={save}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', marginBottom: 12, borderBottom: '1px solid #222' }}>
-          <span style={{ fontSize: 14 }}>Inscripciones abiertas</span>
-          <button type="button"
-            className={form.enrollment_open ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
-            onClick={() => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 }))}>
-            {form.enrollment_open ? '? Abiertas' : 'Cerradas'}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', marginBottom: 14, border: '1px solid #252A33', borderRadius: 14, background: form.enrollment_open ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--oa-text)' }}>Inscripciones habilitadas</div>
+            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>Controla si esta competencia acepta nuevas solicitudes.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 }))}
+            style={{
+              width: 50,
+              height: 30,
+              borderRadius: 999,
+              border: `1px solid ${form.enrollment_open ? 'rgba(255,154,61,0.95)' : '#313844'}`,
+              background: form.enrollment_open ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#252A33',
+              padding: 3,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: form.enrollment_open ? 'flex-end' : 'flex-start',
+            }}>
+            <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#F5F7FA', boxShadow: '0 4px 12px rgba(0,0,0,0.22)' }} />
           </button>
         </div>
         <div className="form-group">
           <label>Fecha inicio inscripciones</label>
-          <input type="datetime-local" value={form.enrollment_start} onChange={e => setForm(f => ({ ...f, enrollment_start: e.target.value }))} />
+          <input type="date" value={form.enrollment_start} onChange={e => setForm(f => ({ ...f, enrollment_start: e.target.value }))} />
         </div>
         <div className="form-group">
           <label>Fecha cierre inscripciones</label>
-          <input type="datetime-local" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
+          <input type="date" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
@@ -563,6 +840,8 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const { role } = useAuth()
   const isOrganizer = role === 'organizer'
   const [modalTab, setModalTab] = useState('pendientes')
+  const [previewImage, setPreviewImage] = useState(null)
+  const [viewedParticipant, setViewedParticipant] = useState(null)
   const [allParticipants, setAllParticipants] = useState([])
   const [competitionParticipants, setCompetitionParticipants] = useState([])
   const [categories, setCategories] = useState([])
@@ -591,11 +870,33 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
       const map = {}
       confirmed.forEach(e => { map[e.id] = { selected: true, categoria: e.categoria_competencia || '' } })
       setEnrollMap(map)
-      setModalTab(pending.length > 0 ? 'pendientes' : 'gestion')
+      setModalTab(pending.length > 0 ? 'pendientes' : (confirmed.length > 0 ? 'confirmados' : 'rechazados'))
+      setViewedParticipant(null)
     })
   }
 
   useEffect(() => { load() }, [competition.id])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const { body, documentElement } = document
+    const prevBodyOverflow = body.style.overflow
+    const prevBodyTouchAction = body.style.touchAction
+    const prevHtmlOverflow = documentElement.style.overflow
+    const prevHtmlOverscroll = documentElement.style.overscrollBehavior
+
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+    documentElement.style.overflow = 'hidden'
+    documentElement.style.overscrollBehavior = 'none'
+
+    return () => {
+      body.style.overflow = prevBodyOverflow
+      body.style.touchAction = prevBodyTouchAction
+      documentElement.style.overflow = prevHtmlOverflow
+      documentElement.style.overscrollBehavior = prevHtmlOverscroll
+    }
+  }, [])
 
   const approveOrReject = async (pid, estado) => {
     await api.put(`/competitions/${competition.id}/participants/${pid}/status`, { estado })
@@ -640,16 +941,107 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const filtered = allParticipants
     .filter(p => !pendingIds.has(p.id))
     .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(search.toLowerCase()))
-  const managedList = useMemo(
-    () => competitionParticipants.filter(p => p.estado !== 'pendiente'),
+  const confirmedList = useMemo(
+    () => competitionParticipants.filter(p => p.estado === 'confirmado'),
+    [competitionParticipants]
+  )
+  const rejectedList = useMemo(
+    () => competitionParticipants.filter(p => p.estado === 'rechazado'),
     [competitionParticipants]
   )
   const selectedCount = Object.values(enrollMap).filter(v => v.selected).length
+  const currentOrganizerList = modalTab === 'pendientes'
+    ? pendingList
+    : modalTab === 'rechazados'
+      ? rejectedList
+      : confirmedList
+
+  const organizerDetailView = viewedParticipant && (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => setViewedParticipant(null)} style={{ justifySelf: 'flex-start' }}>
+        Volver
+      </button>
+      <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 16, display: 'grid', gap: 10 }}>
+        <div style={{ color: 'var(--oa-text)', fontSize: 17, fontWeight: 800 }}>
+          {viewedParticipant.nombre} {viewedParticipant.apellido}
+        </div>
+        <div style={{ display: 'grid', gap: 6, color: 'var(--oa-text-secondary)', fontSize: 13 }}>
+          <div><b style={{ color: 'var(--oa-text)' }}>Cedula:</b> {viewedParticipant.cedula || '-'}</div>
+          <div><b style={{ color: 'var(--oa-text)' }}>Categoria:</b> {viewedParticipant.categoria_competencia || '-'}</div>
+          <div><b style={{ color: 'var(--oa-text)' }}>Estado:</b> {viewedParticipant.estado || '-'}</div>
+        </div>
+        <EnrollmentAnswersBlock raw={viewedParticipant.enrollment_answers} onPreviewImage={setPreviewImage} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+        {viewedParticipant.estado !== 'confirmado' && (
+          <button className="btn-success" onClick={async () => {
+            await approveOrReject(viewedParticipant.id, 'confirmado')
+            setModalTab('confirmados')
+            setViewedParticipant(null)
+          }}>
+            Confirmar
+          </button>
+        )}
+        {viewedParticipant.estado !== 'rechazado' && (
+          <button className="btn-danger" onClick={async () => {
+            await approveOrReject(viewedParticipant.id, 'rechazado')
+            setModalTab('rechazados')
+            setViewedParticipant(null)
+          }}>
+            Rechazar
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
+  const organizerListView = (
+    <div style={{ overflowY: 'auto', flex: 1, display: 'grid', gap: 10 }}>
+      {!currentOrganizerList.length && (
+        <div style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>
+          {modalTab === 'pendientes'
+            ? 'No hay solicitudes pendientes'
+            : modalTab === 'rechazados'
+              ? 'No hay rechazados'
+              : 'No hay inscritos'}
+        </div>
+      )}
+      {currentOrganizerList.map((p) => (
+        <div key={p.id} style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          padding: '12px 14px',
+          borderRadius: 12,
+          border: modalTab === 'pendientes'
+            ? '1px solid rgba(255,107,0,0.26)'
+            : modalTab === 'rechazados'
+              ? '1px solid rgba(239,68,68,0.26)'
+              : '1px solid #252A33',
+          background: modalTab === 'pendientes'
+            ? 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))'
+            : modalTab === 'rechazados'
+              ? 'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(127,29,29,0.04))'
+              : 'rgba(13,15,18,0.72)',
+        }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
+            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>
+              Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia || '-'}</b>
+            </div>
+          </div>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setViewedParticipant(p)}>Ver</button>
+        </div>
+      ))}
+    </div>
+  )
 
   return (
     <Modal title={`Inscripciones - ${competition.nombre}`} onClose={onClose} width={640}>
+      {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
       <div className="tabs" style={{ margin: '0 0 14px', border: 'none', gap: 4 }}>
-        <button className={`tab ${modalTab === 'pendientes' ? 'active' : ''}`} onClick={() => setModalTab('pendientes')} style={{ padding: '4px 14px', fontSize: 13, position: 'relative' }}>
+        <button className={`tab ${modalTab === 'pendientes' ? 'active' : ''}`} onClick={() => { setModalTab('pendientes'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13, position: 'relative' }}>
           Solicitudes
           {pendingList.length > 0 && (
             <span style={{ background: '#284017', color: '#fff', borderRadius: 10, padding: '0 6px', fontSize: 10, fontWeight: 700, marginLeft: 6 }}>
@@ -657,71 +1049,54 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
             </span>
           )}
         </button>
-        <button className={`tab ${modalTab === 'gestion' ? 'active' : ''}`} onClick={() => setModalTab('gestion')} style={{ padding: '4px 14px', fontSize: 13 }}>
-          Gestionar inscriptos
-        </button>
+        {isOrganizer ? (
+          <>
+            <button className={`tab ${modalTab === 'confirmados' ? 'active' : ''}`} onClick={() => { setModalTab('confirmados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
+              Inscritos
+            </button>
+            <button className={`tab ${modalTab === 'rechazados' ? 'active' : ''}`} onClick={() => { setModalTab('rechazados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
+              Rechazados
+            </button>
+          </>
+        ) : (
+          <button className={`tab ${modalTab === 'gestion' ? 'active' : ''}`} onClick={() => { setModalTab('gestion'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
+            Gestionar inscritos
+          </button>
+        )}
       </div>
 
       {modalTab === 'pendientes' && (
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {pendingList.length === 0 ? (
-            <p style={{ color: '#647063', textAlign: 'center', padding: 40 }}>No hay solicitudes pendientes</p>
-          ) : (
-            pendingList.map(p => (
-              <div key={p.id} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 6,
-                border: '1px solid #f5a60033', background: '#f5a60011', marginBottom: 8
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{p.nombre} {p.apellido}</div>
-                  <div style={{ fontSize: 12, color: '#647063', marginTop: 2 }}>
-                    {p.cedula}
-                    {p.categoria_competencia && <span style={{ marginLeft: 8 }}>| Categoria: <b style={{ color: '#4d564b' }}>{p.categoria_competencia}</b></span>}
+        isOrganizer ? organizerDetailView || organizerListView : (
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {pendingList.length === 0 ? (
+              <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>No hay solicitudes pendientes</p>
+            ) : (
+              pendingList.map(p => (
+                <div key={p.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12,
+                  border: '1px solid rgba(255,107,0,0.26)', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))', marginBottom: 10
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
+                    <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>
+                      {p.cedula}
+                      {p.categoria_competencia && <span style={{ marginLeft: 8 }}>| Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia}</b></span>}
+                    </div>
+                    <EnrollmentAnswersBlock raw={p.enrollment_answers} compact onPreviewImage={setPreviewImage} />
                   </div>
+                  <button className="btn-success btn-sm" onClick={() => approveOrReject(p.id, 'confirmado')}>Confirmar</button>
+                  <button className="btn-danger btn-sm" onClick={() => approveOrReject(p.id, 'rechazado')}>Rechazar</button>
                 </div>
-                <button className="btn-success btn-sm" onClick={() => approveOrReject(p.id, 'confirmado')}>? Confirmar</button>
-                <button className="btn-danger btn-sm" onClick={() => approveOrReject(p.id, 'rechazado')}>? Rechazar</button>
-              </div>
-            ))
-          )}
-        </div>
+              ))
+            )}
+          </div>
+        )
       )}
 
-      {modalTab === 'gestion' && (
+      {((isOrganizer && (modalTab === 'confirmados' || modalTab === 'rechazados')) || (!isOrganizer && modalTab === 'gestion')) && (
         <>
           {isOrganizer ? (
-            <>
-              <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Solo puedes gestionar personas que ya están inscritas en esta competencia.</div>
-              <div style={{ overflowY: 'auto', flex: 1 }}>
-                {managedList.map(p => (
-                  <div key={p.id} style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 6, marginBottom: 8,
-                    border: '1px solid #d5ddd3', background: '#fafafa',
-                  }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: 14 }}>{p.nombre} {p.apellido}</div>
-                      <div style={{ fontSize: 12, color: '#647063', marginTop: 2 }}>
-                        {p.cedula}
-                        <span style={{ marginLeft: 8 }}>| Categoria: <b style={{ color: '#4d564b' }}>{p.categoria_competencia || '-'}</b></span>
-                        <span style={{ marginLeft: 8 }}>| Estado: <b style={{ color: '#4d564b' }}>{p.estado}</b></span>
-                      </div>
-                    </div>
-                    {p.estado !== 'confirmado' && <button className="btn-success btn-sm" onClick={() => approveOrReject(p.id, 'confirmado')}>Confirmar</button>}
-                    {p.estado !== 'rechazado' && <button className="btn-secondary btn-sm" onClick={() => approveOrReject(p.id, 'rechazado')}>Rechazar</button>}
-                    <button
-                      className="btn-danger btn-sm"
-                      onClick={async () => {
-                        await api.delete(`/competitions/${competition.id}/participants/${p.id}`)
-                        onSaved()
-                        load()
-                      }}
-                    >
-                      Retirar
-                    </button>
-                  </div>
-                ))}
-                {!managedList.length && <div style={{ color: '#647063', padding: 20, textAlign: 'center' }}>No hay inscriptos para gestionar</div>}
-              </div>
+            <>{organizerDetailView || organizerListView}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
                 <button className="btn-secondary" onClick={onClose}>Cerrar</button>
               </div>
@@ -729,24 +1104,24 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
           ) : (
             <>
               <input placeholder="Buscar participante..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
-              <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>{selectedCount} confirmados seleccionados</div>
+              <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginBottom: 8 }}>{selectedCount} confirmados seleccionados</div>
               <div style={{ overflowY: 'auto', flex: 1 }}>
                 {filtered.map(p => {
                   const enrolled = enrollMap[p.id]
                   return (
                     <div key={p.id} style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 6, marginBottom: 4,
-                      border: `1px solid ${enrolled ? '#284017' : '#d5ddd3'}`,
-                      background: enrolled ? '#28401711' : 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, marginBottom: 8,
+                      border: `1px solid ${enrolled ? 'rgba(0,194,168,0.35)' : '#252A33'}`,
+                      background: enrolled ? 'rgba(0,194,168,0.08)' : 'rgba(13,15,18,0.72)',
                     }}>
                       <input type="checkbox" checked={!!enrolled} onChange={() => toggle(p.id)} style={{ width: 'auto', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13 }}>{p.nombre} {p.apellido}</div>
-                        <div style={{ fontSize: 11, color: '#647063' }}>{p.cedula}</div>
+                        <div style={{ fontSize: 13, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
+                        <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)' }}>{p.cedula}</div>
                       </div>
                       {enrolled && (
                         <select value={enrolled.categoria} onChange={e => setCategoria(p.id, e.target.value)}
-                          style={{ fontSize: 12, width: 130, background: '#fff', border: '1px solid #cfd8ce', borderRadius: 4, padding: '3px 6px', color: '#4d564b' }}>
+                          style={{ fontSize: 12, width: 130, background: '#0D0F12', border: '1px solid #252A33', borderRadius: 8, padding: '6px 8px', color: 'var(--oa-text)' }}>
                           {categories.length === 0 && <option value="">Sin categorias</option>}
                           {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
                           {enrolled.categoria && !categories.find(c => c.nombre === enrolled.categoria) && (
@@ -757,7 +1132,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
                     </div>
                   )
                 })}
-                {!filtered.length && <div style={{ color: '#647063', padding: 20, textAlign: 'center' }}>Sin resultados</div>}
+                {!filtered.length && <div style={{ color: 'var(--oa-text-secondary)', padding: 20, textAlign: 'center' }}>Sin resultados</div>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
                 <button className="btn-secondary" onClick={onClose}>Cancelar</button>
@@ -780,6 +1155,9 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
+    lugar: '',
+    contact_phone: '',
+    website_url: '',
     imagen_url: '',
     activa: 0,
     allow_user_results: 0,
@@ -789,19 +1167,32 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     enrollment_open: 0,
     enrollment_start: '',
     enrollment_end: '',
+    competition_start: '',
+    competition_end: '',
+    enrollment_intro_text: '',
     scoring_mode: 'highest_wins',
   })
   const [cats, setCats] = useState([])
   const [newCat, setNewCat] = useState('')
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two' })
+  const [questions, setQuestions] = useState([])
+  const [paymentMethods, setPaymentMethods] = useState([])
+  const [scheduleItems, setScheduleItems] = useState([])
+  const [socialLinks, setSocialLinks] = useState([])
+  const [assetFiles, setAssetFiles] = useState({ profile: null, banner: null })
+  const [assetPreviews, setAssetPreviews] = useState({ profile: '', banner: '' })
+  const [uploadingAssets, setUploadingAssets] = useState(false)
+  const [deletingAssetKey, setDeletingAssetKey] = useState('')
 
   useEffect(() => {
     if (!isEdit || !competition) return
-    const toLocal = (iso) => (iso ? iso.slice(0, 16) : '')
     setForm({
       nombre: competition.nombre || '',
       descripcion: competition.descripcion || '',
+      lugar: competition.lugar || '',
+      contact_phone: competition.contact_phone || '',
+      website_url: competition.website_url || '',
       imagen_url: competition.imagen_url || '',
       activa: competition.activa || 0,
       allow_user_results: competition.allow_user_results || 0,
@@ -809,10 +1200,19 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       show_team_all_by_category_option: competition.show_team_all_by_category_option == null ? 1 : competition.show_team_all_by_category_option,
       show_team_all_global_option: competition.show_team_all_global_option == null ? 1 : competition.show_team_all_global_option,
       enrollment_open: competition.enrollment_open || 0,
-      enrollment_start: toLocal(competition.enrollment_start),
-      enrollment_end: toLocal(competition.enrollment_end),
+      enrollment_start: toDateInput(competition.enrollment_start),
+      enrollment_end: toDateInput(competition.enrollment_end),
+      competition_start: toDateInput(competition.competition_start),
+      competition_end: toDateInput(competition.competition_end),
+      enrollment_intro_text: competition.enrollment_intro_text || '',
       scoring_mode: competition.scoring_mode || 'highest_wins',
     })
+    setQuestions(parseEnrollmentQuestions(competition.enrollment_questions))
+    setPaymentMethods(parseEnrollmentPaymentMethods(competition.enrollment_payment_methods))
+    setScheduleItems(parseScheduleItems(competition.schedule_items))
+    setSocialLinks(parseSocialLinks(competition.social_links))
+    setAssetFiles({ profile: null, banner: null })
+    setAssetPreviews({ profile: '', banner: '' })
     Promise.all([
       api.get(`/competitions/${competition.id}/categories`),
       api.get(`/competitions/${competition.id}/phases`),
@@ -877,15 +1277,48 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       setMsg({ type: 'error', text: 'La fecha de inicio no puede ser mayor a la de cierre' })
       return
     }
+    if (form.competition_start && form.competition_end && form.competition_start > form.competition_end) {
+      setMsg({ type: 'error', text: 'La fecha inicial de la competencia no puede ser mayor a la final' })
+      return
+    }
 
     const cleanCats = cats.map(c => c.nombre.trim()).filter(Boolean)
     const cleanPhases = phases
       .map(p => ({ ...p, nombre: p.nombre.trim(), descripcion: (p.descripcion || '').trim() }))
       .filter(p => p.nombre)
+    const cleanScheduleItems = scheduleItems
+      .map((item, idx) => ({
+        id: String(item.id || `date_${idx + 1}`),
+        label: String(item.label || '').trim(),
+        kind: String(item.kind || 'custom').trim().toLowerCase() || 'custom',
+        start_at: dateInputToStartOfDay(item.start_at),
+        end_at: dateInputToEndOfDay(item.end_at),
+        note: String(item.note || '').trim() || null,
+      }))
+      .filter(item => item.label || item.start_at || item.end_at || item.note)
+    const cleanSocialLinks = socialLinks
+      .map((item, idx) => ({
+        id: String(item.id || `social_${idx + 1}`),
+        label: item.platform === 'other'
+          ? String(item.custom_label || '').trim()
+          : (SOCIAL_PLATFORM_OPTIONS.find(option => option.value === item.platform)?.label || ''),
+        url: String(item.url || '').trim(),
+      }))
+      .filter(item => item.label || item.url)
+
+    const invalidScheduleItem = cleanScheduleItems.find(item => item.start_at && item.end_at && item.start_at > item.end_at)
+    if (invalidScheduleItem) {
+      setMsg({ type: 'error', text: `La fecha inicial no puede ser mayor a la final en "${invalidScheduleItem.label || 'hito'}"` })
+      return
+    }
 
     const payload = {
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || null,
+      lugar: form.lugar.trim() || null,
+      contact_phone: form.contact_phone.trim() || null,
+      website_url: form.website_url.trim() || null,
+      social_links: cleanSocialLinks,
       imagen_url: form.imagen_url.trim() || null,
       activa: form.activa ? 1 : 0,
       allow_user_results: form.allow_user_results ? 1 : 0,
@@ -893,48 +1326,86 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       show_team_all_by_category_option: form.show_team_all_by_category_option ? 1 : 0,
       show_team_all_global_option: form.show_team_all_global_option ? 1 : 0,
       enrollment_open: form.enrollment_open ? 1 : 0,
-      enrollment_start: form.enrollment_start || null,
-      enrollment_end: form.enrollment_end || null,
+      enrollment_start: dateInputToStartOfDay(form.enrollment_start),
+      enrollment_end: dateInputToEndOfDay(form.enrollment_end),
+      competition_start: dateInputToStartOfDay(form.competition_start),
+      competition_end: dateInputToEndOfDay(form.competition_end),
+      schedule_items: cleanScheduleItems,
+      enrollment_intro_text: form.enrollment_intro_text.trim() || null,
+      enrollment_payment_methods: paymentMethods
+        .map((method, idx) => ({
+          id: String(method.id || `pm_${idx + 1}`),
+          label: String(method.label || '').trim(),
+          account_name: String(method.account_name || '').trim() || null,
+          account_number: String(method.account_number || '').trim() || null,
+          notes: String(method.notes || '').trim() || null,
+        }))
+        .filter(method => method.label || method.account_name || method.account_number || method.notes),
+      enrollment_questions: questions
+        .map((question, idx) => ({
+          id: String(question.id || `q_${idx + 1}`),
+          label: String(question.label || '').trim(),
+          field_type: question.field_type === 'image' ? 'image' : 'text',
+          required: question.required ? 1 : 0,
+          placeholder: String(question.placeholder || '').trim() || null,
+        }))
+        .filter(question => question.label),
       scoring_mode: form.scoring_mode || 'highest_wins',
     }
 
     setSaving(true)
     try {
       let competitionId = competition?.id
+      let createdCompetition = false
       if (isEdit) {
         await api.put(`/competitions/${competition.id}`, payload)
       } else {
         const { data } = await api.post('/competitions', payload)
         competitionId = data.id
+        createdCompetition = true
       }
 
-      const existingCats = isEdit ? (await api.get(`/competitions/${competitionId}/categories`)).data : []
-      await Promise.all(existingCats.map(c => api.delete(`/competitions/${competitionId}/categories/${c.id}`)))
-      for (let i = 0; i < cleanCats.length; i += 1) {
-        await api.post(`/competitions/${competitionId}/categories`, { nombre: cleanCats[i], orden: i })
+      if (competitionId) {
+        await uploadCompetitionAssets(competitionId)
       }
 
-      const existingPhases = isEdit ? (await api.get(`/competitions/${competitionId}/phases`)).data : []
-      const localIds = new Set(cleanPhases.filter(p => Number.isInteger(p.id)).map(p => p.id))
-      for (const existing of existingPhases) {
-        if (!localIds.has(existing.id)) {
-          await api.delete(`/competitions/${competitionId}/phases/${existing.id}`)
+      try {
+        const existingCats = isEdit ? (await api.get(`/competitions/${competitionId}/categories`)).data : []
+        await Promise.all(existingCats.map(c => api.delete(`/competitions/${competitionId}/categories/${c.id}`)))
+        for (let i = 0; i < cleanCats.length; i += 1) {
+          await api.post(`/competitions/${competitionId}/categories`, { nombre: cleanCats[i], orden: i })
         }
-      }
-      for (let i = 0; i < cleanPhases.length; i += 1) {
-        const phase = cleanPhases[i]
-        const phasePayload = {
-          nombre: phase.nombre,
-          measurement_method: normalizeMeasurementMethod(phase.measurement_method, phaseTypeFromMethod(phase.measurement_method)),
-          descripcion: phase.descripcion || null,
-          team_result_mode: phase.team_result_mode || 'sum_two',
-          orden: i,
+
+        const existingPhases = isEdit ? (await api.get(`/competitions/${competitionId}/phases`)).data : []
+        const localIds = new Set(cleanPhases.filter(p => Number.isInteger(p.id)).map(p => p.id))
+        for (const existing of existingPhases) {
+          if (!localIds.has(existing.id)) {
+            await api.delete(`/competitions/${competitionId}/phases/${existing.id}`)
+          }
         }
-        if (Number.isInteger(phase.id)) {
-          await api.put(`/competitions/${competitionId}/phases/${phase.id}`, phasePayload)
-        } else {
-          await api.post(`/competitions/${competitionId}/phases`, phasePayload)
+        for (let i = 0; i < cleanPhases.length; i += 1) {
+          const phase = cleanPhases[i]
+          const phasePayload = {
+            nombre: phase.nombre,
+            measurement_method: normalizeMeasurementMethod(phase.measurement_method, phaseTypeFromMethod(phase.measurement_method)),
+            descripcion: phase.descripcion || null,
+            team_result_mode: phase.team_result_mode || 'sum_two',
+            orden: i,
+          }
+          if (Number.isInteger(phase.id)) {
+            await api.put(`/competitions/${competitionId}/phases/${phase.id}`, phasePayload)
+          } else {
+            await api.post(`/competitions/${competitionId}/phases`, phasePayload)
+          }
         }
+      } catch (syncErr) {
+        if (createdCompetition) {
+          const detail = syncErr.response?.data?.detail || 'no se pudieron guardar todas las categorias o fases'
+          onSaved(`Competencia creada, pero ${detail}`)
+          onClose()
+          return
+        }
+        throw syncErr
       }
 
       onSaved(isEdit ? 'Competencia actualizada' : 'Competencia creada')
@@ -946,80 +1417,528 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     }
   }
 
+  const sectionStyle = {
+    border: '1px solid #252a33',
+    borderRadius: 14,
+    padding: isMobile ? 14 : 18,
+    background: 'linear-gradient(180deg, rgba(255,107,0,0.08) 0%, rgba(23,27,33,0.98) 26%, rgba(23,27,33,0.98) 100%)',
+    marginBottom: 14,
+  }
+  const sectionTitleStyle = {
+    margin: 0,
+    fontSize: 15,
+    fontWeight: 700,
+    color: 'var(--oa-text)',
+  }
+  const sectionHintStyle = {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'var(--oa-text-secondary)',
+    lineHeight: 1.5,
+  }
+  const listItemStyle = {
+    display: 'grid',
+    gap: 8,
+    alignItems: 'center',
+    padding: isMobile ? '10px 12px' : '12px 14px',
+    borderRadius: 12,
+    border: '1px solid #252a33',
+    background: 'rgba(13,15,18,0.72)',
+    marginBottom: 8,
+  }
+  const toggleCardStyle = (enabled) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    width: '100%',
+    padding: '14px 16px',
+    borderRadius: 16,
+    border: `1px solid ${enabled ? 'rgba(255,107,0,0.45)' : '#252a33'}`,
+    background: enabled ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)',
+    color: 'var(--oa-text)',
+    textAlign: 'left',
+    cursor: 'pointer',
+  })
+  const toggleTrackStyle = (enabled) => ({
+    width: 50,
+    height: 30,
+    borderRadius: 999,
+    background: enabled ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#252a33',
+    border: `1px solid ${enabled ? 'rgba(255,154,61,0.95)' : '#313844'}`,
+    padding: 3,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: enabled ? 'flex-end' : 'flex-start',
+    flexShrink: 0,
+    transition: 'all 0.2s ease',
+  })
+  const toggleThumbStyle = {
+    width: 22,
+    height: 22,
+    borderRadius: '50%',
+    background: '#F5F7FA',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.22)',
+  }
+  const renderToggleCard = ({ label, hint, enabled, onClick, enabledText = 'Activo', disabledText = 'Inactivo' }) => (
+    <button type="button" onClick={onClick} style={toggleCardStyle(enabled)}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>{label}</div>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4, lineHeight: 1.45 }}>{hint}</div>
+        <div style={{ color: enabled ? '#FFB36F' : '#7E8796', fontSize: 11, marginTop: 8, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          {enabled ? enabledText : disabledText}
+        </div>
+      </div>
+      <span aria-hidden="true" style={toggleTrackStyle(enabled)}>
+        <span style={toggleThumbStyle} />
+      </span>
+    </button>
+  )
+  const updateQuestion = (id, field, value) => {
+    setQuestions(prev => prev.map(question => question.id === id ? { ...question, [field]: value } : question))
+  }
+  const addQuestion = () => {
+    setQuestions(prev => [...prev, { id: `q_${Date.now()}`, label: '', field_type: 'text', required: 0, placeholder: '' }])
+  }
+  const removeQuestion = (id) => {
+    setQuestions(prev => prev.filter(question => question.id !== id))
+  }
+  const updatePaymentMethod = (id, field, value) => {
+    setPaymentMethods(prev => prev.map(method => method.id === id ? { ...method, [field]: value } : method))
+  }
+  const addPaymentMethod = () => {
+    setPaymentMethods(prev => [...prev, { id: `pm_${Date.now()}`, label: '', account_name: '', account_number: '', notes: '' }])
+  }
+  const removePaymentMethod = (id) => {
+    setPaymentMethods(prev => prev.filter(method => method.id !== id))
+  }
+  const updateScheduleItem = (id, field, value) => {
+    setScheduleItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+  }
+  const addScheduleItem = () => {
+    setScheduleItems(prev => [...prev, { id: `date_${Date.now()}`, label: '', kind: 'custom', start_at: '', end_at: '', note: '' }])
+  }
+  const removeScheduleItem = (id) => {
+    setScheduleItems(prev => prev.filter(item => item.id !== id))
+  }
+  const updateSocialLink = (id, field, value) => {
+    setSocialLinks(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
+  }
+  const addSocialLink = () => {
+    setSocialLinks(prev => [...prev, { id: `social_${Date.now()}`, platform: 'instagram', custom_label: '', url: '' }])
+  }
+  const removeSocialLink = (id) => {
+    setSocialLinks(prev => prev.filter(item => item.id !== id))
+  }
+  const setCompetitionAssetFile = (assetType, file) => {
+    setAssetFiles(prev => ({ ...prev, [assetType]: file || null }))
+    setAssetPreviews(prev => ({
+      ...prev,
+      [assetType]: file ? URL.createObjectURL(file) : '',
+    }))
+  }
+
+  const deleteCompetitionAsset = async (assetType) => {
+    if (!competition?.id) {
+      setAssetFiles(prev => ({ ...prev, [assetType]: null }))
+      setAssetPreviews(prev => ({ ...prev, [assetType]: '' }))
+      return
+    }
+    setDeletingAssetKey(assetType)
+    try {
+      await api.delete(`/competitions/${competition.id}/assets?asset_type=${assetType}`)
+      setAssetFiles(prev => ({ ...prev, [assetType]: null }))
+      setAssetPreviews(prev => ({ ...prev, [assetType]: '' }))
+      onSaved('Imagen eliminada')
+      onClose()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar la imagen' })
+    } finally {
+      setDeletingAssetKey('')
+    }
+  }
+
+  const uploadCompetitionAssets = async (competitionId) => {
+    const pendingAssets = Object.entries(assetFiles).filter(([, file]) => !!file)
+    if (!pendingAssets.length) return null
+    setUploadingAssets(true)
+    try {
+      let latestCompetition = null
+      for (const [assetType, file] of pendingAssets) {
+        const formData = new FormData()
+        formData.append('file', file)
+        const { data } = await api.post(`/competitions/${competitionId}/assets?asset_type=${assetType}`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        latestCompetition = data?.competition || latestCompetition
+      }
+      return latestCompetition
+    } finally {
+      setUploadingAssets(false)
+    }
+  }
+
+  const SOCIAL_PLATFORM_OPTIONS = [
+    { value: 'instagram', label: 'Instagram' },
+    { value: 'whatsapp', label: 'WhatsApp' },
+    { value: 'youtube', label: 'YouTube' },
+    { value: 'facebook', label: 'Facebook' },
+    { value: 'tiktok', label: 'TikTok' },
+    { value: 'x', label: 'X' },
+    { value: 'other', label: 'Otra' },
+  ]
+
   return (
-    <Modal title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'} onClose={onClose} width={760}>
+    <Modal
+      title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'}
+      onClose={onClose}
+      width={760}
+      panelStyle={{
+        background: '#171b21',
+        border: '1px solid #252a33',
+        borderRadius: 22,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+      }}
+      titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
+      closeButtonStyle={{
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        border: '1px solid #252a33',
+        background: 'transparent',
+        color: 'var(--oa-text)',
+        justifyContent: 'center',
+        padding: 0,
+      }}
+    >
       <form onSubmit={save} style={{ overflowY: 'auto', paddingRight: 4 }}>
         {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
-          <div className="form-group">
-            <label>Nombre *</label>
-            <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} required />
+        <div style={{ ...sectionStyle, paddingBottom: isMobile ? 12 : 16 }}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Informacion general</h4>
+            <div style={sectionHintStyle}>Define el nombre, descripcion, contacto e imagenes que se mostraran en la portada publica.</div>
           </div>
-          <div className="form-group">
-            <label>Descripcion</label>
-            <input value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label>Nombre *</label>
+              <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} required />
+            </div>
+            <div className="form-group">
+              <label>Lugar</label>
+              <input value={form.lugar} onChange={e => setForm(f => ({ ...f, lugar: e.target.value }))} placeholder="Ej: Bogota, Coliseo Central" />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label>Numero de contacto</label>
+              <input value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} placeholder="Ej: +57 300 123 4567" />
+            </div>
+            <div className="form-group">
+              <label>Pagina web</label>
+              <input value={form.website_url} onChange={e => setForm(f => ({ ...f, website_url: e.target.value }))} placeholder="https://..." />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+            <div className="form-group">
+              <label>Descripcion</label>
+              <input value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Imagenes</div>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+              Puedes subir foto de perfil y un solo banner para toda la competencia.
+              {!isEdit ? ' En competencias nuevas, las imagenes se cargan al guardar.' : ''}
+            </div>
+            {[
+              { key: 'profile', label: 'Foto de perfil' },
+              { key: 'banner', label: 'Banner' },
+            ].map((asset) => {
+              const savedPreview = resolveCompetitionAsset(competition, asset.key)
+              const currentPreview = assetPreviews[asset.key] || savedPreview
+              const pendingFile = assetFiles[asset.key]
+              return (
+                <div key={asset.key} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '160px 1fr', gap: 12, marginBottom: 0 }}>
+                  <div style={{
+                    width: '100%',
+                    minHeight: asset.key === 'profile' ? 140 : 100,
+                    borderRadius: asset.key === 'profile' ? 18 : 14,
+                    border: '1px solid #252A33',
+                    background: currentPreview ? `#0D0F12 url("${currentPreview}") center/cover no-repeat` : 'rgba(13,15,18,0.72)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#7E8796',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    overflow: 'hidden',
+                    aspectRatio: asset.key === 'profile' ? '1 / 1' : '16 / 9',
+                  }}>
+                    {!currentPreview ? 'Sin imagen' : null}
+                  </div>
+                  <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+                    <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>{asset.label}</div>
+                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{COMPETITION_ASSET_RECOMMENDATIONS[asset.key]}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: '1px solid #252A33',
+                          background: 'rgba(13,15,18,0.72)',
+                          color: '#F5F7FA',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Seleccionar archivo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={e => setCompetitionAssetFile(asset.key, e.target.files?.[0] || null)}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      {(currentPreview || pendingFile) ? (
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          disabled={deletingAssetKey === asset.key}
+                          onClick={() => deleteCompetitionAsset(asset.key)}
+                        >
+                          {deletingAssetKey === asset.key ? 'Eliminando...' : 'Eliminar imagen'}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div style={{ color: pendingFile ? '#F5F7FA' : 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+                      {pendingFile?.name || (currentPreview ? 'Imagen cargada.' : 'Ningun archivo seleccionado.')}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
 
-        <div className="form-group">
-          <label>Imagen URL</label>
-          <input
-            value={form.imagen_url}
-            onChange={e => setForm(f => ({ ...f, imagen_url: e.target.value }))}
-            placeholder="https://..."
-          />
-          <span style={{ fontSize: 11, color: '#647063', marginTop: 4, display: 'block' }}>
-            Opcional. Se usa en la portada publica de FinalRep.
-          </span>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
-          <button type="button" className={form.activa ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, activa: f.activa ? 0 : 1 }))}>
-            {form.activa ? 'Publicada' : 'Borrador'}
-          </button>
-          <button type="button" className={form.allow_user_results ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, allow_user_results: f.allow_user_results ? 0 : 1 }))}>
-            {form.allow_user_results ? 'Resultados de usuario: SI' : 'Resultados de usuario: NO'}
-          </button>
-          <button type="button" className={form.show_individual_leaderboard ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, show_individual_leaderboard: f.show_individual_leaderboard ? 0 : 1 }))}>
-            {form.show_individual_leaderboard ? 'Leaderboard individual: SI' : 'Leaderboard individual: NO'}
-          </button>
-          <button type="button" className={form.show_team_all_by_category_option ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, show_team_all_by_category_option: f.show_team_all_by_category_option ? 0 : 1 }))}>
-            {form.show_team_all_by_category_option ? 'Equipos: Todos por categoria SI' : 'Equipos: Todos por categoria NO'}
-          </button>
-          <button type="button" className={form.show_team_all_global_option ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, show_team_all_global_option: f.show_team_all_global_option ? 0 : 1 }))}>
-            {form.show_team_all_global_option ? 'Equipos: Todos global SI' : 'Equipos: Todos global NO'}
-          </button>
-          <button type="button" className={form.enrollment_open ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 }))}>
-            {form.enrollment_open ? 'Inscripciones abiertas' : 'Inscripciones cerradas'}
-          </button>
-          <button type="button" className={form.scoring_mode === 'lowest_wins' ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, scoring_mode: f.scoring_mode === 'lowest_wins' ? 'highest_wins' : 'lowest_wins' }))}>
-            {form.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}
-          </button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
-          <div className="form-group">
-            <label>Inicio de inscripciones</label>
-            <input type="datetime-local" value={form.enrollment_start} onChange={e => setForm(f => ({ ...f, enrollment_start: e.target.value }))} />
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Configuracion</h4>
+            <div style={sectionHintStyle}>Activa o desactiva rapidamente las opciones clave de la competencia.</div>
           </div>
-          <div className="form-group">
-            <label>Cierre de inscripciones</label>
-            <input type="datetime-local" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            {renderToggleCard({
+              label: 'Competencia publicada',
+              hint: 'Define si esta competencia ya debe operar como activa dentro de la plataforma.',
+              enabled: !!form.activa,
+              enabledText: 'Activa',
+              disabledText: 'Inactiva',
+              onClick: () => setForm(f => ({ ...f, activa: f.activa ? 0 : 1 })),
+            })}
+            {renderToggleCard({
+              label: 'Inscripciones habilitadas',
+              hint: 'Permite que el boton "Quiero participar" abra el formulario y reciba solicitudes.',
+              enabled: !!form.enrollment_open,
+              enabledText: 'Abiertas',
+              disabledText: 'Cerradas',
+              onClick: () => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 })),
+            })}
+            {renderToggleCard({
+              label: 'Carga de resultados por usuario',
+              hint: 'Permite que los participantes carguen sus propios resultados cuando aplique.',
+              enabled: !!form.allow_user_results,
+              enabledText: 'Permitida',
+              disabledText: 'Bloqueada',
+              onClick: () => setForm(f => ({ ...f, allow_user_results: f.allow_user_results ? 0 : 1 })),
+            })}
+            {renderToggleCard({
+              label: 'Leaderboard individual visible',
+              hint: 'Muestra la tabla individual de participantes en la experiencia publica.',
+              enabled: !!form.show_individual_leaderboard,
+              enabledText: 'Visible',
+              disabledText: 'Oculto',
+              onClick: () => setForm(f => ({ ...f, show_individual_leaderboard: f.show_individual_leaderboard ? 0 : 1 })),
+            })}
+            {renderToggleCard({
+              label: 'Equipos por categoria',
+              hint: 'Expone la opcion para ver todos los equipos agrupados por categoria.',
+              enabled: !!form.show_team_all_by_category_option,
+              enabledText: 'Visible',
+              disabledText: 'Oculto',
+              onClick: () => setForm(f => ({ ...f, show_team_all_by_category_option: f.show_team_all_by_category_option ? 0 : 1 })),
+            })}
+            {renderToggleCard({
+              label: 'Equipos globales',
+              hint: 'Expone la opcion para ver todos los equipos sin filtrar por categoria.',
+              enabled: !!form.show_team_all_global_option,
+              enabledText: 'Visible',
+              disabledText: 'Oculto',
+              onClick: () => setForm(f => ({ ...f, show_team_all_global_option: f.show_team_all_global_option ? 0 : 1 })),
+            })}
+            <button type="button" className={form.scoring_mode === 'lowest_wins' ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, scoring_mode: f.scoring_mode === 'lowest_wins' ? 'highest_wins' : 'lowest_wins' }))} style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+              {form.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}
+            </button>
           </div>
         </div>
 
-        <div style={{ borderTop: '1px solid #222', paddingTop: 14, marginTop: 6 }}>
-          <h4 style={{ margin: '0 0 10px', fontSize: 14 }}>Categorias</h4>
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Redes y contacto</h4>
+            <div style={sectionHintStyle}>Agrega links publicos de Instagram, TikTok, Facebook, WhatsApp o cualquier canal oficial de la competencia.</div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {socialLinks.map((item, idx) => (
+              <div key={item.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
+                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.8fr 1.2fr auto', gap: 8 }}>
+                    <select value={item.platform || 'instagram'} onChange={e => updateSocialLink(item.id, 'platform', e.target.value)}>
+                      {SOCIAL_PLATFORM_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <input value={item.url} onChange={e => updateSocialLink(item.id, 'url', e.target.value)} placeholder="https://..." />
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removeSocialLink(item.id)}>Eliminar</button>
+                  </div>
+                  {item.platform === 'other' ? (
+                    <input value={item.custom_label || ''} onChange={e => updateSocialLink(item.id, 'custom_label', e.target.value)} placeholder="Nombre de la red o canal" />
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary btn-sm" onClick={addSocialLink}>
+              + Agregar red social
+            </button>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Ventana de inscripcion</h4>
+            <div style={sectionHintStyle}>Controla la logica de inscripcion y las fechas base de la competencia.</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Inicio de inscripciones</label>
+              <input type="date" value={form.enrollment_start} onChange={e => setForm(f => ({ ...f, enrollment_start: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Cierre de inscripciones</label>
+              <input type="date" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
+            </div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Inicio de competencia</label>
+              <input type="date" value={form.competition_start} onChange={e => setForm(f => ({ ...f, competition_start: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Fin de competencia</label>
+              <input type="date" value={form.competition_end} onChange={e => setForm(f => ({ ...f, competition_end: e.target.value }))} />
+            </div>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Fechas visibles</h4>
+            <div style={sectionHintStyle}>Agrega hitos configurables para mostrar en portada: apertura, cierre, dia 1, final, briefing o cualquier otra fecha.</div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {scheduleItems.map((item, idx) => (
+              <div key={item.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
+                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 8 }}>
+                    <input value={item.label} onChange={e => updateScheduleItem(item.id, 'label', e.target.value)} placeholder="Ej: Inscripciones abiertas, Dia 1, Final..." />
+                    <select value={item.kind} onChange={e => updateScheduleItem(item.id, 'kind', e.target.value)}>
+                      <option value="custom">Personalizada</option>
+                      <option value="enrollment_start">Apertura inscripciones</option>
+                      <option value="enrollment_end">Cierre inscripciones</option>
+                      <option value="competition_start">Inicio competencia</option>
+                      <option value="competition_end">Fin competencia</option>
+                      <option value="competition_day">Dia de competencia</option>
+                    </select>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    <input type="date" value={item.start_at} onChange={e => updateScheduleItem(item.id, 'start_at', e.target.value)} />
+                    <input type="date" value={item.end_at} onChange={e => updateScheduleItem(item.id, 'end_at', e.target.value)} />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
+                    <input value={item.note} onChange={e => updateScheduleItem(item.id, 'note', e.target.value)} placeholder="Nota opcional. Ej: Clasificatorio online o puertas abiertas 7:00 am" />
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removeScheduleItem(item.id)}>Eliminar</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary btn-sm" onClick={addScheduleItem}>
+              + Agregar fecha
+            </button>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Mensaje de confirmacion</h4>
+            <div style={sectionHintStyle}>Aparece arriba del formulario de participacion. Puedes usarlo para explicar pagos, requisitos o instrucciones.</div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Texto informativo</label>
+            <textarea
+              value={form.enrollment_intro_text}
+              onChange={e => setForm(f => ({ ...f, enrollment_intro_text: e.target.value }))}
+              rows={4}
+              placeholder="Ej: Realiza el pago antes de confirmar y adjunta el comprobante en la ultima pregunta."
+            />
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Metodos de pago</h4>
+            <div style={sectionHintStyle}>Estos datos se muestran en el modal de confirmacion para que el participante sepa a donde consignar.</div>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {paymentMethods.map((method, idx) => (
+              <div key={method.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
+                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  <input value={method.label} onChange={e => updatePaymentMethod(method.id, 'label', e.target.value)} placeholder="Nombre del metodo. Ej: Bancolombia ahorro" />
+                  <input value={method.account_name} onChange={e => updatePaymentMethod(method.id, 'account_name', e.target.value)} placeholder="Titular de la cuenta" />
+                  <input value={method.account_number} onChange={e => updatePaymentMethod(method.id, 'account_number', e.target.value)} placeholder="Numero de cuenta" />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={method.notes} onChange={e => updatePaymentMethod(method.id, 'notes', e.target.value)} placeholder="Nota opcional" />
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removePaymentMethod(method.id)}>x</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!paymentMethods.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin metodos de pago configurados.</div>}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={addPaymentMethod}>+ Agregar metodo de pago</button>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Categorias</h4>
+            <div style={sectionHintStyle}>Crea las divisiones que se usaran al inscribir atletas o equipos.</div>
+          </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Ej: Elite, Open, Masters..." />
             <button type="button" className="btn-secondary btn-sm" onClick={addCategory}>Agregar</button>
           </div>
-          {cats.length === 0 && <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>Sin categorias</div>}
-          <div style={{ display: 'grid', gap: 6, marginBottom: 10 }}>
+          {cats.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin categorias</div>}
+          <div style={{ display: 'grid', gap: 6 }}>
             {cats.map((cat, idx) => (
-              <div key={cat.id} style={{ display: 'grid', gridTemplateColumns: '28px 1fr auto', gap: 8, alignItems: 'center' }}>
-                <span style={{ color: '#666', fontSize: 12 }}>{idx + 1}</span>
+              <div key={cat.id} style={{ ...listItemStyle, gridTemplateColumns: '28px 1fr auto' }}>
+                <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
                 <input value={cat.nombre} onChange={e => updateCategoryName(cat.id, e.target.value)} />
                 <button type="button" className="btn-danger btn-sm" onClick={() => removeCategory(cat.id)}>x</button>
               </div>
@@ -1027,8 +1946,39 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={{ borderTop: '1px solid #222', paddingTop: 14, marginTop: 6 }}>
-          <h4 style={{ margin: '0 0 10px', fontSize: 14 }}>Fases</h4>
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
+            <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen, por ejemplo un comprobante de pago.</div>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {questions.map((question, idx) => (
+              <div key={question.id} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '32px 1.2fr 0.9fr 1fr auto auto' }}>
+                <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
+                <input value={question.label} onChange={e => updateQuestion(question.id, 'label', e.target.value)} placeholder="Pregunta" />
+                <select value={question.field_type || 'text'} onChange={e => updateQuestion(question.id, 'field_type', e.target.value)}>
+                  <option value="text">Texto</option>
+                  <option value="image">Imagen</option>
+                </select>
+                <input value={question.placeholder} onChange={e => updateQuestion(question.id, 'placeholder', e.target.value)} placeholder={question.field_type === 'image' ? 'Ayuda opcional. Ej: Sube el comprobante legible' : 'Placeholder (opcional)'} />
+                <button type="button" className={question.required ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => updateQuestion(question.id, 'required', question.required ? 0 : 1)}>
+                  {question.required ? 'Obligatoria' : 'Opcional'}
+                </button>
+                <button type="button" className="btn-danger btn-sm" onClick={() => removeQuestion(question.id)}>x</button>
+              </div>
+            ))}
+            {!questions.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin preguntas configuradas.</div>}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={addQuestion}>+ Agregar pregunta</button>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Fases</h4>
+            <div style={sectionHintStyle}>Agrega las pruebas o etapas de la competencia con su metodo de medicion.</div>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
             <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Nombre de fase" />
             <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
@@ -1042,11 +1992,11 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
             <input value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion (opcional)" />
             <button type="button" className="btn-secondary btn-sm" onClick={addPhase}>Agregar</button>
           </div>
-          {phases.length === 0 && <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>Sin fases</div>}
+          {phases.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin fases</div>}
           <div style={{ display: 'grid', gap: 6 }}>
             {phases.map((phase, idx) => (
-              <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '28px 2fr 1fr 1fr 2fr auto', gap: 8, alignItems: 'center' }}>
-                <span style={{ color: '#666', fontSize: 12 }}>{idx + 1}</span>
+              <div key={phase.id} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '28px 2fr 1fr 1fr 2fr auto' }}>
+                <span style={{ color: '#ff6b00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
                 <input value={phase.nombre} onChange={e => updatePhase(phase.id, 'nombre', e.target.value)} />
                 <select value={normalizeMeasurementMethod(phase.measurement_method, phase.tipo)} onChange={e => updatePhase(phase.id, 'measurement_method', e.target.value)}>
                   {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
@@ -1065,8 +2015,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="btn-primary" disabled={saving}>
-            {saving ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear competencia'}
+          <button type="submit" className="btn-primary" disabled={saving || uploadingAssets}>
+            {(saving || uploadingAssets) ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear competencia'}
           </button>
         </div>
       </form>
@@ -3223,20 +4173,52 @@ function CompetitionsTab() {
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [catsComp, setCatsComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
+  const [pendingCounts, setPendingCounts] = useState({})
   const [selectedCompetition, setSelectedCompetition] = useState(null)
   const [selectedTab, setSelectedTab] = useState('details')
   const [selectedParticipants, setSelectedParticipants] = useState([])
+  const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+
+  const syncCompetitionParticipants = async (competitionId) => {
+    const res = await api.get(`/competitions/${competitionId}/participants`)
+    const items = res.data || []
+    setEnrollCounts(prev => ({ ...prev, [competitionId]: items.filter(p => p.estado === 'confirmado').length }))
+    setPendingCounts(prev => ({ ...prev, [competitionId]: items.filter(p => p.estado === 'pendiente').length }))
+    return items
+  }
 
   const load = () => api.get('/competitions').then(r => {
     setCompetitions(r.data)
     r.data.forEach(c => {
-      api.get(`/competitions/${c.id}/participants`).then(res =>
-        setEnrollCounts(prev => ({ ...prev, [c.id]: res.data.length }))
-      )
+      syncCompetitionParticipants(c.id).catch(() => {})
     })
   })
   useEffect(() => { load() }, [])
+  useEffect(() => {
+    let active = true
+    const refresh = () => {
+      if (!active || typeof document === 'undefined' && typeof window === 'undefined') return
+      if (typeof document !== 'undefined' && document.hidden) return
+      load().catch(() => {})
+      if (selectedCompetition?.id) {
+        refreshSelectedParticipants().catch(() => {})
+      }
+    }
+    const intervalId = setInterval(refresh, 10000)
+    const handleFocus = () => refresh()
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && !document.hidden) refresh()
+    }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      active = false
+      clearInterval(intervalId)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [selectedCompetition?.id])
 
   const deleteCompetition = async (comp) => {
     if (!confirm(`Eliminar competencia "${comp.nombre}"? Esta accion no se puede deshacer.`)) return
@@ -3256,8 +4238,8 @@ function CompetitionsTab() {
     setSelectedCompetition(comp)
     setSelectedTab('details')
     try {
-      const res = await api.get(`/competitions/${comp.id}/participants`)
-      setSelectedParticipants(res.data || [])
+      const items = await syncCompetitionParticipants(comp.id)
+      setSelectedParticipants(items)
     } catch {
       setSelectedParticipants([])
     }
@@ -3266,9 +4248,8 @@ function CompetitionsTab() {
   const refreshSelectedParticipants = async () => {
     if (!selectedCompetition) return
     try {
-      const res = await api.get(`/competitions/${selectedCompetition.id}/participants`)
-      setSelectedParticipants(res.data || [])
-      setEnrollCounts(prev => ({ ...prev, [selectedCompetition.id]: (res.data || []).length }))
+      const items = await syncCompetitionParticipants(selectedCompetition.id)
+      setSelectedParticipants(items)
     } catch {
       setSelectedParticipants([])
     }
@@ -3280,13 +4261,37 @@ function CompetitionsTab() {
     }
   }, [selectedCompetition?.id])
   useEffect(() => {
+    if (!selectedCompetition?.id) return undefined
+    const id = setInterval(() => {
+      refreshSelectedParticipants()
+    }, 15000)
+    return () => clearInterval(id)
+  }, [selectedCompetition?.id])
+  useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  const competitionCardStyle = {
+    padding: 16,
+    display: 'grid',
+    gap: 12,
+    borderRadius: 18,
+    border: '1px solid #252A33',
+    background: 'linear-gradient(135deg, rgba(255,107,0,0.10), rgba(23,27,33,0.96) 42%, rgba(0,194,168,0.06) 100%)',
+    boxShadow: '0 18px 40px rgba(0,0,0,0.22)',
+  }
+  const statCardStyle = {
+    border: '1px solid #252A33',
+    borderRadius: 12,
+    padding: '10px 12px',
+    background: 'rgba(13,15,18,0.72)',
+  }
+
   return (
     <div>
+      {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
       {!selectedCompetition && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -3298,37 +4303,56 @@ function CompetitionsTab() {
           {msg && <div className={`alert alert-${msg.type}`} style={{ marginBottom: 16 }}>{msg.text}</div>}
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-            {competitions.map(c => (
-              <div key={c.id} className="card" style={{ padding: 14, display: 'grid', gap: 10 }}>
+            {competitions.map(c => {
+              const pendingCount = pendingCounts[c.id] || 0
+              return (
+              <div key={c.id} className="card" style={competitionCardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{c.nombre}</div>
-                    <div style={{ color: '#647063', fontSize: 12, marginTop: 2 }}>{c.descripcion || 'Sin descripcion'}</div>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--oa-text)' }}>{c.nombre}</div>
+                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{c.descripcion || 'Sin descripcion'}</div>
+                    {pendingCount > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <span className="badge" style={{ background: 'rgba(245,158,11,0.14)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)' }}>
+                          {pendingCount} pendiente{pendingCount === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <span className={c.activa ? 'badge badge-masters' : 'badge badge-default'}>
+                  <span
+                    className="badge"
+                    style={c.activa
+                      ? { background: 'rgba(255,107,0,0.14)', color: '#ff9a3d', border: '1px solid rgba(255,107,0,0.35)' }
+                      : { background: 'rgba(170,178,192,0.12)', color: 'var(--oa-text-secondary)', border: '1px solid rgba(170,178,192,0.25)' }}
+                  >
                     {c.activa ? 'Activa' : 'Inactiva'}
                   </span>
                 </div>
 
                 <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div style={{ border: '1px solid #d5ddd3', borderRadius: 8, padding: '8px 10px', background: '#fff' }}>
-                    <div style={{ color: '#647063', fontSize: 11, marginBottom: 2 }}>Resultados de usuario</div>
-                    <div style={{ fontWeight: 600 }}>{c.allow_user_results ? 'Habilitado' : 'Deshabilitado'}</div>
+                  <div style={statCardStyle}>
+                    <div style={{ color: '#00C2A8', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Resultados</div>
+                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{c.allow_user_results ? 'Habilitado' : 'Deshabilitado'}</div>
                   </div>
-                  <div style={{ border: '1px solid #d5ddd3', borderRadius: 8, padding: '8px 10px', background: '#fff' }}>
-                    <div style={{ color: '#647063', fontSize: 11, marginBottom: 2 }}>Inscripciones</div>
-                    <div style={{ fontWeight: 600 }}>{enrollCounts[c.id] ?? '-'} registrados</div>
+                  <div style={statCardStyle}>
+                    <div style={{ color: '#FF6B00', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscripciones</div>
+                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{enrollCounts[c.id] ?? 0} confirmados</div>
+                    <div style={{ fontSize: 11, color: pendingCount > 0 ? '#fbbf24' : 'var(--oa-text-secondary)', marginTop: 4 }}>
+                      {pendingCount} pendientes
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button className="btn-primary btn-sm" onClick={() => openCompetition(c)}>Gestionar</button>
-                  <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(c)}>Inscripciones</button>
+                  <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(c)}>
+                    {pendingCount > 0 ? `Inscripciones (${pendingCount})` : 'Inscripciones'}
+                  </button>
                   <button className="btn-secondary btn-sm" onClick={() => setEditor({ mode: 'edit', competition: c })}>Editar</button>
                   <button className="btn-danger btn-sm" onClick={() => deleteCompetition(c)}>Eliminar</button>
                 </div>
               </div>
-            ))}
+            )})}
             {!competitions.length && (
               <div className="card" style={{ color: '#647063', textAlign: 'center', padding: 24 }}>
                 No hay competencias
@@ -3390,6 +4414,7 @@ function CompetitionsTab() {
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 6 : 10, fontSize: isMobile ? 13 : 14 }}>
                 <div><b>Descripcion:</b> {selectedCompetition.descripcion || '-'}</div>
                 <div><b>Inscritos:</b> {enrollCounts[selectedCompetition.id] ?? 0}</div>
+                <div><b>Solicitudes pendientes:</b> {pendingCounts[selectedCompetition.id] ?? 0}</div>
                 <div><b>Estado:</b> {selectedCompetition.activa ? 'Activa' : 'Inactiva'}</div>
                 <div><b>Modo de puntuacion:</b> {selectedCompetition.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}</div>
                 <div><b>Resultados usuario:</b> {selectedCompetition.allow_user_results ? 'Si' : 'No'}</div>
@@ -3426,12 +4451,13 @@ function CompetitionsTab() {
                         <span>Categoria: {p.categoria_competencia || '-'}</span>
                         <span style={{ color: p.estado === 'activo' ? '#284017' : '#8a9489' }}>Estado: {p.estado}</span>
                       </div>
+                      <EnrollmentAnswersBlock raw={p.enrollment_answers} compact onPreviewImage={setPreviewImage} />
                     </div>
                   ))}
                 </div>
               ) : (
                 <table>
-                  <thead><tr><th>Participante</th><th>Cedula</th><th>Categoria</th><th>Estado</th></tr></thead>
+                  <thead><tr><th>Participante</th><th>Cedula</th><th>Categoria</th><th>Estado</th><th>Respuestas</th></tr></thead>
                   <tbody>
                     {selectedParticipants.map(p => (
                       <tr key={p.id}>
@@ -3439,9 +4465,14 @@ function CompetitionsTab() {
                         <td>{p.cedula}</td>
                         <td>{p.categoria_competencia || '-'}</td>
                         <td>{p.estado}</td>
+                        <td>
+                          {parseEnrollmentAnswers(p.enrollment_answers).length
+                            ? parseEnrollmentAnswers(p.enrollment_answers).map(item => `${item.question_label || 'Respuesta'}: ${item.question_type === 'image' && item.answer ? 'Imagen adjunta' : (item.answer || '-')}`).join(' | ')
+                            : '-'}
+                        </td>
                       </tr>
                     ))}
-                    {!selectedParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
+                    {!selectedParticipants.length && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
                   </tbody>
                 </table>
               )}
@@ -3482,12 +4513,11 @@ function CompetitionsTab() {
           competition={enrollingComp}
           onClose={() => setEnrollingComp(null)}
           onSaved={() => {
-            api.get(`/competitions/${enrollingComp.id}/participants`).then(res => {
-              setEnrollCounts(prev => ({ ...prev, [enrollingComp.id]: res.data.length }))
+            syncCompetitionParticipants(enrollingComp.id).then(items => {
               if (selectedCompetition?.id === enrollingComp.id) {
-                setSelectedParticipants(res.data || [])
+                setSelectedParticipants(items)
               }
-            })
+            }).catch(() => {})
           }}
         />
       )}
@@ -4059,7 +5089,7 @@ function TeamsTab() {
           <option value="">Seleccionar competencia...</option>
           {competitions.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
-        {filterComp && <span style={{ fontSize: 12, color: '#647063' }}>{participantPool.length} inscriptos confirmados</span>}
+        {filterComp && <span style={{ fontSize: 12, color: '#647063' }}>{participantPool.length} inscritos confirmados</span>}
         <span style={{ fontSize: 12, color: '#647063' }}>Max. {MAX_TEAM_SIZE} miembros por equipo</span>
       </div>
 
@@ -4198,8 +5228,7 @@ function TeamsTab() {
 
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const navigate = useNavigate()
-  const { role, signOut } = useAuth()
+  const { role } = useAuth()
   const isOrganizer = role === 'organizer'
   const [mainTab, setMainTab] = useState('competitions')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
@@ -4210,14 +5239,8 @@ export default function AdminDashboard() {
     return () => window.removeEventListener('resize', h)
   }, [])
 
-  const logout = () => {
-    signOut()
-    navigate('/login')
-  }
-
   return (
     <div className="app-shell">
-      <NavBar onLogout={logout} title={role === 'organizer' ? 'Organizador' : 'Admin'} />
       <div className="app-container" style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
         <div className="tabs" style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
           <button className={`tab ${mainTab === 'competitions' ? 'active' : ''}`} onClick={() => setMainTab('competitions')} style={{ flexShrink: 0 }}>

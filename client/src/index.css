@@ -33,6 +33,9 @@ body {
 html, #root {
   max-width: 100%;
   overflow-x: hidden;
+  background: var(--oa-bg);
+  color: var(--oa-text);
+  min-height: 100vh;
 }
 
 a { color: inherit; text-decoration: none; }
