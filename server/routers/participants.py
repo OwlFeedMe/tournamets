@@ -1,15 +1,19 @@
 import io
+import uuid
 import unicodedata
+from datetime import date
+from pathlib import Path
 from typing import List, Optional
 
 import openpyxl
 import pandas as pd
+from PIL import Image, UnidentifiedImageError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import require_admin, require_auth
+from auth import get_effective_participant_id, is_end_user, require_admin, require_auth
 from database import get_session
 from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantSelfUpdate, CompetitionParticipant
 
@@ -43,13 +47,74 @@ def _read_df(content: bytes, filename: str) -> pd.DataFrame:
         raise ValueError("Formato no soportado. Use CSV o Excel (.xlsx/.xls)")
 
 router = APIRouter(prefix="/api/participants", tags=["participants"])
+PROFILE_PHOTO_DIR = Path(__file__).resolve().parents[1] / "uploads" / "profile_photos"
+PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+MAX_PROFILE_PHOTO_SIZE = 512
+
+
+def _sync_genero_fields(data: dict) -> dict:
+    genero = data.get("genero")
+    sexo = data.get("sexo")
+    if genero and not sexo:
+        data["sexo"] = genero
+    elif sexo and not genero:
+        data["genero"] = sexo
+    return data
+
+
+def _parse_optional_date(value) -> Optional[date]:
+    if value is None or pd.isna(value):
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    parsed = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.date()
+
+
+def _delete_local_profile_photo(photo_url: Optional[str]) -> None:
+    if not photo_url or not photo_url.startswith("/uploads/profile_photos/"):
+        return
+    target = PROFILE_PHOTO_DIR / photo_url.rsplit("/", 1)[-1]
+    try:
+        if target.exists():
+            target.unlink()
+    except OSError:
+        pass
+
+
+def _process_profile_photo(file: UploadFile, participant_id: int) -> str:
+    # TODO: migrate this local upload flow to S3-compatible object storage.
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "El archivo debe ser una imagen")
+
+    try:
+        raw = file.file.read()
+        image = Image.open(io.BytesIO(raw)).convert("RGB")
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(400, "No se pudo procesar la imagen")
+
+    width, height = image.size
+    crop_size = min(width, height)
+    left = int((width - crop_size) / 2)
+    top = int((height - crop_size) / 2)
+    image = image.crop((left, top, left + crop_size, top + crop_size))
+    image = image.resize((MAX_PROFILE_PHOTO_SIZE, MAX_PROFILE_PHOTO_SIZE), Image.Resampling.LANCZOS)
+
+    filename = f"participant_{participant_id}_{uuid.uuid4().hex}.jpg"
+    output_path = PROFILE_PHOTO_DIR / filename
+    image.save(output_path, format="JPEG", quality=84, optimize=True)
+    return f"/uploads/profile_photos/{filename}"
 
 
 @router.get("/me", response_model=Participant)
 def get_my_profile(session: Session = Depends(get_session), user=Depends(require_auth)):
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes")
-    p = session.get(Participant, int(user["sub"]))
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
+    p = session.get(Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
     return p
@@ -61,13 +126,14 @@ def update_my_profile(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes")
-    p = session.get(Participant, int(user["sub"]))
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
+    p = session.get(Participant, participant_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in _sync_genero_fields(body.model_dump(exclude_unset=True)).items():
         setattr(p, field, value)
 
     session.add(p)
@@ -78,6 +144,29 @@ def update_my_profile(
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "Ya existe un participante con esa cédula")
+
+
+@router.post("/me/photo", response_model=Participant)
+def upload_my_profile_photo(
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
+
+    participant = session.get(Participant, participant_id)
+    if not participant:
+        raise HTTPException(404, "Participante no encontrado")
+
+    previous_photo = participant.profile_photo_url
+    participant.profile_photo_url = _process_profile_photo(file, participant_id)
+    session.add(participant)
+    session.commit()
+    session.refresh(participant)
+    _delete_local_profile_photo(previous_photo)
+    return participant
 
 
 @router.get("", response_model=List[Participant])
@@ -97,7 +186,7 @@ def get_participant(participant_id: int, session: Session = Depends(get_session)
 
 @router.post("", response_model=Participant, status_code=201)
 def create_participant(body: ParticipantCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
-    participant = Participant.model_validate(body)
+    participant = Participant.model_validate(_sync_genero_fields(body.model_dump()))
     session.add(participant)
     try:
         session.commit()
@@ -115,7 +204,7 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in _sync_genero_fields(body.model_dump(exclude_unset=True)).items():
         setattr(p, field, value)
 
     session.add(p)
@@ -143,9 +232,12 @@ def download_template(_=Depends(require_admin)):
     ws = wb.active
     ws.title = "Participantes"
 
-    headers = ["cedula", "nombre", "apellido", "email", "celular", "sexo", "categoria"]
+    headers = [
+        "cedula", "nombre", "apellido", "email", "celular", "genero",
+        "categoria", "box", "talla_camiseta", "fecha_nacimiento", "ciudad_pais",
+    ]
     ws.append(headers)
-    ws.append(["12345678", "María", "González", "maria@email.com", "3001234567", "F", "Rx"])
+    ws.append(["12345678", "María", "González", "maria@email.com", "3001234567", "F", "Rx", "FinalRep North", "M", "1995-06-15", "Bogota/Colombia"])
 
     # Bold header row
     from openpyxl.styles import Font
@@ -215,8 +307,13 @@ def import_participants(
             apellido=apellido,
             email=str(row.get("email",     "") or "").strip() or None,
             celular=str(row.get("celular", "") or "").strip() or None,
-            sexo=str(row.get("sexo",       "") or "").strip() or None,
+            sexo=str(row.get("sexo",       "") or row.get("genero", "") or "").strip() or None,
+            genero=str(row.get("genero",   "") or row.get("sexo",   "") or "").strip() or None,
             categoria=str(row.get("categoria", "") or "").strip() or None,
+            box=str(row.get("box", "") or "").strip() or None,
+            talla_camiseta=str(row.get("talla_camiseta", "") or row.get("talla", "") or "").strip() or None,
+            fecha_nacimiento=_parse_optional_date(row.get("fecha_nacimiento")),
+            ciudad_pais=str(row.get("ciudad_pais", "") or row.get("ciudad/pais", "") or "").strip() or None,
             estado=str(row.get("estado",   "activo") or "activo").strip(),
         )
         try:

@@ -4,23 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from auth import require_admin, get_current_user, require_auth
+from access import require_competition_access
+from auth import get_current_user, get_effective_participant_id, is_end_user, require_admin, require_auth, require_staff
 from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant,
-    EnrollBody, EnrollEntry, SelfEnrollRequest, EnrollStatusUpdate,
+    EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
 )
 
 router = APIRouter(tags=["enrollments"])
 
 
-# ── Admin: list enrolled (all estados) ────────────────────────────────────────
-
 @router.get("/api/competitions/{competition_id}/participants")
-def list_enrolled(competition_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
-    comp = session.get(Competition, competition_id)
-    if not comp:
-        raise HTTPException(404, "Competencia no encontrada")
+def list_enrolled(competition_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
 
     rows = session.exec(
         select(CompetitionParticipant, Participant)
@@ -35,16 +32,15 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
     ]
 
 
-# ── Admin: bulk set enrollments (confirms all) ─────────────────────────────────
-
 @router.post("/api/competitions/{competition_id}/participants", status_code=201)
-def set_enrolled(competition_id: int, body: EnrollBody,
-                 session: Session = Depends(get_session), _=Depends(require_admin)):
-    comp = session.get(Competition, competition_id)
-    if not comp:
-        raise HTTPException(404, "Competencia no encontrada")
+def set_enrolled(
+    competition_id: int,
+    body: EnrollBody,
+    session: Session = Depends(get_session),
+    user=Depends(require_admin),
+):
+    require_competition_access(session, competition_id, user)
 
-    # Remove only confirmed enrollments (preserve pending/rejected requests)
     existing_confirmed = session.exec(
         select(CompetitionParticipant)
         .where(CompetitionParticipant.competition_id == competition_id)
@@ -57,7 +53,6 @@ def set_enrolled(competition_id: int, body: EnrollBody,
     for entry in body.participants:
         if not session.get(Participant, entry.participant_id):
             raise HTTPException(404, f"Participante {entry.participant_id} no encontrado")
-        # If a pending/rejected record exists, promote it to confirmed
         existing = session.get(CompetitionParticipant, (competition_id, entry.participant_id))
         if existing:
             existing.estado = "confirmado"
@@ -75,16 +70,15 @@ def set_enrolled(competition_id: int, body: EnrollBody,
     return {"enrolled": len(body.participants)}
 
 
-# ── Admin: approve / reject a single enrollment ────────────────────────────────
-
 @router.put("/api/competitions/{competition_id}/participants/{participant_id}/status")
 def update_enrollment_status(
     competition_id: int,
     participant_id: int,
     body: EnrollStatusUpdate,
     session: Session = Depends(get_session),
-    _=Depends(require_admin),
+    user=Depends(require_staff),
 ):
+    require_competition_access(session, competition_id, user)
     if body.estado not in ("confirmado", "rechazado", "pendiente"):
         raise HTTPException(400, "Estado inválido")
     cp = session.get(CompetitionParticipant, (competition_id, participant_id))
@@ -96,18 +90,19 @@ def update_enrollment_status(
     return {"ok": True, "estado": cp.estado}
 
 
-# ── Admin: unenroll one ────────────────────────────────────────────────────────
-
 @router.delete("/api/competitions/{competition_id}/participants/{participant_id}", status_code=204)
-def unenroll(competition_id: int, participant_id: int,
-             session: Session = Depends(get_session), _=Depends(require_admin)):
+def unenroll(
+    competition_id: int,
+    participant_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
     cp = session.get(CompetitionParticipant, (competition_id, participant_id))
     if cp:
         session.delete(cp)
         session.commit()
 
-
-# ── Participant: self-enroll (creates pendiente) ───────────────────────────────
 
 @router.post("/api/competitions/{competition_id}/enroll", status_code=201)
 def self_enroll(
@@ -116,7 +111,9 @@ def self_enroll(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = int(user["sub"])
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
 
     comp = session.get(Competition, competition_id)
     if not comp:
@@ -144,27 +141,25 @@ def self_enroll(
     return {"ok": True, "estado": "pendiente"}
 
 
-# ── Participant: cancel own pending enrollment ─────────────────────────────────
-
 @router.delete("/api/competitions/{competition_id}/enroll", status_code=204)
 def cancel_self_enroll(
     competition_id: int,
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = int(user["sub"])
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
     cp = session.get(CompetitionParticipant, (competition_id, participant_id))
     if cp and cp.estado == "pendiente":
         session.delete(cp)
         session.commit()
 
 
-# ── Public: confirmed participant list (for catalog / who's enrolled) ──────────
-
 @router.get("/api/competitions/{competition_id}/enrolled-list")
 def enrolled_list(competition_id: int, session: Session = Depends(get_session)):
     rows = session.execute(text("""
-        SELECT p.nombre, p.apellido, p.sexo, cp.categoria
+        SELECT p.nombre, p.apellido, COALESCE(p.genero, p.sexo) AS sexo, cp.categoria
         FROM competition_participants cp
         JOIN participants p ON p.id = cp.participant_id
         WHERE cp.competition_id = :cid AND cp.estado = 'confirmado'
@@ -173,14 +168,14 @@ def enrolled_list(competition_id: int, session: Session = Depends(get_session)):
     return [dict(r) for r in rows]
 
 
-# ── Participant: my competitions (with estado) ─────────────────────────────────
-
 @router.get("/api/participants/{participant_id}/competitions")
-def participant_competitions(participant_id: int,
-                             session: Session = Depends(get_session),
-                             user=Depends(get_current_user)):
-    user_sub = int(user["sub"]) if user.get("sub") is not None else None
-    if user["role"] == "participant" and user_sub != participant_id:
+def participant_competitions(
+    participant_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    user_sub = get_effective_participant_id(user)
+    if is_end_user(user) and user_sub != participant_id:
         raise HTTPException(403, "Sin permiso")
 
     rows = session.execute(text("""

@@ -9,7 +9,8 @@ from pydantic import BaseModel
 import qrcode
 from sqlmodel import Session, select
 
-from auth import require_admin
+from access import get_owned_competition_ids, require_competition_access
+from auth import get_current_user_optional, require_staff
 from database import get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 
@@ -60,18 +61,24 @@ def _leaderboard_public_url(competition_id: int) -> str:
 
 
 @router.get("", response_model=List[Competition])
-def list_competitions(session: Session = Depends(get_session)):
-    return session.exec(
-        select(Competition).order_by(Competition.created_at.desc())
-    ).all()
+def list_competitions(
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    query = select(Competition).order_by(Competition.created_at.desc())
+    owned_ids = get_owned_competition_ids(session, user)
+    if user and user.get("role") == "organizer":
+        query = query.where(Competition.id.in_(owned_ids))
+    return session.exec(query).all()
 
 
 @router.get("/{competition_id}", response_model=Competition)
-def get_competition(competition_id: int, session: Session = Depends(get_session)):
-    c = session.get(Competition, competition_id)
-    if not c:
-        raise HTTPException(404, "Competencia no encontrada")
-    return c
+def get_competition(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    return require_competition_access(session, competition_id, user)
 
 
 @router.get("/{competition_id}/leaderboard-qr")
@@ -93,11 +100,13 @@ def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_sessi
 
 
 @router.post("", response_model=Competition, status_code=201)
-def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
+def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
     payload = body.model_dump()
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     _validate_tv_settings(payload)
+    if user.get("role") == "organizer":
+        payload["organizer_user_id"] = user.get("app_user_id")
     competition = Competition.model_validate(payload)
     session.add(competition)
     session.commit()
@@ -107,14 +116,14 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
 
 @router.put("/{competition_id}", response_model=Competition)
 def update_competition(competition_id: int, body: CompetitionUpdate,
-                       session: Session = Depends(get_session), _=Depends(require_admin)):
-    c = session.get(Competition, competition_id)
-    if not c:
-        raise HTTPException(404, "Competencia no encontrada")
+                       session: Session = Depends(get_session), user=Depends(require_staff)):
+    c = require_competition_access(session, competition_id, user)
 
     data = body.model_dump(exclude_unset=True)
     if "scoring_mode" in data and data["scoring_mode"] not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
+    if user.get("role") != "admin":
+        data.pop("organizer_user_id", None)
     _validate_tv_settings(data)
     for field, value in data.items():
         setattr(c, field, value)
@@ -126,11 +135,10 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
 
 
 @router.delete("/{competition_id}", status_code=204)
-def delete_competition(competition_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
-    c = session.get(Competition, competition_id)
-    if c:
-        session.delete(c)
-        session.commit()
+def delete_competition(competition_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
+    c = require_competition_access(session, competition_id, user)
+    session.delete(c)
+    session.commit()
 
 
 # ── Timer ──────────────────────────────────────────────────────────────────────
@@ -170,10 +178,12 @@ def _compute_timer(c: Competition, now: Optional[datetime] = None) -> dict:
 
 
 @router.get("/{competition_id}/timer")
-def get_timer(competition_id: int, session: Session = Depends(get_session)):
-    c = session.get(Competition, competition_id)
-    if not c:
-        raise HTTPException(404, "Competencia no encontrada")
+def get_timer(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    c = require_competition_access(session, competition_id, user)
     return _compute_timer(c, now=datetime.now(timezone.utc))
 
 
@@ -190,11 +200,9 @@ def control_timer(
     competition_id: int,
     body: TimerActionBody,
     session: Session = Depends(get_session),
-    _=Depends(require_admin),
+    user=Depends(require_staff),
 ):
-    c = session.get(Competition, competition_id)
-    if not c:
-        raise HTTPException(404, "Competencia no encontrada")
+    c = require_competition_access(session, competition_id, user)
 
     now = datetime.now(timezone.utc)
 

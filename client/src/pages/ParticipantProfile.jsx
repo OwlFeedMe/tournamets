@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import api from '../api/axios'
+import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
+import { useAuth } from '../context/AuthContext'
 import {
-  Trophy, LogOut, ClipboardList, Eye, EyeOff, PlusCircle, Medal,
+  Trophy, ClipboardList, Eye, EyeOff, PlusCircle, Medal,
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog,
 } from 'lucide-react'
 
@@ -20,6 +21,45 @@ function formatDate(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
   return d.toLocaleString()
+}
+
+function formatBirthDate(value) {
+  if (!value) return '-'
+  const d = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleDateString()
+}
+
+function resolveProfilePhoto(url) {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url
+  }
+  return url
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = reject
+    image.src = src
+  })
+}
+
+function centerCropToBlob(image, zoom = 1, outputSize = 512) {
+  const canvas = document.createElement('canvas')
+  canvas.width = outputSize
+  canvas.height = outputSize
+  const context = canvas.getContext('2d')
+  const minSide = Math.min(image.width, image.height)
+  const cropSize = minSide / Math.max(zoom, 1)
+  const sx = (image.width - cropSize) / 2
+  const sy = (image.height - cropSize) / 2
+  context.drawImage(image, sx, sy, cropSize, cropSize, 0, 0, outputSize, outputSize)
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.84)
+  })
 }
 
 function enrollmentWindow(competition) {
@@ -201,7 +241,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
         <div style={{
           padding: isMobile ? '16px 16px 12px' : '20px 24px 14px',
           borderBottom: '1px solid #e8ede7',
-          background: '#284017',
+          background: '#171B21',
           borderRadius: isMobile ? '16px 16px 0 0' : '14px 14px 0 0',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -232,8 +272,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             <div style={{ marginBottom: 18 }}>
               {/* Team header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Users size={15} color="#284017" />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#284017' }}>Tu equipo</span>
+                <Users size={15} color="#FF6B00" />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#FF6B00' }}>Tu equipo</span>
                 {isCaptain && (
                   <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 7px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <Crown size={10} /> CAPITAN
@@ -285,13 +325,13 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                       width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
                       background: m.is_captain ? '#fff3cd' : '#e8ede7',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#664d03' : '#284017',
+                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#664d03' : '#FF6B00',
                     }}>
                       {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
-                      {m.id === participantId && <span style={{ fontSize: 11, color: '#284017', marginLeft: 6 }}>(tú)</span>}
+                      {m.id === participantId && <span style={{ fontSize: 11, color: '#FF6B00', marginLeft: 6 }}>(tú)</span>}
                     </div>
                     {m.is_captain ? (
                       <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
@@ -315,7 +355,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
               {/* Captain: invite section */}
               {isCaptain && (
                 <div style={{ background: '#f8faf7', borderRadius: 10, padding: '12px 14px', border: '1px solid #d5ddd3' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#284017', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#FF6B00', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <UserPlus size={14} /> Invitar participante
                   </div>
                   <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
@@ -355,7 +395,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           {/* Results section */}
           {compResults.length > 0 && (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#284017', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#FF6B00', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trophy size={14} /> Tus resultados
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
@@ -368,12 +408,12 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
                         <>
-                          <div style={{ fontWeight: 800, color: '#284017', fontSize: 20 }}>#{r.posicion}</div>
+                          <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 20 }}>#{r.posicion}</div>
                           <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, color: '#284017', fontSize: 22 }}>{r.puntos}</div>
+                          <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 22 }}>{r.puntos}</div>
                           <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                         </>
                       )}
@@ -393,7 +433,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           {/* Leaderboard link */}
           <a
             href={`/leaderboard/${comp.id}`}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, padding: '12px', borderRadius: 10, border: '1px solid #d5ddd3', background: '#f8faf7', color: '#284017', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#FF6B00', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
           >
             <Medal size={16} /> Ver Leaderboard <ChevronRight size={14} />
           </a>
@@ -406,9 +446,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ParticipantProfile() {
-  const navigate = useNavigate()
-  const participantId = Number(localStorage.getItem('participant_id'))
-  const nombre = localStorage.getItem('nombre') || 'Participante'
+  const { participantId, displayName } = useAuth()
+  const nombre = displayName || 'Participante'
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [results, setResults] = useState([])
@@ -439,12 +478,79 @@ export default function ParticipantProfile() {
   const [editForm, setEditForm] = useState({})
   const [editMsg, setEditMsg] = useState(null)
   const [editBusy, setEditBusy] = useState(false)
+  const [photoMsg, setPhotoMsg] = useState(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const [photoEditorOpen, setPhotoEditorOpen] = useState(false)
+  const [photoDraftUrl, setPhotoDraftUrl] = useState('')
+  const [photoDraftImage, setPhotoDraftImage] = useState(null)
+  const [photoZoom, setPhotoZoom] = useState(1.15)
+  const displayGenero = myProfile?.genero || myProfile?.sexo || '-'
+  const [countries, setCountries] = useState([])
+  const [allCities, setAllCities] = useState([])
+  const photoInputRef = useRef(null)
+  const countryNameByCode = useMemo(() => Object.fromEntries(countries.map(c => [c.code, c.name])), [countries])
+  const countryCodeByName = useMemo(() => Object.fromEntries(countries.map(c => [c.name.toLowerCase(), c.code])), [countries])
+  const cityOptions = useMemo(() => {
+    const list = allCities
+    const query = (editForm.city || '').trim().toLowerCase()
+    if (!query) return list.slice(0, 150)
+    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
+  }, [allCities, editForm.city])
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
+
+  useEffect(() => {
+    return () => {
+      if (photoDraftUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(photoDraftUrl)
+      }
+    }
+  }, [photoDraftUrl])
+
+  useEffect(() => {
+    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile)
+    window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
+    if (!hasOverlay || typeof document === 'undefined') {
+      return () => {
+        window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+      }
+    }
+
+    const { body, documentElement } = document
+    const previousBodyOverflow = body.style.overflow
+    const previousBodyTouchAction = body.style.touchAction
+    const previousHtmlOverflow = documentElement.style.overflow
+    const previousHtmlOverscroll = documentElement.style.overscrollBehavior
+
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+    documentElement.style.overflow = 'hidden'
+    documentElement.style.overscrollBehavior = 'none'
+
+    return () => {
+      body.style.overflow = previousBodyOverflow
+      body.style.touchAction = previousBodyTouchAction
+      documentElement.style.overflow = previousHtmlOverflow
+      documentElement.style.overscrollBehavior = previousHtmlOverscroll
+      window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+    }
+  }, [selectedComp, photoEditorOpen, showEditProfile])
+
+  useEffect(() => {
+    loadCountries().then(setCountries).catch(() => setCountries([]))
+  }, [])
+
+  useEffect(() => {
+    if (!editForm.countryCode) {
+      setAllCities([])
+      return
+    }
+    loadCitiesByCountry(editForm.countryCode).then(setAllCities).catch(() => setAllCities([]))
+  }, [editForm.countryCode])
 
   const loadResults = () => api.get('/results').then(r => setResults(r.data))
   const loadCompetitions = async () => { const res = await api.get('/competitions'); setCompetitions(res.data) }
@@ -465,11 +571,29 @@ export default function ParticipantProfile() {
         cedula: res.data.cedula || '',
         email: res.data.email || '',
         celular: res.data.celular || '',
-        sexo: res.data.sexo || '',
+        genero: res.data.genero || res.data.sexo || '',
         categoria: res.data.categoria || '',
+        box: res.data.box || '',
+        talla_camiseta: res.data.talla_camiseta || '',
+        fecha_nacimiento: res.data.fecha_nacimiento || '',
+        ciudad_pais: res.data.ciudad_pais || '',
+        ...(() => {
+          const parsed = parseCityCountry(res.data.ciudad_pais || '')
+          return { city: parsed.city }
+        })(),
       })
     } catch { /* silent */ }
   }
+
+  useEffect(() => {
+    if (!countries.length || !editForm.ciudad_pais || editForm.countryCode) return
+    const parsed = parseCityCountry(editForm.ciudad_pais)
+    if (!parsed.countryName) return
+    const countryCode = countryCodeByName[parsed.countryName.toLowerCase()] || ''
+    if (countryCode) {
+      setEditForm(f => ({ ...f, countryCode }))
+    }
+  }, [countries, countryCodeByName, editForm.ciudad_pais, editForm.countryCode])
 
   useEffect(() => {
     if (!participantId) return
@@ -544,9 +668,24 @@ export default function ParticipantProfile() {
     setEditMsg(null)
     const payload = {}
     for (const [k, v] of Object.entries(editForm)) {
-      const trimmed = v.trim()
+      if (['city', 'countryCode', 'ciudad_pais'].includes(k)) continue
+      const trimmed = typeof v === 'string' ? v.trim() : v
       if (trimmed) payload[k] = trimmed
     }
+    const city = (editForm.city || '').trim()
+    const countryCode = (editForm.countryCode || '').trim()
+    const countryName = countryNameByCode[countryCode] || ''
+    if ((city || countryCode) && !(city && countryCode)) {
+      setEditBusy(false)
+      setEditMsg({ type: 'error', text: 'Selecciona pais y ciudad validos' })
+      return
+    }
+    if (city && countryCode && !allCities.some(candidate => candidate.toLowerCase() === city.toLowerCase())) {
+      setEditBusy(false)
+      setEditMsg({ type: 'error', text: 'La ciudad no pertenece al pais seleccionado' })
+      return
+    }
+    if (city && countryName) payload.ciudad_pais = buildCityCountry(city, countryName)
     try {
       const res = await api.patch('/participants/me', payload)
       setMyProfile(res.data)
@@ -557,6 +696,67 @@ export default function ParticipantProfile() {
       setEditMsg({ type: 'error', text: err.response?.data?.detail || 'Error al guardar' })
     } finally {
       setEditBusy(false)
+    }
+  }
+
+  const closePhotoEditor = useCallback(() => {
+    setPhotoEditorOpen(false)
+    setPhotoDraftImage(null)
+    setPhotoZoom(1.15)
+    if (photoDraftUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(photoDraftUrl)
+    }
+    setPhotoDraftUrl('')
+    if (photoInputRef.current) {
+      photoInputRef.current.value = ''
+    }
+  }, [photoDraftUrl])
+
+  const onSelectProfilePhoto = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setPhotoMsg({ type: 'error', text: 'Selecciona una imagen valida' })
+      return
+    }
+
+    try {
+      const url = URL.createObjectURL(file)
+      const image = await loadImageElement(url)
+      setPhotoMsg(null)
+      setPhotoDraftUrl((previous) => {
+        if (previous?.startsWith('blob:')) URL.revokeObjectURL(previous)
+        return url
+      })
+      setPhotoDraftImage(image)
+      setPhotoZoom(1.15)
+      setPhotoEditorOpen(true)
+    } catch {
+      setPhotoMsg({ type: 'error', text: 'No se pudo abrir la imagen' })
+    }
+  }
+
+  const saveProfilePhoto = async () => {
+    if (!photoDraftImage) return
+    setPhotoBusy(true)
+    setPhotoMsg(null)
+    try {
+      const blob = await centerCropToBlob(photoDraftImage, photoZoom, 512)
+      if (!blob) {
+        throw new Error('No se pudo preparar la imagen')
+      }
+      const formData = new FormData()
+      formData.append('file', blob, 'profile-photo.jpg')
+      const { data } = await api.post('/participants/me/photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      setMyProfile(data)
+      setPhotoMsg({ type: 'success', text: 'Foto actualizada' })
+      closePhotoEditor()
+    } catch (err) {
+      setPhotoMsg({ type: 'error', text: err.response?.data?.detail || err.message || 'No se pudo guardar la foto' })
+    } finally {
+      setPhotoBusy(false)
     }
   }
 
@@ -650,6 +850,7 @@ export default function ParticipantProfile() {
 
   const totalPuntos = results.reduce((acc, r) => acc + (r.puntos || 0), 0)
   const initial = nombre.trim().charAt(0).toUpperCase() || 'P'
+  const profilePhotoUrl = resolveProfilePhoto(myProfile?.profile_photo_url)
 
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
@@ -670,7 +871,7 @@ export default function ParticipantProfile() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f6f7f5' }}>
+    <div style={{ minHeight: '100vh', background: '#0D0F12' }}>
 
       {/* Modal */}
       {selectedComp && (
@@ -683,32 +884,55 @@ export default function ParticipantProfile() {
         />
       )}
 
-      {/* Nav */}
-      <nav style={{
-        background: '#fff', borderBottom: '1px solid #d7ddd7',
-        padding: isMobile ? '10px 14px' : '12px 24px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        position: 'sticky', top: 0, zIndex: 100,
-      }}>
-        <span style={{ fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1, fontWeight: 800, fontSize: isMobile ? 22 : 28, color: '#284017', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Trophy size={isMobile ? 18 : 22} /> Loyalty Race
-        </span>
-        <div style={{ display: 'flex', gap: isMobile ? 8 : 12, alignItems: 'center' }}>
-          {!isMobile && <span style={{ color: '#647063', fontSize: 14 }}>{nombre}</span>}
-          <a href="/leaderboard" style={{ color: '#284017', fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <Medal size={14} />{isMobile ? '' : ' Leaderboard'}
-          </a>
-          <button className="btn-secondary btn-sm" onClick={() => { localStorage.clear(); navigate('/login') }} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <LogOut size={14} /> Salir
-          </button>
+      {photoEditorOpen && photoDraftUrl && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ width: '100%', maxWidth: 420, borderRadius: 22, background: '#171B21', border: '1px solid #252A33', padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.35)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 18 }}>Ajustar foto</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Vista previa del recorte circular antes de guardar.</div>
+              </div>
+              <button type="button" onClick={closePhotoEditor} style={{ width: 34, height: 34, borderRadius: 12, border: '1px solid #252A33', background: 'transparent', color: '#F5F7FA', display: 'grid', placeItems: 'center' }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', placeItems: 'center', marginBottom: 16 }}>
+              <div style={{ width: 220, height: 220, borderRadius: '50%', overflow: 'hidden', border: '4px solid rgba(255,255,255,0.12)', background: '#0D0F12', position: 'relative' }}>
+                <img
+                  src={photoDraftUrl}
+                  alt="Vista previa de foto de perfil"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    transform: `scale(${photoZoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', color: '#AAB2C0', fontSize: 12, marginBottom: 8 }}>Zoom</label>
+              <input type="range" min="1" max="2.4" step="0.05" value={photoZoom} onChange={e => setPhotoZoom(Number(e.target.value))} style={{ width: '100%' }} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="btn-secondary btn-sm" onClick={closePhotoEditor}>Cancelar</button>
+              <button type="button" className="btn-primary btn-sm" onClick={saveProfilePhoto} disabled={photoBusy}>
+                {photoBusy ? 'Guardando...' : 'Guardar foto'}
+              </button>
+            </div>
+          </div>
         </div>
-      </nav>
+      )}
 
       <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
 
         {/* Profile hero */}
         <div style={{
-          background: '#284017', borderRadius: 14,
+          background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)', borderRadius: 14,
           padding: isMobile ? '18px 16px' : '24px',
           marginBottom: 16, display: 'flex', alignItems: 'center', gap: isMobile ? 14 : 20,
         }}>
@@ -716,18 +940,28 @@ export default function ParticipantProfile() {
             width: isMobile ? 50 : 62, height: isMobile ? 50 : 62, flexShrink: 0,
             borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: isMobile ? 20 : 26, fontWeight: 800, color: '#fff',
+            fontSize: isMobile ? 20 : 26, fontWeight: 800, color: '#fff', overflow: 'hidden',
           }}>
-            {initial}
+            {profilePhotoUrl ? (
+              <img
+                src={profilePhotoUrl}
+                alt={myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : initial}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${myProfile.cedula}` : ''}</div>
-            {myProfile?.categoria && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 1 }}>{myProfile.categoria}</div>}
+            <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {myProfile?.categoria && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
+              {myProfile?.box && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
+              {myProfile?.ciudad_pais && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.ciudad_pais}</span>}
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: '#e491ac' }}>{totalPuntos}</div>
+              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: '#0D0F12' }}>{totalPuntos}</div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
             </div>
             <button
@@ -739,17 +973,52 @@ export default function ParticipantProfile() {
           </div>
         </div>
 
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Ficha del atleta</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Box</div><div style={{ fontWeight: 600 }}>{myProfile?.box || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Talla camiseta</div><div style={{ fontWeight: 600 }}>{myProfile?.talla_camiseta || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
+            <div><div style={{ fontSize: 11, color: '#647063', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
+          </div>
+        </div>
+
         {msg && <div className={`alert alert-${msg.type}`} style={{ marginBottom: 12 }}>{msg.text}</div>}
 
         {/* Edit profile form */}
         {showEditProfile && (
-          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <UserCog size={15} /> Mis datos
-            </h3>
-            {editMsg && <div className={`alert alert-${editMsg.type}`} style={{ marginBottom: 12 }}>{editMsg.text}</div>}
-            <form onSubmit={saveProfile}>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: isMobile ? 'flex-end' : 'center', justifyContent: 'center', padding: isMobile ? '12px 12px calc(12px + env(safe-area-inset-bottom, 0px))' : 16 }}>
+            <div style={{ width: '100%', maxWidth: 760, height: isMobile ? 'min(88dvh, 88vh)' : 'min(86dvh, 86vh)', maxHeight: isMobile ? 'min(88dvh, 88vh)' : 'min(86dvh, 86vh)', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '16px 18px', background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, color: '#F5F7FA' }}>
+                  <UserCog size={15} /> Mis datos
+                </div>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowEditProfile(false); setEditMsg(null) }}>Cerrar</button>
+              </div>
+
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
+                {(editMsg || photoMsg) && <div className={`alert alert-${(editMsg || photoMsg).type}`} style={{ marginBottom: 12 }}>{(editMsg || photoMsg).text}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: '#e8ede7', border: '3px solid #f3f5f3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#FF6B00' }}>
+                    {profilePhotoUrl ? (
+                      <img src={profilePhotoUrl} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : initial}
+                  </div>
+                  <div style={{ minWidth: 220, flex: 1 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4, color: '#F5F7FA' }}>Foto de perfil</div>
+                    <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.5, marginBottom: 10 }}>
+                      Elige una imagen, revisa como quedara dentro del circulo y guardala optimizada en almacenamiento local.
+                    </div>
+                    <input ref={photoInputRef} type="file" accept="image/*" onChange={onSelectProfilePhoto} style={{ display: 'none' }} />
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => photoInputRef.current?.click()}>
+                      {profilePhotoUrl ? 'Cambiar foto' : 'Subir foto'}
+                    </button>
+                  </div>
+                </div>
+                <form onSubmit={saveProfile}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Nombre</label>
                   <input value={editForm.nombre || ''} onChange={e => setEditForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Nombre" required />
@@ -771,25 +1040,69 @@ export default function ParticipantProfile() {
                   <input value={editForm.email || ''} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" inputMode="email" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Sexo</label>
-                  <select value={editForm.sexo || ''} onChange={e => setEditForm(f => ({ ...f, sexo: e.target.value }))}>
+                  <label>Genero</label>
+                  <select value={editForm.genero || ''} onChange={e => setEditForm(f => ({ ...f, genero: e.target.value }))}>
                     <option value="">Sin especificar</option>
                     <option value="M">Masculino</option>
                     <option value="F">Femenino</option>
+                    <option value="Otro">Otro</option>
                   </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Box</label>
+                  <input value={editForm.box || ''} onChange={e => setEditForm(f => ({ ...f, box: e.target.value }))} placeholder="Lugar donde entrenas" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Talla camiseta</label>
+                  <select value={editForm.talla_camiseta || ''} onChange={e => setEditForm(f => ({ ...f, talla_camiseta: e.target.value }))}>
+                    <option value="">Sin definir</option>
+                    <option value="XS">XS</option>
+                    <option value="S">S</option>
+                    <option value="M">M</option>
+                    <option value="L">L</option>
+                    <option value="XL">XL</option>
+                    <option value="XXL">XXL</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fecha nacimiento</label>
+                  <input type="date" value={editForm.fecha_nacimiento || ''} onChange={e => setEditForm(f => ({ ...f, fecha_nacimiento: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                  <label>Ciudad / Pais</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    <select value={editForm.countryCode || ''} onChange={e => setEditForm(f => ({ ...f, countryCode: e.target.value, city: '' }))}>
+                      <option value="">Selecciona pais</option>
+                      {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                    </select>
+                    <div>
+                      <input
+                        list="participant-city-options"
+                        value={editForm.city || ''}
+                        onChange={e => setEditForm(f => ({ ...f, city: e.target.value }))}
+                        placeholder={editForm.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
+                        disabled={!editForm.countryCode}
+                      />
+                      <datalist id="participant-city-options">
+                        {cityOptions.map(city => <option key={city} value={city} />)}
+                      </datalist>
+                    </div>
+                  </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
                   <label>Categoría</label>
                   <input value={editForm.categoria || ''} onChange={e => setEditForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Ej: Rx, Scaled, Masters..." />
                 </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowEditProfile(false); setEditMsg(null) }}>Cancelar</button>
+                    <button type="submit" className="btn-primary" disabled={editBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Check size={14} /> {editBusy ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowEditProfile(false); setEditMsg(null) }}>Cancelar</button>
-                <button type="submit" className="btn-primary" disabled={editBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Check size={14} /> {editBusy ? 'Guardando...' : 'Guardar cambios'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         )}
 

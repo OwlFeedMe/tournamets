@@ -1,10 +1,12 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { House, LogOut, X, Trash2, Pencil, ChevronDown, ChevronRight, Trophy, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const CATEGORIAS = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro']
-const SEXOS = ['M', 'F', 'Otro']
+const GENEROS = ['M', 'F', 'Otro']
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
 
 function orderCategories(data) {
@@ -12,7 +14,7 @@ function orderCategories(data) {
   return CATEGORY_ORDER.filter(c => keys.includes(c)).concat(keys.filter(c => !CATEGORY_ORDER.includes(c)))
 }
 
-function NavBar({ onLogout }) {
+function NavBar({ onLogout, title = 'Admin' }) {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   useEffect(() => {
     const h = () => setIsMobile(window.innerWidth <= 768)
@@ -21,8 +23,8 @@ function NavBar({ onLogout }) {
   }, [])
   return (
     <nav className="app-nav" style={{ background: '#fff', borderBottom: '1px solid #d7ddd7', padding: isMobile ? '10px 12px' : '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span style={{ fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1, fontWeight: 800, fontSize: isMobile ? 20 : 28, color: '#284017', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <Trophy size={isMobile ? 18 : 24} />{isMobile ? 'Admin' : 'Loyalty Race - Admin'}
+      <span style={{ fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1, fontWeight: 800, fontSize: isMobile ? 20 : 28, color: '#FF6B00', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <Trophy size={isMobile ? 18 : 24} />{isMobile ? title : `FinalRep - ${title}`}
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <a href="/" className="btn-secondary btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><House size={14} />{!isMobile && 'Inicio'}</a>
@@ -558,29 +560,40 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
 
 // ── Enrollment Modal ──────────────────────────────────────────────────────────
 function EnrollmentModal({ competition, onClose, onSaved }) {
+  const { role } = useAuth()
+  const isOrganizer = role === 'organizer'
   const [modalTab, setModalTab] = useState('pendientes')
   const [allParticipants, setAllParticipants] = useState([])
+  const [competitionParticipants, setCompetitionParticipants] = useState([])
   const [categories, setCategories] = useState([])
   const [enrollMap, setEnrollMap] = useState({})   // confirmed: pid -> { selected, categoria }
   const [pendingList, setPendingList] = useState([])
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
-  const load = () => Promise.all([
-    api.get('/participants'),
-    api.get(`/competitions/${competition.id}/participants`),
-    api.get(`/competitions/${competition.id}/categories`),
-  ]).then(([pRes, eRes, cRes]) => {
-    setAllParticipants(pRes.data)
-    setCategories(cRes.data)
-    const pending = eRes.data.filter(e => e.estado === 'pendiente')
-    const confirmed = eRes.data.filter(e => e.estado === 'confirmado')
-    setPendingList(pending)
-    const map = {}
-    confirmed.forEach(e => { map[e.id] = { selected: true, categoria: e.categoria_competencia || '' } })
-    setEnrollMap(map)
-    setModalTab(pending.length > 0 ? 'pendientes' : 'gestion')
-  })
+  const load = () => {
+    const requests = [
+      api.get(`/competitions/${competition.id}/participants`),
+      api.get(`/competitions/${competition.id}/categories`),
+    ]
+    if (!isOrganizer) requests.unshift(api.get('/participants'))
+    return Promise.all(requests).then((responses) => {
+      const pRes = isOrganizer ? { data: [] } : responses[0]
+      const eRes = isOrganizer ? responses[0] : responses[1]
+      const cRes = isOrganizer ? responses[1] : responses[2]
+      setAllParticipants(pRes.data || [])
+      setCompetitionParticipants(eRes.data || [])
+      setCategories(cRes.data || [])
+      const enrolled = eRes.data || []
+      const pending = enrolled.filter(e => e.estado === 'pendiente')
+      const confirmed = enrolled.filter(e => e.estado === 'confirmado')
+      setPendingList(pending)
+      const map = {}
+      confirmed.forEach(e => { map[e.id] = { selected: true, categoria: e.categoria_competencia || '' } })
+      setEnrollMap(map)
+      setModalTab(pending.length > 0 ? 'pendientes' : 'gestion')
+    })
+  }
 
   useEffect(() => { load() }, [competition.id])
 
@@ -607,6 +620,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   }
 
   const save = async () => {
+    if (isOrganizer) return
     setSaving(true)
     const participants = Object.entries(enrollMap)
       .filter(([, v]) => v.selected)
@@ -626,6 +640,10 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const filtered = allParticipants
     .filter(p => !pendingIds.has(p.id))
     .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(search.toLowerCase()))
+  const managedList = useMemo(
+    () => competitionParticipants.filter(p => p.estado !== 'pendiente'),
+    [competitionParticipants]
+  )
   const selectedCount = Object.values(enrollMap).filter(v => v.selected).length
 
   return (
@@ -671,41 +689,82 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
 
       {modalTab === 'gestion' && (
         <>
-          <input placeholder="Buscar participante..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
-          <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>{selectedCount} confirmados seleccionados</div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {filtered.map(p => {
-              const enrolled = enrollMap[p.id]
-              return (
-                <div key={p.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 6, marginBottom: 4,
-                  border: `1px solid ${enrolled ? '#284017' : '#d5ddd3'}`,
-                  background: enrolled ? '#28401711' : 'transparent',
-                }}>
-                  <input type="checkbox" checked={!!enrolled} onChange={() => toggle(p.id)} style={{ width: 'auto', flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13 }}>{p.nombre} {p.apellido}</div>
-                    <div style={{ fontSize: 11, color: '#647063' }}>{p.cedula}</div>
+          {isOrganizer ? (
+            <>
+              <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Solo puedes gestionar personas que ya están inscritas en esta competencia.</div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {managedList.map(p => (
+                  <div key={p.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 6, marginBottom: 8,
+                    border: '1px solid #d5ddd3', background: '#fafafa',
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>{p.nombre} {p.apellido}</div>
+                      <div style={{ fontSize: 12, color: '#647063', marginTop: 2 }}>
+                        {p.cedula}
+                        <span style={{ marginLeft: 8 }}>| Categoria: <b style={{ color: '#4d564b' }}>{p.categoria_competencia || '-'}</b></span>
+                        <span style={{ marginLeft: 8 }}>| Estado: <b style={{ color: '#4d564b' }}>{p.estado}</b></span>
+                      </div>
+                    </div>
+                    {p.estado !== 'confirmado' && <button className="btn-success btn-sm" onClick={() => approveOrReject(p.id, 'confirmado')}>Confirmar</button>}
+                    {p.estado !== 'rechazado' && <button className="btn-secondary btn-sm" onClick={() => approveOrReject(p.id, 'rechazado')}>Rechazar</button>}
+                    <button
+                      className="btn-danger btn-sm"
+                      onClick={async () => {
+                        await api.delete(`/competitions/${competition.id}/participants/${p.id}`)
+                        onSaved()
+                        load()
+                      }}
+                    >
+                      Retirar
+                    </button>
                   </div>
-                  {enrolled && (
-                    <select value={enrolled.categoria} onChange={e => setCategoria(p.id, e.target.value)}
-                      style={{ fontSize: 12, width: 130, background: '#fff', border: '1px solid #cfd8ce', borderRadius: 4, padding: '3px 6px', color: '#4d564b' }}>
-                      {categories.length === 0 && <option value="">Sin categorias</option>}
-                      {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
-                      {enrolled.categoria && !categories.find(c => c.nombre === enrolled.categoria) && (
-                        <option value={enrolled.categoria}>{enrolled.categoria}</option>
+                ))}
+                {!managedList.length && <div style={{ color: '#647063', padding: 20, textAlign: 'center' }}>No hay inscriptos para gestionar</div>}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+                <button className="btn-secondary" onClick={onClose}>Cerrar</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <input placeholder="Buscar participante..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+              <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>{selectedCount} confirmados seleccionados</div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {filtered.map(p => {
+                  const enrolled = enrollMap[p.id]
+                  return (
+                    <div key={p.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', borderRadius: 6, marginBottom: 4,
+                      border: `1px solid ${enrolled ? '#284017' : '#d5ddd3'}`,
+                      background: enrolled ? '#28401711' : 'transparent',
+                    }}>
+                      <input type="checkbox" checked={!!enrolled} onChange={() => toggle(p.id)} style={{ width: 'auto', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13 }}>{p.nombre} {p.apellido}</div>
+                        <div style={{ fontSize: 11, color: '#647063' }}>{p.cedula}</div>
+                      </div>
+                      {enrolled && (
+                        <select value={enrolled.categoria} onChange={e => setCategoria(p.id, e.target.value)}
+                          style={{ fontSize: 12, width: 130, background: '#fff', border: '1px solid #cfd8ce', borderRadius: 4, padding: '3px 6px', color: '#4d564b' }}>
+                          {categories.length === 0 && <option value="">Sin categorias</option>}
+                          {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                          {enrolled.categoria && !categories.find(c => c.nombre === enrolled.categoria) && (
+                            <option value={enrolled.categoria}>{enrolled.categoria}</option>
+                          )}
+                        </select>
                       )}
-                    </select>
-                  )}
-                </div>
-              )
-            })}
-            {!filtered.length && <div style={{ color: '#647063', padding: 20, textAlign: 'center' }}>Sin resultados</div>}
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
-            <button className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Guardando...' : 'Guardar inscripciones'}</button>
-          </div>
+                    </div>
+                  )
+                })}
+                {!filtered.length && <div style={{ color: '#647063', padding: 20, textAlign: 'center' }}>Sin resultados</div>}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}>
+                <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+                <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Guardando...' : 'Guardar inscripciones'}</button>
+              </div>
+            </>
+          )}
         </>
       )}
     </Modal>
@@ -721,6 +780,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
+    imagen_url: '',
     activa: 0,
     allow_user_results: 0,
     show_individual_leaderboard: 1,
@@ -742,6 +802,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     setForm({
       nombre: competition.nombre || '',
       descripcion: competition.descripcion || '',
+      imagen_url: competition.imagen_url || '',
       activa: competition.activa || 0,
       allow_user_results: competition.allow_user_results || 0,
       show_individual_leaderboard: competition.show_individual_leaderboard == null ? 1 : competition.show_individual_leaderboard,
@@ -825,6 +886,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     const payload = {
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || null,
+      imagen_url: form.imagen_url.trim() || null,
       activa: form.activa ? 1 : 0,
       allow_user_results: form.allow_user_results ? 1 : 0,
       show_individual_leaderboard: form.show_individual_leaderboard ? 1 : 0,
@@ -898,6 +960,18 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
             <label>Descripcion</label>
             <input value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
           </div>
+        </div>
+
+        <div className="form-group">
+          <label>Imagen URL</label>
+          <input
+            value={form.imagen_url}
+            onChange={e => setForm(f => ({ ...f, imagen_url: e.target.value }))}
+            placeholder="https://..."
+          />
+          <span style={{ fontSize: 11, color: '#647063', marginTop: 4, display: 'block' }}>
+            Opcional. Se usa en la portada publica de FinalRep.
+          </span>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
@@ -3426,14 +3500,31 @@ function ParticipantsTab() {
   const [participants, setParticipants] = useState([])
   const [competitions, setCompetitions] = useState([])
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', sexo: 'M', categoria: 'Rx', estado: 'activo' })
+  const [form, setForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
   const [editingParticipant, setEditingParticipant] = useState(null)
-  const [editForm, setEditForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', sexo: 'M', categoria: 'Rx', estado: 'activo' })
+  const [editForm, setEditForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
   const [msg, setMsg] = useState(null)
   const [uploading, setUploading] = useState(false)
   const [importCompId, setImportCompId] = useState('')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const fileRef = useRef()
+  const [countries, setCountries] = useState([])
+  const [createCities, setCreateCities] = useState([])
+  const [editCities, setEditCities] = useState([])
+  const countryNameByCode = useMemo(() => Object.fromEntries(countries.map(c => [c.code, c.name])), [countries])
+  const countryCodeByName = useMemo(() => Object.fromEntries(countries.map(c => [c.name.toLowerCase(), c.code])), [countries])
+  const cityOptionsCreate = useMemo(() => {
+    const list = createCities
+    const query = (form.city || '').trim().toLowerCase()
+    if (!query) return list.slice(0, 150)
+    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
+  }, [createCities, form.city])
+  const cityOptionsEdit = useMemo(() => {
+    const list = editCities
+    const query = (editForm.city || '').trim().toLowerCase()
+    if (!query) return list.slice(0, 150)
+    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
+  }, [editCities, editForm.city])
 
   const load = () => api.get('/participants').then(r => setParticipants(r.data))
   useEffect(() => {
@@ -3445,14 +3536,55 @@ function ParticipantsTab() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  useEffect(() => {
+    loadCountries().then(setCountries).catch(() => setCountries([]))
+  }, [])
+  useEffect(() => {
+    if (!form.countryCode) {
+      setCreateCities([])
+      return
+    }
+    loadCitiesByCountry(form.countryCode).then(setCreateCities).catch(() => setCreateCities([]))
+  }, [form.countryCode])
+  useEffect(() => {
+    if (!editForm.countryCode) {
+      setEditCities([])
+      return
+    }
+    loadCitiesByCountry(editForm.countryCode).then(setEditCities).catch(() => setEditCities([]))
+  }, [editForm.countryCode])
+  useEffect(() => {
+    if (!countries.length || !editForm.ciudad_pais || editForm.countryCode) return
+    const parsed = parseCityCountry(editForm.ciudad_pais)
+    if (!parsed.countryName) return
+    const countryCode = countryCodeByName[parsed.countryName.toLowerCase()] || ''
+    if (countryCode) setEditForm(prev => ({ ...prev, countryCode }))
+  }, [countries, countryCodeByName, editForm.ciudad_pais, editForm.countryCode])
 
   const create = async (e) => {
     e.preventDefault()
     try {
-      await api.post('/participants', form)
+      const city = (form.city || '').trim()
+      const countryCode = (form.countryCode || '').trim()
+      const countryName = countryNameByCode[countryCode] || ''
+      if ((city || countryCode) && !(city && countryCode)) {
+        setMsg({ type: 'error', text: 'Selecciona pais y ciudad validos' })
+        return
+      }
+      if (city && countryCode && !createCities.some(candidate => candidate.toLowerCase() === city.toLowerCase())) {
+        setMsg({ type: 'error', text: 'La ciudad no pertenece al pais seleccionado' })
+        return
+      }
+      const payload = {
+        ...form,
+        ciudad_pais: city && countryName ? buildCityCountry(city, countryName) : '',
+      }
+      delete payload.city
+      delete payload.countryCode
+      await api.post('/participants', payload)
       setMsg({ type: 'success', text: 'Participante creado' })
       setShowForm(false)
-      setForm({ cedula: '', nombre: '', apellido: '', email: '', celular: '', sexo: 'M', categoria: 'Rx', estado: 'activo' })
+      setForm({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
       load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'Error' })
@@ -3495,6 +3627,7 @@ function ParticipantsTab() {
   }
 
   const startEdit = (p) => {
+    const parsed = parseCityCountry(p.ciudad_pais || '')
     setEditingParticipant(p)
     setEditForm({
       cedula: p.cedula || '',
@@ -3502,8 +3635,14 @@ function ParticipantsTab() {
       apellido: p.apellido || '',
       email: p.email || '',
       celular: p.celular || '',
-      sexo: p.sexo || 'M',
+      genero: p.genero || p.sexo || 'M',
       categoria: p.categoria || 'Rx',
+      box: p.box || '',
+      talla_camiseta: p.talla_camiseta || '',
+      fecha_nacimiento: p.fecha_nacimiento || '',
+      ciudad_pais: p.ciudad_pais || '',
+      city: parsed.city,
+      countryCode: '',
       estado: p.estado || 'activo',
     })
   }
@@ -3512,7 +3651,24 @@ function ParticipantsTab() {
     e.preventDefault()
     if (!editingParticipant) return
     try {
-      await api.put(`/participants/${editingParticipant.id}`, editForm)
+      const city = (editForm.city || '').trim()
+      const countryCode = (editForm.countryCode || '').trim()
+      const countryName = countryNameByCode[countryCode] || ''
+      if ((city || countryCode) && !(city && countryCode)) {
+        setMsg({ type: 'error', text: 'Selecciona pais y ciudad validos' })
+        return
+      }
+      if (city && countryCode && !editCities.some(candidate => candidate.toLowerCase() === city.toLowerCase())) {
+        setMsg({ type: 'error', text: 'La ciudad no pertenece al pais seleccionado' })
+        return
+      }
+      const payload = {
+        ...editForm,
+        ciudad_pais: city && countryName ? buildCityCountry(city, countryName) : '',
+      }
+      delete payload.city
+      delete payload.countryCode
+      await api.put(`/participants/${editingParticipant.id}`, payload)
       setMsg({ type: 'success', text: 'Atleta actualizado' })
       setEditingParticipant(null)
       load()
@@ -3576,10 +3732,44 @@ function ParticipantsTab() {
               <div className="form-group"><label>Apellido *</label><input value={form.apellido} onChange={e => setForm({ ...form, apellido: e.target.value })} required /></div>
               <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
               <div className="form-group"><label>Celular</label><input value={form.celular} onChange={e => setForm({ ...form, celular: e.target.value })} /></div>
-              <div className="form-group"><label>Sexo</label>
-                <select value={form.sexo} onChange={e => setForm({ ...form, sexo: e.target.value })}>
-                  {SEXOS.map(s => <option key={s}>{s}</option>)}
+              <div className="form-group"><label>Genero</label>
+                <select value={form.genero} onChange={e => setForm({ ...form, genero: e.target.value })}>
+                  {GENEROS.map(s => <option key={s}>{s}</option>)}
                 </select>
+              </div>
+              <div className="form-group"><label>Box</label><input value={form.box} onChange={e => setForm({ ...form, box: e.target.value })} /></div>
+              <div className="form-group"><label>Talla camiseta</label>
+                <select value={form.talla_camiseta} onChange={e => setForm({ ...form, talla_camiseta: e.target.value })}>
+                  <option value="">-</option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                  <option value="XXL">XXL</option>
+                </select>
+              </div>
+              <div className="form-group"><label>Fecha nacimiento</label><input type="date" value={form.fecha_nacimiento} onChange={e => setForm({ ...form, fecha_nacimiento: e.target.value })} /></div>
+              <div className="form-group" style={{ gridColumn: isMobile ? 'span 2' : 'span 3' }}>
+                <label>Ciudad / Pais</label>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  <select value={form.countryCode} onChange={e => setForm({ ...form, countryCode: e.target.value, city: '' })}>
+                    <option value="">Selecciona pais</option>
+                    {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                  </select>
+                  <div>
+                    <input
+                      list="admin-create-city-options"
+                      value={form.city}
+                      onChange={e => setForm({ ...form, city: e.target.value })}
+                      placeholder={form.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
+                      disabled={!form.countryCode}
+                    />
+                    <datalist id="admin-create-city-options">
+                      {cityOptionsCreate.map(city => <option key={city} value={city} />)}
+                    </datalist>
+                  </div>
+                </div>
               </div>
               <div className="form-group"><label>Categoria</label>
                 <select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
@@ -3604,7 +3794,9 @@ function ParticipantsTab() {
                 {categoryBadge(p.categoria)}
               </div>
               <div style={{ marginTop: 8, fontSize: 13, color: '#555', display: 'grid', gap: 2 }}>
-                <div><b>Sexo:</b> {p.sexo || '-'}</div>
+                <div><b>Genero:</b> {p.genero || p.sexo || '-'}</div>
+                <div><b>Box:</b> {p.box || '-'}</div>
+                <div><b>Ciudad / Pais:</b> {p.ciudad_pais || '-'}</div>
                 <div><b>Contacto:</b> {p.email || p.celular || '-'}</div>
               </div>
               <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -3621,7 +3813,7 @@ function ParticipantsTab() {
       ) : (
         <table>
           <thead>
-            <tr><th>#</th><th>Cedula</th><th>Nombre</th><th>Categoria</th><th>Sexo</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>#</th><th>Cedula</th><th>Nombre</th><th>Categoria</th><th>Genero</th><th>Box</th><th>Ciudad / Pais</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
           </thead>
           <tbody>
             {participants.map((p, i) => (
@@ -3630,7 +3822,9 @@ function ParticipantsTab() {
                 <td style={{ fontFamily: 'monospace' }}>{p.cedula}</td>
                 <td>{p.nombre} {p.apellido}</td>
                 <td>{categoryBadge(p.categoria)}</td>
-                <td>{p.sexo || '-'}</td>
+                <td>{p.genero || p.sexo || '-'}</td>
+                <td>{p.box || '-'}</td>
+                <td>{p.ciudad_pais || '-'}</td>
                 <td style={{ color: '#647063' }}>{p.email || p.celular || '-'}</td>
                 <td>
                   <button className={p.estado === 'activo' ? 'btn-success btn-sm' : 'btn-danger btn-sm'} onClick={() => toggleEstado(p)}>
@@ -3645,7 +3839,7 @@ function ParticipantsTab() {
                 </td>
               </tr>
             ))}
-            {!participants.length && <tr><td colSpan={8} style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</td></tr>}
+            {!participants.length && <tr><td colSpan={10} style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</td></tr>}
           </tbody>
         </table>
       )}
@@ -3659,10 +3853,44 @@ function ParticipantsTab() {
               <div className="form-group"><label>Apellido *</label><input value={editForm.apellido} onChange={e => setEditForm({ ...editForm, apellido: e.target.value })} required /></div>
               <div className="form-group"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
               <div className="form-group"><label>Celular</label><input value={editForm.celular} onChange={e => setEditForm({ ...editForm, celular: e.target.value })} /></div>
-              <div className="form-group"><label>Sexo</label>
-                <select value={editForm.sexo} onChange={e => setEditForm({ ...editForm, sexo: e.target.value })}>
-                  {SEXOS.map(s => <option key={s}>{s}</option>)}
+              <div className="form-group"><label>Genero</label>
+                <select value={editForm.genero} onChange={e => setEditForm({ ...editForm, genero: e.target.value })}>
+                  {GENEROS.map(s => <option key={s}>{s}</option>)}
                 </select>
+              </div>
+              <div className="form-group"><label>Box</label><input value={editForm.box} onChange={e => setEditForm({ ...editForm, box: e.target.value })} /></div>
+              <div className="form-group"><label>Talla camiseta</label>
+                <select value={editForm.talla_camiseta} onChange={e => setEditForm({ ...editForm, talla_camiseta: e.target.value })}>
+                  <option value="">-</option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                  <option value="XXL">XXL</option>
+                </select>
+              </div>
+              <div className="form-group"><label>Fecha nacimiento</label><input type="date" value={editForm.fecha_nacimiento} onChange={e => setEditForm({ ...editForm, fecha_nacimiento: e.target.value })} /></div>
+              <div className="form-group" style={{ gridColumn: isMobile ? 'span 2' : 'span 3' }}>
+                <label>Ciudad / Pais</label>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                  <select value={editForm.countryCode} onChange={e => setEditForm({ ...editForm, countryCode: e.target.value, city: '' })}>
+                    <option value="">Selecciona pais</option>
+                    {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
+                  </select>
+                  <div>
+                    <input
+                      list="admin-edit-city-options"
+                      value={editForm.city}
+                      onChange={e => setEditForm({ ...editForm, city: e.target.value })}
+                      placeholder={editForm.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
+                      disabled={!editForm.countryCode}
+                    />
+                    <datalist id="admin-edit-city-options">
+                      {cityOptionsEdit.map(city => <option key={city} value={city} />)}
+                    </datalist>
+                  </div>
+                </div>
               </div>
               <div className="form-group"><label>Categoria</label>
                 <select value={editForm.categoria} onChange={e => setEditForm({ ...editForm, categoria: e.target.value })}>
@@ -3971,6 +4199,8 @@ function TeamsTab() {
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const navigate = useNavigate()
+  const { role, signOut } = useAuth()
+  const isOrganizer = role === 'organizer'
   const [mainTab, setMainTab] = useState('competitions')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
@@ -3981,24 +4211,26 @@ export default function AdminDashboard() {
   }, [])
 
   const logout = () => {
-    localStorage.clear()
+    signOut()
     navigate('/login')
   }
 
   return (
     <div className="app-shell">
-      <NavBar onLogout={logout} />
+      <NavBar onLogout={logout} title={role === 'organizer' ? 'Organizador' : 'Admin'} />
       <div className="app-container" style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
         <div className="tabs" style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
           <button className={`tab ${mainTab === 'competitions' ? 'active' : ''}`} onClick={() => setMainTab('competitions')} style={{ flexShrink: 0 }}>
             Competencias
           </button>
-          <button className={`tab ${mainTab === 'athletes' ? 'active' : ''}`} onClick={() => setMainTab('athletes')} style={{ flexShrink: 0 }}>
-            Atletas / Usuarios
-          </button>
+          {!isOrganizer && (
+            <button className={`tab ${mainTab === 'athletes' ? 'active' : ''}`} onClick={() => setMainTab('athletes')} style={{ flexShrink: 0 }}>
+              Atletas / Usuarios
+            </button>
+          )}
         </div>
         {mainTab === 'competitions' && <CompetitionsTab />}
-        {mainTab === 'athletes' && <ParticipantsTab />}
+        {!isOrganizer && mainTab === 'athletes' && <ParticipantsTab />}
       </div>
     </div>
   )

@@ -2,9 +2,18 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { registerServiceWorker } from './pwa/registerServiceWorker'
+import { PwaInstallBanner } from './pwa/PwaInstallBanner'
+
+if (import.meta.env.PROD) {
+  registerServiceWorker()
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <>
+      <App />
+      <PwaInstallBanner />
+    </>
   </React.StrictMode>
 )

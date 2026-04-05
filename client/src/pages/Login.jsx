@@ -1,9 +1,11 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { getHomePath, useAuth } from '../context/AuthContext'
 
 export default function Login() {
   const navigate = useNavigate()
+  const { persistSession } = useAuth()
   const [form, setForm] = useState({ cedula: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -14,39 +16,34 @@ export default function Login() {
     setLoading(true)
     try {
       const { data } = await api.post('/auth/login', form)
-      localStorage.setItem('token', data.access_token)
-      localStorage.setItem('role', data.role)
-      localStorage.setItem('nombre', data.nombre || '')
-      if (data.participant_id) localStorage.setItem('participant_id', data.participant_id)
-
-      if (data.role === 'admin') navigate('/admin')
-      else navigate('/profile')
+      persistSession(data)
+      navigate(getHomePath(data.role), { replace: true })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error al iniciar sesión')
+      setError(err.response?.data?.detail || 'Error al iniciar sesion')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 20 }}>
+    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', padding: 20, background: 'radial-gradient(circle at top, rgba(255,107,0,0.14), transparent 32%), #0D0F12' }}>
       <div className="auth-card-wrap" style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <h1 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 38, fontWeight: 800, color: '#284017', letterSpacing: '0.5px' }}>
-            🏆 Loyalty Race
+          <h1 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 42, fontWeight: 800, color: '#FF6B00', letterSpacing: '0.8px' }}>
+            FinalRep
           </h1>
-          <p style={{ color: '#647063', marginTop: 6, fontSize: 14 }}>Ingresa con tu cédula</p>
+          <p style={{ color: '#AAB2C0', marginTop: 6, fontSize: 14 }}>Ingresa con tu cedula</p>
         </div>
 
-        <div className="card">
+        <div className="card" style={{ background: '#171B21', borderColor: '#252A33' }}>
           <form onSubmit={handleSubmit}>
             {error && <div className="alert alert-error">{error}</div>}
 
             <div className="form-group">
-              <label>ID / Cédula</label>
+              <label>ID / Cedula</label>
               <input
                 type="text"
-                placeholder="Tu cédula o ID de admin"
+                placeholder="Tu cedula o ID de admin"
                 value={form.cedula}
                 onChange={(e) => setForm({ ...form, cedula: e.target.value })}
                 required
@@ -55,16 +52,16 @@ export default function Login() {
             </div>
 
             <div className="form-group">
-              <label>Contraseña</label>
+              <label>Contrasena</label>
               <input
                 type="password"
-                placeholder="Tu contraseña"
+                placeholder="Tu contrasena"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
               />
-              <span style={{ fontSize: 11, color: '#647063', marginTop: 4, display: 'block' }}>
-                Participantes: tu contraseña es tu cédula
+              <span style={{ fontSize: 11, color: '#AAB2C0', marginTop: 4, display: 'block' }}>
+                Usuarios creados desde participantes conservan por defecto la contrasena de su cedula hasta que se cambie en backend.
               </span>
             </div>
 
@@ -74,8 +71,12 @@ export default function Login() {
           </form>
         </div>
 
-        <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#647063' }}>
-          ← <a href="/leaderboard" style={{ color: '#284017' }}>Volver al leaderboard</a>
+        <p style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: '#AAB2C0' }}>
+          ¿No tienes cuenta? <Link to="/register" style={{ color: '#FF6B00' }}>Registrarte</Link>
+        </p>
+
+        <p style={{ textAlign: 'center', marginTop: 8, fontSize: 13, color: '#AAB2C0' }}>
+          <a href="/" style={{ color: '#FF6B00' }}>Volver al inicio</a>
         </p>
       </div>
     </div>

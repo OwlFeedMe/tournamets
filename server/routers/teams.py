@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import require_admin, require_auth
+from access import get_owned_competition_ids, require_competition_access
+from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import MAX_TEAM_SIZE, get_session
 from models import (
     Participant, Team, TeamCreate, TeamMember, TeamUpdate,
@@ -26,7 +27,14 @@ def _with_members(session: Session, team: Team) -> dict:
     return {
         **team.model_dump(),
         "members": [
-            {**m.model_dump(), "is_captain": m.id == team.captain_id}
+            {
+                "id": m.id,
+                "nombre": m.nombre,
+                "apellido": m.apellido,
+                "box": m.box,
+                "categoria": m.categoria,
+                "is_captain": m.id == team.captain_id,
+            }
             for m in members
         ],
     }
@@ -46,12 +54,13 @@ def _competition_team_size(session: Session, competition_id: int, fallback: int 
 
 
 def _require_captain(team_id: int, user: dict, session: Session) -> Team:
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes pueden realizar esta accion")
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios pueden realizar esta accion")
     team = session.get(Team, team_id)
     if not team:
         raise HTTPException(404, "Equipo no encontrado")
-    if team.captain_id != int(user["sub"]):
+    if team.captain_id != participant_id:
         raise HTTPException(403, "No eres el capitan de este equipo")
     return team
 
@@ -61,9 +70,9 @@ def _require_captain(team_id: int, user: dict, session: Session) -> Team:
 @router.get("/my-invitations")
 def my_invitations(session: Session = Depends(get_session), user=Depends(require_auth)):
     """Invitaciones pendientes que el participante autenticado ha recibido."""
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes")
-    participant_id = int(user["sub"])
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
     invs = session.exec(
         select(TeamInvitation).where(
             TeamInvitation.invitee_id == participant_id,
@@ -83,7 +92,17 @@ def my_invitations(session: Session = Depends(get_session), user=Depends(require
             **inv.model_dump(),
             "team": {
                 **team.model_dump(),
-                "members": [{**m.model_dump(), "is_captain": m.id == team.captain_id} for m in members],
+                "members": [
+                    {
+                        "id": m.id,
+                        "nombre": m.nombre,
+                        "apellido": m.apellido,
+                        "box": m.box,
+                        "categoria": m.categoria,
+                        "is_captain": m.id == team.captain_id,
+                    }
+                    for m in members
+                ],
             } if team else None,
             "captain_nombre": f"{captain.nombre} {captain.apellido}" if captain else None,
         })
@@ -92,9 +111,9 @@ def my_invitations(session: Session = Depends(get_session), user=Depends(require
 
 @router.post("/invitations/{inv_id}/accept")
 def accept_invitation(inv_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes")
-    participant_id = int(user["sub"])
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
 
     inv = session.get(TeamInvitation, inv_id)
     if not inv or inv.invitee_id != participant_id:
@@ -145,9 +164,9 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
 
 @router.delete("/invitations/{inv_id}")
 def reject_invitation(inv_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
-    if user.get("role") != "participant":
-        raise HTTPException(403, "Solo participantes")
-    participant_id = int(user["sub"])
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
 
     inv = session.get(TeamInvitation, inv_id)
     if not inv or inv.invitee_id != participant_id:
@@ -164,24 +183,35 @@ def reject_invitation(inv_id: int, session: Session = Depends(get_session), user
 # ── Standard CRUD ─────────────────────────────────────────────────────────────
 
 @router.get("")
-def list_teams(competition_id: Optional[int] = None, session: Session = Depends(get_session)):
+def list_teams(
+    competition_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
     query = select(Team).order_by(Team.nombre)
     if competition_id:
+        require_competition_access(session, competition_id, user)
         query = query.where(Team.competition_id == competition_id)
+    else:
+        owned_ids = get_owned_competition_ids(session, user)
+        if user.get("role") == "organizer":
+            query = query.where(Team.competition_id.in_(owned_ids))
     teams = session.exec(query).all()
     return [_with_members(session, t) for t in teams]
 
 
 @router.get("/{team_id}")
-def get_team(team_id: int, session: Session = Depends(get_session)):
+def get_team(team_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
     team = session.get(Team, team_id)
     if not team:
         raise HTTPException(404, "Equipo no encontrado")
+    require_competition_access(session, int(team.competition_id), user)
     return _with_members(session, team)
 
 
 @router.post("", status_code=201)
-def create_team(body: TeamCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
+def create_team(body: TeamCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, body.competition_id, user)
     team_size = _competition_team_size(session, body.competition_id, fallback=len(body.member_ids) or 2)
     if len(body.member_ids) != team_size:
         raise HTTPException(400, f"Cada equipo debe tener exactamente {team_size} miembros")
@@ -233,10 +263,11 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), _=Dep
 
 
 @router.put("/{team_id}")
-def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_session), _=Depends(require_admin)):
+def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_session), user=Depends(require_staff)):
     team = session.get(Team, team_id)
     if not team:
         raise HTTPException(404, "Equipo no encontrado")
+    require_competition_access(session, int(team.competition_id), user)
 
     if body.nombre is not None:
         team.nombre = _clean_name(body.nombre) or f"Equipo {team.id}"
@@ -300,9 +331,10 @@ def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_s
 
 
 @router.delete("/{team_id}", status_code=204)
-def delete_team(team_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
+def delete_team(team_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
     team = session.get(Team, team_id)
     if team:
+        require_competition_access(session, int(team.competition_id), user)
         session.delete(team)
         session.commit()
 

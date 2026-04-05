@@ -13,6 +13,7 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       localStorage.clear()
+      window.dispatchEvent(new Event('openarena:session-changed'))
       window.location.href = '/login'
     }
     return Promise.reject(err)

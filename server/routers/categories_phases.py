@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from auth import require_admin
+from access import require_competition_access
+from auth import get_current_user_optional, require_staff
 from database import get_session
 from phase_status import compute_phase_status_map
 from models import (
@@ -131,7 +132,12 @@ def _normalize_points_mode(raw: str | None) -> str:
 
 
 @router.get("/api/competitions/{competition_id}/categories")
-def list_categories(competition_id: int, session: Session = Depends(get_session)):
+def list_categories(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    require_competition_access(session, competition_id, user)
     return session.exec(
         select(CompetitionCategory)
         .where(CompetitionCategory.competition_id == competition_id)
@@ -141,9 +147,8 @@ def list_categories(competition_id: int, session: Session = Depends(get_session)
 
 @router.post("/api/competitions/{competition_id}/categories", status_code=201)
 def create_category(competition_id: int, body: CategoryCreate,
-                    session: Session = Depends(get_session), _=Depends(require_admin)):
-    if not session.get(Competition, competition_id):
-        raise HTTPException(404, "Competencia no encontrada")
+                    session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
     cat = CompetitionCategory(competition_id=competition_id, nombre=body.nombre, orden=body.orden)
     session.add(cat)
     session.commit()
@@ -153,7 +158,8 @@ def create_category(competition_id: int, body: CategoryCreate,
 
 @router.delete("/api/competitions/{competition_id}/categories/{cat_id}", status_code=204)
 def delete_category(competition_id: int, cat_id: int,
-                    session: Session = Depends(get_session), _=Depends(require_admin)):
+                    session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
     cat = session.get(CompetitionCategory, cat_id)
     if cat and cat.competition_id == competition_id:
         session.delete(cat)
@@ -161,7 +167,13 @@ def delete_category(competition_id: int, cat_id: int,
 
 
 @router.get("/api/competitions/{competition_id}/phases")
-def list_phases(competition_id: int, estado: Optional[str] = None, session: Session = Depends(get_session)):
+def list_phases(
+    competition_id: int,
+    estado: Optional[str] = None,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    require_competition_access(session, competition_id, user)
     auto_status = compute_phase_status_map(session, competition_id)
     items = session.exec(
         select(CompetitionPhase)
@@ -180,9 +192,8 @@ def list_phases(competition_id: int, estado: Optional[str] = None, session: Sess
 
 @router.post("/api/competitions/{competition_id}/phases", status_code=201)
 def create_phase(competition_id: int, body: PhaseCreate,
-                 session: Session = Depends(get_session), _=Depends(require_admin)):
-    if not session.get(Competition, competition_id):
-        raise HTTPException(404, "Competencia no encontrada")
+                 session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
     phase_type = _normalize_phase_type(body.tipo)
     if phase_type not in PHASE_TIPOS_VALIDOS:
         raise HTTPException(400, "Tipo de fase invalido. Usa: posicion, cantidad o tiempo")
@@ -224,7 +235,8 @@ def create_phase(competition_id: int, body: PhaseCreate,
 
 @router.put("/api/competitions/{competition_id}/phases/{phase_id}")
 def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
-                 session: Session = Depends(get_session), _=Depends(require_admin)):
+                 session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or phase.competition_id != competition_id:
         raise HTTPException(404, "Fase no encontrada")
@@ -270,7 +282,8 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
 
 @router.delete("/api/competitions/{competition_id}/phases/{phase_id}", status_code=204)
 def delete_phase(competition_id: int, phase_id: int,
-                 session: Session = Depends(get_session), _=Depends(require_admin)):
+                 session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
     phase = session.get(CompetitionPhase, phase_id)
     if phase and phase.competition_id == competition_id:
         session.delete(phase)

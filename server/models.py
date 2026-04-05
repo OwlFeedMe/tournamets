@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, func
+from sqlalchemy import UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
 from sqlmodel import SQLModel, Field, Relationship
 
 
@@ -17,8 +17,40 @@ class Participant(SQLModel, table=True):
     email: Optional[str] = None
     celular: Optional[str] = None
     sexo: Optional[str] = None
+    genero: Optional[str] = None
     categoria: Optional[str] = None
+    box: Optional[str] = None
+    talla_camiseta: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    fecha_nacimiento: Optional[date] = Field(
+        default=None,
+        sa_column=Column(Date, nullable=True),
+    )
+    ciudad_pais: Optional[str] = None
     estado: str = Field(default="activo")
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class AppUser(SQLModel, table=True):
+    __tablename__ = "app_users"
+    __table_args__ = (
+        UniqueConstraint("username"),
+        UniqueConstraint("participant_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(index=True)
+    display_name: str
+    role: str = Field(default="user", index=True)  # admin | organizer | user
+    password_hash: str
+    participant_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    is_active: int = Field(default=1)
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -31,6 +63,7 @@ class Competition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nombre: str
     descripcion: Optional[str] = None
+    imagen_url: Optional[str] = None
     activa: int = Field(default=0)
     allow_user_results: int = Field(default=0)
     show_individual_leaderboard: int = Field(default=1)
@@ -63,6 +96,10 @@ class Competition(SQLModel, table=True):
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
     scoring_mode: str = Field(default="highest_wins")  # highest_wins | lowest_wins
+    organizer_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -206,11 +243,33 @@ class LoginRequest(SQLModel):
     password: str
 
 
+class RegisterRequest(SQLModel):
+    cedula: str
+    nombre: str
+    apellido: str
+    email: Optional[str] = None
+    celular: Optional[str] = None
+    genero: Optional[str] = None
+    password: str
+
+
 class TokenResponse(SQLModel):
     access_token: str
     token_type: str = "bearer"
     role: str
+    display_name: Optional[str] = None
     nombre: Optional[str] = None
+    username: Optional[str] = None
+    app_user_id: Optional[int] = None
+    participant_id: Optional[int] = None
+
+
+class MeResponse(SQLModel):
+    role: str
+    display_name: Optional[str] = None
+    nombre: Optional[str] = None
+    username: Optional[str] = None
+    app_user_id: Optional[int] = None
     participant_id: Optional[int] = None
 
 
@@ -223,7 +282,13 @@ class ParticipantCreate(SQLModel):
     email: Optional[str] = None
     celular: Optional[str] = None
     sexo: Optional[str] = None
+    genero: Optional[str] = None
     categoria: Optional[str] = None
+    box: Optional[str] = None
+    talla_camiseta: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    ciudad_pais: Optional[str] = None
     estado: str = "activo"
 
 
@@ -234,7 +299,13 @@ class ParticipantUpdate(SQLModel):
     email: Optional[str] = None
     celular: Optional[str] = None
     sexo: Optional[str] = None
+    genero: Optional[str] = None
     categoria: Optional[str] = None
+    box: Optional[str] = None
+    talla_camiseta: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    ciudad_pais: Optional[str] = None
     estado: Optional[str] = None
 
 
@@ -246,7 +317,13 @@ class ParticipantSelfUpdate(SQLModel):
     email: Optional[str] = None
     celular: Optional[str] = None
     sexo: Optional[str] = None
+    genero: Optional[str] = None
     categoria: Optional[str] = None
+    box: Optional[str] = None
+    talla_camiseta: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    fecha_nacimiento: Optional[date] = None
+    ciudad_pais: Optional[str] = None
 
 
 # ── Competition schemas ────────────────────────────────────────────────────────
@@ -254,6 +331,7 @@ class ParticipantSelfUpdate(SQLModel):
 class CompetitionCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    imagen_url: Optional[str] = None
     activa: int = 0
     allow_user_results: int = 0
     show_individual_leaderboard: int = 1
@@ -279,6 +357,7 @@ class CompetitionCreate(SQLModel):
 class CompetitionUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    imagen_url: Optional[str] = None
     activa: Optional[int] = None
     allow_user_results: Optional[int] = None
     show_individual_leaderboard: Optional[int] = None

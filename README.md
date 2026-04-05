@@ -1,4 +1,4 @@
-# Loyalty Race 🏆
+# FinalRep 🏆
 
 App de gestión de competencias fitness con leaderboard en tiempo real.
 
@@ -26,6 +26,18 @@ npm install
 npm run dev
 ```
 App disponible en http://localhost:5173
+
+### Docker local
+```bash
+docker compose up --build
+```
+
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8000`
+- Docs API: `http://localhost:8000/docs`
+- En Docker: frontend `http://localhost:5174`
+- En Docker: backend `http://localhost:8001`
+- En Docker: docs `http://localhost:8001/docs`
 
 ---
 

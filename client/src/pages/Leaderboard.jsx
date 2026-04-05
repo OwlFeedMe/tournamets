@@ -2,17 +2,21 @@
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, Clock3, Circle } from 'lucide-react'
 import api from '../api/axios'
+import { useAuth } from '../context/AuthContext'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
 const THEME = {
-  blush: '#E491AC',
-  mist: '#C7CBC8',
-  forest: '#284017',
-  olive: '#738063',
-  ink: '#222121',
-  paper: '#F6F7F5',
+  primary: '#FF6B00',
+  primaryHover: '#E45E00',
+  accent: '#00C2A8',
+  border: '#252A33',
+  ink: '#F5F7FA',
+  paper: '#0D0F12',
+  surface: '#171B21',
+  muted: '#AAB2C0',
+  soft: '#6B7280',
 }
 
 function safeServerNowMs(value) {
@@ -126,7 +130,7 @@ function MoveBadge({ delta, tvMode = false }) {
   const pad = tvMode ? '2px 8px' : '1px 6px'
   if (delta > 0) {
     return (
-      <span style={{ color: THEME.forest, background: '#e9f2e7', border: '1px solid #bdd0b6', borderRadius: 999, padding: pad, fontSize: size, fontWeight: 700 }}>
+      <span style={{ color: THEME.accent, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.28)', borderRadius: 999, padding: pad, fontSize: size, fontWeight: 700 }}>
         +{delta}
       </span>
     )
@@ -192,7 +196,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     >
                       {/* Header: rank + name + movement */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                        <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? THEME.forest : '#666' }}>#{p.rank}</span>
+                <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? THEME.primary : THEME.muted }}>#{p.rank}</span>
                         <span style={{ fontWeight: p.rank <= 3 ? 700 : 500, flex: 1, fontSize: 14 }}>{p.nombre} {p.apellido}</span>
                         <MoveBadge delta={delta} />
                       </div>
@@ -201,7 +205,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                         <div style={{ flex: 1, background: isPhaseView ? '#f0f5ee' : '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: `1px solid ${isPhaseView ? '#c8d9c2' : '#e4eae3'}` }}>
                           <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: p.total_puntos > 0 ? THEME.forest : '#8a9489' }}>{p.total_puntos}</div>
+                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>{p.total_puntos}</div>
                         </div>
                         {isPhaseView && (
                           <div style={{ flex: 1, background: '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: '1px solid #e4eae3' }}>
@@ -257,7 +261,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         <td style={{ color: '#6d756c' }}>{p.sexo || '-'}</td>
                         {showEventCount && <td style={{ textAlign: 'right', color: '#6d756c' }}>{p.total_eventos}</td>}
                         {phaseInfo && <td style={{ textAlign: 'center', color: '#6d756c' }}>{metricValue(p.mejor_marca, phaseInfo)}</td>}
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.forest : '#5f685e' }}>
+                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                           {p.total_puntos}
                         </td>
                         {totalScoreMap && (
@@ -314,7 +318,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
             <div key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''} style={{ background: '#fff', border: '1px solid #d5ddd3', borderRadius: 10, padding: '10px 12px' }}>
               {/* Header: rank + team name + movement */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? THEME.forest : '#666' }}>#{visibleRank}</span>
+                <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? THEME.primary : THEME.muted }}>#{visibleRank}</span>
                 <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14 }}>{teamName}</span>
                 <MoveBadge delta={delta} />
               </div>
@@ -323,7 +327,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 <div style={{ flex: 1, background: isPhaseView ? '#f0f5ee' : '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: `1px solid ${isPhaseView ? '#c8d9c2' : '#e4eae3'}` }}>
                   <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? THEME.forest : '#8a9489' }}>{t.total_puntos}</div>
+                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>{t.total_puntos}</div>
                   {phaseInfo && t.mejor_marca != null && (
                     <div style={{ fontSize: 11, color: '#6d756c', marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValue(t.mejor_marca, phaseInfo)}</div>
                   )}
@@ -414,7 +418,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
               </td>
               {showEventCount && <td style={{ textAlign: 'right', color: '#6d756c' }}>{t.total_eventos}</td>}
               {phaseInfo && <td style={{ textAlign: 'center', color: '#6d756c' }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
-              <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.forest : '#5f685e' }}>
+              <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                 {t.total_puntos}
               </td>
               {totalScoreMap && (
@@ -532,6 +536,7 @@ function CountdownClock({ timerData, tvMode, serverOffsetMs = 0 }) {
 // ── Main Leaderboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function Leaderboard() {
   const { competitionId } = useParams()
+  const { session, displayName } = useAuth()
   const [competitions, setCompetitions] = useState([])
   const [selectedComp, setSelectedComp] = useState(competitionId || '')
   const [view, setView] = useState('individual') // 'individual' | 'teams'
@@ -561,8 +566,8 @@ export default function Leaderboard() {
   const tvScrollContainerRef = useRef(null)
 
   // Detect if user is already logged in
-  const loggedRole = localStorage.getItem('role')
-  const loggedNombre = localStorage.getItem('nombre')
+  const loggedRole = session?.role || null
+  const loggedNombre = displayName || ''
 
   useEffect(() => {
     api.get('/competitions').then(r => {
@@ -963,38 +968,38 @@ export default function Leaderboard() {
           color: ${THEME.ink};
           font-family: 'Poppins', sans-serif;
         }
-        .lb-root nav { background: #ffffff !important; border-bottom: 1px solid #d7ddd7 !important; }
-        .lb-root .lb-brand { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; color: ${THEME.forest}; font-size: 30px; }
-        .lb-root table { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border: 1px solid #d5ddd3; border-radius: 12px; overflow: hidden; }
-        .lb-root table th { background: #eef2ed; color: #495348; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid #d5ddd3; }
-        .lb-root table td { border-bottom: 1px solid #e7ece6; }
+        .lb-root nav { background: #090B0E !important; border-bottom: 1px solid ${THEME.border} !important; }
+        .lb-root .lb-brand { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; color: ${THEME.primary}; font-size: 30px; }
+        .lb-root table { width: 100%; border-collapse: separate; border-spacing: 0; background: ${THEME.surface}; border: 1px solid ${THEME.border}; border-radius: 12px; overflow: hidden; }
+        .lb-root table th { background: #11151a; color: ${THEME.muted}; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; border-bottom: 1px solid ${THEME.border}; }
+        .lb-root table td { border-bottom: 1px solid ${THEME.border}; }
         .lb-root table tr:last-child td { border-bottom: none; }
-        .lb-root table tr:hover td { background: #f8fbf8; }
-        .lb-root .tabs { border-bottom-color: #d7ddd7; }
-        .lb-root .tab { color: #5f685e; }
-        .lb-root .tab.active { color: ${THEME.forest}; border-bottom-color: ${THEME.forest}; }
-        .lb-root .tab:hover:not(.active) { color: ${THEME.ink}; background: #edf3eb; }
+        .lb-root table tr:hover td { background: rgba(255,255,255,0.02); }
+        .lb-root .tabs { border-bottom-color: ${THEME.border}; }
+        .lb-root .tab { color: ${THEME.soft}; }
+        .lb-root .tab.active { color: ${THEME.primary}; border-bottom-color: ${THEME.primary}; }
+        .lb-root .tab:hover:not(.active) { color: ${THEME.ink}; background: rgba(255,255,255,0.04); }
         .lb-root h1 { color: ${THEME.ink} !important; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.5px; font-size: 38px !important; }
-        .lb-root select, .lb-root input { background: #fff; color: ${THEME.ink}; border: 1px solid #cfd8ce; }
-        .lb-root .badge-rx { background: #28401722; color: #284017; border-color: #738063; }
-        .lb-root .badge-scaled { background: #e491ac1f; color: #8a3f5b; border-color: #e491ac; }
-        .lb-root .badge-masters { background: #73806322; color: #3d4c33; border-color: #738063; }
-        .lb-root .badge-default { background: #ecefed; color: #4d564b; border-color: #c7cbc8; }
+        .lb-root select, .lb-root input { background: ${THEME.surface}; color: ${THEME.ink}; border: 1px solid ${THEME.border}; }
+        .lb-root .badge-rx { background: rgba(255,107,0,0.12); color: #ff9a3d; border-color: rgba(255,107,0,0.35); }
+        .lb-root .badge-scaled { background: rgba(0,194,168,0.12); color: #6ff3e1; border-color: rgba(0,194,168,0.35); }
+        .lb-root .badge-masters { background: rgba(212,165,55,0.12); color: #f1ce75; border-color: rgba(212,165,55,0.35); }
+        .lb-root .badge-default { background: rgba(170,178,192,0.12); color: ${THEME.muted}; border-color: rgba(170,178,192,0.25); }
         @keyframes shimmer {
           0% { background-position: -200% 0; }
           100% { background-position: 200% 0; }
         }
         .skeleton {
-          background: linear-gradient(90deg, #e8ece8 25%, #d9dfd8 50%, #e8ece8 75%);
+          background: linear-gradient(90deg, #1c2129 25%, #252b35 50%, #1c2129 75%);
           background-size: 200% 100%;
           animation: shimmer 1.4s infinite;
         }
         @keyframes flashUp {
-          0%   { background: #9fb58a66; }
+          0%   { background: rgba(0,194,168,0.28); }
           100% { background: transparent; }
         }
         @keyframes flashDown {
-          0%   { background: #e491ac55; }
+          0%   { background: rgba(255,107,0,0.28); }
           100% { background: transparent; }
         }
         @keyframes flashNew {
@@ -1006,7 +1011,7 @@ export default function Leaderboard() {
         tr.row-new  { animation: flashNew  0.8s ease-out; }
         .pulse-dot {
           width: 8px; height: 8px; border-radius: 50%;
-          background: ${THEME.forest};
+          background: ${THEME.primary};
           display: inline-block;
           transition: opacity 0.3s;
         }
@@ -1041,31 +1046,36 @@ export default function Leaderboard() {
         .tv-phase-progress > span {
           display: block;
           height: 100%;
-          background: linear-gradient(90deg, ${THEME.forest}, ${THEME.olive});
+          background: linear-gradient(135deg, ${THEME.primary} 0%, #FF9A3D 100%);
           animation-name: tvProgress;
           animation-timing-function: linear;
           animation-fill-mode: forwards;
         }
       `}</style>
 
-      <nav style={{ padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="lb-brand">Loyalty Race</span>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          {!tvMode && timerData && <CountdownClock timerData={timerData} tvMode={false} serverOffsetMs={timerClockOffsetMs || 0} />}
-          <span className="pulse-dot" style={{ opacity: pulse ? 1 : 0.3 }} title="Live" />
-          {lastUpdate && !isMobile && <span style={{ fontSize: 12, color: '#616b60' }}>{lastUpdate.toLocaleTimeString()}</span>}
+      {!isMobile && (
+        <nav style={{ padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="lb-brand">FinalRep</span>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            {!tvMode && timerData && <CountdownClock timerData={timerData} tvMode={false} serverOffsetMs={timerClockOffsetMs || 0} />}
+            <span className="pulse-dot" style={{ opacity: pulse ? 1 : 0.3 }} title="Live" />
+            {lastUpdate && !isMobile && <span style={{ fontSize: 12, color: THEME.muted }}>{lastUpdate.toLocaleTimeString()}</span>}
 
-          {loggedRole === 'admin' && (
-            <a href="/admin" style={{ color: THEME.forest, fontSize: 13, fontWeight: 700 }}>Admin</a>
-          )}
-          {loggedRole === 'participant' && (
-            <a href="/profile" style={{ color: THEME.forest, fontSize: 13, fontWeight: 700 }}>Mi perfil</a>
-          )}
-          {!loggedRole && (
-            <a href="/login" style={{ color: '#637061', fontSize: 12, borderBottom: '1px solid #bfc9be', paddingBottom: 1 }}>ingresar</a>
-          )}
-        </div>
-      </nav>
+            {loggedRole === 'admin' && (
+              <a href="/admin" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Admin</a>
+            )}
+            {loggedRole === 'organizer' && (
+              <a href="/organizer" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Organizador</a>
+            )}
+            {loggedRole === 'user' && (
+              <a href="/profile" style={{ color: THEME.primary, fontSize: 13, fontWeight: 700 }}>Mi perfil</a>
+            )}
+            {!loggedRole && (
+              <a href="/login" style={{ color: THEME.muted, fontSize: 12, borderBottom: '1px solid rgba(170,178,192,0.35)', paddingBottom: 1 }}>ingresar</a>
+            )}
+          </div>
+        </nav>
+      )}
 
       <div style={{ maxWidth: tvMode ? '100%' : 960, margin: '0 auto', padding: tvMode ? '24px 28px' : (isMobile ? '14px 12px' : '24px 20px') }}>
         {/* Competition selector */}
@@ -1182,7 +1192,7 @@ export default function Leaderboard() {
                 {/* Current phase — solid */}
                 <div style={{
                   display: 'inline-flex', alignItems: 'center', gap: 14,
-                  background: THEME.forest, color: '#fff',
+                  background: THEME.primary, color: '#fff',
                   borderRadius: 10, padding: '10px 28px',
                   fontFamily: 'Bebas Neue, monospace',
                   fontSize: 42, letterSpacing: 3, lineHeight: 1,
@@ -1209,7 +1219,7 @@ export default function Leaderboard() {
                     <div style={{
                       position: 'absolute', inset: 0,
                       clipPath: 'polygon(0 27%, 68% 27%, 68% 0%, 100% 50%, 68% 100%, 68% 73%, 0 73%)',
-                      background: `${THEME.forest}38`,
+                      background: 'rgba(255,107,0,0.22)',
                     }} />
                     {/* CSS-animated fill — uses the existing tvProgress keyframe */}
                     <div style={{
@@ -1222,7 +1232,7 @@ export default function Leaderboard() {
                       <div style={{
                         width: 46, height: '100%',
                         clipPath: 'polygon(0 27%, 68% 27%, 68% 0%, 100% 50%, 68% 100%, 68% 73%, 0 73%)',
-                        background: THEME.forest,
+                        background: THEME.primary,
                       }} />
                     </div>
                   </div>
@@ -1232,7 +1242,7 @@ export default function Leaderboard() {
                 {showNext && (
                   <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: 10,
-                    background: THEME.forest,
+                    background: THEME.primary,
                     color: '#fff',
                     borderRadius: 10, padding: '7px 20px',
                     fontFamily: 'Bebas Neue, monospace',

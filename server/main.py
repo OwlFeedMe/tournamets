@@ -1,14 +1,25 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from database import init_db
 from routers import auth, participants, competitions, results, leaderboard, teams, enrollments, categories_phases
 
-app = FastAPI(title="Loyalty Race API", version="1.0.0")
+app = FastAPI(title="FinalRep API", version="1.0.0")
+uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(uploads_dir, exist_ok=True)
+
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,6 +33,7 @@ app.include_router(leaderboard.router)
 app.include_router(teams.router)
 app.include_router(enrollments.router)
 app.include_router(categories_phases.router)
+app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
 @app.on_event("startup")
@@ -31,4 +43,4 @@ def startup():
 
 @app.get("/")
 def root():
-    return {"message": "Loyalty Race API"}
+    return {"message": "FinalRep API"}

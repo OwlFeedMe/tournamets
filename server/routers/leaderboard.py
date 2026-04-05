@@ -65,7 +65,7 @@ def _ind_query(session: Session, competition_id: int, phase_id=None, lower_is_be
             p.nombre,
             p.apellido,
             cp.categoria,
-            p.sexo,
+            COALESCE(p.genero, p.sexo) AS sexo,
             COALESCE(SUM(r.puntos), 0)::int AS total_puntos,
             COUNT(r.id)::int                AS total_eventos,
             {mark_select}
@@ -108,7 +108,7 @@ def _team_members_points(
             p.nombre,
             p.apellido,
             cp.categoria,
-            p.sexo,
+            COALESCE(p.genero, p.sexo) AS sexo,
             COALESCE(SUM(r.puntos), 0)::int AS puntos_propios,
             COUNT(r.id)::int                AS intentos,
             {mark_select}

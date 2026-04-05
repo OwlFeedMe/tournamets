@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from auth import require_admin, require_auth
+from access import get_owned_competition_ids, require_competition_access
+from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
@@ -332,12 +333,17 @@ def list_results(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    if user["role"] == "participant":
-        participant_id = int(user["sub"])
+    if is_end_user(user):
+        participant_id = get_effective_participant_id(user)
 
     query = select(Result)
     if competition_id:
+        require_competition_access(session, competition_id, user)
         query = query.where(Result.competition_id == competition_id)
+    else:
+        owned_ids = get_owned_competition_ids(session, user)
+        if user.get("role") == "organizer":
+            query = query.where(Result.competition_id.in_(owned_ids))
     if participant_id:
         query = query.where(Result.participant_id == participant_id)
     if team_id:
@@ -371,6 +377,8 @@ def list_results(
 def create_result(body: ResultCreate, session: Session = Depends(get_session), user=Depends(require_auth)):
     if not body.participant_id and not body.team_id:
         raise HTTPException(400, "Se requiere participant_id o team_id")
+    if not is_end_user(user):
+        require_competition_access(session, body.competition_id, user)
 
     resolved_team_id = body.team_id
     computed_points: int | None = None
@@ -394,17 +402,18 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         elif participant_team_id is None or int(participant_team_id) != int(resolved_team_id):
             raise HTTPException(400, "El participante no pertenece al equipo indicado")
 
-    if user["role"] == "participant":
+    if is_end_user(user):
+        current_participant_id = get_effective_participant_id(user)
         if body.team_id:
-            raise HTTPException(403, "Los participantes no pueden cargar resultados de equipo")
-        if int(user["sub"]) != body.participant_id:
+            raise HTTPException(403, "Los usuarios no pueden cargar resultados de equipo")
+        if current_participant_id is None or current_participant_id != body.participant_id:
             raise HTTPException(403, "Solo puedes cargar tus propios resultados")
 
         comp = session.get(Competition, body.competition_id)
         if not comp or not comp.activa:
             raise HTTPException(403, "La competencia no está activa")
         if not comp.allow_user_results:
-            raise HTTPException(403, "La carga de resultados por participantes está deshabilitada")
+            raise HTTPException(403, "La carga de resultados por usuarios está deshabilitada")
 
     phase_mode = ""
     if body.phase_id:
@@ -461,10 +470,11 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
 
 @router.put("/{result_id}")
 def update_result(result_id: int, body: ResultUpdate,
-                  session: Session = Depends(get_session), _=Depends(require_admin)):
+                  session: Session = Depends(get_session), user=Depends(require_staff)):
     r = session.get(Result, result_id)
     if not r:
         raise HTTPException(404, "Resultado no encontrado")
+    require_competition_access(session, int(r.competition_id), user)
     prev_phase_id = int(r.phase_id) if r.phase_id is not None else None
 
     computed_points: int | None = None
@@ -528,9 +538,10 @@ def update_result(result_id: int, body: ResultUpdate,
 
 
 @router.delete("/{result_id}", status_code=204)
-def delete_result(result_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
+def delete_result(result_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
     r = session.get(Result, result_id)
     if r:
+        require_competition_access(session, int(r.competition_id), user)
         competition_id = int(r.competition_id)
         phase_id = int(r.phase_id) if r.phase_id is not None else None
         session.delete(r)
@@ -545,11 +556,9 @@ def delete_results_by_phase(
     competition_id: int,
     phase_id: int,
     session: Session = Depends(get_session),
-    _=Depends(require_admin),
+    user=Depends(require_staff),
 ):
-    comp = session.get(Competition, competition_id)
-    if not comp:
-        raise HTTPException(404, "Competencia no encontrada")
+    require_competition_access(session, competition_id, user)
 
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or int(phase.competition_id) != int(competition_id):
@@ -573,11 +582,9 @@ def delete_results_by_phase(
 def delete_results_by_competition(
     competition_id: int,
     session: Session = Depends(get_session),
-    _=Depends(require_admin),
+    user=Depends(require_staff),
 ):
-    comp = session.get(Competition, competition_id)
-    if not comp:
-        raise HTTPException(404, "Competencia no encontrada")
+    require_competition_access(session, competition_id, user)
 
     deleted = session.execute(
         text("""

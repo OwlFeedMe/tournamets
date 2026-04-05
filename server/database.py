@@ -1,22 +1,71 @@
-﻿import os
+import os
 from typing import Generator
 
 from dotenv import load_dotenv
 from sqlalchemy import text
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import SQLModel, Session, create_engine, select
+
+from auth import ADMIN_ID, ADMIN_PASSWORD, hash_password
+from models import AppUser, Participant
 
 load_dotenv()
 
 MAX_TEAM_SIZE = 10
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost/loyalty_race")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./loyalty_race.db")
 
-engine = create_engine(DATABASE_URL, echo=False)
+engine_options = {"echo": False}
+if DATABASE_URL.startswith("sqlite"):
+    engine_options["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, **engine_options)
 
 
 def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session
+
+
+def _ensure_app_user(
+    session: Session,
+    *,
+    username: str,
+    display_name: str,
+    role: str,
+    password: str,
+    participant_id: int | None = None,
+):
+    existing = session.exec(select(AppUser).where(AppUser.username == username)).first()
+    if existing:
+        changed = False
+        if existing.display_name != display_name:
+            existing.display_name = display_name
+            changed = True
+        if existing.role != role:
+            existing.role = role
+            changed = True
+        if participant_id is not None and existing.participant_id != participant_id:
+            existing.participant_id = participant_id
+            changed = True
+        if existing.is_active != 1:
+            existing.is_active = 1
+            changed = True
+        if changed:
+            session.add(existing)
+            session.commit()
+        return
+
+    session.add(
+        AppUser(
+            username=username,
+            display_name=display_name,
+            role=role,
+            password_hash=hash_password(password),
+            participant_id=participant_id,
+            is_active=1,
+        )
+    )
+    session.commit()
 
 
 def init_db():
@@ -46,6 +95,7 @@ def init_db():
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS tv_static_team_category_mode TEXT NOT NULL DEFAULT '__by_category__'",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_start TIMESTAMPTZ",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_end TIMESTAMPTZ",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS imagen_url TEXT",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS scoring_rules TEXT",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS winner_rule TEXT NOT NULL DEFAULT 'higher_wins'",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS measurement_method TEXT NOT NULL DEFAULT 'unidades'",
@@ -59,6 +109,7 @@ def init_db():
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_mode TEXT NOT NULL DEFAULT 'countdown'",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS timer_format TEXT NOT NULL DEFAULT 'mm:ss'",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS scoring_mode TEXT NOT NULL DEFAULT 'highest_wins'",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS organizer_user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL",
         "ALTER TABLE results DROP COLUMN IF EXISTS evento",
         "UPDATE competition_phases SET tipo = 'cantidad' WHERE tipo IS NULL OR LOWER(TRIM(tipo)) IN ('', 'puntos', 'peso')",
         "UPDATE competition_phases SET tipo = 'posicion' WHERE LOWER(TRIM(tipo)) = 'posición'",
@@ -84,6 +135,20 @@ def init_db():
         "UPDATE competitions SET tv_static_view = 'individual' WHERE tv_static_view IS NULL OR LOWER(TRIM(tv_static_view)) NOT IN ('individual', 'teams')",
         "UPDATE competitions SET tv_static_team_category_mode = '__by_category__' WHERE tv_static_team_category_mode IS NULL OR TRIM(tv_static_team_category_mode) = ''",
         "ALTER TABLE teams ADD COLUMN IF NOT EXISTS captain_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS genero TEXT",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS box TEXT",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS talla_camiseta TEXT",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS profile_photo_url TEXT",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE",
+        "ALTER TABLE participants ADD COLUMN IF NOT EXISTS ciudad_pais TEXT",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name TEXT",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1",
+        "UPDATE participants SET genero = sexo WHERE genero IS NULL AND sexo IS NOT NULL",
+        "UPDATE app_users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''",
+        "UPDATE app_users SET is_active = 1 WHERE is_active IS NULL",
     ]
     with engine.connect() as conn:
         for sql in _migrations:
@@ -92,3 +157,75 @@ def init_db():
                 conn.commit()
             except Exception:
                 conn.rollback()
+
+    with Session(engine) as session:
+        _ensure_app_user(
+            session,
+            username=ADMIN_ID,
+            display_name="Administrador",
+            role="admin",
+            password=ADMIN_PASSWORD,
+        )
+
+        organizer_username = os.getenv("APP_ORGANIZER_USERNAME", "organizer").strip()
+        organizer_password = os.getenv("APP_ORGANIZER_PASSWORD", "organizer123").strip()
+        organizer_display_name = os.getenv("APP_ORGANIZER_DISPLAY_NAME", "Organizador").strip()
+        organizer_participant_id_raw = os.getenv("APP_ORGANIZER_PARTICIPANT_ID", "").strip()
+        if organizer_username and organizer_password and organizer_display_name:
+            organizer_participant_id = None
+            if organizer_participant_id_raw:
+                try:
+                    organizer_participant_id = int(organizer_participant_id_raw)
+                except ValueError:
+                    organizer_participant_id = None
+            _ensure_app_user(
+                session,
+                username=organizer_username,
+                display_name=organizer_display_name,
+                role="organizer",
+                password=organizer_password,
+                participant_id=organizer_participant_id,
+            )
+
+        participants = session.exec(select(Participant).where(Participant.estado == "activo")).all()
+        for participant in participants:
+            existing = session.exec(
+                select(AppUser).where(AppUser.participant_id == participant.id)
+            ).first()
+            display_name = f"{participant.nombre} {participant.apellido}".strip() or participant.cedula
+            if existing:
+                changed = False
+                if existing.username != participant.cedula:
+                    existing.username = participant.cedula
+                    changed = True
+                if existing.display_name != display_name:
+                    existing.display_name = display_name
+                    changed = True
+                if existing.role not in {"admin", "organizer"} and existing.role != "user":
+                    existing.role = "user"
+                    changed = True
+                if existing.is_active != 1:
+                    existing.is_active = 1
+                    changed = True
+                if changed:
+                    session.add(existing)
+                    session.commit()
+                continue
+
+            username_taken = session.exec(
+                select(AppUser).where(AppUser.username == participant.cedula)
+            ).first()
+            if username_taken:
+                continue
+
+            session.add(
+                AppUser(
+                    username=participant.cedula,
+                    display_name=display_name,
+                    role="user",
+                    password_hash=hash_password(participant.cedula),
+                    participant_id=participant.id,
+                    is_active=1,
+                )
+            )
+            session.commit()
