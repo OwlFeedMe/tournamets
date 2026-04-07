@@ -324,6 +324,8 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
 function CategoriesModal({ competition, onClose }) {
   const [cats, setCats] = useState([])
   const [nombre, setNombre] = useState('')
+  const [descripcion, setDescripcion] = useState('')
+  const [savingId, setSavingId] = useState(null)
 
   const load = () => api.get(`/competitions/${competition.id}/categories`).then(r => setCats(r.data))
   useEffect(() => { load() }, [competition.id])
@@ -331,9 +333,32 @@ function CategoriesModal({ competition, onClose }) {
   const add = async (e) => {
     e.preventDefault()
     if (!nombre.trim()) return
-    await api.post(`/competitions/${competition.id}/categories`, { nombre: nombre.trim() })
+    await api.post(`/competitions/${competition.id}/categories`, {
+      nombre: nombre.trim(),
+      descripcion: descripcion.trim() || null,
+    })
     setNombre('')
+    setDescripcion('')
     load()
+  }
+
+  const updateCatField = (id, field, value) => {
+    setCats(prev => prev.map(cat => (cat.id === id ? { ...cat, [field]: value } : cat)))
+  }
+
+  const saveCat = async (cat) => {
+    if (!cat?.id || !String(cat.nombre || '').trim()) return
+    setSavingId(cat.id)
+    try {
+      await api.put(`/competitions/${competition.id}/categories/${cat.id}`, {
+        nombre: String(cat.nombre || '').trim(),
+        descripcion: String(cat.descripcion || '').trim() || null,
+        orden: Number.isFinite(cat.orden) ? cat.orden : 0,
+      })
+      load()
+    } finally {
+      setSavingId(null)
+    }
   }
 
   const remove = async (id) => {
@@ -343,16 +368,23 @@ function CategoriesModal({ competition, onClose }) {
 
   return (
     <Modal title={`Categorias - ${competition.nombre}`} onClose={onClose}>
-      <form onSubmit={add} style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <form onSubmit={add} style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
         <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Hombres, Mujeres, Master..." style={{ flex: 1 }} />
+        <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ resize: 'vertical' }} />
         <button type="submit" className="btn-primary btn-sm">Agregar</button>
       </form>
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {cats.length === 0 && <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 20 }}>Sin categorias definidas</p>}
         {cats.map(c => (
-          <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', marginBottom: 8 }}>
-            <span style={{ fontSize: 14, color: 'var(--oa-text)' }}>{c.nombre}</span>
-            <button className="btn-danger btn-sm" onClick={() => remove(c.id)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
+          <div key={c.id} style={{ display: 'grid', gap: 8, padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', marginBottom: 8 }}>
+            <input value={c.nombre || ''} onChange={e => updateCatField(c.id, 'nombre', e.target.value)} placeholder="Nombre" />
+            <textarea value={c.descripcion || ''} onChange={e => updateCatField(c.id, 'descripcion', e.target.value)} placeholder="Descripcion" rows={3} style={{ resize: 'vertical' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => saveCat(c)} disabled={savingId === c.id}>
+                {savingId === c.id ? 'Guardando...' : 'Guardar'}
+              </button>
+              <button className="btn-danger btn-sm" onClick={() => remove(c.id)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
+            </div>
           </div>
         ))}
       </div>
@@ -1170,10 +1202,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     competition_start: '',
     competition_end: '',
     enrollment_intro_text: '',
+    enrollment_terms_text: '',
+    require_payment_receipt: 0,
     scoring_mode: 'highest_wins',
   })
   const [cats, setCats] = useState([])
-  const [newCat, setNewCat] = useState('')
+  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '' })
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two' })
   const [questions, setQuestions] = useState([])
@@ -1205,6 +1239,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       competition_start: toDateInput(competition.competition_start),
       competition_end: toDateInput(competition.competition_end),
       enrollment_intro_text: competition.enrollment_intro_text || '',
+      enrollment_terms_text: competition.enrollment_terms_text || '',
+      require_payment_receipt: competition.require_payment_receipt || 0,
       scoring_mode: competition.scoring_mode || 'highest_wins',
     })
     setQuestions(parseEnrollmentQuestions(competition.enrollment_questions))
@@ -1217,7 +1253,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       api.get(`/competitions/${competition.id}/categories`),
       api.get(`/competitions/${competition.id}/phases`),
     ]).then(([catRes, phRes]) => {
-      setCats(catRes.data.map(c => ({ id: c.id, nombre: c.nombre })))
+      setCats(catRes.data.map(c => ({ id: c.id, nombre: c.nombre, descripcion: c.descripcion || '' })))
       setPhases(phRes.data.map(p => ({
         id: p.id,
         nombre: p.nombre,
@@ -1237,10 +1273,11 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   }, [])
 
   const addCategory = () => {
-    const nombre = newCat.trim()
+    const nombre = newCat.nombre.trim()
+    const descripcion = (newCat.descripcion || '').trim()
     if (!nombre) return
-    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre }])
-    setNewCat('')
+    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion }])
+    setNewCat({ nombre: '', descripcion: '' })
   }
 
   const removeCategory = (id) => {
@@ -1249,6 +1286,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
 
   const updateCategoryName = (id, value) => {
     setCats(prev => prev.map(c => (c.id === id ? { ...c, nombre: value } : c)))
+  }
+
+  const updateCategoryDescription = (id, value) => {
+    setCats(prev => prev.map(c => (c.id === id ? { ...c, descripcion: value } : c)))
   }
 
   const addPhase = () => {
@@ -1282,7 +1323,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       return
     }
 
-    const cleanCats = cats.map(c => c.nombre.trim()).filter(Boolean)
+    const cleanCats = cats
+      .map(c => ({
+        nombre: String(c.nombre || '').trim(),
+        descripcion: String(c.descripcion || '').trim(),
+      }))
+      .filter(c => c.nombre)
     const cleanPhases = phases
       .map(p => ({ ...p, nombre: p.nombre.trim(), descripcion: (p.descripcion || '').trim() }))
       .filter(p => p.nombre)
@@ -1332,6 +1378,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       competition_end: dateInputToEndOfDay(form.competition_end),
       schedule_items: cleanScheduleItems,
       enrollment_intro_text: form.enrollment_intro_text.trim() || null,
+      enrollment_terms_text: form.enrollment_terms_text.trim() || null,
+      require_payment_receipt: form.require_payment_receipt ? 1 : 0,
       enrollment_payment_methods: paymentMethods
         .map((method, idx) => ({
           id: String(method.id || `pm_${idx + 1}`),
@@ -1373,7 +1421,11 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
         const existingCats = isEdit ? (await api.get(`/competitions/${competitionId}/categories`)).data : []
         await Promise.all(existingCats.map(c => api.delete(`/competitions/${competitionId}/categories/${c.id}`)))
         for (let i = 0; i < cleanCats.length; i += 1) {
-          await api.post(`/competitions/${competitionId}/categories`, { nombre: cleanCats[i], orden: i })
+          await api.post(`/competitions/${competitionId}/categories`, {
+            nombre: cleanCats[i].nombre,
+            descripcion: cleanCats[i].descripcion || null,
+            orden: i,
+          })
         }
 
         const existingPhases = isEdit ? (await api.get(`/competitions/${competitionId}/phases`)).data : []
@@ -1893,7 +1945,23 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
               value={form.enrollment_intro_text}
               onChange={e => setForm(f => ({ ...f, enrollment_intro_text: e.target.value }))}
               rows={4}
-              placeholder="Ej: Realiza el pago antes de confirmar y adjunta el comprobante en la ultima pregunta."
+              placeholder="Ej: Revisa cada categoria, completa tus datos y sigue las instrucciones antes de enviar la solicitud."
+            />
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <h4 style={sectionTitleStyle}>Terminos y condiciones</h4>
+            <div style={sectionHintStyle}>Se mostraran como paso obligatorio dentro del registro. El participante debera abrirlos, leerlos y aceptarlos antes de enviar la solicitud.</div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Texto de terminos del evento</label>
+            <textarea
+              value={form.enrollment_terms_text}
+              onChange={e => setForm(f => ({ ...f, enrollment_terms_text: e.target.value }))}
+              rows={8}
+              placeholder="Ej: Al inscribirme declaro que estoy en condiciones fisicas adecuadas, acepto el reglamento del evento, autorizo el uso de imagen segun las politicas del organizador y entiendo las condiciones de reembolso."
             />
           </div>
         </div>
@@ -1901,7 +1969,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Metodos de pago</h4>
-            <div style={sectionHintStyle}>Estos datos se muestran en el modal de confirmacion para que el participante sepa a donde consignar.</div>
+            <div style={sectionHintStyle}>Estos datos se muestran en el paso de pago del registro para que el participante sepa a donde consignar.</div>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            {renderToggleCard({
+              label: 'Solicitar comprobante de pago',
+              hint: 'Si activas esta opcion, el formulario de inscripcion mostrara una seccion fija para cargar el comprobante. Ya no sera necesario crear una pregunta manual para eso.',
+              enabled: !!form.require_payment_receipt,
+              onClick: () => setForm(f => ({ ...f, require_payment_receipt: f.require_payment_receipt ? 0 : 1 })),
+              enabledText: 'Comprobante obligatorio',
+              disabledText: 'Comprobante opcional',
+            })}
           </div>
           <div style={{ display: 'grid', gap: 6 }}>
             {paymentMethods.map((method, idx) => (
@@ -1931,15 +2009,19 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
             <div style={sectionHintStyle}>Crea las divisiones que se usaran al inscribir atletas o equipos.</div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-            <input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Ej: Elite, Open, Masters..." />
+            <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
             <button type="button" className="btn-secondary btn-sm" onClick={addCategory}>Agregar</button>
           </div>
+          <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical', marginBottom: 8 }} />
           {cats.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin categorias</div>}
           <div style={{ display: 'grid', gap: 6 }}>
             {cats.map((cat, idx) => (
-              <div key={cat.id} style={{ ...listItemStyle, gridTemplateColumns: '28px 1fr auto' }}>
+              <div key={cat.id} style={{ ...listItemStyle, gridTemplateColumns: '28px minmax(0, 1fr) auto' }}>
                 <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <input value={cat.nombre} onChange={e => updateCategoryName(cat.id, e.target.value)} />
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <input value={cat.nombre} onChange={e => updateCategoryName(cat.id, e.target.value)} placeholder="Nombre de la categoria" />
+                  <textarea value={cat.descripcion || ''} onChange={e => updateCategoryDescription(cat.id, e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical' }} />
+                </div>
                 <button type="button" className="btn-danger btn-sm" onClick={() => removeCategory(cat.id)}>x</button>
               </div>
             ))}

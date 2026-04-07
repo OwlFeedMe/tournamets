@@ -12,7 +12,7 @@ const NAV_ITEMS = {
   user: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
     { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
     { label: 'Perfil', icon: UserCircle2, to: '/profile' },
   ],
@@ -36,6 +36,7 @@ function isActivePath(pathname, target) {
   if (!target) return false
   if (target === '/') return pathname === '/'
   if (target === '/events') return pathname.startsWith('/events')
+  if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/workouts') return pathname.startsWith('/workouts')
   if (target === '/leaderboard') return pathname.startsWith('/leaderboard')
   if (target === '/admin') return pathname.startsWith('/admin')
@@ -44,7 +45,7 @@ function isActivePath(pathname, target) {
   return pathname === target || pathname.startsWith(`${target}?`)
 }
 
-export function DesktopHeader({ onOpenNotifications }) {
+export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
   const navigate = useNavigate()
   const location = useLocation()
   const { session, signOut } = useAuth()
@@ -143,9 +144,31 @@ export function DesktopHeader({ onOpenNotifications }) {
             type="button"
             aria-label="Abrir notificaciones"
             onClick={onOpenNotifications}
-            style={iconButtonStyle}
+            style={{ ...iconButtonStyle, position: 'relative' }}
           >
             <Bell size={18} />
+            {unreadCount > 0 ? (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  minWidth: 18,
+                  height: 18,
+                  padding: '0 5px',
+                  borderRadius: 999,
+                  background: '#FF453A',
+                  color: '#fff',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: '2px solid rgba(23,27,33,0.96)',
+                }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            ) : null}
           </button>
           {session ? (
             <button

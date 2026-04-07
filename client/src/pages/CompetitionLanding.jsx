@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, CalendarDays, Globe, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { getHomePath, useAuth } from '../context/AuthContext'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
@@ -80,6 +81,7 @@ function resolveCompetitionAsset(competition, asset, isMobile = false) {
 
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
+  const { session, role } = useAuth()
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -129,6 +131,13 @@ export default function CompetitionLanding() {
   }, [competition])
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+  const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
+  const secondaryCtaHref = !session ? '/login' : role === 'user' ? registerHref : getHomePath(role)
+  const secondaryCtaLabel = !session
+    ? 'Quiero participar'
+    : role === 'user'
+      ? (competition?.enrollment_open ? 'Inscribirme ahora' : 'Inscripciones cerradas')
+      : 'Ir a mi panel'
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
@@ -235,6 +244,44 @@ export default function CompetitionLanding() {
                 <p style={{ margin: '14px 0 0', maxWidth: 680, color: '#D7DEE8', fontSize: isMobile ? 14 : 16, lineHeight: 1.7 }}>
                   {(competition.descripcion || '').trim() || 'Esta competencia ya tiene pagina publica. Aqui podras revisar su panorama general y entrar al leaderboard.'}
                 </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 18 }}>
+                  <a
+                    href={`/leaderboard/${competition.id}`}
+                    style={{
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '12px 16px',
+                      borderRadius: 14,
+                      background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
+                      color: '#0D0F12',
+                      fontWeight: 800,
+                    }}
+                  >
+                    Ver leaderboard
+                    <ArrowRight size={16} />
+                  </a>
+                  <Link
+                    to={secondaryCtaHref}
+                    style={{
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '12px 16px',
+                      borderRadius: 14,
+                      border: '1px solid #252A33',
+                      background: competition.enrollment_open || role !== 'user' || !session ? 'rgba(13,15,18,0.36)' : 'rgba(13,15,18,0.62)',
+                      color: '#F5F7FA',
+                      fontWeight: 700,
+                      pointerEvents: competition.enrollment_open || role !== 'user' || !session ? 'auto' : 'none',
+                      opacity: competition.enrollment_open || role !== 'user' || !session ? 1 : 0.65,
+                    }}
+                  >
+                    {secondaryCtaLabel}
+                  </Link>
+                </div>
               </div>
             </section>
 
@@ -375,11 +422,18 @@ export default function CompetitionLanding() {
                   <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                     Categorias
                   </div>
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+                  <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                     {categories.length ? categories.map((category) => (
-                      <span key={category.id} style={{ padding: '10px 14px', borderRadius: 999, background: 'rgba(13,15,18,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>
-                        {category.nombre}
-                      </span>
+                      <div key={category.id} style={{ padding: '12px 14px', borderRadius: 18, background: 'rgba(13,15,18,0.62)', border: '1px solid #252A33' }}>
+                        <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
+                          {category.nombre}
+                        </div>
+                        {category.descripcion ? (
+                          <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+                            {category.descripcion}
+                          </div>
+                        ) : null}
+                      </div>
                     )) : (
                       <span style={{ color: '#AAB2C0', fontSize: 14 }}>Sin categorias definidas.</span>
                     )}

@@ -1,7 +1,8 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import AdminDashboard from './pages/AdminDashboard'
+import CompetitionEnrollmentPage from './pages/CompetitionEnrollmentPage'
 import CompetitionLanding from './pages/CompetitionLanding'
-import { EventsPage, NotificationsPage, WorkoutsPage } from './pages/ExplorePages'
+import { EventsPage, MyEventsPage, NotificationsPage, WorkoutsPage } from './pages/ExplorePages'
 import Home from './pages/Home'
 import Leaderboard from './pages/Leaderboard'
 import Login from './pages/Login'
@@ -47,6 +48,7 @@ export default function App() {
           <Route element={<AuthenticatedShell />}>
             <Route path="/" element={<Home />} />
             <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
+            <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/workouts" element={<WorkoutsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
@@ -69,6 +71,14 @@ export default function App() {
                 element={
                   <RoleGate allowedRoles={['user']}>
                     <ParticipantProfile />
+                  </RoleGate>
+                }
+              />
+              <Route
+                path="/my-events"
+                element={
+                  <RoleGate allowedRoles={['user']}>
+                    <MyEventsPage />
                   </RoleGate>
                 }
               />

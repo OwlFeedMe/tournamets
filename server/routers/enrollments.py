@@ -69,9 +69,7 @@ def _process_enrollment_image(file: UploadFile, participant_id: int) -> str:
     return f"/uploads/enrollment_answers/{filename}"
 
 
-def _serialize_enrollment_answers(questions: list[dict], answers: list | None) -> str | None:
-    if not questions:
-        return None
+def _serialize_enrollment_answers(questions: list[dict], answers: list | None, extra_items: list[dict] | None = None) -> str | None:
     answer_map = {}
     for item in answers or []:
         if item is None:
@@ -96,7 +94,18 @@ def _serialize_enrollment_answers(questions: list[dict], answers: list | None) -
         })
     if missing_required:
         raise HTTPException(400, f"Responde las preguntas obligatorias: {', '.join(missing_required)}")
-    return json.dumps(normalized, ensure_ascii=False)
+    for item in extra_items or []:
+        label = str((item or {}).get("question_label") or "").strip()
+        value = str((item or {}).get("answer") or "").strip()
+        if not label and not value:
+            continue
+        normalized.append({
+            "question_id": str((item or {}).get("question_id") or "").strip() or f"extra_{len(normalized) + 1}",
+            "question_label": label,
+            "question_type": str((item or {}).get("question_type") or "text").strip().lower() or "text",
+            "answer": value,
+        })
+    return json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
 @router.post("/api/enrollment-answers/upload")
@@ -227,7 +236,27 @@ def self_enroll(
         raise HTTPException(409, f"Ya tienes una inscripción con estado: {existing.estado}")
 
     questions = _parse_enrollment_questions(comp.enrollment_questions)
-    serialized_answers = _serialize_enrollment_answers(questions, body.answers)
+    extra_items = []
+    if comp.enrollment_terms_text and not body.terms_accepted:
+        raise HTTPException(400, "Debes aceptar los terminos y condiciones del evento")
+    if comp.enrollment_terms_text:
+        extra_items.append({
+            "question_id": "__terms_acceptance__",
+            "question_label": "Aceptacion de terminos y condiciones",
+            "question_type": "text",
+            "answer": "Aceptado",
+        })
+    if comp.require_payment_receipt:
+        receipt_url = str(body.payment_receipt_url or "").strip()
+        if not receipt_url:
+            raise HTTPException(400, "Debes adjuntar el comprobante de pago")
+        extra_items.append({
+            "question_id": "__payment_receipt__",
+            "question_label": "Comprobante de pago",
+            "question_type": "image",
+            "answer": receipt_url,
+        })
+    serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
 
     if existing and existing.estado == "rechazado":
         existing.categoria = body.categoria

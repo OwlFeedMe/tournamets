@@ -108,8 +108,11 @@ def init_db():
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_intro_text TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_payment_methods TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_questions TEXT",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS enrollment_terms_text TEXT",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS require_payment_receipt INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS imagen_url TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS lugar TEXT",
+        "ALTER TABLE competition_categories ADD COLUMN IF NOT EXISTS descripcion TEXT",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS scoring_rules TEXT",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS winner_rule TEXT NOT NULL DEFAULT 'higher_wins'",
         "ALTER TABLE competition_phases ADD COLUMN IF NOT EXISTS measurement_method TEXT NOT NULL DEFAULT 'unidades'",
@@ -148,6 +151,7 @@ def init_db():
         "UPDATE competitions SET tv_mode = 'cyclic' WHERE tv_mode IS NULL OR LOWER(TRIM(tv_mode)) NOT IN ('cyclic', 'static')",
         "UPDATE competitions SET tv_static_view = 'individual' WHERE tv_static_view IS NULL OR LOWER(TRIM(tv_static_view)) NOT IN ('individual', 'teams')",
         "UPDATE competitions SET tv_static_team_category_mode = '__by_category__' WHERE tv_static_team_category_mode IS NULL OR TRIM(tv_static_team_category_mode) = ''",
+        "UPDATE competitions SET require_payment_receipt = 0 WHERE require_payment_receipt IS NULL OR require_payment_receipt NOT IN (0,1)",
         "ALTER TABLE teams ADD COLUMN IF NOT EXISTS captain_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
         "ALTER TABLE participants ADD COLUMN IF NOT EXISTS genero TEXT",
         "ALTER TABLE participants ADD COLUMN IF NOT EXISTS box TEXT",
@@ -208,10 +212,13 @@ def init_db():
                 select(AppUser).where(AppUser.participant_id == participant.id)
             ).first()
             display_name = f"{participant.nombre} {participant.apellido}".strip() or participant.cedula
+            preferred_username = (participant.email or participant.cedula or "").strip().lower()
+            if not preferred_username:
+                continue
             if existing:
                 changed = False
-                if existing.username != participant.cedula:
-                    existing.username = participant.cedula
+                if existing.username != preferred_username:
+                    existing.username = preferred_username
                     changed = True
                 if existing.display_name != display_name:
                     existing.display_name = display_name
@@ -224,18 +231,21 @@ def init_db():
                     changed = True
                 if changed:
                     session.add(existing)
-                    session.commit()
+                    try:
+                        session.commit()
+                    except Exception:
+                        session.rollback()
                 continue
 
             username_taken = session.exec(
-                select(AppUser).where(AppUser.username == participant.cedula)
+                select(AppUser).where(AppUser.username == preferred_username)
             ).first()
             if username_taken:
                 continue
 
             session.add(
                 AppUser(
-                    username=participant.cedula,
+                    username=preferred_username,
                     display_name=display_name,
                     role="user",
                     password_hash=hash_password(participant.cedula),

@@ -166,170 +166,6 @@ function buttonStateForCompetition(competition, sessionRole, enrollmentState) {
   return { label: 'Quiero participar', tone: 'secondary', disabled: false }
 }
 
-function ParticipationRequestModal({ competition, onClose, onSubmitted }) {
-  const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])
-  const paymentMethods = useMemo(() => parseEnrollmentPaymentMethods(competition?.enrollment_payment_methods), [competition])
-  const [categories, setCategories] = useState([])
-  const [category, setCategory] = useState('')
-  const [answers, setAnswers] = useState({})
-  const [uploadingQuestionId, setUploadingQuestionId] = useState(null)
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState(null)
-
-  useEffect(() => {
-    if (!competition) return undefined
-    let active = true
-    setAnswers({})
-    setMsg(null)
-    api.get(`/competitions/${competition.id}/categories`)
-      .then(({ data }) => {
-        if (!active) return
-        const items = Array.isArray(data) ? data : []
-        setCategories(items)
-        setCategory(items[0]?.nombre || '')
-      })
-      .catch(() => {
-        if (!active) return
-        setCategories([])
-        setCategory('')
-      })
-    return () => {
-      active = false
-    }
-  }, [competition])
-
-  const uploadAnswerImage = async (question, file) => {
-    if (!file) return
-    setMsg(null)
-    setUploadingQuestionId(question.id)
-    try {
-      const formData = new FormData()
-      formData.append('file', file)
-      const { data } = await api.post('/enrollment-answers/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      setAnswers(prev => ({ ...prev, [question.id]: data?.url || '' }))
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo subir la imagen' })
-    } finally {
-      setUploadingQuestionId(null)
-    }
-  }
-
-  const submit = async (e) => {
-    e.preventDefault()
-    if (!competition) return
-    setMsg(null)
-    setSaving(true)
-    try {
-      await api.post(`/competitions/${competition.id}/enroll`, {
-        categoria: category || null,
-        answers: questions.map(question => ({
-          question_id: question.id,
-          question_label: question.label,
-          question_type: question.field_type || 'text',
-          answer: answers[question.id] || '',
-        })),
-      })
-      onSubmitted()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo confirmar la participacion' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!competition) return null
-
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
-      <div style={{ width: '100%', maxWidth: 640, maxHeight: '100%', overflow: 'hidden', borderRadius: 24, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '18px 20px', borderBottom: '1px solid #252A33' }}>
-          <div>
-            <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 20 }}>Confirmar participacion</div>
-            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{competition.nombre}</div>
-          </div>
-          <button type="button" className="btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
-        </div>
-        <form onSubmit={submit} style={{ padding: 20, overflowY: 'auto', display: 'grid', gap: 14 }}>
-          {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
-          <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
-            {competition.enrollment_intro_text?.trim()
-              ? competition.enrollment_intro_text
-              : 'Completa las preguntas del organizador y confirma tu participacion en esta competencia.'}
-          </div>
-          {paymentMethods.length > 0 && (
-            <div style={{ display: 'grid', gap: 10 }}>
-              <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase' }}>Metodos de pago</div>
-              {paymentMethods.map((method) => (
-                <div key={method.id} style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14 }}>
-                  <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>{method.label || 'Metodo de pago'}</div>
-                  {method.account_name && <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 6 }}>Titular: <b style={{ color: '#F5F7FA' }}>{method.account_name}</b></div>}
-                  {method.account_number && <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Cuenta: <b style={{ color: '#F5F7FA' }}>{method.account_number}</b></div>}
-                  {method.notes && <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 6 }}>{method.notes}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-          {categories.length > 0 && (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Categoria</label>
-              <select value={category} onChange={e => setCategory(e.target.value)}>
-                {categories.map(cat => <option key={cat.id} value={cat.nombre}>{cat.nombre}</option>)}
-              </select>
-            </div>
-          )}
-          {questions.map((question) => (
-            <div key={question.id} className="form-group" style={{ marginBottom: 0 }}>
-              <label>{question.label}{question.required ? ' *' : ''}</label>
-              {question.field_type === 'image' ? (
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={e => uploadAnswerImage(question, e.target.files?.[0])}
-                    required={!!question.required && !answers[question.id]}
-                  />
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                    {uploadingQuestionId === question.id
-                      ? 'Subiendo imagen...'
-                      : answers[question.id]
-                        ? 'Imagen cargada correctamente.'
-                        : (question.placeholder || 'Sube una imagen clara y legible.')}
-                  </div>
-                  {answers[question.id] && (
-                    <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12 }}>
-                      Ver archivo cargado
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <input
-                  value={answers[question.id] || ''}
-                  onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value }))}
-                  placeholder={question.placeholder || ''}
-                  required={!!question.required}
-                />
-              )}
-            </div>
-          ))}
-          {!questions.length && (
-            <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 13 }}>
-              Esta competencia no tiene preguntas adicionales. Solo debes confirmar tu participacion.
-            </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4 }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={saving}>
-              {saving ? 'Confirmando...' : 'Confirmar participacion'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
 function CompetitionCard({ competition, index, sessionRole, enrollmentState, onParticipate }) {
   const status = getCompetitionState(competition)
   const cta = buttonStateForCompetition(competition, sessionRole, enrollmentState)
@@ -499,7 +335,6 @@ export default function Home() {
   const { session, role, participantId } = useAuth()
   const [competitions, setCompetitions] = useState([])
   const [myComps, setMyComps] = useState([])
-  const [requestingCompetition, setRequestingCompetition] = useState(null)
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
@@ -560,32 +395,12 @@ export default function Home() {
     }
     if (enrollmentByComp[competition.id] && enrollmentByComp[competition.id] !== 'rechazado') return
     if (!competition.enrollment_open) return
-    setRequestingCompetition(competition)
-  }
-
-  const handleSubmitted = async () => {
-    setRequestingCompetition(null)
-    if (role === 'user' && participantId) {
-      try {
-        const { data } = await api.get(`/participants/${participantId}/competitions`)
-        setMyComps(Array.isArray(data) ? data : [])
-      } catch {
-        // keep current state if refresh fails
-      }
-    }
+    navigate(`/competitions/${competition.id}/register`)
   }
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 18px 72px' }}>
-        {requestingCompetition && (
-          <ParticipationRequestModal
-            competition={requestingCompetition}
-            onClose={() => setRequestingCompetition(null)}
-            onSubmitted={handleSubmitted}
-          />
-        )}
-
         <section
           style={{
             display: 'grid',
@@ -658,7 +473,7 @@ export default function Home() {
             </div>
             <div style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.1 }}>Eventos destacados y entrada directa al ranking.</div>
             <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
-              Si eres participante, el boton de cada tarjeta abre la solicitud real de inscripcion con preguntas del organizador.
+              Si eres participante, el boton de cada tarjeta te lleva a una pagina completa de inscripcion con categorias, detalles y preguntas del organizador.
             </div>
           </div>
         </section>

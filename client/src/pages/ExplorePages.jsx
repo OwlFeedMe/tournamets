@@ -24,6 +24,18 @@ function truncate(text, max = 120) {
   return value.length > max ? `${value.slice(0, max - 1)}...` : value
 }
 
+function resolveCompetitionAsset(competition, asset) {
+  if (!competition) return ''
+  const profile = competition.profile_image_url || ''
+  const banner = competition.banner_image_url || ''
+  const desktop = competition.banner_desktop_url || ''
+  const mobile = competition.banner_mobile_url || ''
+  const legacy = competition.imagen_url || ''
+  if (asset === 'profile') return profile || legacy
+  if (asset === 'banner') return banner || desktop || mobile || legacy
+  return legacy
+}
+
 function useCompetitions() {
   const [competitions, setCompetitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -69,6 +81,13 @@ function TopBlock({ kicker, title, text }) {
   )
 }
 
+function enrollmentBadge(status) {
+  if (status === 'confirmado') return { label: 'Confirmado', color: '#22C55E', border: 'rgba(34,197,94,0.28)', background: 'rgba(34,197,94,0.12)' }
+  if (status === 'pendiente') return { label: 'Pendiente', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
+  if (status === 'rechazado') return { label: 'Rechazado', color: '#FF453A', border: 'rgba(255,69,58,0.28)', background: 'rgba(255,69,58,0.12)' }
+  return { label: status || 'Sin registro', color: '#AAB2C0', border: 'rgba(170,178,192,0.22)', background: 'rgba(170,178,192,0.08)' }
+}
+
 export function EventsPage() {
   const { competitions, loading } = useCompetitions()
 
@@ -85,38 +104,64 @@ export function EventsPage() {
         {!loading && !competitions.length ? <div style={{ color: '#AAB2C0' }}>Todavia no hay eventos publicados.</div> : null}
 
         <div style={{ display: 'grid', gap: 14 }}>
-          {competitions.map((competition) => (
-            <article key={competition.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
-                <div>
-                  <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
-                  <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
-                </div>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: competition.enrollment_open ? '#22C55E' : '#FF6B00', fontWeight: 700, fontSize: 12 }}>
-                  <Flame size={14} />
-                  {competition.enrollment_open ? 'Abierta' : 'Visible'}
-                </div>
-              </div>
+          {competitions.map((competition) => {
+            const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
 
-              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <CalendarDays size={14} color="#00C2A8" />
-                  {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}{competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
-                </span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Trophy size={14} color="#D4A537" />
-                  Leaderboard publico
-                </span>
-              </div>
+            return (
+              <article key={competition.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      width: 88,
+                      minWidth: 88,
+                      height: 88,
+                      borderRadius: 20,
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: profileImageUrl
+                        ? `#0D0F12 url("${profileImageUrl}") center/cover no-repeat`
+                        : 'linear-gradient(135deg, rgba(255,107,0,0.26), rgba(0,194,168,0.18))',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                  </div>
 
-              <div style={{ marginTop: 14 }}>
-                <Link to={`/leaderboard/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Abrir evento
-                  <ChevronRight size={16} />
-                </Link>
-              </div>
-            </article>
-          ))}
+                  <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
+                        <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
+                      </div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: competition.enrollment_open ? '#22C55E' : '#FF6B00', fontWeight: 700, fontSize: 12 }}>
+                        <Flame size={14} />
+                        {competition.enrollment_open ? 'Abierta' : 'Visible'}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <CalendarDays size={14} color="#00C2A8" />
+                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}{competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <Trophy size={14} color="#D4A537" />
+                        Leaderboard publico
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: 14 }}>
+                      <Link to={`/leaderboard/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Abrir evento
+                        <ChevronRight size={16} />
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            )
+          })}
         </div>
       </div>
     </div>
@@ -189,6 +234,137 @@ export function WorkoutsPage() {
                     Esta competencia todavia no tiene workouts publicados.
                   </div>
                 )}
+              </article>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function MyEventsPage() {
+  const { participantId } = useAuth()
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!participantId) {
+      setItems([])
+      setLoading(false)
+      return
+    }
+
+    let mounted = true
+    setLoading(true)
+    api.get(`/participants/${participantId}/competitions`)
+      .then(({ data }) => {
+        if (!mounted) return
+        setItems(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {
+        if (!mounted) return
+        setItems([])
+      })
+      .finally(() => {
+        if (!mounted) return
+        setLoading(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [participantId])
+
+  return (
+    <div style={pageStyle}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
+        <TopBlock
+          kicker="Mis eventos"
+          title="Tus inscripciones y eventos en un solo lugar."
+          text="Consulta en que competencias estas inscrito, revisa tu estado y entra rapido al detalle o al leaderboard."
+        />
+
+        {loading ? <div style={{ color: '#AAB2C0' }}>Cargando tus eventos...</div> : null}
+        {!loading && !items.length ? <div style={{ color: '#AAB2C0' }}>Todavia no tienes eventos asociados a tu cuenta.</div> : null}
+
+        <div style={{ display: 'grid', gap: 14 }}>
+          {items.map((competition) => {
+            const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+            const badge = enrollmentBadge(competition.enrollment_estado)
+
+            return (
+              <article key={competition.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'stretch', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      width: 88,
+                      minWidth: 88,
+                      height: 88,
+                      borderRadius: 20,
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      background: profileImageUrl
+                        ? `#0D0F12 url("${profileImageUrl}") center/cover no-repeat`
+                        : 'linear-gradient(135deg, rgba(255,107,0,0.26), rgba(0,194,168,0.18))',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                  >
+                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                  </div>
+
+                  <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
+                        <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
+                      </div>
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontWeight: 800,
+                          fontSize: 12,
+                          color: badge.color,
+                          border: `1px solid ${badge.border}`,
+                          background: badge.background,
+                          borderRadius: 999,
+                          padding: '8px 12px',
+                        }}
+                      >
+                        <CalendarDays size={14} />
+                        {badge.label}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <CalendarDays size={14} color="#00C2A8" />
+                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}
+                        {competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                      </span>
+                      {competition.enrollment_categoria ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Trophy size={14} color="#D4A537" />
+                          Categoria: {competition.enrollment_categoria}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14 }}>
+                      <Link to={`/competitions/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Ver evento
+                        <ChevronRight size={16} />
+                      </Link>
+                      <Link to={`/leaderboard/${competition.id}`} style={{ color: '#00C2A8', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Ver leaderboard
+                        <ChevronRight size={16} />
+                      </Link>
+                    </div>
+                  </div>
+                </div>
               </article>
             )
           })}

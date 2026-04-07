@@ -1,4 +1,5 @@
 import io
+import re
 import uuid
 import unicodedata
 from datetime import date
@@ -15,7 +16,7 @@ from sqlmodel import Session, select
 
 from auth import get_effective_participant_id, is_end_user, require_admin, require_auth
 from database import get_session
-from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
+from models import AppUser, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
 
 
 def _normalize(s: str) -> str:
@@ -50,6 +51,10 @@ router = APIRouter(prefix="/api/participants", tags=["participants"])
 PROFILE_PHOTO_DIR = Path(__file__).resolve().parents[1] / "uploads" / "profile_photos"
 PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PROFILE_PHOTO_SIZE = 512
+VALID_GENEROS = {"M", "F", "Otro"}
+PENDING_CEDULA_PREFIX = "pending:"
+TEXT_ONLY_REGEX = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$")
+BASIC_EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 def _sync_genero_fields(data: dict) -> dict:
@@ -60,6 +65,43 @@ def _sync_genero_fields(data: dict) -> dict:
     elif sexo and not genero:
         data["genero"] = sexo
     return data
+
+
+def _is_pending_cedula(value: str | None) -> bool:
+    return bool(value and value.startswith(PENDING_CEDULA_PREFIX))
+
+
+def _validate_participant_payload(data: dict) -> None:
+    cedula = data.get("cedula")
+    nombre = data.get("nombre")
+    apellido = data.get("apellido")
+    email = data.get("email")
+    celular = data.get("celular")
+    genero = data.get("genero") or data.get("sexo")
+
+    if cedula is not None and cedula != "" and not _is_pending_cedula(cedula) and not str(cedula).isdigit():
+        raise HTTPException(400, "La cedula debe contener solo numeros")
+    if nombre is not None and nombre != "" and not TEXT_ONLY_REGEX.fullmatch(str(nombre)):
+        raise HTTPException(400, "El nombre solo puede tener letras y espacios")
+    if apellido is not None and apellido != "" and not TEXT_ONLY_REGEX.fullmatch(str(apellido)):
+        raise HTTPException(400, "El apellido solo puede tener letras y espacios")
+    if email is not None and email != "" and not BASIC_EMAIL_REGEX.fullmatch(str(email).lower()):
+        raise HTTPException(400, "Ingresa un email valido")
+    if celular is not None and celular != "" and not str(celular).isdigit():
+        raise HTTPException(400, "El celular debe contener solo numeros")
+    if genero is not None and genero != "" and genero not in VALID_GENEROS:
+        raise HTTPException(400, "Selecciona un genero valido")
+
+
+def _sync_app_user_username(session: Session, participant: Participant) -> None:
+    normalized_email = (participant.email or "").strip().lower()
+    if not normalized_email:
+        return
+    app_user = session.exec(select(AppUser).where(AppUser.participant_id == participant.id)).first()
+    if not app_user or app_user.username == normalized_email:
+        return
+    app_user.username = normalized_email
+    session.add(app_user)
 
 
 def _parse_optional_date(value) -> Optional[date]:
@@ -133,8 +175,13 @@ def update_my_profile(
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
-    for field, value in _sync_genero_fields(body.model_dump(exclude_unset=True)).items():
+    payload = _sync_genero_fields(body.model_dump(exclude_unset=True))
+    _validate_participant_payload(payload)
+
+    for field, value in payload.items():
         setattr(p, field, value)
+
+    _sync_app_user_username(session, p)
 
     session.add(p)
     try:
@@ -143,7 +190,7 @@ def update_my_profile(
         return p
     except IntegrityError:
         session.rollback()
-        raise HTTPException(409, "Ya existe un participante con esa cédula")
+        raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
 
 
 @router.post("/me/photo", response_model=ParticipantProfile)
@@ -186,7 +233,9 @@ def get_participant(participant_id: int, session: Session = Depends(get_session)
 
 @router.post("", response_model=Participant, status_code=201)
 def create_participant(body: ParticipantCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
-    participant = Participant.model_validate(_sync_genero_fields(body.model_dump()))
+    payload = _sync_genero_fields(body.model_dump())
+    _validate_participant_payload(payload)
+    participant = Participant.model_validate(payload)
     session.add(participant)
     try:
         session.commit()
@@ -194,7 +243,7 @@ def create_participant(body: ParticipantCreate, session: Session = Depends(get_s
         return participant
     except IntegrityError:
         session.rollback()
-        raise HTTPException(409, f"Ya existe un participante con cédula {body.cedula}")
+        raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
 
 
 @router.put("/{participant_id}", response_model=Participant)
@@ -204,8 +253,13 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
-    for field, value in _sync_genero_fields(body.model_dump(exclude_unset=True)).items():
+    payload = _sync_genero_fields(body.model_dump(exclude_unset=True))
+    _validate_participant_payload(payload)
+
+    for field, value in payload.items():
         setattr(p, field, value)
+
+    _sync_app_user_username(session, p)
 
     session.add(p)
     try:
@@ -214,7 +268,7 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
         return p
     except IntegrityError:
         session.rollback()
-        raise HTTPException(409, "Ya existe un participante con esa cédula")
+        raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
 
 
 @router.delete("/{participant_id}", status_code=204)

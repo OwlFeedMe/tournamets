@@ -7,6 +7,8 @@ import {
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog,
 } from 'lucide-react'
 
+const PENDING_CEDULA_PREFIX = 'pending:'
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function statusBadge(estado) {
@@ -36,6 +38,11 @@ function resolveProfilePhoto(url) {
     return url
   }
   return url
+}
+
+function displayCedula(value) {
+  if (!value || value.startsWith(PENDING_CEDULA_PREFIX)) return ''
+  return value
 }
 
 function loadImageElement(src) {
@@ -604,7 +611,7 @@ export default function ParticipantProfile() {
       setEditForm({
         nombre: res.data.nombre || '',
         apellido: res.data.apellido || '',
-        cedula: res.data.cedula || '',
+        cedula: displayCedula(res.data.cedula),
         email: res.data.email || '',
         celular: res.data.celular || '',
         genero: res.data.genero || res.data.sexo || '',
@@ -705,6 +712,19 @@ export default function ParticipantProfile() {
       const res = await api.patch('/participants/me', payload)
       setMyProfile(res.data)
       localStorage.setItem('nombre', `${res.data.nombre} ${res.data.apellido}`)
+      setEditForm((current) => ({
+        ...current,
+        nombre: res.data.nombre || '',
+        apellido: res.data.apellido || '',
+        cedula: displayCedula(res.data.cedula),
+        email: res.data.email || '',
+        celular: res.data.celular || '',
+        genero: res.data.genero || res.data.sexo || '',
+        categoria: res.data.categoria || '',
+        box: res.data.box || '',
+        fecha_nacimiento: res.data.fecha_nacimiento || '',
+        ciudad_pais: res.data.ciudad_pais || '',
+      }))
       setEditMsg({ type: 'success', text: 'Datos actualizados correctamente' })
       setShowEditProfile(false)
     } catch (err) {
@@ -960,7 +980,7 @@ export default function ParticipantProfile() {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${myProfile.cedula}` : ''}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{displayCedula(myProfile?.cedula) ? ` · ${displayCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {myProfile?.categoria && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
               {myProfile?.box && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
@@ -1036,11 +1056,11 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Cédula</label>
-                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value }))} placeholder="Cédula" />
+                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value.replace(/\D/g, '') }))} placeholder="Cédula" inputMode="numeric" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
-                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value }))} placeholder="Celular" inputMode="tel" />
+                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Email</label>

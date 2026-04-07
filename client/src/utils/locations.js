@@ -16,6 +16,7 @@ export async function loadCountries() {
     .map((country) => ({
       code: country.isoCode,
       name: country.name,
+      phoneCode: String(country.phonecode || '').replace(/\D/g, ''),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
   return countriesCache

@@ -105,6 +105,8 @@ class Competition(SQLModel, table=True):
     enrollment_intro_text: Optional[str] = None
     enrollment_payment_methods: Optional[str] = None
     enrollment_questions: Optional[str] = None
+    enrollment_terms_text: Optional[str] = None
+    require_payment_receipt: int = Field(default=0)
     # Timer fields
     timer_duration: int = Field(default=0)            # total seconds; 0 = no timer configured
     timer_started_at: Optional[datetime] = Field(
@@ -180,6 +182,7 @@ class CompetitionCategory(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
     nombre: str
+    descripcion: Optional[str] = None
     orden: int = Field(default=0)
 
 
@@ -263,10 +266,10 @@ class LoginRequest(SQLModel):
 
 
 class RegisterRequest(SQLModel):
-    cedula: str
+    cedula: Optional[str] = None
     nombre: str
     apellido: str
-    email: Optional[str] = None
+    email: str
     celular: Optional[str] = None
     genero: Optional[str] = None
     password: str
@@ -401,6 +404,8 @@ class CompetitionCreate(SQLModel):
     enrollment_intro_text: Optional[str] = None
     enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
+    enrollment_terms_text: Optional[str] = None
+    require_payment_receipt: int = 0
     scoring_mode: str = "highest_wins"
 
 
@@ -441,6 +446,8 @@ class CompetitionUpdate(SQLModel):
     enrollment_intro_text: Optional[str] = None
     enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
+    enrollment_terms_text: Optional[str] = None
+    require_payment_receipt: Optional[int] = None
     scoring_mode: Optional[str] = None
 
 
@@ -501,7 +508,14 @@ class EnrollBody(SQLModel):
 
 class CategoryCreate(SQLModel):
     nombre: str
+    descripcion: Optional[str] = None
     orden: int = 0
+
+
+class CategoryUpdate(SQLModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    orden: Optional[int] = None
 
 
 class PhaseCreate(SQLModel):
@@ -574,6 +588,8 @@ class EnrollmentAnswerItem(SQLModel):
 class SelfEnrollRequest(SQLModel):
     categoria: Optional[str] = None
     answers: Optional[List[EnrollmentAnswerItem]] = None
+    payment_receipt_url: Optional[str] = None
+    terms_accepted: int = 0
 
 
 class EnrollStatusUpdate(SQLModel):

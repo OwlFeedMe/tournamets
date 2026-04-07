@@ -380,6 +380,10 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
         payload["website_url"] = str(payload.get("website_url") or "").strip() or None
     if "enrollment_intro_text" in payload:
         payload["enrollment_intro_text"] = str(payload.get("enrollment_intro_text") or "").strip() or None
+    if "enrollment_terms_text" in payload:
+        payload["enrollment_terms_text"] = str(payload.get("enrollment_terms_text") or "").strip() or None
+    if "require_payment_receipt" in payload:
+        payload["require_payment_receipt"] = 1 if payload.get("require_payment_receipt") else 0
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
@@ -414,6 +418,10 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         data["website_url"] = str(data.get("website_url") or "").strip() or None
     if "enrollment_intro_text" in data:
         data["enrollment_intro_text"] = str(data.get("enrollment_intro_text") or "").strip() or None
+    if "enrollment_terms_text" in data:
+        data["enrollment_terms_text"] = str(data.get("enrollment_terms_text") or "").strip() or None
+    if "require_payment_receipt" in data:
+        data["require_payment_receipt"] = 1 if data.get("require_payment_receipt") else 0
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)

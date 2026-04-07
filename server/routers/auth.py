@@ -1,14 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+import re
+import uuid
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, verify_password
 from database import get_session
-from models import AppUser, LoginRequest, MeResponse, Participant, RegisterRequest, TokenResponse
+from models import AppUser, MeResponse, Participant, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 VALID_APP_ROLES = {"admin", "organizer", "user"}
+VALID_GENEROS = {"M", "F", "Otro"}
+PENDING_CEDULA_PREFIX = "pending:"
+TEXT_ONLY_REGEX = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$")
+BASIC_EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+STRONG_PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$")
 
 
 def _session_token_payload(
@@ -63,7 +72,7 @@ def _me_response(payload: dict) -> MeResponse:
 def _active_app_user_for_identifier(session: Session, identifier: str) -> AppUser | None:
     return session.exec(
         select(AppUser).where(
-            AppUser.username == identifier,
+            func.lower(AppUser.username) == identifier.strip().lower(),
             AppUser.is_active == 1,
             AppUser.role.in_(VALID_APP_ROLES),
         )
@@ -80,49 +89,117 @@ def _active_app_user_for_participant(session: Session, participant_id: int) -> A
     ).first()
 
 
+def _participants_for_email(session: Session, email: str, *, active_only: bool = False) -> list[Participant]:
+    normalized_email = email.strip().lower()
+    if not normalized_email:
+        return []
+
+    query = select(Participant).where(func.lower(Participant.email) == normalized_email)
+    if active_only:
+        query = query.where(Participant.estado == "activo")
+    return session.exec(query).all()
+
+
+def _active_participant_for_email(session: Session, email: str) -> Participant | None:
+    matches = _participants_for_email(session, email, active_only=True)
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
 def _participant_display_name(participant: Participant) -> str:
     return f"{participant.nombre} {participant.apellido}".strip()
 
 
-@router.post("/register", response_model=TokenResponse, status_code=201)
-def register(body: RegisterRequest, session: Session = Depends(get_session)):
-    cedula = body.cedula.strip()
-    nombre = body.nombre.strip()
-    apellido = body.apellido.strip()
-    password = body.password
+def _is_pending_cedula(value: str | None) -> bool:
+    return bool(value and value.startswith(PENDING_CEDULA_PREFIX))
 
-    if not cedula or not nombre or not apellido or not password:
+
+def _generate_pending_cedula() -> str:
+    return f"{PENDING_CEDULA_PREFIX}{uuid.uuid4().hex}"
+
+
+def _validate_register_fields(
+    *,
+    nombre: str,
+    apellido: str,
+    email: str,
+    celular: str,
+    genero: str,
+    password: str,
+) -> None:
+    if not TEXT_ONLY_REGEX.fullmatch(nombre):
+        raise HTTPException(status_code=400, detail="El nombre solo puede tener letras y espacios")
+
+    if not TEXT_ONLY_REGEX.fullmatch(apellido):
+        raise HTTPException(status_code=400, detail="El apellido solo puede tener letras y espacios")
+
+    if email and not BASIC_EMAIL_REGEX.fullmatch(email):
+        raise HTTPException(status_code=400, detail="Ingresa un email valido")
+
+    if celular and not celular.isdigit():
+        raise HTTPException(status_code=400, detail="El celular debe contener solo numeros")
+
+    if genero and genero not in VALID_GENEROS:
+        raise HTTPException(status_code=400, detail="Selecciona un genero valido")
+
+    if not STRONG_PASSWORD_REGEX.fullmatch(password):
+        raise HTTPException(
+            status_code=400,
+            detail="La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial",
+        )
+
+
+@router.post("/register", response_model=TokenResponse, status_code=201)
+def register(body: dict = Body(...), session: Session = Depends(get_session)):
+    nombre = str(body.get("nombre") or "").strip()
+    apellido = str(body.get("apellido") or "").strip()
+    email = str(body.get("email") or "").strip().lower()
+    celular = str(body.get("celular") or "").strip()
+    genero = str(body.get("genero") or "").strip()
+    password = str(body.get("password") or "")
+
+    if not nombre or not apellido or not email or not password:
         raise HTTPException(status_code=400, detail="Completa los campos requeridos")
 
-    existing_user = _active_app_user_for_identifier(session, cedula)
-    if existing_user:
-        raise HTTPException(status_code=409, detail="Ya existe un usuario con esa cedula")
+    _validate_register_fields(
+        nombre=nombre,
+        apellido=apellido,
+        email=email,
+        celular=celular,
+        genero=genero,
+        password=password,
+    )
 
-    existing_participant = session.exec(
-        select(Participant).where(Participant.cedula == cedula)
-    ).first()
+    existing_user = _active_app_user_for_identifier(session, email)
+    if existing_user:
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese email")
+
+    participant_matches = _participants_for_email(session, email)
+    if len(participant_matches) > 1:
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese email")
+
+    existing_participant = participant_matches[0] if participant_matches else None
     if existing_participant:
-        linked_user = _active_app_user_for_participant(session, existing_participant.id)
-        if linked_user:
-            raise HTTPException(status_code=409, detail="Ya existe una cuenta con esa cedula")
         participant = existing_participant
         participant.nombre = nombre
         participant.apellido = apellido
-        participant.email = (body.email or "").strip() or participant.email
-        participant.celular = (body.celular or "").strip() or participant.celular
-        participant.genero = (body.genero or "").strip() or participant.genero
+        participant.email = email
+        participant.celular = celular or participant.celular
+        participant.genero = genero or participant.genero
         participant.sexo = participant.genero or participant.sexo
         participant.estado = "activo"
         session.add(participant)
     else:
+        cedula = _generate_pending_cedula()
         participant = Participant(
             cedula=cedula,
             nombre=nombre,
             apellido=apellido,
-            email=(body.email or "").strip() or None,
-            celular=(body.celular or "").strip() or None,
-            genero=(body.genero or "").strip() or None,
-            sexo=(body.genero or "").strip() or None,
+            email=email or None,
+            celular=celular or None,
+            genero=genero or None,
+            sexo=genero or None,
             estado="activo",
         )
         session.add(participant)
@@ -132,10 +209,10 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
         session.refresh(participant)
     except IntegrityError:
         session.rollback()
-        raise HTTPException(status_code=409, detail="Ya existe una cuenta con esa cedula")
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta con ese email")
 
     app_user = AppUser(
-        username=cedula,
+        username=email,
         display_name=_participant_display_name(participant),
         role="user",
         password_hash=hash_password(password),
@@ -161,9 +238,12 @@ def register(body: RegisterRequest, session: Session = Depends(get_session)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, session: Session = Depends(get_session)):
-    identifier = body.cedula.strip()
-    password = body.password
+def login(body: dict = Body(...), session: Session = Depends(get_session)):
+    identifier = str(body.get("cedula") or body.get("email") or body.get("username") or "").strip()
+    password = str(body.get("password") or "")
+
+    if not identifier or not password:
+        raise HTTPException(status_code=400, detail="Correo o usuario y contrasena son obligatorios")
 
     # Legacy admin login remains for compatibility while app_users are introduced.
     if identifier == ADMIN_ID and password == ADMIN_PASSWORD:
@@ -185,12 +265,15 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
         )
         return _token_response(payload)
 
-    participant = session.exec(
-        select(Participant).where(
-            Participant.cedula == identifier,
-            Participant.estado == "activo",
-        )
-    ).first()
+    participant = _active_participant_for_email(session, identifier)
+
+    if not participant:
+        participant = session.exec(
+            select(Participant).where(
+                Participant.cedula == identifier,
+                Participant.estado == "activo",
+            )
+        ).first()
 
     if not participant:
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
@@ -212,7 +295,7 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
 
     session.add(
         AppUser(
-            username=participant.cedula,
+            username=(participant.email or participant.cedula),
             display_name=_participant_display_name(participant),
             role="user",
             password_hash=hash_password(password),
@@ -236,7 +319,7 @@ def login(body: LoginRequest, session: Session = Depends(get_session)):
     payload = _session_token_payload(
         role="participant",
         display_name=_participant_display_name(participant),
-        username=participant.cedula,
+        username=participant.email or participant.cedula,
         participant_id=participant.id,
     )
     return _token_response(payload)
@@ -291,7 +374,7 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
         payload = _session_token_payload(
             role="participant",
             display_name=_participant_display_name(participant),
-            username=participant.cedula,
+            username=participant.email or participant.cedula,
             participant_id=participant.id,
         )
         return _me_response(payload)

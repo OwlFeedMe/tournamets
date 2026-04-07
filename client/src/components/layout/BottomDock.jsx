@@ -1,4 +1,4 @@
-import { CalendarDays, Dumbbell, House, LogIn, UserCircle2 } from 'lucide-react'
+import { CalendarDays, House, LogIn, UserCircle2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
@@ -6,25 +6,25 @@ const DOCKS = {
   public: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Workouts', icon: CalendarDays, to: '/workouts' },
     { label: 'Ingresar', icon: LogIn, to: '/login' },
   ],
   user: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
     { label: 'Perfil', icon: UserCircle2, to: '/profile' },
   ],
   organizer: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Workouts', icon: CalendarDays, to: '/workouts' },
     { label: 'Perfil', icon: UserCircle2, to: '/organizer' },
   ],
   admin: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Workouts', icon: CalendarDays, to: '/workouts' },
     { label: 'Perfil', icon: UserCircle2, to: '/admin' },
   ],
 }
@@ -32,6 +32,7 @@ const DOCKS = {
 function isActivePath(pathname, target) {
   if (!target) return false
   if (target === '/events') return pathname.startsWith('/events')
+  if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/workouts') return pathname.startsWith('/workouts')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')

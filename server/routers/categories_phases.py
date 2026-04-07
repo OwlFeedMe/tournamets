@@ -9,7 +9,7 @@ from database import get_session
 from phase_status import compute_phase_status_map
 from models import (
     Competition, CompetitionCategory, CompetitionPhase,
-    CategoryCreate, PhaseCreate, PhaseUpdate,
+    CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
 )
 
 router = APIRouter(tags=["categories_phases"])
@@ -149,7 +149,33 @@ def list_categories(
 def create_category(competition_id: int, body: CategoryCreate,
                     session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, competition_id, user)
-    cat = CompetitionCategory(competition_id=competition_id, nombre=body.nombre, orden=body.orden)
+    cat = CompetitionCategory(
+        competition_id=competition_id,
+        nombre=body.nombre,
+        descripcion=body.descripcion,
+        orden=body.orden,
+    )
+    session.add(cat)
+    session.commit()
+    session.refresh(cat)
+    return cat
+
+
+@router.put("/api/competitions/{competition_id}/categories/{cat_id}")
+def update_category(
+    competition_id: int,
+    cat_id: int,
+    body: CategoryUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    cat = session.get(CompetitionCategory, cat_id)
+    if not cat or cat.competition_id != competition_id:
+        raise HTTPException(404, "Categoria no encontrada")
+    data = body.model_dump(exclude_unset=True)
+    for key, value in data.items():
+        setattr(cat, key, value)
     session.add(cat)
     session.commit()
     session.refresh(cat)

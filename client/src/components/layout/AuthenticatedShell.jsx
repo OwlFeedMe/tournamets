@@ -4,18 +4,21 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BottomDock } from './BottomDock'
 import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
+import api from '../../api/axios'
 
-function NotificationSheet({ open, onClose, session, displayName }) {
-  const items = useMemo(() => {
+function NotificationSheet({ open, onClose, session, displayName, items = [] }) {
+  const fallbackItems = useMemo(() => {
     if (session) {
       return [
         {
           title: 'Competencias y resultados',
           text: 'Aqui veras avisos de aperturas, cambios de fase y movimientos relevantes del leaderboard.',
+          tone: 'neutral',
         },
         {
           title: 'Tu cuenta',
           text: `Las notificaciones personalizadas apareceran aqui para ${displayName || 'tu perfil'}.`,
+          tone: 'neutral',
         },
       ]
     }
@@ -23,13 +26,16 @@ function NotificationSheet({ open, onClose, session, displayName }) {
       {
         title: 'Novedades de eventos',
         text: 'Consulta aperturas, nuevas competencias visibles y cambios importantes del calendario.',
+        tone: 'neutral',
       },
       {
         title: 'Acceso personal',
         text: 'Ingresa para recibir notificaciones asociadas a tu perfil y a tus competencias.',
+        tone: 'neutral',
       },
     ]
   }, [displayName, session])
+  const renderedItems = items.length ? items : fallbackItems
 
   if (!open) return null
 
@@ -99,8 +105,16 @@ function NotificationSheet({ open, onClose, session, displayName }) {
           </div>
 
           <div style={{ display: 'grid', gap: 10 }}>
-            {items.map((item) => (
-              <div key={item.title} style={{ borderRadius: 18, border: '1px solid rgba(37,42,51,0.92)', background: 'rgba(13,15,18,0.5)', padding: 14 }}>
+            {renderedItems.map((item, idx) => (
+              <div
+                key={`${item.title}-${idx}`}
+                style={{
+                  borderRadius: 18,
+                  border: `1px solid ${item.tone === 'danger' ? 'rgba(255,69,58,0.28)' : item.tone === 'success' ? 'rgba(0,194,168,0.28)' : 'rgba(37,42,51,0.92)'}`,
+                  background: item.tone === 'danger' ? 'rgba(255,69,58,0.08)' : item.tone === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(13,15,18,0.5)',
+                  padding: 14,
+                }}
+              >
                 <div style={{ color: 'var(--oa-text)', fontWeight: 700 }}>{item.title}</div>
                 <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>{item.text}</div>
               </div>
@@ -135,10 +149,12 @@ function NotificationSheet({ open, onClose, session, displayName }) {
 export function AuthenticatedShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, displayName, signOut } = useAuth()
+  const { session, displayName, signOut, participantId, role } = useAuth()
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
+  const [notificationItems, setNotificationItems] = useState([])
+  const [unreadCount, setUnreadCount] = useState(0)
   const isLoginRoute = location.pathname === '/login'
   const topInset = isMobile
     ? 'calc(68px + env(safe-area-inset-top, 0px))'
@@ -176,6 +192,84 @@ export function AuthenticatedShell() {
     }
   }, [notificationsOpen])
 
+  useEffect(() => {
+    if (!session || role !== 'user' || !participantId) {
+      setNotificationItems([])
+      setUnreadCount(0)
+      return
+    }
+    let active = true
+    const storageKey = `finalrep:enrollment-status:${participantId}`
+
+    api.get(`/participants/${participantId}/competitions`)
+      .then(({ data }) => {
+        if (!active) return
+        const list = Array.isArray(data) ? data : []
+        const currentMap = {}
+        const dynamicItems = []
+        let unread = 0
+        let previousMap = {}
+        try {
+          previousMap = JSON.parse(window.localStorage.getItem(storageKey) || '{}')
+        } catch {
+          previousMap = {}
+        }
+        for (const item of list) {
+          const currentStatus = item.enrollment_estado || ''
+          currentMap[String(item.id)] = currentStatus
+          if (currentStatus === 'confirmado') {
+            dynamicItems.push({
+              title: `Inscripcion confirmada: ${item.nombre}`,
+              text: `Tu solicitud fue aprobada${item.enrollment_categoria ? ` en la categoria ${item.enrollment_categoria}` : ''}.`,
+              tone: 'success',
+            })
+          } else if (currentStatus === 'rechazado') {
+            dynamicItems.push({
+              title: `Inscripcion rechazada: ${item.nombre}`,
+              text: 'Tu solicitud fue rechazada. Puedes revisar el registro e intentarlo de nuevo si sigue abierto.',
+              tone: 'danger',
+            })
+          }
+          if (
+            previousMap[String(item.id)] &&
+            previousMap[String(item.id)] !== currentStatus &&
+            (currentStatus === 'confirmado' || currentStatus === 'rechazado')
+          ) {
+            unread += 1
+          }
+        }
+        setNotificationItems(dynamicItems)
+        setUnreadCount(unread)
+        if (!window.localStorage.getItem(storageKey)) {
+          window.localStorage.setItem(storageKey, JSON.stringify(currentMap))
+        }
+      })
+      .catch(() => {
+        if (!active) return
+        setNotificationItems([])
+        setUnreadCount(0)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [participantId, role, session, location.pathname])
+
+  useEffect(() => {
+    if (!notificationsOpen || !session || role !== 'user' || !participantId) return
+    api.get(`/participants/${participantId}/competitions`)
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : []
+        const currentMap = {}
+        for (const item of list) {
+          currentMap[String(item.id)] = item.enrollment_estado || ''
+        }
+        window.localStorage.setItem(`finalrep:enrollment-status:${participantId}`, JSON.stringify(currentMap))
+        setUnreadCount(0)
+      })
+      .catch(() => {})
+  }, [notificationsOpen, participantId, role, session])
+
   const modalVisible = notificationsOpen || overlayOpen
 
   return (
@@ -190,7 +284,7 @@ export function AuthenticatedShell() {
       }}
     >
       {!isMobile && (
-        <DesktopHeader onOpenNotifications={() => setNotificationsOpen(true)} />
+        <DesktopHeader onOpenNotifications={() => setNotificationsOpen(true)} unreadCount={unreadCount} />
       )}
       {isMobile && (
         <header
@@ -226,6 +320,7 @@ export function AuthenticatedShell() {
                 aria-label="Abrir notificaciones"
                 onClick={() => setNotificationsOpen(true)}
                 style={{
+                  position: 'relative',
                   width: 42,
                   height: 42,
                   borderRadius: 14,
@@ -239,6 +334,28 @@ export function AuthenticatedShell() {
                 }}
               >
                 <Bell size={18} />
+                {unreadCount > 0 ? (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: -4,
+                      right: -4,
+                      minWidth: 18,
+                      height: 18,
+                      padding: '0 5px',
+                      borderRadius: 999,
+                      background: '#FF453A',
+                      color: '#fff',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      display: 'grid',
+                      placeItems: 'center',
+                      border: '2px solid rgba(23,27,33,0.96)',
+                    }}
+                  >
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                ) : null}
               </button>
               {session && (
                 <button
@@ -277,6 +394,7 @@ export function AuthenticatedShell() {
         onClose={() => setNotificationsOpen(false)}
         session={session}
         displayName={displayName}
+        items={notificationItems}
       />
 
       {isMobile && !modalVisible && (
