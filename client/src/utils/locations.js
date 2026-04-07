@@ -1,18 +1,20 @@
-let countryStateCityModulePromise = null
 let countriesCache = null
+let citiesDataPromise = null
 const citiesCache = new Map()
 
-function loadModule() {
-  if (!countryStateCityModulePromise) {
-    countryStateCityModulePromise = import('country-state-city')
+async function loadJson(url) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar ${url}`)
   }
-  return countryStateCityModulePromise
+  return response.json()
 }
 
-export async function loadCountries() {
+async function loadCountriesData() {
   if (countriesCache) return countriesCache
-  const { Country } = await loadModule()
-  countriesCache = Country.getAllCountries()
+
+  const rawCountries = await loadJson('/data/countries.json')
+  countriesCache = rawCountries
     .map((country) => ({
       code: country.isoCode,
       name: country.name,
@@ -22,11 +24,24 @@ export async function loadCountries() {
   return countriesCache
 }
 
+function loadCitiesData() {
+  if (!citiesDataPromise) {
+    citiesDataPromise = loadJson('/data/cities.json')
+  }
+  return citiesDataPromise
+}
+
+export async function loadCountries() {
+  return loadCountriesData()
+}
+
 export async function loadCitiesByCountry(countryCode) {
   if (!countryCode) return []
   if (citiesCache.has(countryCode)) return citiesCache.get(countryCode)
-  const { City } = await loadModule()
-  const cities = City.getCitiesOfCountry(countryCode)
+
+  const cityRows = await loadCitiesData()
+  const cities = cityRows
+    .filter((city) => city.countryCode === countryCode)
     .map((city) => city.name)
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, 'es'))
