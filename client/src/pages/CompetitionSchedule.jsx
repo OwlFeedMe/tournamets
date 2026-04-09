@@ -3,9 +3,12 @@ import { ArrowLeft, ArrowRight, Clock3, MapPin, Medal, Users } from 'lucide-reac
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
+import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
+import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
 
-const pageBg =
-  'radial-gradient(circle at top, rgba(255,107,0,0.16), transparent 28%), radial-gradient(circle at 88% 12%, rgba(0,194,168,0.10), transparent 24%), #0D0F12'
+function buildPageBackground(theme) {
+  return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.16)}, transparent 28%), radial-gradient(circle at 88% 12%, ${hexToRgba(theme.accent, 0.10)}, transparent 24%), ${theme.background}`
+}
 
 const scheduleCopy = {
   public: {
@@ -191,33 +194,33 @@ async function fetchWithFallback(urls) {
   throw lastError || new Error('No se pudo cargar el cronograma')
 }
 
-function ScheduleItemCard({ item, personal = false }) {
+function ScheduleItemCard({ item, personal = false, theme }) {
   const participants = item.participants || []
   const firstParticipant = participants[0]
   return (
     <div style={{
       borderRadius: 18,
-      border: '1px solid #252A33',
-      background: 'rgba(13,15,18,0.62)',
+      border: `1px solid ${theme.border}`,
+      background: hexToRgba(theme.background, 0.62),
       padding: 16,
       display: 'grid',
       gap: 10,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {item.kind === 'heat' ? 'Heat' : item.kind === 'block' ? 'Bloque' : 'Salida'}
             {item.heatNumber != null ? ` ${item.heatNumber}` : ''}
           </div>
-          <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>
+          <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>
             {item.title}
           </div>
           {item.phaseName ? (
-            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{item.phaseName}</div>
+            <div style={{ color: theme.textSecondary, fontSize: 13, marginTop: 4 }}>{item.phaseName}</div>
           ) : null}
         </div>
         {item.lane != null ? (
-          <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.24)', color: '#FFD0AE', fontSize: 12, fontWeight: 800 }}>
+          <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
             Lane {item.lane}
           </span>
         ) : null}
@@ -225,22 +228,22 @@ function ScheduleItemCard({ item, personal = false }) {
 
       <div style={{ display: 'grid', gap: 8 }}>
         {(item.startAt || item.endAt) ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#D7DEE8', fontSize: 14, lineHeight: 1.5 }}>
-            <Clock3 size={14} color="#00C2A8" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
+            <Clock3 size={14} color={theme.accent} />
             {formatDateRange(item.startAt, item.endAt)}
           </div>
         ) : null}
         {item.checkInAt ? (
-          <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+          <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
             Check-in: {formatDateTime(item.checkInAt) || item.checkInAt}
           </div>
         ) : null}
         {item.locationName || item.locationDetail ? (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: '#D7DEE8', fontSize: 14, lineHeight: 1.5 }}>
-            <MapPin size={14} color="#00C2A8" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
+            <MapPin size={14} color={theme.accent} style={{ marginTop: 2, flexShrink: 0 }} />
             <span>
               {item.locationName || 'Ubicacion por confirmar'}
-              {item.locationDetail ? <span style={{ color: '#AAB2C0' }}> · {item.locationDetail}</span> : null}
+              {item.locationDetail ? <span style={{ color: theme.textSecondary }}> · {item.locationDetail}</span> : null}
             </span>
           </div>
         ) : null}
@@ -248,7 +251,7 @@ function ScheduleItemCard({ item, personal = false }) {
 
       {participants.length ? (
         <div style={{ display: 'grid', gap: 8 }}>
-          <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {personal ? 'Tu salida' : 'Asignados'}
           </div>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -257,8 +260,8 @@ function ScheduleItemCard({ item, personal = false }) {
                 key={participant.id}
                 style={{
                   borderRadius: 14,
-                  border: '1px solid #252A33',
-                  background: participant.note ? 'rgba(0,194,168,0.08)' : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${theme.border}`,
+                  background: participant.note ? hexToRgba(theme.accent, 0.08) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -267,15 +270,15 @@ function ScheduleItemCard({ item, personal = false }) {
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ color: theme.text, fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {participant.name}
                   </div>
                   {participant.category ? (
-                    <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 2 }}>Cat: {participant.category}</div>
+                    <div style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Cat: {participant.category}</div>
                   ) : null}
                 </div>
                 {participant.lane != null ? (
-                  <span style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
+                  <span style={{ color: theme.accent, fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
                 ) : null}
               </div>
             ))}
@@ -284,53 +287,53 @@ function ScheduleItemCard({ item, personal = false }) {
       ) : null}
 
       {item.note ? (
-        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>{item.note}</div>
+        <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.6 }}>{item.note}</div>
       ) : null}
       {!participants.length && !personal ? (
-        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+        <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.6 }}>
           Sin asignacion visible todavia.
         </div>
       ) : null}
       {!participants.length && personal ? (
-        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+        <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.6 }}>
           Tu asignacion personal aun no esta publicada.
         </div>
       ) : null}
       {firstParticipant?.note ? (
-        <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>{firstParticipant.note}</div>
+        <div style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 1.5 }}>{firstParticipant.note}</div>
       ) : null}
     </div>
   )
 }
 
-function ScheduleSection({ section, personal = false }) {
+function ScheduleSection({ section, personal = false, theme }) {
   return (
     <section style={{
       borderRadius: 24,
-      border: '1px solid #252A33',
-      background: '#171B21',
+      border: `1px solid ${theme.border}`,
+      background: theme.surface,
       padding: 18,
       display: 'grid',
       gap: 14,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
         <div>
-          <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
             {section.kind === 'phase' ? 'Fase' : 'Bloque'}
           </div>
           <h2 style={{ margin: '6px 0 0', fontSize: 22, lineHeight: 1.1 }}>{section.title}</h2>
           {section.subtitle ? (
-            <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 14, lineHeight: 1.5 }}>{section.subtitle}</div>
+            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 14, lineHeight: 1.5 }}>{section.subtitle}</div>
           ) : null}
         </div>
         <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
           {section.startAt || section.endAt ? (
-            <div style={{ color: '#D7DEE8', fontSize: 13, textAlign: 'right' }}>
+            <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
               {formatDateRange(section.startAt, section.endAt)}
             </div>
           ) : null}
           {section.locationName || section.locationDetail ? (
-            <div style={{ color: '#AAB2C0', fontSize: 13, textAlign: 'right' }}>
+            <div style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'right' }}>
               {section.locationName || 'Ubicacion por confirmar'}
               {section.locationDetail ? <span style={{ color: '#6B7280' }}> · {section.locationDetail}</span> : null}
             </div>
@@ -341,11 +344,11 @@ function ScheduleSection({ section, personal = false }) {
       {section.items?.length ? (
         <div style={{ display: 'grid', gap: 12 }}>
           {section.items.map((item) => (
-            <ScheduleItemCard key={item.id} item={item} personal={personal} />
+            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} />
           ))}
         </div>
       ) : (
-        <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
+        <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
           {personal ? scheduleCopy.personal.empty : scheduleCopy.public.empty}
         </div>
       )}
@@ -482,10 +485,13 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
   const sectionCount = sections.length
   const totalHeats = schedule.items.filter(item => item.kind === 'heat').length || Number(stats.heats_total || 0) || 0
   const totalParticipants = Number(stats.participants_total || stats.confirmed_total || 0) || 0
+  const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
+  const pageBg = useMemo(() => buildPageBackground(theme), [theme])
+  const primaryTextColor = useMemo(() => getReadableTextColor(theme.primary), [theme.primary])
 
   return (
-    <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
-      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '20px 16px 72px' }}>
+    <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
+      <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 72px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
           <Link
             to={heroLink}
@@ -496,9 +502,9 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
               gap: 8,
               padding: '10px 14px',
               borderRadius: 12,
-              border: '1px solid #252A33',
-              color: '#F5F7FA',
-              background: 'rgba(13,15,18,0.4)',
+              border: `1px solid ${theme.border}`,
+              color: theme.text,
+              background: hexToRgba(theme.background, 0.4),
               width: 'fit-content',
               justifyContent: 'center',
             }}
@@ -516,8 +522,8 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
                 gap: 8,
                 padding: '12px 16px',
                 borderRadius: 14,
-                background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
-                color: '#0D0F12',
+                background: `linear-gradient(135deg, ${theme.primary} 0%, ${hexToRgba(theme.primary, 0.72)} 100%)`,
+                color: primaryTextColor,
                 fontWeight: 800,
               }}
             >
@@ -534,9 +540,9 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
                   gap: 8,
                   padding: '12px 16px',
                   borderRadius: 14,
-                  border: '1px solid #252A33',
-                  background: 'rgba(13,15,18,0.62)',
-                  color: '#F5F7FA',
+                  border: `1px solid ${theme.border}`,
+                  background: hexToRgba(theme.background, 0.62),
+                  color: theme.text,
                   fontWeight: 700,
                 }}
               >
@@ -548,24 +554,24 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
         <section style={{
           borderRadius: 28,
-          border: '1px solid #252A33',
-          background: 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.96) 40%, rgba(0,194,168,0.08) 100%)',
+          border: `1px solid ${theme.border}`,
+          background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.14)}, ${hexToRgba(theme.surface, 0.96)} 40%, ${hexToRgba(theme.accent, 0.08)} 100%)`,
           padding: 22,
           marginBottom: 18,
           boxShadow: '0 24px 70px rgba(0,0,0,0.25)',
         }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.78)', border: '1px solid rgba(255,107,0,0.28)', color: '#F5F7FA', fontSize: 12, fontWeight: 800 }}>
-              <Clock3 size={14} color="#FF9A3D" />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: hexToRgba(theme.background, 0.78), border: `1px solid ${hexToRgba(theme.primary, 0.28)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
+              <Clock3 size={14} color={theme.primary} />
               {modeCopy.eyebrow}
             </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.78)', border: '1px solid rgba(0,194,168,0.22)', color: '#D7DEE8', fontSize: 12, fontWeight: 800 }}>
-              <Users size={14} color="#00C2A8" />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: hexToRgba(theme.background, 0.78), border: `1px solid ${hexToRgba(theme.accent, 0.22)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
+              <Users size={14} color={theme.accent} />
               {totalHeats ? `${totalHeats} heats` : 'Heats por publicar'}
             </span>
             {totalParticipants ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.78)', border: '1px solid rgba(255,107,0,0.20)', color: '#D7DEE8', fontSize: 12, fontWeight: 800 }}>
-                <Medal size={14} color="#FF9A3D" />
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: hexToRgba(theme.background, 0.78), border: `1px solid ${hexToRgba(theme.primary, 0.20)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
+                <Medal size={14} color={theme.primary} />
                 {totalParticipants} inscritos
               </span>
             ) : null}
@@ -573,11 +579,11 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           <h1 style={{ margin: 0, fontSize: 'clamp(32px, 5vw, 58px)', lineHeight: 0.98 }}>
             {title}
           </h1>
-          <p style={{ margin: '12px 0 0', maxWidth: 760, color: '#D7DEE8', fontSize: 15, lineHeight: 1.7 }}>
+          <p style={{ margin: '12px 0 0', maxWidth: 760, color: theme.text, fontSize: 15, lineHeight: 1.7 }}>
             {modeCopy.description}
           </p>
           {schedule.note ? (
-            <div style={{ marginTop: 12, color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>{schedule.note}</div>
+            <div style={{ marginTop: 12, color: theme.textSecondary, fontSize: 13, lineHeight: 1.6 }}>{schedule.note}</div>
           ) : null}
           {lastUpdated ? (
             <div style={{ marginTop: 8, color: '#6B7280', fontSize: 12 }}>
@@ -587,40 +593,40 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         </section>
 
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
-          <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
-            <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
+          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{isPersonal ? 'Personal' : 'Publica'}</div>
-            <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
               {isPersonal ? 'Solo tus salidas y tus cambios.' : 'Todo lo que ya esta publicado.'}
             </div>
           </div>
-          <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
-            <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
+          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{sectionCount}</div>
-            <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>Fases, heats y bloques publicados.</div>
+            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Fases, heats y bloques publicados.</div>
           </div>
-          <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
-            <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>
+          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{competition?.lugar || 'Por confirmar'}</div>
-            <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>Si cambia el venue por heat, quedara indicado en cada card.</div>
+            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Si cambia el venue por heat, quedara indicado en cada card.</div>
           </div>
         </section>
 
         {loading ? (
-          <div style={{ borderRadius: 22, padding: 24, background: 'rgba(23,27,33,0.94)', border: '1px solid #252A33', color: '#AAB2C0' }}>
+          <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
             Cargando cronograma...
           </div>
         ) : error ? (
-          <div style={{ borderRadius: 22, padding: 24, background: 'rgba(23,27,33,0.94)', border: '1px solid #252A33', color: '#F5F7FA' }}>
+          <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
             <div style={{ fontWeight: 800, marginBottom: 8 }}>No se pudo cargar el cronograma</div>
-            <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>{error}</div>
+            <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>{error}</div>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 14 }}>
             {sections.length ? sections.map((section) => (
-              <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} />
+              <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} />
             )) : (
-              <div style={{ borderRadius: 22, padding: 24, background: 'rgba(23,27,33,0.94)', border: '1px solid #252A33', color: '#AAB2C0' }}>
+              <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                 {modeCopy.empty}
               </div>
             )}
@@ -631,10 +637,10 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           <div style={{
             marginTop: 16,
             borderRadius: 18,
-            border: '1px solid rgba(255,107,0,0.22)',
-            background: 'rgba(255,107,0,0.08)',
+            border: `1px solid ${hexToRgba(theme.primary, 0.22)}`,
+            background: hexToRgba(theme.primary, 0.08),
             padding: 16,
-            color: '#F5F7FA',
+            color: theme.text,
           }}>
             Tu cronograma personal usa un endpoint distinto al publico. Si el backend aun no lo publica, veras solo la estructura general de la competencia.
           </div>

@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, Flame, Medal, Trophy } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
+import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
@@ -424,7 +425,7 @@ export default function Home() {
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 18px 72px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 72px' }}>
         <section
           style={{
             display: 'grid',

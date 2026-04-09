@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Crown, LayoutDashboard, LogOut, Trophy } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
 
 export function RolePlaceholder({ role }) {
   const navigate = useNavigate()
@@ -22,7 +23,7 @@ export function RolePlaceholder({ role }) {
   const Icon = meta.icon
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 16px 32px' }}>
+    <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 32px' }}>
       <div
         style={{
           borderRadius: 24,

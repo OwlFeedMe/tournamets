@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, 
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
+import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
@@ -363,7 +364,7 @@ export default function CompetitionEnrollmentPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 18px 72px' }}>
+      <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 18px 72px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
           <Link to={`/competitions/${competition.id}`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, border: '1px solid #252A33', color: '#F5F7FA', background: 'rgba(13,15,18,0.4)' }}>
             <ArrowLeft size={16} />

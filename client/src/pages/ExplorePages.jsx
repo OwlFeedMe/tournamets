@@ -3,6 +3,7 @@ import { Bell, CalendarDays, ChevronRight, Dumbbell, Flame, Lock, Trophy } from 
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
+import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const pageStyle = {
   minHeight: '100vh',
@@ -135,7 +136,7 @@ export function EventsPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Eventos"
           title="Eventos para seguir, compartir y competir."
@@ -241,7 +242,7 @@ export function WorkoutsPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Workouts"
           title="Una capa para mostrar pruebas, fases y el tipo de reto que viene."
@@ -332,7 +333,7 @@ export function MyEventsPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Mis eventos"
           title="Tus inscripciones y eventos en un solo lugar."
@@ -435,7 +436,7 @@ export function NotificationsPage() {
 
   return (
     <div style={pageStyle}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Notificaciones"
           title="Avisos clave de competencias y actividad reciente."

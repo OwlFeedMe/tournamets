@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
+import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { useAuth } from '../context/AuthContext'
 import {
   Trophy, PlusCircle, Medal,
@@ -980,7 +981,7 @@ export default function ParticipantProfile() {
         </div>
       )}
 
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
 
         {/* Profile hero */}
         <div style={{

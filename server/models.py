@@ -72,6 +72,10 @@ class Competition(SQLModel, table=True):
     banner_image_url: Optional[str] = None
     banner_desktop_url: Optional[str] = None
     banner_mobile_url: Optional[str] = None
+    theme_background_color: Optional[str] = None
+    theme_surface_color: Optional[str] = None
+    theme_primary_color: Optional[str] = None
+    theme_accent_color: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = Field(default=0)
     individual_enabled: int = Field(default=1)
@@ -460,6 +464,10 @@ class CompetitionCreate(SQLModel):
     banner_image_url: Optional[str] = None
     banner_desktop_url: Optional[str] = None
     banner_mobile_url: Optional[str] = None
+    theme_background_color: Optional[str] = None
+    theme_surface_color: Optional[str] = None
+    theme_primary_color: Optional[str] = None
+    theme_accent_color: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = 0
     individual_enabled: int = 1
@@ -508,6 +516,10 @@ class CompetitionUpdate(SQLModel):
     banner_image_url: Optional[str] = None
     banner_desktop_url: Optional[str] = None
     banner_mobile_url: Optional[str] = None
+    theme_background_color: Optional[str] = None
+    theme_surface_color: Optional[str] = None
+    theme_primary_color: Optional[str] = None
+    theme_accent_color: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: Optional[int] = None
     individual_enabled: Optional[int] = None

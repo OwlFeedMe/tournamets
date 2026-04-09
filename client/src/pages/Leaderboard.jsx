@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { CheckCircle2, Clock3, Circle } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
+import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
@@ -1053,7 +1054,7 @@ export default function Leaderboard() {
         }
       `}</style>
 
-      <div style={{ maxWidth: tvMode ? '100%' : 960, margin: '0 auto', padding: tvMode ? '24px 28px' : (isMobile ? '14px 12px' : '24px 20px') }}>
+      <div style={{ maxWidth: tvMode ? '100%' : COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: tvMode ? '24px 28px' : (isMobile ? '14px 12px' : '24px 20px') }}>
         {/* Competition selector */}
         {!tvMode && (
           <div style={{ marginBottom: isMobile ? 14 : 24 }}>

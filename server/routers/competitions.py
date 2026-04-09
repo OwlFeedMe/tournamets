@@ -2,6 +2,7 @@ import io
 import json
 import json
 import os
+import re
 from collections import defaultdict
 from datetime import datetime, time, timezone
 from pathlib import Path
@@ -47,6 +48,13 @@ COMPETITION_ASSET_SPECS = {
     "profile": {"field": "profile_image_url", "width": 512, "height": 512, "mode": "cover"},
     "banner": {"field": "banner_image_url", "width": 1920, "height": 1080, "mode": "contain"},
 }
+HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
+COMPETITION_THEME_FIELDS = (
+    "theme_background_color",
+    "theme_surface_color",
+    "theme_primary_color",
+    "theme_accent_color",
+)
 
 
 def _serialize_enrollment_questions(payload: dict):
@@ -160,6 +168,25 @@ def _normalize_date_boundary(value, *, end_of_day: bool = False):
         value = value.replace(tzinfo=None)
     boundary = time(23, 59, 59, 999999) if end_of_day else time(0, 0, 0)
     return datetime.combine(value.date(), boundary)
+
+
+def _normalize_theme_color(value: object) -> str | None:
+    if value is None:
+        return None
+    color = str(value).strip()
+    if not color:
+        return None
+    if not color.startswith("#") and len(color) == 6:
+        color = f"#{color}"
+    if not HEX_COLOR_RE.fullmatch(color):
+        raise HTTPException(400, "Los colores del tema deben usar formato HEX de 6 digitos, por ejemplo #FF6B00")
+    return color.upper()
+
+
+def _normalize_competition_theme(payload: dict) -> None:
+    for field in COMPETITION_THEME_FIELDS:
+        if field in payload:
+            payload[field] = _normalize_theme_color(payload.get(field))
 
 
 def _normalize_competition_dates(payload: dict):
@@ -548,6 +575,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
         payload["enrollment_terms_text"] = str(payload.get("enrollment_terms_text") or "").strip() or None
     if "require_payment_receipt" in payload:
         payload["require_payment_receipt"] = 1 if payload.get("require_payment_receipt") else 0
+    _normalize_competition_theme(payload)
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
@@ -595,6 +623,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         data["enrollment_terms_text"] = str(data.get("enrollment_terms_text") or "").strip() or None
     if "require_payment_receipt" in data:
         data["require_payment_receipt"] = 1 if data.get("require_payment_receipt") else 0
+    _normalize_competition_theme(data)
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)

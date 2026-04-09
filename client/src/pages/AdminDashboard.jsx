@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
+import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
 import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
@@ -354,6 +356,69 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
           <button style={{ background: 'transparent', border: '1px solid #252A33', borderRadius: 10, color: 'var(--oa-text-secondary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, ...closeButtonStyle }} onClick={onClose}><X size={18} /></button>
         </div>
         {children}
+      </div>
+    </div>
+  )
+}
+
+function CompetitionThemeMiniPreview({ theme }) {
+  const primaryTextColor = getReadableTextColor(theme.primary)
+  return (
+    <div
+      style={{
+        borderRadius: 20,
+        overflow: 'hidden',
+        border: `1px solid ${theme.border}`,
+        background: `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.18)}, transparent 28%), radial-gradient(circle at 85% 20%, ${hexToRgba(theme.accent, 0.12)}, transparent 24%), ${theme.background}`,
+        padding: 14,
+      }}
+    >
+      <div
+        style={{
+          borderRadius: 18,
+          border: `1px solid ${theme.border}`,
+          background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.16)}, ${hexToRgba(theme.surface, 0.96)} 46%, ${hexToRgba(theme.accent, 0.10)} 100%)`,
+          padding: 14,
+          boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+        }}
+      >
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ width: 72, height: 22, borderRadius: 999, background: hexToRgba(theme.primary, 0.18), border: `1px solid ${hexToRgba(theme.primary, 0.30)}` }} />
+          <div style={{ width: 84, height: 22, borderRadius: 999, background: hexToRgba(theme.accent, 0.14), border: `1px solid ${hexToRgba(theme.accent, 0.26)}` }} />
+        </div>
+        <div style={{ width: '58%', height: 24, borderRadius: 10, background: hexToRgba(theme.text, 0.92), marginBottom: 10 }} />
+        <div style={{ width: '82%', height: 10, borderRadius: 999, background: hexToRgba(theme.textSecondary, 0.64), marginBottom: 6 }} />
+        <div style={{ width: '68%', height: 10, borderRadius: 999, background: hexToRgba(theme.textSecondary, 0.42), marginBottom: 14 }} />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          <div style={{ width: 108, height: 34, borderRadius: 12, background: theme.primary, border: `1px solid ${hexToRgba(theme.primary, 0.45)}`, boxShadow: `inset 0 0 0 1px ${hexToRgba(primaryTextColor, 0.08)}` }} />
+          <div style={{ width: 96, height: 34, borderRadius: 12, background: hexToRgba(theme.background, 0.56), border: `1px solid ${theme.border}` }} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 12 }}>
+        {[0, 1, 2].map((index) => (
+          <div key={index} style={{ borderRadius: 16, border: `1px solid ${theme.border}`, background: theme.surface, padding: 12 }}>
+            <div style={{ width: 44, height: 8, borderRadius: 999, background: hexToRgba(theme.accent, 0.8), marginBottom: 10 }} />
+            <div style={{ width: '72%', height: 18, borderRadius: 8, background: hexToRgba(theme.text, 0.88), marginBottom: 8 }} />
+            <div style={{ width: '100%', height: 8, borderRadius: 999, background: hexToRgba(theme.textSecondary, 0.34), marginBottom: 5 }} />
+            <div style={{ width: '64%', height: 8, borderRadius: 999, background: hexToRgba(theme.textSecondary, 0.22) }} />
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 12, borderRadius: 18, border: `1px solid ${theme.border}`, background: theme.surface, padding: 12 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div style={{ width: 74, height: 26, borderRadius: 999, background: hexToRgba(theme.primary, 0.14), border: `1px solid ${hexToRgba(theme.primary, 0.24)}` }} />
+          <div style={{ width: 90, height: 26, borderRadius: 999, background: hexToRgba(theme.background, 0.64), border: `1px solid ${theme.border}` }} />
+          <div style={{ width: 78, height: 26, borderRadius: 999, background: hexToRgba(theme.background, 0.64), border: `1px solid ${theme.border}` }} />
+        </div>
+        {[0, 1, 2].map((index) => (
+          <div key={index} style={{ borderRadius: 14, border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.56), padding: 12, marginBottom: index === 2 ? 0 : 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ width: '52%', height: 14, borderRadius: 999, background: hexToRgba(theme.text, 0.84) }} />
+              <div style={{ width: 68, height: 20, borderRadius: 999, background: index % 2 === 0 ? hexToRgba(theme.accent, 0.14) : hexToRgba(theme.primary, 0.14), border: `1px solid ${index % 2 === 0 ? hexToRgba(theme.accent, 0.24) : hexToRgba(theme.primary, 0.24)}` }} />
+            </div>
+            <div style={{ width: '34%', height: 8, borderRadius: 999, background: hexToRgba(theme.textSecondary, 0.30), marginTop: 10 }} />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -1566,6 +1631,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     lugar: '',
     contact_phone: '',
     website_url: '',
+    theme_background_color: '',
+    theme_surface_color: '',
+    theme_primary_color: '',
+    theme_accent_color: '',
     imagen_url: '',
     activa: 0,
     individual_enabled: 1,
@@ -1599,6 +1668,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [assetPreviews, setAssetPreviews] = useState({ profile: '', banner: '' })
   const [uploadingAssets, setUploadingAssets] = useState(false)
   const [deletingAssetKey, setDeletingAssetKey] = useState('')
+  const [showThemePreview, setShowThemePreview] = useState(false)
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -1609,6 +1679,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       lugar: competition.lugar || '',
       contact_phone: competition.contact_phone || '',
       website_url: competition.website_url || '',
+      theme_background_color: competition.theme_background_color || '',
+      theme_surface_color: competition.theme_surface_color || '',
+      theme_primary_color: competition.theme_primary_color || '',
+      theme_accent_color: competition.theme_accent_color || '',
       imagen_url: competition.imagen_url || '',
       activa: competition.activa || 0,
       individual_enabled: competition.individual_enabled == null ? 1 : competition.individual_enabled,
@@ -1662,12 +1736,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     }).catch(() => {
       setMsg({ type: 'error', text: 'No se pudo cargar la configuracion actual' })
     })
-  }, [isEdit, competition])
+  }, [isEdit, competition?.id])
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  const previewTheme = useMemo(() => resolveCompetitionTheme(form), [form])
 
   const addCategory = () => {
     const nombre = newCat.nombre.trim()
@@ -1792,6 +1867,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       lugar: form.lugar.trim() || null,
       contact_phone: form.contact_phone.trim() || null,
       website_url: form.website_url.trim() || null,
+      theme_background_color: normalizeHexColor(form.theme_background_color) || null,
+      theme_surface_color: normalizeHexColor(form.theme_surface_color) || null,
+      theme_primary_color: normalizeHexColor(form.theme_primary_color) || null,
+      theme_accent_color: normalizeHexColor(form.theme_accent_color) || null,
       social_links: cleanSocialLinks,
       imagen_url: form.imagen_url.trim() || null,
       activa: form.activa ? 1 : 0,
@@ -2187,6 +2266,64 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Tema de la competencia</div>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setShowThemePreview(true)}
+              >
+                Ver preview
+              </button>
+            </div>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+              Define 4 colores base para la pagina de esta competencia. Si un campo queda vacio, se usa el tema oficial de FinalRep.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+              <div style={{ maxWidth: isMobile ? '100%' : 320 }}>
+                <CompetitionThemeMiniPreview theme={previewTheme} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                {COMPETITION_THEME_FIELDS.map((field) => {
+                  const currentValue = normalizeHexColor(form[field.key]) || field.fallback
+                  return (
+                    <div key={field.key} style={{ ...listItemStyle, gap: 10, marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+                        <div>
+                          <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>{field.label}</div>
+                          <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45, marginTop: 4 }}>{field.hint}</div>
+                        </div>
+                        <div style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #252A33', background: currentValue, flexShrink: 0 }} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'center' }}>
+                        <input
+                          value={form[field.key]}
+                          onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value.trim() }))}
+                          placeholder={field.fallback}
+                          maxLength={7}
+                        />
+                        <input
+                          type="color"
+                          value={currentValue}
+                          onChange={e => setForm(f => ({ ...f, [field.key]: e.target.value }))}
+                          style={{ width: 46, height: 40, padding: 4, borderRadius: 10, cursor: 'pointer' }}
+                        />
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          onClick={() => setForm(f => ({ ...f, [field.key]: '' }))}
+                        >
+                          FinalRep
+                        </button>
+                      </div>
+                      <div style={{ color: 'var(--oa-text-secondary)', fontSize: 11 }}>
+                        {normalizeHexColor(form[field.key]) ? `Guardado: ${normalizeHexColor(form[field.key])}` : `Por defecto: ${field.fallback}`}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
             <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Imagenes</div>
             <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
               Puedes subir foto de perfil y un solo banner para toda la competencia.
@@ -2777,43 +2914,77 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   if (inline) {
     return (
-      <div>
-        <div style={{ marginBottom: 16 }}>
-          <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
-          <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
-            Edita identidad, modelo de salida, registro, pagos, divisiones y fases directamente desde el workspace.
+      <>
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
+            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
+              Edita identidad, modelo de salida, registro, pagos, divisiones y fases directamente desde el workspace.
+            </div>
           </div>
+          {formContent}
         </div>
-        {formContent}
-      </div>
+        {showThemePreview ? (
+          <Modal
+            title="Preview del tema"
+            onClose={() => setShowThemePreview(false)}
+            width={760}
+            panelStyle={{ padding: 18 }}
+          >
+            <div style={{ display: 'grid', gap: 12, overflowY: 'auto' }}>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+                Vista rapida del layout publico con los colores actuales del formulario.
+              </div>
+              <CompetitionThemeMiniPreview theme={previewTheme} />
+            </div>
+          </Modal>
+        ) : null}
+      </>
     )
   }
 
   return (
-    <Modal
-      title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'}
-      onClose={onClose}
-      width={760}
-      panelStyle={{
-        background: '#171b21',
-        border: '1px solid #252a33',
-        borderRadius: 22,
-        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-      }}
-      titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
-      closeButtonStyle={{
-        width: 34,
-        height: 34,
-        borderRadius: 12,
-        border: '1px solid #252a33',
-        background: 'transparent',
-        color: 'var(--oa-text)',
-        justifyContent: 'center',
-        padding: 0,
-      }}
-    >
-      {formContent}
-    </Modal>
+    <>
+      <Modal
+        title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'}
+        onClose={onClose}
+        width={760}
+        panelStyle={{
+          background: '#171b21',
+          border: '1px solid #252a33',
+          borderRadius: 22,
+          boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+        }}
+        titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
+        closeButtonStyle={{
+          width: 34,
+          height: 34,
+          borderRadius: 12,
+          border: '1px solid #252a33',
+          background: 'transparent',
+          color: 'var(--oa-text)',
+          justifyContent: 'center',
+          padding: 0,
+        }}
+      >
+        {formContent}
+      </Modal>
+      {showThemePreview ? (
+        <Modal
+          title="Preview del tema"
+          onClose={() => setShowThemePreview(false)}
+          width={760}
+          panelStyle={{ padding: 18 }}
+        >
+          <div style={{ display: 'grid', gap: 12, overflowY: 'auto' }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
+              Vista rapida del layout publico con los colores actuales del formulario.
+            </div>
+            <CompetitionThemeMiniPreview theme={previewTheme} />
+          </div>
+        </Modal>
+      ) : null}
+    </>
   )
 }
 
@@ -6272,7 +6443,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="app-shell">
-      <div className="app-container" style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
+      <div className="app-container" style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
         <div className="tabs" style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
           <button className={`tab ${mainTab === 'competitions' ? 'active' : ''}`} onClick={() => setMainTab('competitions')} style={{ flexShrink: 0 }}>
             Competencias

@@ -1,6 +1,7 @@
 import { Bell, CalendarDays, Dumbbell, House, LogIn, LogOut, Trophy, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
 
 const NAV_ITEMS = {
   public: [
@@ -85,7 +86,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
           display: 'flex',
           alignItems: 'center',
           gap: 24,
-          maxWidth: 1280,
+          maxWidth: APP_CONTENT_MAX_WIDTH,
           margin: '0 auto',
         }}
       >
