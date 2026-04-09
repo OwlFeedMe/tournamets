@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { useAuth } from '../context/AuthContext'
 import {
   Trophy, PlusCircle, Medal,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3,
 } from 'lucide-react'
 
 const PENDING_CEDULA_PREFIX = 'pending:'
@@ -99,6 +100,11 @@ function phaseTypeFromMethod(method) {
   if (m === 'tiempo_hms') return 'tiempo'
   if (m === 'posicion') return 'posicion'
   return 'cantidad'
+}
+
+function getCompetitionScheduleHref(competitionId, personal = false) {
+  if (!competitionId) return '/profile'
+  return personal ? `/competitions/${competitionId}/my-schedule` : `/competitions/${competitionId}/schedule`
 }
 
 // ── Competition Detail Modal ──────────────────────────────────────────────────
@@ -205,6 +211,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   }, [team, participantId, loadPendingInvites])
 
   const isCaptain = team?.captain_id === participantId
+  const canSeeMySchedule = String(comp?.enrollment_estado || '').trim().toLowerCase() === 'confirmado'
 
   const handleRename = async (e) => {
     e.preventDefault()
@@ -478,13 +485,30 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             </div>
           )}
 
-          {/* Leaderboard link */}
-          <a
-            href={`/leaderboard/${comp.id}`}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 16, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#FF6B00', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
-          >
-            <Medal size={16} /> Ver Leaderboard <ChevronRight size={14} />
-          </a>
+          <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+            {canSeeMySchedule ? (
+              <Link
+                to={getCompetitionScheduleHref(comp.id, true)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid rgba(0,194,168,0.24)', background: 'linear-gradient(135deg, rgba(0,194,168,0.12), rgba(13,15,18,0.92))', color: '#DFFFF9', fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
+              >
+                <Clock3 size={16} /> Mi cronograma <ChevronRight size={14} />
+              </Link>
+            ) : null}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <Link
+                to={getCompetitionScheduleHref(comp.id)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#F5F7FA', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+              >
+                <Users size={16} /> Cronograma
+              </Link>
+              <a
+                href={`/leaderboard/${comp.id}`}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#FF6B00', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+              >
+                <Medal size={16} /> Leaderboard
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>

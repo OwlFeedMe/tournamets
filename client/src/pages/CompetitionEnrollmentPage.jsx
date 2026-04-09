@@ -204,7 +204,7 @@ export default function CompetitionEnrollmentPage() {
     setMsg(null)
     Promise.all([
       api.get(`/competitions/${competitionId}/public`),
-      api.get(`/competitions/${competitionId}/categories`).catch(() => ({ data: [] })),
+      api.get(`/competitions/${competitionId}/categories?modality=individual`).catch(() => ({ data: [] })),
       role === 'user' && participantId
         ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),

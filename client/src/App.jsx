@@ -6,6 +6,7 @@ import { AuthenticatedShell } from './components/layout/AuthenticatedShell'
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
+const CompetitionSchedule = lazy(() => import('./pages/CompetitionSchedule'))
 const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.EventsPage })))
 const Home = lazy(() => import('./pages/Home'))
 const Leaderboard = lazy(() => import('./pages/Leaderboard'))
@@ -70,6 +71,7 @@ export default function App() {
             <Route element={<AuthenticatedShell />}>
               <Route path="/" element={<Home />} />
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
+              <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/workouts" element={<WorkoutsPage />} />
@@ -93,6 +95,14 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['user']}>
                       <ParticipantProfile />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/competitions/:competitionId/my-schedule"
+                  element={
+                    <RoleGate allowedRoles={['user']}>
+                      <CompetitionSchedule scope="personal" />
                     </RoleGate>
                   }
                 />

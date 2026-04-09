@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Globe, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
+import { ArrowRight, CalendarDays, Globe, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -37,14 +37,32 @@ function parseScheduleItems(raw) {
         id: String(item?.id || `date_${idx + 1}`),
         label: String(item?.label || '').trim(),
         kind: String(item?.kind || 'custom').trim().toLowerCase() || 'custom',
+        phase_id: item?.phase_id != null ? String(item.phase_id) : '',
+        use_phase_dates: Number(item?.use_phase_dates || 0),
         start_at: item?.start_at || null,
         end_at: item?.end_at || null,
         note: String(item?.note || '').trim(),
       }))
-      .filter(item => item.label || item.start_at || item.end_at || item.note)
+      .filter(item => item.label || item.start_at || item.end_at || item.note || item.phase_id)
   } catch {
     return []
   }
+}
+
+function resolveScheduleItemsWithPhases(items, phases) {
+  const phaseMap = new Map((phases || []).map(phase => [String(phase.id), phase]))
+  return (items || []).map(item => {
+    const linkedPhase = item.phase_id ? phaseMap.get(String(item.phase_id)) : null
+    if (!linkedPhase || !item.use_phase_dates) {
+      return { ...item, linked_phase_name: linkedPhase?.nombre || '' }
+    }
+    return {
+      ...item,
+      start_at: linkedPhase.start_at || item.start_at || null,
+      end_at: linkedPhase.end_at || item.end_at || null,
+      linked_phase_name: linkedPhase.nombre || '',
+    }
+  })
 }
 
 function getStatusLabel(competition) {
@@ -53,10 +71,40 @@ function getStatusLabel(competition) {
   return { label: 'Proximamente', tone: '#AAB2C0' }
 }
 
+function getCompetitionMode(config) {
+  const individual = !!config?.individual_enabled
+  const teams = !!config?.team_enabled
+  if (individual && teams) return { id: 'mixed', label: 'Individual + Equipos' }
+  if (teams) return { id: 'teams', label: 'Por equipos' }
+  return { id: 'individual', label: 'Individual' }
+}
+
+function enrollmentButtonState(competition, sessionRole, enrollmentState) {
+  if (!sessionRole) return { label: 'Quiero participar', disabled: false }
+  if (sessionRole !== 'user') return { label: 'Ir a mi panel', disabled: false }
+  if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', disabled: true }
+  if (enrollmentState === 'pendiente') return { label: 'Solicitud enviada', disabled: true }
+  if (enrollmentState === 'rechazado') {
+    if (!competition?.enrollment_open) return { label: 'Inscripciones cerradas', disabled: true }
+    return { label: 'Reintentar solicitud', disabled: false }
+  }
+  if (!competition?.enrollment_open) return { label: 'Inscripciones cerradas', disabled: true }
+  return { label: 'Inscribirme ahora', disabled: false }
+}
+
+function modalityLabel(modality) {
+  return modality === 'teams' ? 'Equipos' : 'Individual'
+}
+
 function phaseStateLabel(state) {
   if (state === 'finalizada') return 'Finalizada'
   if (state === 'en_progreso') return 'En progreso'
   return 'Pendiente'
+}
+
+function phaseFormatLabel(phase) {
+  const activityCount = Array.isArray(phase?.activities) && phase.activities.length ? phase.activities.length : 1
+  return activityCount === 1 ? '1 actividad' : `${activityCount} actividades`
 }
 
 function socialIconForLabel(label = '', url = '') {
@@ -79,13 +127,33 @@ function resolveCompetitionAsset(competition, asset, isMobile = false) {
   return legacy
 }
 
+const contactChipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  justifySelf: 'start',
+  width: 'fit-content',
+  padding: '8px 10px',
+  borderRadius: 999,
+  background: 'rgba(13,15,18,0.62)',
+  border: '1px solid #252A33',
+  color: '#D7DEE8',
+  fontSize: 12,
+  fontWeight: 700,
+  textDecoration: 'none',
+  maxWidth: '100%',
+}
+
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
-  const { session, role } = useAuth()
+  const { session, role, participantId } = useAuth()
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [myEnrollmentState, setMyEnrollmentState] = useState('')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [detailTab, setDetailTab] = useState('overview')
+  const [expandedCategoryKey, setExpandedCategoryKey] = useState('')
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -115,10 +183,42 @@ export default function CompetitionLanding() {
     }
   }, [competitionId])
 
+  useEffect(() => {
+    let active = true
+    setMyEnrollmentState('')
+    if (!session || role !== 'user' || !participantId) {
+      return () => {
+        active = false
+      }
+    }
+    api.get(`/participants/${participantId}/competitions`)
+      .then(({ data }) => {
+        if (!active) return
+        const current = Array.isArray(data) ? data.find(item => String(item?.id) === String(competitionId)) : null
+        setMyEnrollmentState(String(current?.enrollment_estado || '').trim().toLowerCase())
+      })
+      .catch(() => {
+        if (!active) return
+        setMyEnrollmentState('')
+      })
+    return () => {
+      active = false
+    }
+  }, [session, role, participantId, competitionId])
+
   const competition = payload?.competition || null
   const categories = useMemo(() => payload?.categories || [], [payload])
+  const categoriesByModality = useMemo(
+    () => payload?.categories_by_modality || { individual: [], teams: [] },
+    [payload]
+  )
+  const modalityConfig = payload?.modality_config || null
+  const competitionMode = getCompetitionMode(modalityConfig)
   const phases = useMemo(() => payload?.phases || [], [payload])
-  const scheduleItems = useMemo(() => parseScheduleItems(competition?.schedule_items), [competition])
+  const scheduleItems = useMemo(
+    () => resolveScheduleItemsWithPhases(parseScheduleItems(competition?.schedule_items), phases),
+    [competition, phases]
+  )
   const stats = payload?.stats || {}
   const status = getStatusLabel(competition)
   const socialLinks = useMemo(() => {
@@ -129,62 +229,27 @@ export default function CompetitionLanding() {
       return []
     }
   }, [competition])
+  const hasContactInfo = !!(competition?.contact_phone || competition?.website_url || socialLinks.length)
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+  const detailTabs = [
+    { id: 'overview', label: 'Resumen' },
+    { id: 'schedule', label: 'Calendario' },
+    { id: 'phases', label: 'Fases' },
+    { id: 'categories', label: 'Categorias' },
+  ]
+  const overviewText = (competition?.general_info_text || competition?.descripcion || '').trim()
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
+  const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
+  const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
+  const canSeeMySchedule = !!(session && role === 'user' && myEnrollmentState === 'confirmado')
+  const enrollmentButton = enrollmentButtonState(competition, role, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : role === 'user' ? registerHref : getHomePath(role)
-  const secondaryCtaLabel = !session
-    ? 'Quiero participar'
-    : role === 'user'
-      ? (competition?.enrollment_open ? 'Inscribirme ahora' : 'Inscripciones cerradas')
-      : 'Ir a mi panel'
+  const secondaryCtaLabel = enrollmentButton.label
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
-      <div style={{ maxWidth: 1180, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 18px 72px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-          <Link
-            to="/"
-            style={{
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 14px',
-              borderRadius: 12,
-              border: '1px solid #252A33',
-              color: '#F5F7FA',
-              background: 'rgba(13,15,18,0.4)',
-              width: isMobile ? '100%' : 'auto',
-              justifyContent: 'center',
-            }}
-          >
-            <ArrowLeft size={16} />
-            Volver
-          </Link>
-          {competition && (
-            <a
-              href={`/leaderboard/${competition.id}`}
-              style={{
-                textDecoration: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '12px 16px',
-                borderRadius: 14,
-                background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
-                color: '#0D0F12',
-                fontWeight: 800,
-                width: isMobile ? '100%' : 'auto',
-                justifyContent: 'center',
-              }}
-            >
-              Ver leaderboard
-              <ArrowRight size={16} />
-            </a>
-          )}
-        </div>
-
+      <div style={{ maxWidth: 1440, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 24px 72px' }}>
         {loading ? (
           <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando competencia...</div>
         ) : error ? (
@@ -238,6 +303,17 @@ export default function CompetitionLanding() {
                   <ShieldCheck size={14} color={status.tone} />
                   {status.label}
                 </span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(255,107,0,0.28)', color: '#F5F7FA', fontSize: 12, fontWeight: 800 }}>
+                    <Users size={14} color="#FF9A3D" />
+                    {competitionMode.label}
+                  </span>
+                  {modalityConfig?.team_enabled ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(0,194,168,0.28)', color: '#D7DEE8', fontSize: 12, fontWeight: 700 }}>
+                      Equipos de {modalityConfig?.team_size || 2}
+                    </span>
+                  ) : null}
+                </div>
                 <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 'clamp(34px, 6vw, 64px)', lineHeight: 0.94, wordBreak: 'break-word' }}>
                   {competition.nombre}
                 </h1>
@@ -263,6 +339,42 @@ export default function CompetitionLanding() {
                     <ArrowRight size={16} />
                   </a>
                   <Link
+                    to={scheduleHref}
+                    style={{
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '12px 16px',
+                      borderRadius: 14,
+                      border: '1px solid rgba(0,194,168,0.22)',
+                      background: 'rgba(13,15,18,0.58)',
+                      color: '#F5F7FA',
+                      fontWeight: 700,
+                    }}
+                  >
+                    Ver cronograma
+                  </Link>
+                  {canSeeMySchedule ? (
+                    <Link
+                      to={myScheduleHref}
+                      style={{
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '12px 16px',
+                        borderRadius: 14,
+                        border: '1px solid rgba(255,107,0,0.28)',
+                        background: 'rgba(13,15,18,0.58)',
+                        color: '#F5F7FA',
+                        fontWeight: 700,
+                      }}
+                    >
+                      Mi cronograma
+                    </Link>
+                  ) : null}
+                  <Link
                     to={secondaryCtaHref}
                     style={{
                       textDecoration: 'none',
@@ -272,11 +384,11 @@ export default function CompetitionLanding() {
                       padding: '12px 16px',
                       borderRadius: 14,
                       border: '1px solid #252A33',
-                      background: competition.enrollment_open || role !== 'user' || !session ? 'rgba(13,15,18,0.36)' : 'rgba(13,15,18,0.62)',
+                      background: !enrollmentButton.disabled ? 'rgba(13,15,18,0.36)' : 'rgba(13,15,18,0.62)',
                       color: '#F5F7FA',
                       fontWeight: 700,
-                      pointerEvents: competition.enrollment_open || role !== 'user' || !session ? 'auto' : 'none',
-                      opacity: competition.enrollment_open || role !== 'user' || !session ? 1 : 0.65,
+                      pointerEvents: enrollmentButton.disabled ? 'none' : 'auto',
+                      opacity: enrollmentButton.disabled ? 0.65 : 1,
                     }}
                   >
                     {secondaryCtaLabel}
@@ -285,7 +397,7 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
-            <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14, marginBottom: 18 }}>
+            <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
               <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
                   <MapPin size={14} />
@@ -304,170 +416,322 @@ export default function CompetitionLanding() {
               </div>
               <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
-                  <Users size={14} />
-                  Inscritos
+                  <Medal size={14} />
+                  Formato
                 </div>
-                <div style={{ marginTop: 10, fontSize: 32, fontWeight: 800 }}>{stats.inscritos_confirmados || 0}</div>
+                <div style={{ marginTop: 10, fontSize: 18, fontWeight: 800, lineHeight: 1.35 }}>
+                  {competitionMode.label}
+                </div>
                 <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13 }}>
-                  {stats.solicitudes_pendientes || 0} solicitudes pendientes
+                  {stats.categorias_total || 0} categorias y {stats.fases_total || 0} fases
                 </div>
               </div>
               <div style={{ borderRadius: 20, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
-                  <Medal size={14} />
-                  Estructura
+                  <Phone size={14} />
+                  Contacto
                 </div>
-                <div style={{ marginTop: 10, fontSize: 18, fontWeight: 800, lineHeight: 1.35 }}>
-                  {stats.categorias_total || 0} categorias
-                </div>
-                <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13 }}>
-                  {stats.fases_total || 0} fases configuradas
+                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                  {competition.contact_phone ? (
+                    <span style={contactChipStyle}>
+                      <Phone size={13} color="#00C2A8" />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {competition.contact_phone}
+                      </span>
+                    </span>
+                  ) : null}
+                  {competition.website_url ? (
+                    <a href={competition.website_url} target="_blank" rel="noreferrer" style={contactChipStyle}>
+                      <Globe size={13} color="#00C2A8" />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {competition.website_url}
+                      </span>
+                    </a>
+                  ) : null}
+                  {socialLinks.length ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {socialLinks.slice(0, 2).map((item) => {
+                        const Icon = socialIconForLabel(item.label, item.url)
+                        return (
+                          <a
+                            key={`main-contact-${item.id || `${item.label}-${item.url}`}`}
+                            href={item.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              ...contactChipStyle,
+                            }}
+                          >
+                            <Icon size={13} color="#00C2A8" />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {item.label || item.url}
+                            </span>
+                          </a>
+                        )
+                      })}
+                    </div>
+                  ) : null}
+                  {!competition.contact_phone && !competition.website_url ? (
+                    <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+                      {socialLinks.length ? 'Canales sociales disponibles.' : 'Canales por confirmar'}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </section>
 
-            {(competition.contact_phone || competition.website_url || socialLinks.length) ? (
-              <section style={{ marginBottom: 18 }}>
-                <div style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: isMobile ? 18 : 22 }}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Contacto
-                  </div>
-                  <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-                    {competition.contact_phone ? (
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#F5F7FA', fontSize: 14, flexWrap: 'wrap' }}>
-                        <Phone size={14} color="#00C2A8" />
-                        <span>{competition.contact_phone}</span>
-                      </div>
-                    ) : null}
-                    {competition.website_url ? (
-                      <a href={competition.website_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#F5F7FA', fontSize: 14, textDecoration: 'none' }}>
-                        <Globe size={14} color="#00C2A8" />
-                        <span>{competition.website_url}</span>
-                      </a>
-                    ) : null}
-                    {socialLinks.length ? (
-                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        {socialLinks.map((item) => (
-                          (() => {
-                            const Icon = socialIconForLabel(item.label, item.url)
-                            return (
-                              <a key={item.id || `${item.label}-${item.url}`} href={item.url} target="_blank" rel="noreferrer" style={{ padding: '10px 14px', borderRadius: 999, background: 'rgba(13,15,18,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13, fontWeight: 700, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                <Icon size={14} color="#00C2A8" />
-                                <span>{item.label || item.url}</span>
-                              </a>
-                            )
-                          })()
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.95fr) minmax(280px, 0.65fr)', gap: 18 }}>
+            <section style={{ display: 'grid', gap: 18 }}>
               <div style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: isMobile ? 18 : 22 }}>
-                <div style={{ marginBottom: 18 }}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Agenda
-                  </div>
-                  <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Fechas clave</h2>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+                  {detailTabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setDetailTab(tab.id)}
+                      style={{
+                        border: '1px solid',
+                        borderColor: detailTab === tab.id ? 'rgba(255,107,0,0.35)' : '#252A33',
+                        background: detailTab === tab.id ? 'linear-gradient(135deg, rgba(255,107,0,0.16), rgba(255,154,61,0.08))' : 'rgba(13,15,18,0.62)',
+                        color: detailTab === tab.id ? '#F5F7FA' : '#AAB2C0',
+                        borderRadius: 999,
+                        padding: '10px 14px',
+                        fontSize: 13,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
-                {scheduleItems.length ? (
-                  <div style={{ display: 'grid', gap: 10, marginBottom: 18 }}>
-                    {scheduleItems.map((item) => (
-                      <div key={item.id} style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: isMobile ? 14 : 16 }}>
-                        <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>{item.label || 'Fecha'}</div>
-                        <div style={{ marginTop: 6, color: '#D7DEE8', fontSize: 14, lineHeight: 1.6 }}>
-                          {formatDateRange(item.start_at, item.end_at)}
-                        </div>
-                        {item.note ? (
-                          <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.55 }}>{item.note}</div>
-                        ) : null}
-                      </div>
-                    ))}
+
+                {detailTab === 'overview' ? (
+                  <div>
+                    <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Resumen
+                    </div>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Informacion general</h2>
+                    <div style={{ marginTop: 14, color: '#D7DEE8', fontSize: 15, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                      {overviewText || 'Todavia no hay informacion general publicada para esta competencia.'}
+                    </div>
                   </div>
                 ) : null}
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Fases
-                  </div>
-                  <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Panorama de la competencia</h2>
-                </div>
-                {phases.length ? (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {phases.map((phase, index) => (
-                      <div key={phase.id || `${phase.nombre}-${index}`} style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: isMobile ? 14 : 16 }}>
-                        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'stretch' : 'start', flexWrap: 'wrap' }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ color: '#F5F7FA', fontSize: isMobile ? 16 : 17, fontWeight: 800, lineHeight: 1.25, wordBreak: 'break-word' }}>{phase.nombre}</div>
-                            {phase.descripcion ? (
-                              <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>{phase.descripcion}</div>
-                            ) : null}
+
+                {detailTab === 'schedule' ? (
+                  <div>
+                    <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Calendario
+                    </div>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Fechas clave</h2>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                      <Link
+                        to={scheduleHref}
+                        style={{
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: '1px solid rgba(0,194,168,0.22)',
+                          background: 'rgba(13,15,18,0.58)',
+                          color: '#F5F7FA',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Abrir cronograma completo
+                      </Link>
+                  {canSeeMySchedule ? (
+                        <Link
+                          to={myScheduleHref}
+                          style={{
+                            textDecoration: 'none',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 14px',
+                            borderRadius: 12,
+                            border: '1px solid rgba(255,107,0,0.24)',
+                            background: 'rgba(13,15,18,0.58)',
+                            color: '#F5F7FA',
+                            fontWeight: 700,
+                          }}
+                        >
+                          Ver mi cronograma
+                        </Link>
+                      ) : null}
+                    </div>
+                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                      {scheduleItems.length ? scheduleItems.map((item) => (
+                        <div key={item.id} style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: isMobile ? 14 : 16 }}>
+                          {item.linked_phase_name ? (
+                            <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                              Fase enlazada: {item.linked_phase_name}
+                            </div>
+                          ) : null}
+                          <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>{item.label || 'Fecha'}</div>
+                          <div style={{ marginTop: 6, color: '#D7DEE8', fontSize: 14, lineHeight: 1.6 }}>
+                            {formatDateRange(item.start_at, item.end_at)}
                           </div>
-                          <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.25)', color: '#FFD0AE', fontSize: 12, fontWeight: 700, alignSelf: isMobile ? 'flex-start' : 'auto' }}>
-                            {phaseStateLabel(phase.estado)}
-                          </span>
+                          {item.note ? (
+                            <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.55 }}>{item.note}</div>
+                          ) : null}
                         </div>
-                      </div>
-                    ))}
+                      )) : (
+                        <div style={{ color: '#AAB2C0', fontSize: 14 }}>Todavia no hay fechas clave publicadas.</div>
+                      )}
+                    </div>
                   </div>
-                ) : (
-                  <div style={{ color: '#AAB2C0', fontSize: 14 }}>Todavia no hay fases publicadas para esta competencia.</div>
-                )}
+                ) : null}
+
+                {detailTab === 'phases' ? (
+                  <div>
+                    <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Fases
+                    </div>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Panorama de la competencia</h2>
+                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                      {phases.length ? phases.map((phase, index) => (
+                        <div key={phase.id || `${phase.nombre}-${index}`} style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: isMobile ? 14 : 16 }}>
+                          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'stretch' : 'start', flexWrap: 'wrap' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+                                <span style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>{phaseFormatLabel(phase)}</span>
+                                <span style={{ padding: '4px 8px', borderRadius: 999, background: (phase.modality || 'individual') === 'teams' ? 'rgba(255,107,0,0.12)' : 'rgba(0,194,168,0.12)', border: `1px solid ${(phase.modality || 'individual') === 'teams' ? 'rgba(255,107,0,0.24)' : 'rgba(0,194,168,0.24)'}`, color: (phase.modality || 'individual') === 'teams' ? '#FFD0AE' : '#D9FFFA', fontSize: 11, fontWeight: 700 }}>
+                                  {modalityLabel(phase.modality || 'individual')}
+                                </span>
+                              </div>
+                              <div style={{ color: '#F5F7FA', fontSize: isMobile ? 16 : 17, fontWeight: 800, lineHeight: 1.25, wordBreak: 'break-word' }}>{phase.nombre}</div>
+                              {(phase.start_at || phase.end_at) ? (
+                                <div style={{ marginTop: 6, color: '#D7DEE8', fontSize: 13, lineHeight: 1.55 }}>
+                                  {formatDateRange(phase.start_at, phase.end_at)}
+                                </div>
+                              ) : null}
+                              {phase.descripcion ? (
+                                <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{phase.descripcion}</div>
+                              ) : null}
+                              {(phase.activities || []).length ? (
+                                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                                  {(phase.activities || []).map((activity, activityIndex) => (
+                                    <div
+                                      key={`${phase.id || phase.nombre}-activity-${activityIndex}`}
+                                      style={{
+                                        borderRadius: 14,
+                                        border: '1px solid rgba(0,194,168,0.18)',
+                                        background: 'rgba(0,194,168,0.08)',
+                                        padding: '10px 12px',
+                                      }}
+                                    >
+                                      <div style={{ color: '#D9FFFA', fontSize: 13, fontWeight: 700 }}>
+                                        {activity.nombre || `Actividad ${activityIndex + 1}`}
+                                      </div>
+                                      {activity.descripcion ? (
+                                        <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                                          {activity.descripcion}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                            <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.25)', color: '#FFD0AE', fontSize: 12, fontWeight: 700, alignSelf: isMobile ? 'flex-start' : 'auto' }}>
+                              {phaseStateLabel(phase.estado)}
+                            </span>
+                          </div>
+                        </div>
+                      )) : (
+                        <div style={{ color: '#AAB2C0', fontSize: 14 }}>Todavia no hay fases publicadas para esta competencia.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {detailTab === 'categories' ? (
+                  <div>
+                    <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Categorias
+                    </div>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Divisiones de la competencia</h2>
+                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                      {categories.length ? Object.entries(categoriesByModality)
+                        .filter(([, items]) => Array.isArray(items) && items.length)
+                        .map(([modality, items]) => (
+                          <div key={`group-${modality}`} style={{ display: 'grid', gap: 8 }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: modality === 'teams' ? '#FF9A3D' : '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                              <Users size={14} />
+                              {modalityLabel(modality)}
+                            </div>
+                            {items.map((category) => {
+                              const categoryKey = `${modality}-${category.id || category.nombre}`
+                              const isExpanded = expandedCategoryKey === categoryKey
+                              return (
+                                <button
+                                  key={category.id}
+                                  type="button"
+                                  onClick={() => setExpandedCategoryKey(prev => (prev === categoryKey ? '' : categoryKey))}
+                                  style={{
+                                    padding: '12px 14px',
+                                    borderRadius: 18,
+                                    background: 'rgba(13,15,18,0.62)',
+                                    border: '1px solid #252A33',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    color: 'inherit',
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
+                                      {category.nombre}
+                                    </div>
+                                    <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? 'rgba(255,107,0,0.12)' : 'rgba(0,194,168,0.12)', border: `1px solid ${modality === 'teams' ? 'rgba(255,107,0,0.24)' : 'rgba(0,194,168,0.24)'}`, color: modality === 'teams' ? '#FFD0AE' : '#D9FFFA', fontSize: 11, fontWeight: 700 }}>
+                                      {modalityLabel(modality)}
+                                    </span>
+                                  </div>
+                                  {isExpanded && category.descripcion ? (
+                                    <div style={{ marginTop: 8, color: '#AAB2C0', fontSize: 13, lineHeight: 1.55 }}>
+                                      {category.descripcion}
+                                    </div>
+                                  ) : null}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )) : (
+                        <div style={{ color: '#AAB2C0', fontSize: 14 }}>Sin categorias definidas.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
-              <div style={{ display: 'grid', gap: 18, alignContent: 'start' }}>
-                <div style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: isMobile ? 18 : 22 }}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Categorias
-                  </div>
-                  <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-                    {categories.length ? categories.map((category) => (
-                      <div key={category.id} style={{ padding: '12px 14px', borderRadius: 18, background: 'rgba(13,15,18,0.62)', border: '1px solid #252A33' }}>
-                        <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
-                          {category.nombre}
-                        </div>
-                        {category.descripcion ? (
-                          <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
-                            {category.descripcion}
-                          </div>
-                        ) : null}
-                      </div>
-                    )) : (
-                      <span style={{ color: '#AAB2C0', fontSize: 14 }}>Sin categorias definidas.</span>
-                    )}
-                  </div>
+              <div style={{ borderRadius: 24, border: '1px solid #252A33', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(23,27,33,0.96))', padding: isMobile ? 18 : 22 }}>
+                <div style={{ color: '#F5F7FA', fontSize: isMobile ? 22 : 24, fontWeight: 800, lineHeight: 1.1 }}>
+                  Sigue el rendimiento en tiempo real.
                 </div>
-
-                <div style={{ borderRadius: 24, border: '1px solid #252A33', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(23,27,33,0.96))', padding: isMobile ? 18 : 22 }}>
-                  <div style={{ color: '#F5F7FA', fontSize: isMobile ? 22 : 24, fontWeight: 800, lineHeight: 1.1 }}>
-                    Sigue el rendimiento en tiempo real.
-                  </div>
-                  <div style={{ marginTop: 10, color: '#D7DEE8', fontSize: 14, lineHeight: 1.6 }}>
-                    Revisa posiciones, puntajes y movimientos del ranking desde el leaderboard publico de esta competencia.
-                  </div>
-                  <a
-                    href={`/leaderboard/${competition.id}`}
-                    style={{
-                      marginTop: 18,
-                      textDecoration: 'none',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '12px 16px',
-                      borderRadius: 14,
-                      background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
-                      color: '#0D0F12',
-                      fontWeight: 800,
-                      width: isMobile ? '100%' : 'auto',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    Ver leaderboard
-                    <ArrowRight size={16} />
-                  </a>
+                <div style={{ marginTop: 10, color: '#D7DEE8', fontSize: 14, lineHeight: 1.6 }}>
+                  Revisa posiciones, puntajes y movimientos del ranking desde el leaderboard publico de esta competencia.
                 </div>
+                <a
+                  href={`/leaderboard/${competition.id}`}
+                  style={{
+                    marginTop: 18,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '12px 16px',
+                    borderRadius: 14,
+                    background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
+                    color: '#0D0F12',
+                    fontWeight: 800,
+                    width: isMobile ? '100%' : 'auto',
+                    justifyContent: 'center',
+                  }}
+                >
+                  Ver leaderboard
+                  <ArrowRight size={16} />
+                </a>
               </div>
             </section>
           </>

@@ -8,9 +8,9 @@ from access import get_owned_competition_ids, require_competition_access
 from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import MAX_TEAM_SIZE, get_session
 from models import (
+    Competition, CompetitionCategory, CompetitionParticipant,
     Participant, Team, TeamCreate, TeamMember, TeamUpdate,
     TeamInvitation, TeamInviteRequest, TeamRenameRequest,
-    CompetitionParticipant,
 )
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
@@ -19,23 +19,36 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _with_members(session: Session, team: Team) -> dict:
-    members = session.exec(
-        select(Participant)
+    member_rows = session.exec(
+        select(Participant, CompetitionParticipant.categoria)
         .join(TeamMember, TeamMember.participant_id == Participant.id)
+        .outerjoin(
+            CompetitionParticipant,
+            (CompetitionParticipant.participant_id == Participant.id)
+            & (CompetitionParticipant.competition_id == team.competition_id),
+        )
         .where(TeamMember.team_id == team.id)
     ).all()
+    members = []
+    member_ids: list[int] = []
+    for participant, category in member_rows:
+        member_ids.append(int(participant.id))
+        members.append({
+            "id": participant.id,
+            "nombre": participant.nombre,
+            "apellido": participant.apellido,
+            "box": participant.box,
+            "categoria": category or participant.categoria,
+            "is_captain": participant.id == team.captain_id,
+        })
+    team_category = _team_category_payload(session, team, member_ids)
     return {
         **team.model_dump(),
+        "team_category": team_category,
+        "team_category_id": team.team_category_id,
         "members": [
-            {
-                "id": m.id,
-                "nombre": m.nombre,
-                "apellido": m.apellido,
-                "box": m.box,
-                "categoria": m.categoria,
-                "is_captain": m.id == team.captain_id,
-            }
-            for m in members
+            member
+            for member in members
         ],
     }
 
@@ -45,12 +58,133 @@ def _clean_name(value: str | None) -> str:
 
 
 def _competition_team_size(session: Session, competition_id: int, fallback: int = 2) -> int:
+    competition = session.get(Competition, competition_id)
+    if competition is not None:
+        return max(1, min(MAX_TEAM_SIZE, int(getattr(competition, "team_size", fallback) or fallback)))
     teams = session.exec(select(Team).where(Team.competition_id == competition_id)).all()
     for t in teams:
         count = session.exec(select(TeamMember).where(TeamMember.team_id == t.id)).all()
         if len(count) > 0:
             return len(count)
     return max(1, min(MAX_TEAM_SIZE, fallback))
+
+
+def _competition_team_membership_rule(session: Session, competition_id: int) -> str:
+    competition = session.get(Competition, competition_id)
+    if not competition:
+        return "free"
+    value = (getattr(competition, "team_membership_rule", "free") or "free").strip().lower()
+    return value if value in {"free", "same_category"} else "free"
+
+
+def _competition_team_categories_enabled(session: Session, competition_id: int) -> bool:
+    competition = session.get(Competition, competition_id)
+    return bool(competition and getattr(competition, "team_categories_enabled", 1))
+
+
+def _team_category(session: Session, team_category_id: int | None) -> CompetitionCategory | None:
+    if team_category_id is None:
+        return None
+    return session.get(CompetitionCategory, team_category_id)
+
+
+def _member_category_label(session: Session, competition_id: int, participant_id: int) -> str:
+    enrollment = session.get(CompetitionParticipant, (competition_id, participant_id))
+    if enrollment and (enrollment.categoria or "").strip():
+        return (enrollment.categoria or "").strip()
+    participant = session.get(Participant, participant_id)
+    if participant and (participant.categoria or "").strip():
+        return (participant.categoria or "").strip()
+    return "Sin categoria"
+
+
+def _team_member_categories(session: Session, competition_id: int, member_ids: list[int]) -> list[str]:
+    return [_member_category_label(session, competition_id, pid) for pid in member_ids]
+
+
+def _team_category_payload(session: Session, team: Team, member_ids: list[int]) -> dict | None:
+    category = _team_category(session, getattr(team, "team_category_id", None))
+    if category:
+        return {
+            "id": category.id,
+            "nombre": category.nombre,
+            "descripcion": category.descripcion,
+            "modality": category.modality,
+            "orden": category.orden,
+        }
+    member_categories = sorted({cat for cat in _team_member_categories(session, team.competition_id, member_ids) if cat})
+    if len(member_categories) == 1:
+        return {
+            "id": None,
+            "nombre": member_categories[0],
+            "descripcion": None,
+            "modality": "teams",
+            "orden": 0,
+        }
+    if len(member_categories) > 1:
+        return {
+            "id": None,
+            "nombre": "Mixta",
+            "descripcion": None,
+            "modality": "teams",
+            "orden": 0,
+        }
+    return None
+
+
+def _validate_team_membership(
+    session: Session,
+    *,
+    competition_id: int,
+    member_ids: list[int],
+    team_category_id: int | None = None,
+    current_team_id: int | None = None,
+) -> None:
+    competition = session.get(Competition, competition_id)
+    if not competition:
+        raise HTTPException(404, "Competencia no encontrada")
+    if not getattr(competition, "team_enabled", 0):
+        raise HTTPException(400, "La competencia no tiene modalidad por equipos activa")
+    if len(set(member_ids)) != len(member_ids):
+        raise HTTPException(400, "El equipo no puede repetir participantes")
+    team_size = _competition_team_size(session, competition_id, fallback=len(member_ids) or 2)
+    if len(member_ids) != team_size:
+        raise HTTPException(400, f"Cada equipo debe tener exactamente {team_size} miembros")
+
+    category = _team_category(session, team_category_id)
+    if team_category_id is not None and not category:
+        raise HTTPException(404, "Categoria de equipo no encontrada")
+    if category and category.competition_id != competition_id:
+        raise HTTPException(400, "La categoria del equipo no pertenece a esta competencia")
+    if category and (category.modality or "").strip().lower() not in {"teams", "team", "equipo", "equipos"}:
+        raise HTTPException(400, "La categoria del equipo debe pertenecer a la modalidad por equipos")
+
+    rule = _competition_team_membership_rule(session, competition_id)
+    categories = _team_member_categories(session, competition_id, member_ids)
+    unique_categories = {cat for cat in categories if cat}
+    if rule == "same_category":
+        if len(unique_categories) > 1:
+            raise HTTPException(400, "Todos los integrantes del equipo deben pertenecer a la misma categoria")
+        if category and unique_categories and next(iter(unique_categories)) != (category.nombre or "").strip():
+            raise HTTPException(400, "La categoria del equipo no coincide con la categoria de los integrantes")
+    elif category and unique_categories and len(unique_categories) > 1:
+        # Explicit team categories stay valid even if member categories are mixed.
+        pass
+
+    for pid in member_ids:
+        if not session.get(Participant, pid):
+            raise HTTPException(404, f"Participante {pid} no encontrado")
+        existing = session.exec(
+            select(Team)
+            .join(TeamMember, TeamMember.team_id == Team.id)
+            .where(
+                TeamMember.participant_id == pid,
+                Team.competition_id == competition_id,
+                Team.id != (current_team_id or 0),
+            )
+        ).first()
+        if existing:
+            raise HTTPException(409, f"El participante {pid} ya esta en el equipo '{existing.nombre}'")
 
 
 def _require_captain(team_id: int, user: dict, session: Session) -> Team:
@@ -83,27 +217,9 @@ def my_invitations(session: Session = Depends(get_session), user=Depends(require
     for inv in invs:
         team = session.get(Team, inv.team_id)
         captain = session.get(Participant, team.captain_id) if team and team.captain_id else None
-        members = session.exec(
-            select(Participant)
-            .join(TeamMember, TeamMember.participant_id == Participant.id)
-            .where(TeamMember.team_id == inv.team_id)
-        ).all()
         result.append({
             **inv.model_dump(),
-            "team": {
-                **team.model_dump(),
-                "members": [
-                    {
-                        "id": m.id,
-                        "nombre": m.nombre,
-                        "apellido": m.apellido,
-                        "box": m.box,
-                        "categoria": m.categoria,
-                        "is_captain": m.id == team.captain_id,
-                    }
-                    for m in members
-                ],
-            } if team else None,
+            "team": _with_members(session, team) if team else None,
             "captain_nombre": f"{captain.nombre} {captain.apellido}" if captain else None,
         })
     return result
@@ -126,9 +242,10 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
         raise HTTPException(404, "Equipo no encontrado")
 
     # check capacity
+    team_size = _competition_team_size(session, team.competition_id, fallback=2)
     current_size = len(session.exec(select(TeamMember).where(TeamMember.team_id == team.id)).all())
-    if current_size >= MAX_TEAM_SIZE:
-        raise HTTPException(400, "El equipo ya esta lleno")
+    if current_size >= team_size:
+        raise HTTPException(400, f"El equipo ya esta lleno. Maximo {team_size} integrantes")
 
     # check not already in a team in this competition
     existing = session.exec(
@@ -212,17 +329,20 @@ def get_team(team_id: int, session: Session = Depends(get_session), user=Depends
 @router.post("", status_code=201)
 def create_team(body: TeamCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, body.competition_id, user)
-    team_size = _competition_team_size(session, body.competition_id, fallback=len(body.member_ids) or 2)
-    if len(body.member_ids) != team_size:
-        raise HTTPException(400, f"Cada equipo debe tener exactamente {team_size} miembros")
-
     if body.captain_id and body.captain_id not in body.member_ids:
         raise HTTPException(400, "El capitan debe ser uno de los integrantes del equipo")
+    _validate_team_membership(
+        session,
+        competition_id=body.competition_id,
+        member_ids=body.member_ids,
+        team_category_id=body.team_category_id,
+    )
 
     requested_name = _clean_name(body.nombre)
     team = Team(
         nombre=requested_name or f"tmp-{body.competition_id}-{len(body.member_ids)}",
         competition_id=body.competition_id,
+        team_category_id=body.team_category_id,
         captain_id=body.captain_id if body.captain_id else (body.member_ids[0] if body.member_ids else None),
     )
     session.add(team)
@@ -242,19 +362,6 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), user=
             raise HTTPException(409, "No se pudo generar un nombre de equipo")
 
     for pid in body.member_ids:
-        if not session.get(Participant, pid):
-            session.rollback()
-            raise HTTPException(404, f"Participante {pid} no encontrado")
-
-        existing = session.exec(
-            select(Team)
-            .join(TeamMember, TeamMember.team_id == Team.id)
-            .where(TeamMember.participant_id == pid, Team.competition_id == body.competition_id)
-        ).first()
-        if existing:
-            session.rollback()
-            raise HTTPException(409, f"El participante {pid} ya esta en el equipo '{existing.nombre}'")
-
         session.add(TeamMember(team_id=team.id, participant_id=pid))
 
     session.commit()
@@ -278,41 +385,33 @@ def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_s
             session.rollback()
             raise HTTPException(409, "Ya existe un equipo con ese nombre en esta competencia")
 
-    if body.member_ids is not None:
-        current_members_count = len(
-            session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
-        )
-        fallback = current_members_count if current_members_count > 0 else 2
-        team_size = _competition_team_size(session, team.competition_id, fallback=fallback)
-        if len(body.member_ids) != team_size:
-            raise HTTPException(400, f"Cada equipo debe tener exactamente {team_size} miembros")
+    next_member_ids = body.member_ids if body.member_ids is not None else [
+        m.participant_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
+    ]
+    next_team_category_id = body.team_category_id if body.team_category_id is not None else team.team_category_id
+    _validate_team_membership(
+        session,
+        competition_id=team.competition_id,
+        member_ids=next_member_ids,
+        team_category_id=next_team_category_id,
+        current_team_id=team_id,
+    )
 
+    if body.member_ids is not None:
         for tm in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all():
             session.delete(tm)
         session.flush()
-
         for pid in body.member_ids:
-            if not session.get(Participant, pid):
-                raise HTTPException(404, f"Participante {pid} no encontrado")
-
-            existing = session.exec(
-                select(Team)
-                .join(TeamMember, TeamMember.team_id == Team.id)
-                .where(
-                    TeamMember.participant_id == pid,
-                    Team.competition_id == team.competition_id,
-                    Team.id != team_id,
-                )
-            ).first()
-            if existing:
-                raise HTTPException(409, f"El participante {pid} ya esta en '{existing.nombre}'")
-
             session.add(TeamMember(team_id=team_id, participant_id=pid))
 
         # if new member_ids no longer include existing captain, reset captain to first member
         if team.captain_id and team.captain_id not in body.member_ids:
             team.captain_id = body.member_ids[0] if body.member_ids else None
             session.add(team)
+
+    if body.team_category_id is not None:
+        team.team_category_id = body.team_category_id
+        session.add(team)
 
     if body.captain_id is not None:
         # validate captain is a member
@@ -391,9 +490,19 @@ def captain_invite(
         raise HTTPException(409, f"El participante ya esta en el equipo '{existing_team.nombre}'")
 
     # team must have room
+    team_size = _competition_team_size(session, team.competition_id, fallback=2)
     current_size = len(session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all())
-    if current_size >= MAX_TEAM_SIZE:
-        raise HTTPException(400, f"El equipo ya tiene el maximo de {MAX_TEAM_SIZE} integrantes")
+    if current_size >= team_size:
+        raise HTTPException(400, f"El equipo ya tiene el maximo de {team_size} integrantes")
+
+    current_member_ids = [m.participant_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()]
+    _validate_team_membership(
+        session,
+        competition_id=team.competition_id,
+        member_ids=current_member_ids + [invitee.id],
+        team_category_id=team.team_category_id,
+        current_team_id=team.id,
+    )
 
     # no duplicate pending invite
     existing_inv = session.exec(

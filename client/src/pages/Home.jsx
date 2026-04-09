@@ -115,6 +115,24 @@ function cardVisualStyle(competition, index, bannerUrl = '') {
   return { backgroundImage: palettes[index % palettes.length] }
 }
 
+function competitionSearchText(competition) {
+  return [
+    competition?.nombre,
+    competition?.descripcion,
+    competition?.general_info_text,
+    competition?.lugar,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function filterCompetitionsByQuery(items, query) {
+  const value = String(query || '').trim().toLowerCase()
+  if (!value) return items
+  return (items || []).filter((competition) => competitionSearchText(competition).includes(value))
+}
+
 function parseEnrollmentQuestions(raw) {
   if (!raw) return []
   try {
@@ -335,6 +353,7 @@ export default function Home() {
   const { session, role, participantId } = useAuth()
   const [competitions, setCompetitions] = useState([])
   const [myComps, setMyComps] = useState([])
+  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
@@ -383,6 +402,11 @@ export default function Home() {
       })
       .slice(0, 6)
   }, [competitions])
+
+  const filteredCompetitions = useMemo(
+    () => filterCompetitionsByQuery(featuredCompetitions, query),
+    [featuredCompetitions, query]
+  )
 
   const handleParticipate = (competition) => {
     if (!session) {
@@ -488,9 +512,27 @@ export default function Home() {
             </div>
           </div>
 
+          <div style={{ marginBottom: 16 }}>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar competencia por nombre, lugar o descripcion"
+              style={{
+                width: '100%',
+                borderRadius: 16,
+                border: '1px solid #252A33',
+                background: '#171B21',
+                color: '#F5F7FA',
+                padding: '14px 16px',
+                fontSize: 14,
+                outline: 'none',
+              }}
+            />
+          </div>
+
           {loading ? (
             <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando competencias...</div>
-          ) : featuredCompetitions.length ? (
+          ) : filteredCompetitions.length ? (
             <div
               style={{
                 display: 'grid',
@@ -498,7 +540,7 @@ export default function Home() {
                 gap: 18,
               }}
             >
-              {featuredCompetitions.map((competition, index) => (
+              {filteredCompetitions.map((competition, index) => (
                 <CompetitionCard
                   key={competition.id}
                   competition={competition}
@@ -519,7 +561,7 @@ export default function Home() {
                 color: '#AAB2C0',
               }}
             >
-              Todavia no hay competencias visibles en este momento.
+              {featuredCompetitions.length ? 'No hay competencias que coincidan con tu busqueda.' : 'Todavia no hay competencias visibles en este momento.'}
             </div>
           )}
         </section>

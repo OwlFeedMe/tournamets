@@ -1,6 +1,8 @@
 import io
 import json
+import json
 import os
+from collections import defaultdict
 from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -15,7 +17,7 @@ from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, require_competition_access
 from auth import get_current_user_optional, require_staff
-from database import get_session
+from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 from phase_status import compute_phase_status_map
 
@@ -27,6 +29,18 @@ TV_REFRESH_MIN_SECONDS = 2
 TV_REFRESH_MAX_SECONDS = 60
 TV_MODE_VALIDOS = {"cyclic", "static"}
 TV_VIEW_VALIDOS = {"individual", "teams"}
+TEAM_MEMBERSHIP_RULES_VALIDOS = {"free", "same_category"}
+MODALITY_VALIDOS = {"individual", "teams"}
+MODALITY_ALIAS = {
+    "individual": "individual",
+    "individuales": "individual",
+    "user": "individual",
+    "teams": "teams",
+    "team": "teams",
+    "equipo": "teams",
+    "equipos": "teams",
+    "por_equipo": "teams",
+}
 COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "competition_assets"
 COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 COMPETITION_ASSET_SPECS = {
@@ -100,8 +114,10 @@ def _serialize_schedule_items(payload: dict):
         kind = str((raw or {}).get("kind") or "custom").strip().lower() or "custom"
         start_at = (raw or {}).get("start_at")
         end_at = (raw or {}).get("end_at")
+        phase_id = (raw or {}).get("phase_id")
+        use_phase_dates = 1 if (raw or {}).get("use_phase_dates") else 0
         note = str((raw or {}).get("note") or "").strip() or None
-        if not label and not start_at and not end_at and not note:
+        if not label and not start_at and not end_at and not note and phase_id in (None, "", False):
             continue
         normalized.append({
             "id": str((raw or {}).get("id") or f"date_{idx + 1}").strip() or f"date_{idx + 1}",
@@ -109,6 +125,8 @@ def _serialize_schedule_items(payload: dict):
             "kind": kind,
             "start_at": start_at.isoformat() if isinstance(start_at, datetime) else start_at,
             "end_at": end_at.isoformat() if isinstance(end_at, datetime) else end_at,
+            "phase_id": int(phase_id) if phase_id not in (None, "", False) else None,
+            "use_phase_dates": use_phase_dates,
             "note": note,
         })
     payload["schedule_items"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
@@ -256,6 +274,88 @@ def _validate_tv_settings(payload: dict):
         payload["tv_static_team_category_mode"] = str(payload["tv_static_team_category_mode"]).strip() or "__by_category__"
 
 
+def _normalize_modality(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    value = MODALITY_ALIAS.get(value, value)
+    return value if value in MODALITY_VALIDOS else "individual"
+
+
+def _normalize_team_membership_rule(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    return value if value in TEAM_MEMBERSHIP_RULES_VALIDOS else "free"
+
+
+def _normalize_toggle(raw: object, fallback: int = 0) -> int:
+    if isinstance(raw, bool):
+        return 1 if raw else 0
+    if raw is None:
+        return fallback
+    if isinstance(raw, str):
+        value = raw.strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return 1
+        if value in {"0", "false", "no", "off", ""}:
+            return 0
+    try:
+        return 1 if int(raw) else 0
+    except Exception:
+        return fallback
+
+
+def _normalize_team_size(raw: object, fallback: int = 2) -> int:
+    try:
+        size = int(raw if raw is not None else fallback)
+    except Exception:
+        size = fallback
+    return max(1, min(MAX_TEAM_SIZE, size))
+
+
+def _normalize_competition_team_settings(payload: dict) -> None:
+    if "individual_enabled" in payload:
+        payload["individual_enabled"] = _normalize_toggle(payload.get("individual_enabled"), fallback=1)
+    if "team_enabled" in payload:
+        payload["team_enabled"] = _normalize_toggle(payload.get("team_enabled"), fallback=0)
+    if "team_categories_enabled" in payload:
+        payload["team_categories_enabled"] = _normalize_toggle(payload.get("team_categories_enabled"), fallback=1)
+    if "team_size" in payload:
+        payload["team_size"] = _normalize_team_size(payload.get("team_size"))
+    if "team_membership_rule" in payload:
+        payload["team_membership_rule"] = _normalize_team_membership_rule(payload.get("team_membership_rule"))
+
+
+def _validate_competition_team_settings(payload: dict) -> None:
+    if not payload.get("individual_enabled") and not payload.get("team_enabled"):
+        raise HTTPException(400, "La competencia debe tener al menos una modalidad activa")
+    if int(payload.get("team_size") or 0) < 1:
+        raise HTTPException(400, "team_size invalido")
+
+
+def _competition_modality_config(competition: Competition | None) -> dict:
+    if not competition:
+        return {
+            "individual_enabled": True,
+            "team_enabled": False,
+            "team_categories_enabled": True,
+            "team_size": 2,
+            "team_membership_rule": "free",
+        }
+    return {
+        "individual_enabled": bool(getattr(competition, "individual_enabled", 1)),
+        "team_enabled": bool(getattr(competition, "team_enabled", 0)),
+        "team_categories_enabled": bool(getattr(competition, "team_categories_enabled", 1)),
+        "team_size": _normalize_team_size(getattr(competition, "team_size", 2), fallback=2),
+        "team_membership_rule": _normalize_team_membership_rule(getattr(competition, "team_membership_rule", "free")),
+    }
+
+
+def _group_rows_by_modality(rows: list[dict]) -> dict[str, list[dict]]:
+    grouped = {"individual": [], "teams": []}
+    for row in rows:
+        modality = _normalize_modality(row.get("modality"))
+        grouped.setdefault(modality, []).append(row)
+    return grouped
+
+
 def _leaderboard_public_url(competition_id: int) -> str:
     base = (os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
     if not base.endswith("/"):
@@ -295,20 +395,20 @@ def get_public_competition_detail(
 
     categories = session.execute(
         text("""
-            SELECT id, nombre, orden
+            SELECT id, nombre, descripcion, orden, modality
             FROM competition_categories
             WHERE competition_id = :cid
-            ORDER BY orden, nombre
+            ORDER BY modality, orden, nombre
         """),
         {"cid": competition_id},
     ).mappings().all()
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, tipo, measurement_method, winner_rule, estado, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, estado, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
-            ORDER BY orden, id
+            ORDER BY block_order, orden, id
         """),
         {"cid": competition_id},
     ).mappings().all()
@@ -319,7 +419,63 @@ def get_public_competition_detail(
         phase_id = item.get("id")
         if phase_id in auto_status:
             item["estado"] = auto_status[phase_id]
+        item["modality"] = _normalize_modality(item.get("modality"))
+        item["block_name"] = str(item.get("block_name") or "").strip() or None
+        item["block_order"] = int(item.get("block_order") or 0)
+        phase_format = str(item.get("phase_format") or "activity").strip().lower()
+        if phase_format in {"actividad", "activity"}:
+            phase_format = "activity"
+        elif phase_format in {"wod", "workout"}:
+            phase_format = "wod"
+        else:
+            phase_format = "activity"
+        item["phase_format"] = phase_format
+        item["points_mode"] = item.get("points_mode") or "manual"
+        item["allow_multiple_results"] = int(item.get("allow_multiple_results") or 0)
+        item["team_result_mode"] = item.get("team_result_mode") or "sum_two"
+        try:
+            parsed_activities = json.loads(item.get("activities") or "[]")
+        except Exception:
+            parsed_activities = []
+        if isinstance(parsed_activities, list) and parsed_activities:
+            item["activities"] = parsed_activities
+        else:
+            item["activities"] = [{
+                "nombre": item.get("nombre"),
+                "descripcion": item.get("descripcion"),
+                "tipo": item.get("tipo"),
+                "measurement_method": item.get("measurement_method"),
+                "winner_rule": item.get("winner_rule"),
+                "points_mode": item.get("points_mode"),
+                "team_result_mode": item.get("team_result_mode"),
+                "allow_multiple_results": item.get("allow_multiple_results"),
+                "orden": 0,
+            }]
         normalized_phases.append(item)
+
+    normalized_categories = []
+    for category in categories:
+        item = dict(category)
+        item["modality"] = _normalize_modality(item.get("modality"))
+        normalized_categories.append(item)
+    categories_by_modality = _group_rows_by_modality(normalized_categories)
+    phases_by_modality = _group_rows_by_modality(normalized_phases)
+    blocks_by_key: dict[tuple[str | None, int], dict] = {}
+    for phase in normalized_phases:
+        key = (phase.get("block_name"), int(phase.get("block_order") or 0))
+        bucket = blocks_by_key.setdefault(
+            key,
+            {
+                "block_name": phase.get("block_name"),
+                "block_order": int(phase.get("block_order") or 0),
+                "phases": [],
+            },
+        )
+        bucket["phases"].append(phase)
+    blocks = sorted(
+        blocks_by_key.values(),
+        key=lambda item: (int(item.get("block_order") or 0), (item.get("block_name") or "").lower()),
+    )
 
     stats = session.execute(
         text("""
@@ -335,8 +491,12 @@ def get_public_competition_detail(
 
     return {
         "competition": competition.model_dump(),
-        "categories": [dict(item) for item in categories],
+        "categories": normalized_categories,
         "phases": normalized_phases,
+        "categories_by_modality": categories_by_modality,
+        "phases_by_modality": phases_by_modality,
+        "blocks": blocks,
+        "modality_config": _competition_modality_config(competition),
         "stats": {
             "inscritos_confirmados": int(stats.get("inscritos_confirmados") or 0),
             "solicitudes_pendientes": int(stats.get("solicitudes_pendientes") or 0),
@@ -371,6 +531,8 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     payload = body.model_dump()
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
+    _normalize_competition_team_settings(payload)
+    _validate_competition_team_settings(payload)
     _validate_tv_settings(payload)
     if "lugar" in payload:
         payload["lugar"] = str(payload.get("lugar") or "").strip() or None
@@ -380,6 +542,8 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
         payload["website_url"] = str(payload.get("website_url") or "").strip() or None
     if "enrollment_intro_text" in payload:
         payload["enrollment_intro_text"] = str(payload.get("enrollment_intro_text") or "").strip() or None
+    if "general_info_text" in payload:
+        payload["general_info_text"] = str(payload.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in payload:
         payload["enrollment_terms_text"] = str(payload.get("enrollment_terms_text") or "").strip() or None
     if "require_payment_receipt" in payload:
@@ -409,6 +573,13 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     if user.get("role") != "admin":
         data.pop("organizer_user_id", None)
+    merged = c.model_dump()
+    merged.update(data)
+    _normalize_competition_team_settings(merged)
+    _validate_competition_team_settings(merged)
+    for key in ("individual_enabled", "team_enabled", "team_categories_enabled", "team_size", "team_membership_rule"):
+        if key in data:
+            data[key] = merged[key]
     _validate_tv_settings(data)
     if "lugar" in data:
         data["lugar"] = str(data.get("lugar") or "").strip() or None
@@ -418,6 +589,8 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         data["website_url"] = str(data.get("website_url") or "").strip() or None
     if "enrollment_intro_text" in data:
         data["enrollment_intro_text"] = str(data.get("enrollment_intro_text") or "").strip() or None
+    if "general_info_text" in data:
+        data["general_info_text"] = str(data.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in data:
         data["enrollment_terms_text"] = str(data.get("enrollment_terms_text") or "").strip() or None
     if "require_payment_receipt" in data:

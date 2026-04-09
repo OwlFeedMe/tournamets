@@ -1,14 +1,25 @@
 from collections import defaultdict
+import json
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlmodel import Session, select
 
 from database import get_session
-from models import Competition, CompetitionPhase, Team
+from models import Competition, CompetitionCategory, CompetitionPhase, Team
 from phase_status import compute_phase_status_map
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
+
+
+def _parse_phase_activities(raw: str | None) -> list[dict]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    return [dict(item) for item in parsed] if isinstance(parsed, list) else []
 
 
 def _phase_lower_is_better(phase: CompetitionPhase | None) -> bool:
@@ -193,8 +204,11 @@ def _build_team_rows_for_phase(
     rows = []
     for t in teams:
         members = _team_members_points(session, competition_id, t.id, phase_id, lower_is_better=mark_lower_is_better)
+        explicit_category = session.get(CompetitionCategory, getattr(t, "team_category_id", None)) if getattr(t, "team_category_id", None) else None
         member_cats = sorted({(m.get("categoria") or "").strip() for m in members if (m.get("categoria") or "").strip()})
-        if len(member_cats) == 1:
+        if explicit_category and explicit_category.competition_id == competition_id:
+            team_category = (explicit_category.nombre or "").strip() or "Sin categoria"
+        elif len(member_cats) == 1:
             team_category = member_cats[0]
         elif len(member_cats) == 0:
             team_category = "Sin categoria"
@@ -257,7 +271,10 @@ def _build_team_rows_for_phase(
 def get_leaderboard(competition_id: int, session: Session = Depends(get_session)):
     comp = session.get(Competition, competition_id)
     comp_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
+    individual_enabled = bool(getattr(comp, "individual_enabled", 1)) if comp else True
+    team_enabled = bool(getattr(comp, "team_enabled", 0)) if comp else False
     show_individual = bool(comp.show_individual_leaderboard) if comp else True
+    show_individual = show_individual and individual_enabled
     show_team_all_by_category_option = bool(comp.show_team_all_by_category_option) if comp else True
     show_team_all_global_option = bool(comp.show_team_all_global_option) if comp else True
     tv_show_qr = bool(comp.tv_show_qr) if comp else True
@@ -290,7 +307,7 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         .order_by(CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
     phase_status_map = compute_phase_status_map(session, competition_id)
-    teams = session.exec(select(Team).where(Team.competition_id == competition_id).order_by(Team.id)).all()
+    teams = session.exec(select(Team).where(Team.competition_id == competition_id).order_by(Team.id)).all() if team_enabled else []
 
     phases_data = []
     for phase in phases:
@@ -314,15 +331,20 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         phases_data.append({
             "id": phase.id,
             "nombre": phase.nombre,
+            "modality": getattr(phase, "modality", "individual") or "individual",
+            "block_name": getattr(phase, "block_name", None),
+            "block_order": int(getattr(phase, "block_order", 0) or 0),
+            "phase_format": getattr(phase, "phase_format", "activity") or "activity",
             "tipo": phase.tipo,
             "measurement_method": getattr(phase, "measurement_method", None),
             "winner_rule": getattr(phase, "winner_rule", None),
+            "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_status_map.get(int(phase.id), phase.estado),
             "descripcion": phase.descripcion,
             "allow_multiple_results": phase.allow_multiple_results,
             "team_result_mode": phase_mode,
-            "individual": _rank_by_category(phase_rows, lower_is_better=comp_lower_is_better),
-            "teams": team_phase_rows,
+            "individual": _rank_by_category(phase_rows, lower_is_better=comp_lower_is_better) if (getattr(phase, "modality", "individual") or "individual") == "individual" and show_individual else {},
+            "teams": team_phase_rows if (getattr(phase, "modality", "individual") or "individual") == "teams" and team_enabled else [],
         })
 
     # Team total = suma de puntos por fase respetando el modo de cada fase.
@@ -344,8 +366,12 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
 
     teams_values = list(team_totals_map.values())
     for row in teams_values:
+        team = next((item for item in teams if int(item.id) == int(row["id"])), None)
+        explicit_category = session.get(CompetitionCategory, getattr(team, "team_category_id", None)) if team and getattr(team, "team_category_id", None) else None
         member_cats = sorted({(m.get("categoria") or "").strip() for m in row.get("members", []) if (m.get("categoria") or "").strip()})
-        if len(member_cats) == 1:
+        if explicit_category and explicit_category.competition_id == competition_id:
+            row["team_category"] = (explicit_category.nombre or "").strip() or "Sin categoria"
+        elif len(member_cats) == 1:
             row["team_category"] = member_cats[0]
         elif len(member_cats) == 0:
             row["team_category"] = "Sin categoria"
@@ -385,6 +411,8 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         "phases": phases_data,
         "has_phases": len(phases_data) > 0 and show_individual,
         "show_individual_leaderboard": 1 if show_individual else 0,
+        "individual_enabled": 1 if individual_enabled else 0,
+        "team_enabled": 1 if team_enabled else 0,
         "show_team_all_by_category_option": 1 if show_team_all_by_category_option else 0,
         "show_team_all_global_option": 1 if show_team_all_global_option else 0,
         "tv_show_qr": 1 if tv_show_qr else 0,
@@ -401,5 +429,5 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         "show_event_count": any(bool(p.allow_multiple_results) for p in phases),
         "scoring_mode": getattr(comp, "scoring_mode", "highest_wins") if comp else "highest_wins",
         "teams": teams_list,
-        "has_teams": len(teams_list) > 0,
+        "has_teams": team_enabled and len(teams_list) > 0,
     }

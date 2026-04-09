@@ -3,6 +3,8 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
+import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
 
 const CATEGORIAS = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro']
 const GENEROS = ['M', 'F', 'Otro']
@@ -91,9 +93,11 @@ function parseScheduleItems(raw) {
         kind: String(item?.kind || 'custom').trim().toLowerCase() || 'custom',
         start_at: toDateInput(item?.start_at),
         end_at: toDateInput(item?.end_at),
+        phase_id: item?.phase_id == null ? '' : String(item.phase_id),
+        use_phase_dates: Number(item?.use_phase_dates || 0),
         note: String(item?.note || '').trim(),
       }))
-      .filter(item => item.label || item.start_at || item.end_at || item.note)
+      .filter(item => item.label || item.start_at || item.end_at || item.note || item.phase_id)
   } catch {
     return []
   }
@@ -148,6 +152,41 @@ function parseEnrollmentAnswers(raw) {
   } catch {
     return []
   }
+}
+
+const SHARED_MODE_CHIP_BASE_STYLE = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '7px 10px',
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1,
+}
+
+function getCompetitionVisibilitySummary(comp) {
+  const items = []
+  if (comp?.show_individual_leaderboard) items.push({ label: 'Individual visible', tone: 'teal' })
+  if (comp?.show_team_all_by_category_option) items.push({ label: 'Equipos por categoria', tone: 'orange' })
+  if (comp?.show_team_all_global_option) items.push({ label: 'Equipos globales', tone: 'slate' })
+  if (!items.length) items.push({ label: 'Sin vistas publicas', tone: 'muted' })
+  return items
+}
+
+function getPhaseModeSummary(phase) {
+  const activityCount = Array.isArray(phase?.activities) && phase.activities.length ? phase.activities.length : 1
+  const formatLabel = activityCount === 1 ? '1 actividad' : `${activityCount} actividades`
+  const measurement = PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)] || normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
+  const winner = normalizeWinnerRule(phase?.winner_rule, phaseTypeFromPhase(phase)) === 'lower_wins' ? 'Gana menor' : 'Gana mayor'
+  const teamMode = (phase?.team_result_mode || 'sum_two') === 'single_member'
+    ? 'Equipo: uno'
+    : (phase?.team_result_mode || 'sum_two') === 'total'
+      ? 'Equipo: total'
+      : 'Equipo: ambos'
+  const resultCount = Number(phase?.allow_multiple_results) ? 'Multiples' : 'Unico'
+  const status = phase?.estado || 'pendiente'
+  return [formatLabel, measurement, winner, teamMode, resultCount, status]
 }
 
 function ImagePreviewModal({ item, onClose }) {
@@ -478,6 +517,108 @@ function parseScoringRules(raw) {
   }
 }
 
+function createDefaultPhaseActivity(index = 0) {
+  return {
+    nombre: `Actividad ${index + 1}`,
+    descripcion: '',
+    measurement_method: 'unidades',
+    winner_rule: 'higher_wins',
+    points_mode: 'manual',
+  }
+}
+
+function normalizePhaseActivities(raw, phaseFallback = null) {
+  const source = Array.isArray(raw) && raw.length
+    ? raw
+    : (phaseFallback ? [{
+      nombre: phaseFallback.nombre || 'Actividad 1',
+      descripcion: phaseFallback.descripcion || '',
+      measurement_method: normalizeMeasurementMethod(phaseFallback.measurement_method, phaseFallback.tipo),
+      winner_rule: normalizeWinnerRule(phaseFallback.winner_rule, phaseTypeFromPhase(phaseFallback)),
+      points_mode: phaseFallback.points_mode || 'manual',
+    }] : [])
+
+  const normalized = source.map((item, index) => {
+    const method = normalizeMeasurementMethod(item?.measurement_method, item?.tipo)
+    const hasExplicitName = Object.prototype.hasOwnProperty.call(item || {}, 'nombre') || Object.prototype.hasOwnProperty.call(item || {}, 'name')
+    const rawName = hasExplicitName ? String(item?.nombre ?? item?.name ?? '') : `Actividad ${index + 1}`
+    return {
+      nombre: rawName,
+      descripcion: String(item?.descripcion ?? ''),
+      measurement_method: method,
+      winner_rule: normalizeWinnerRule(item?.winner_rule, phaseTypeFromMethod(method)),
+      points_mode: String(item?.points_mode || 'manual') || 'manual',
+    }
+  })
+  return normalized.length ? normalized : [createDefaultPhaseActivity()]
+}
+
+function createPhaseFormState() {
+  return {
+    nombre: '',
+    descripcion: '',
+    allow_multiple_results: 0,
+    team_result_mode: 'sum_two',
+    estado: 'pendiente',
+    start_at: '',
+    end_at: '',
+    activities: [createDefaultPhaseActivity()],
+  }
+}
+
+function createPhaseDraftState(phase) {
+  return {
+    nombre: phase.nombre || '',
+    descripcion: phase.descripcion || '',
+    allow_multiple_results: Number(phase.allow_multiple_results || 0),
+    team_result_mode: phase.team_result_mode || 'sum_two',
+    estado: phase.estado || 'pendiente',
+    start_at: toDateInput(phase.start_at),
+    end_at: toDateInput(phase.end_at),
+    activities: normalizePhaseActivities(phase.activities, phase),
+  }
+}
+
+function buildPhasePayload(values, orden = 0) {
+  const activities = normalizePhaseActivities(values.activities).map((activity, index) => {
+    const method = normalizeMeasurementMethod(activity.measurement_method, phaseTypeFromMethod(activity.measurement_method))
+    return {
+      nombre: String(activity.nombre || `Actividad ${index + 1}`) || `Actividad ${index + 1}`,
+      descripcion: String(activity.descripcion || '') || null,
+      measurement_method: method,
+      tipo: phaseTypeFromMethod(method),
+      winner_rule: normalizeWinnerRule(activity.winner_rule, phaseTypeFromMethod(method)),
+      points_mode: activity.points_mode || 'manual',
+      orden: index,
+    }
+  })
+  const primary = activities[0] || {
+    measurement_method: 'unidades',
+    tipo: 'cantidad',
+    winner_rule: 'higher_wins',
+    points_mode: 'manual',
+  }
+  const payload = {
+    nombre: String(values.nombre || '').trim(),
+    phase_format: activities.length > 1 ? 'wod' : 'activity',
+    descripcion: String(values.descripcion || '').trim() || null,
+    allow_multiple_results: Number(values.allow_multiple_results || 0),
+    team_result_mode: values.team_result_mode || 'sum_two',
+    estado: values.estado || 'pendiente',
+    start_at: dateInputToStartOfDay(values.start_at),
+    end_at: dateInputToEndOfDay(values.end_at),
+    orden,
+  }
+  return {
+    ...payload,
+    tipo: primary.tipo,
+    measurement_method: primary.measurement_method,
+    winner_rule: primary.winner_rule,
+    points_mode: primary.points_mode || 'manual',
+    activities,
+  }
+}
+
 function pointsFromPosition(position, rules) {
   const pos = Number(position)
   if (!Number.isFinite(pos) || pos <= 0) return null
@@ -523,7 +664,8 @@ function parseMetricByPhase(value, phase) {
 
 function PhasesModal({ competition, onClose, inline = false }) {
   const [phases, setPhases] = useState([])
-  const [form, setForm] = useState({ nombre: '', measurement_method: 'unidades', winner_rule: 'higher_wins', descripcion: '', allow_multiple_results: 0, team_result_mode: 'sum_two', estado: 'pendiente' })
+  const [form, setForm] = useState(createPhaseFormState)
+  const [createStep, setCreateStep] = useState(0)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [phaseDrafts, setPhaseDrafts] = useState({})
   const [savingPhaseId, setSavingPhaseId] = useState(null)
@@ -537,15 +679,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
     setPhases(items)
     const drafts = {}
     items.forEach(ph => {
-      drafts[ph.id] = {
-        nombre: ph.nombre || '',
-        measurement_method: normalizeMeasurementMethod(ph.measurement_method, ph.tipo),
-        winner_rule: normalizeWinnerRule(ph.winner_rule, phaseTypeFromPhase(ph)),
-        descripcion: ph.descripcion || '',
-        allow_multiple_results: Number(ph.allow_multiple_results || 0),
-        team_result_mode: ph.team_result_mode || 'sum_two',
-        estado: ph.estado || 'pendiente',
-      }
+      drafts[ph.id] = createPhaseDraftState(ph)
     })
     setPhaseDrafts(drafts)
   }
@@ -559,8 +693,9 @@ function PhasesModal({ competition, onClose, inline = false }) {
   const add = async (e) => {
     e.preventDefault()
     if (!form.nombre.trim()) return
-    await api.post(`/competitions/${competition.id}/phases`, { ...form, orden: phases.length })
-    setForm({ nombre: '', measurement_method: 'unidades', winner_rule: 'higher_wins', descripcion: '', allow_multiple_results: 0, team_result_mode: 'sum_two', estado: 'pendiente' })
+    await api.post(`/competitions/${competition.id}/phases`, buildPhasePayload(form, phases.length))
+    setForm(createPhaseFormState())
+    setCreateStep(0)
     load()
   }
 
@@ -576,19 +711,75 @@ function PhasesModal({ competition, onClose, inline = false }) {
     }))
   }
 
+  const patchFormActivity = (activityIndex, field, value) => {
+    setForm(prev => {
+      const activities = normalizePhaseActivities(prev.activities).map((activity, index) => {
+        if (index !== activityIndex) return activity
+        const next = { ...activity, [field]: value }
+        if (field === 'measurement_method') {
+          next.winner_rule = defaultWinnerRuleForType(phaseTypeFromMethod(value))
+        }
+        return next
+      })
+      return { ...prev, activities }
+    })
+  }
+
+  const appendFormActivity = () => {
+    setForm(prev => {
+      const activities = normalizePhaseActivities(prev.activities)
+      return { ...prev, activities: [...activities, createDefaultPhaseActivity(activities.length)] }
+    })
+  }
+
+  const removeFormActivity = (activityIndex) => {
+    setForm(prev => {
+      const current = normalizePhaseActivities(prev.activities)
+      const activities = current.filter((_, index) => index !== activityIndex)
+      return { ...prev, activities: activities.length ? activities : [createDefaultPhaseActivity()] }
+    })
+  }
+
+  const patchDraftActivity = (phaseId, activityIndex, field, value) => {
+    setPhaseDrafts(prev => {
+      const draft = prev[phaseId] || {}
+      const activities = normalizePhaseActivities(draft.activities).map((activity, index) => {
+        if (index !== activityIndex) return activity
+        const next = { ...activity, [field]: value }
+        if (field === 'measurement_method') {
+          next.winner_rule = defaultWinnerRuleForType(phaseTypeFromMethod(value))
+        }
+        return next
+      })
+      return { ...prev, [phaseId]: { ...draft, activities } }
+    })
+  }
+
+  const appendDraftActivity = (phaseId) => {
+    setPhaseDrafts(prev => {
+      const draft = prev[phaseId] || {}
+      const activities = normalizePhaseActivities(draft.activities)
+      return { ...prev, [phaseId]: { ...draft, activities: [...activities, createDefaultPhaseActivity(activities.length)] } }
+    })
+  }
+
+  const removeDraftActivity = (phaseId, activityIndex) => {
+    setPhaseDrafts(prev => {
+      const draft = prev[phaseId] || {}
+      const current = normalizePhaseActivities(draft.activities)
+      const activities = current.filter((_, index) => index !== activityIndex)
+      return { ...prev, [phaseId]: { ...draft, activities: activities.length ? activities : [createDefaultPhaseActivity()] } }
+    })
+  }
+
   const savePhase = async (phase) => {
     const d = phaseDrafts[phase.id] || {}
     setSavingPhaseId(phase.id)
     try {
-      await api.put(`/competitions/${competition.id}/phases/${phase.id}`, {
-        nombre: (d.nombre || '').trim() || phase.nombre,
-        measurement_method: normalizeMeasurementMethod(d.measurement_method ?? phase.measurement_method, phaseTypeFromPhase(phase)),
-        winner_rule: normalizeWinnerRule(d.winner_rule ?? phase.winner_rule, phaseTypeFromMethod(d.measurement_method ?? phase.measurement_method)),
-        descripcion: (d.descripcion || '').trim() || null,
-        allow_multiple_results: Number(d.allow_multiple_results || 0),
-        team_result_mode: d.team_result_mode || 'sum_two',
-        estado: d.estado || 'pendiente',
-      })
+      await api.put(`/competitions/${competition.id}/phases/${phase.id}`, buildPhasePayload({
+        ...createPhaseDraftState(phase),
+        ...d,
+      }, Number(phase.orden || 0)))
       await load()
     } finally {
       setSavingPhaseId(null)
@@ -618,56 +809,211 @@ function PhasesModal({ competition, onClose, inline = false }) {
     await load()
   }
 
+  const createActivities = normalizePhaseActivities(form.activities)
+  const wizardSteps = [
+    { id: 'overview', label: 'Resumen' },
+    { id: 'settings', label: 'Ajustes' },
+    { id: 'activities', label: 'Actividades' },
+    { id: 'review', label: 'Revision' },
+  ]
+  const canAdvanceCreateStep = [
+    form.nombre.trim().length > 0,
+    !form.start_at || !form.end_at || form.start_at <= form.end_at,
+    createActivities.length > 0 && createActivities.every(activity => String(activity.nombre || '').trim() || String(activity.descripcion || '').trim()),
+    true,
+  ]
+  const goNextCreateStep = () => {
+    setCreateStep(prev => Math.min(prev + 1, wizardSteps.length - 1))
+  }
+  const goPrevCreateStep = () => {
+    setCreateStep(prev => Math.max(prev - 1, 0))
+  }
+
   const phaseManagerContent = (
     <>
-      <form onSubmit={add} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr auto auto auto auto auto', gap: 8, marginBottom: 16, alignItems: 'end' }}>
-        <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? '1 / -1' : 'auto' }}>
-          <label>Nombre *</label>
-          <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Fase 1: Carrera" required />
+      <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
+        Crea cada fase paso a paso. Una fase puede tener una sola actividad o varios bloques dentro del mismo WOD.
+      </div>
+      <form onSubmit={add} style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+        <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', padding: isMobile ? 14 : 18, display: 'grid', gap: 14, boxShadow: '0 20px 50px rgba(0,0,0,0.22)' }}>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.9 }}>Wizard de fase</div>
+                <div style={{ color: '#F5F7FA', fontSize: isMobile ? 18 : 20, fontWeight: 800, marginTop: 4 }}>{wizardSteps[createStep].label}</div>
+              </div>
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>{`Paso ${createStep + 1} de ${wizardSteps.length}`}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${wizardSteps.length}, minmax(0, 1fr))`, gap: 8 }}>
+              {wizardSteps.map((step, index) => (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => {
+                    if (index <= createStep || canAdvanceCreateStep.slice(0, index).every(Boolean)) setCreateStep(index)
+                  }}
+                  style={{
+                    borderRadius: 999,
+                    border: index === createStep ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
+                    background: index === createStep ? 'rgba(255,107,0,0.14)' : 'rgba(13,15,18,0.72)',
+                    color: index <= createStep ? '#F5F7FA' : '#6B7280',
+                    padding: '10px 12px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {step.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {createStep === 0 && (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Nombre *</label>
+                <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: WOD 1, Sprint, Evento final" required />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Descripcion</label>
+                <textarea value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Resumen visible de la fase" rows={4} style={{ resize: 'vertical' }} />
+              </div>
+            </div>
+          )}
+
+          {createStep === 1 && (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Resultados</label>
+                <select value={form.allow_multiple_results} onChange={e => setForm({ ...form, allow_multiple_results: Number(e.target.value) })}>
+                  <option value={0}>Uno por participante</option>
+                  <option value={1}>Multiples por participante</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Puntaje equipo</label>
+                <select value={form.team_result_mode} onChange={e => setForm({ ...form, team_result_mode: e.target.value })}>
+                  <option value="sum_two">Suma de ambos</option>
+                  <option value="total">Total de equipo</option>
+                  <option value="single_member">Solo uno</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Estado</label>
+                <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>
+                  {PHASE_ESTADOS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Fecha inicial</label>
+                <input type="date" value={form.start_at || ''} onChange={e => setForm(prev => ({ ...prev, start_at: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Fecha final</label>
+                <input type="date" value={form.end_at || ''} onChange={e => setForm(prev => ({ ...prev, end_at: e.target.value }))} />
+              </div>
+              {form.start_at && form.end_at && form.start_at > form.end_at ? (
+                <div style={{ gridColumn: '1 / -1', color: '#F59E0B', fontSize: 12 }}>
+                  La fecha final no puede quedar antes de la inicial.
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {createStep === 2 && (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades de la fase</div>
+                  <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>Usa una actividad para una prueba simple o varias para un WOD por bloques.</div>
+                </div>
+                <button type="button" className="btn-secondary btn-sm" onClick={appendFormActivity}>+ Actividad</button>
+              </div>
+              {createActivities.map((activity, activityIndex, activityList) => (
+                <div key={`new-phase-activity-${activityIndex}`} style={{ display: 'grid', gap: 8, borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.18)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>Actividad {activityIndex + 1}</div>
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removeFormActivity(activityIndex)} disabled={activityList.length <= 1}>Eliminar</button>
+                  </div>
+                  <input value={activity.nombre} onChange={e => patchFormActivity(activityIndex, 'nombre', e.target.value)} placeholder={`Nombre interno o visible de la actividad ${activityIndex + 1}`} />
+                  <textarea value={activity.descripcion} onChange={e => patchFormActivity(activityIndex, 'descripcion', e.target.value)} placeholder="Describe el bloque con saltos de linea si hace falta" rows={4} style={{ resize: 'vertical' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
+                    <select value={activity.measurement_method} onChange={e => patchFormActivity(activityIndex, 'measurement_method', e.target.value)}>
+                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={`new-phase-activity-method-${activityIndex}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                    </select>
+                    <select value={activity.winner_rule} onChange={e => patchFormActivity(activityIndex, 'winner_rule', e.target.value)}>
+                      <option value="higher_wins">Mayor valor</option>
+                      <option value="lower_wins">Menor valor</option>
+                    </select>
+                    <select value={activity.points_mode || 'manual'} onChange={e => patchFormActivity(activityIndex, 'points_mode', e.target.value)}>
+                      <option value="manual">Puntaje manual</option>
+                      <option value="position_direct">Por posicion directa</option>
+                      <option value="position_rules">Por reglas</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {createStep === 3 && (
+            <div style={{ display: 'grid', gap: 12 }}>
+              <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
+                <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nueva fase'}</div>
+                {form.descripcion ? <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{form.descripcion}</div> : null}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 12, fontWeight: 700 }}>{`${createActivities.length} ${createActivities.length === 1 ? 'actividad' : 'actividades'}`}</span>
+                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>{form.estado || 'pendiente'}</span>
+                </div>
+                <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                  {form.start_at || form.end_at ? `Fechas: ${form.start_at || 'sin inicio'} a ${form.end_at || 'sin cierre'}` : 'Fechas: por definir'}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {createActivities.map((activity, index) => (
+                  <div key={`create-review-${index}`} style={{ borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>{activity.nombre || `Actividad ${index + 1}`}</div>
+                    {activity.descripcion ? <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{activity.descripcion}</div> : null}
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#D9FFFA', fontSize: 12 }}>{PHASE_MEASUREMENT_LABELS[activity.measurement_method] || activity.measurement_method}</span>
+                      <span style={{ color: '#AAB2C0', fontSize: 12 }}>{activity.winner_rule === 'lower_wins' ? 'Gana menor' : 'Gana mayor'}</span>
+                      <span style={{ color: '#AAB2C0', fontSize: 12 }}>{activity.points_mode || 'manual'}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={goPrevCreateStep} disabled={createStep === 0}>
+              Atras
+            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {createStep < wizardSteps.length - 1 ? (
+                <button type="button" className="btn-primary btn-sm" onClick={goNextCreateStep} disabled={!canAdvanceCreateStep[createStep]}>
+                  Continuar
+                </button>
+              ) : (
+                <button type="submit" className="btn-primary btn-sm" disabled={!canAdvanceCreateStep.slice(0, 3).every(Boolean)}>
+                  + Agregar fase
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Metodo</label>
-          <select value={form.measurement_method} onChange={e => setForm({ ...form, measurement_method: e.target.value, winner_rule: defaultWinnerRuleForType(phaseTypeFromMethod(e.target.value)) })}>
-            {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-          </select>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Gana</label>
-          <select value={form.winner_rule} onChange={e => setForm({ ...form, winner_rule: e.target.value })}>
-            <option value="higher_wins">Mayor valor</option>
-            <option value="lower_wins">Menor valor</option>
-          </select>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Resultados</label>
-          <select value={form.allow_multiple_results} onChange={e => setForm({ ...form, allow_multiple_results: Number(e.target.value) })}>
-            <option value={0}>Uno por participante</option>
-            <option value={1}>Multiples por participante</option>
-          </select>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Puntaje equipo</label>
-          <select value={form.team_result_mode} onChange={e => setForm({ ...form, team_result_mode: e.target.value })}>
-            <option value="sum_two">Suma de ambos</option>
-            <option value="total">Total de equipo</option>
-            <option value="single_member">Solo uno</option>
-          </select>
-        </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Estado</label>
-          <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value })}>
-            {PHASE_ESTADOS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <button type="submit" className="btn-primary btn-sm" style={{ alignSelf: 'flex-end', width: isMobile ? '100%' : 'auto', gridColumn: isMobile ? '1 / -1' : 'auto' }}>
-          + Agregar fase
-        </button>
       </form>
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {phases.length === 0 && <p style={{ color: '#647063', textAlign: 'center', padding: 20 }}>Sin fases definidas</p>}
         {phases.map((ph, i) => (
-          <div key={ph.id} style={{ display: 'grid', gap: 8, padding: '10px', borderRadius: 8, border: '1px solid #d5ddd3', marginBottom: 8 }}>
-            <span style={{ color: '#647063', fontSize: 12, width: 20 }}>{i + 1}</span>
+          <div key={ph.id} style={{ display: 'grid', gap: 10, padding: 14, borderRadius: 16, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', marginBottom: 10, boxShadow: '0 18px 40px rgba(0,0,0,0.22)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>{`Fase ${i + 1}`}</span>
+              <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 11, fontWeight: 800 }}>
+                {normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length === 1 ? '1 actividad' : `${normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length} actividades`}
+              </span>
+            </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Nombre</label>
               <input
@@ -676,28 +1022,6 @@ function PhasesModal({ competition, onClose, inline = false }) {
               />
             </div>
             <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Metodo</label>
-                <select
-                  value={phaseDrafts[ph.id]?.measurement_method ?? normalizeMeasurementMethod(ph.measurement_method, phaseTypeFromPhase(ph))}
-                  onChange={e => {
-                    patchPhaseDraft(ph.id, 'measurement_method', e.target.value)
-                    patchPhaseDraft(ph.id, 'winner_rule', defaultWinnerRuleForType(phaseTypeFromMethod(e.target.value)))
-                  }}
-                >
-                  {PHASE_MEASUREMENT_METHODS.map(m => <option key={`phase-method-${ph.id}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Gana</label>
-                <select
-                  value={phaseDrafts[ph.id]?.winner_rule ?? normalizeWinnerRule(ph.winner_rule, phaseTypeFromPhase(ph))}
-                  onChange={e => patchPhaseDraft(ph.id, 'winner_rule', e.target.value)}
-                >
-                  <option value="higher_wins">Mayor valor</option>
-                  <option value="lower_wins">Menor valor</option>
-                </select>
-              </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Resultados</label>
                 <select
@@ -728,21 +1052,72 @@ function PhasesModal({ competition, onClose, inline = false }) {
                   {PHASE_ESTADOS.map(s => <option key={`phase-state-${ph.id}-${s}`} value={s}>{s}</option>)}
                 </select>
               </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Fecha inicial</label>
+                <input
+                  type="date"
+                  value={phaseDrafts[ph.id]?.start_at ?? toDateInput(ph.start_at)}
+                  onChange={e => patchPhaseDraft(ph.id, 'start_at', e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Fecha final</label>
+                <input
+                  type="date"
+                  value={phaseDrafts[ph.id]?.end_at ?? toDateInput(ph.end_at)}
+                  onChange={e => patchPhaseDraft(ph.id, 'end_at', e.target.value)}
+                />
+              </div>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Descripcion</label>
-              <input
+              <textarea
                 value={phaseDrafts[ph.id]?.descripcion ?? (ph.descripcion || '')}
                 onChange={e => patchPhaseDraft(ph.id, 'descripcion', e.target.value)}
+                rows={4}
+                style={{ resize: 'vertical' }}
               />
             </div>
+            <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades de la fase</div>
+                  <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>La primera actividad define la medicion principal de la fase.</div>
+                </div>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => appendDraftActivity(ph.id)}>+ Actividad</button>
+              </div>
+              {normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).map((activity, activityIndex, activityList) => (
+                <div key={`phase-${ph.id}-activity-${activityIndex}`} style={{ display: 'grid', gap: 8, borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>{`Actividad ${activityIndex + 1}`}</div>
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removeDraftActivity(ph.id, activityIndex)} disabled={activityList.length <= 1}>Eliminar</button>
+                  </div>
+                  <input value={activity.nombre} onChange={e => patchDraftActivity(ph.id, activityIndex, 'nombre', e.target.value)} placeholder="Nombre de actividad" />
+                  <textarea value={activity.descripcion} onChange={e => patchDraftActivity(ph.id, activityIndex, 'descripcion', e.target.value)} placeholder="Describe el bloque o esfuerzo" rows={4} style={{ resize: 'vertical' }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
+                    <select value={activity.measurement_method} onChange={e => patchDraftActivity(ph.id, activityIndex, 'measurement_method', e.target.value)}>
+                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={`phase-${ph.id}-activity-method-${activityIndex}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                    </select>
+                    <select value={activity.winner_rule} onChange={e => patchDraftActivity(ph.id, activityIndex, 'winner_rule', e.target.value)}>
+                      <option value="higher_wins">Mayor valor</option>
+                      <option value="lower_wins">Menor valor</option>
+                    </select>
+                    <select value={activity.points_mode || 'manual'} onChange={e => patchDraftActivity(ph.id, activityIndex, 'points_mode', e.target.value)}>
+                      <option value="manual">Puntaje manual</option>
+                      <option value="position_direct">Por posicion directa</option>
+                      <option value="position_rules">Por reglas</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn-primary btn-sm" onClick={() => savePhase(ph)} disabled={savingPhaseId === ph.id}>
+              <button type="button" className="btn-primary btn-sm" onClick={() => savePhase(ph)} disabled={savingPhaseId === ph.id}>
                 {savingPhaseId === ph.id ? 'Guardando...' : 'Guardar fase'}
               </button>
-              <button className="btn-danger btn-sm" onClick={() => remove(ph.id)}>Eliminar</button>
+              <button type="button" className="btn-danger btn-sm" onClick={() => remove(ph.id)}>Eliminar</button>
               <span style={{ fontSize: 11, color: '#647063', alignSelf: 'center' }}>
-                {`Actual: ${phaseTypeFromPhase(ph)} | ${PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(ph.measurement_method, ph.tipo)] || normalizeMeasurementMethod(ph.measurement_method, ph.tipo)} | ${normalizeWinnerRule(ph.winner_rule, phaseTypeFromPhase(ph)) === 'lower_wins' ? 'gana menor' : 'gana mayor'} | ${Number(ph.allow_multiple_results) ? 'multiples' : 'unico'} | ${(ph.team_result_mode || 'sum_two') === 'single_member' ? 'equipo uno' : ((ph.team_result_mode || 'sum_two') === 'total' ? 'equipo total' : 'equipo ambos')} | ${ph.estado || 'pendiente'}${parseScoringRules(ph.scoring_rules).length ? ` | reglas: ${parseScoringRules(ph.scoring_rules).length}` : ''}`}
+                {`Actual: ${normalizePhaseActivities(ph.activities, ph).length === 1 ? '1 actividad' : `${normalizePhaseActivities(ph.activities, ph).length} actividades`} | ${phaseTypeFromPhase(ph)} | ${PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(ph.measurement_method, ph.tipo)] || normalizeMeasurementMethod(ph.measurement_method, ph.tipo)} | ${normalizeWinnerRule(ph.winner_rule, phaseTypeFromPhase(ph)) === 'lower_wins' ? 'gana menor' : 'gana mayor'} | ${Number(ph.allow_multiple_results) ? 'multiples' : 'unico'} | ${(ph.team_result_mode || 'sum_two') === 'single_member' ? 'equipo uno' : ((ph.team_result_mode || 'sum_two') === 'total' ? 'equipo total' : 'equipo ambos')} | ${ph.estado || 'pendiente'}${parseScoringRules(ph.scoring_rules).length ? ` | reglas: ${parseScoringRules(ph.scoring_rules).length}` : ''}`}
               </span>
             </div>
           </div>
@@ -787,7 +1162,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
   if (inline) {
     return (
       <div className="card">
-        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Fases</h4>
+        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Bloques y fases</h4>
         {phaseManagerContent}
       </div>
     )
@@ -1179,7 +1554,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
 }
 
 // ── Competitions Tab ──────────────────────────────────────────────────────────
-function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
+function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = false }) {
   const isEdit = mode === 'edit'
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [saving, setSaving] = useState(false)
@@ -1187,11 +1562,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   const [form, setForm] = useState({
     nombre: '',
     descripcion: '',
+    general_info_text: '',
     lugar: '',
     contact_phone: '',
     website_url: '',
     imagen_url: '',
     activa: 0,
+    individual_enabled: 1,
+    team_enabled: 0,
+    team_categories_enabled: 1,
+    team_size: 2,
+    team_membership_rule: 'free',
     allow_user_results: 0,
     show_individual_leaderboard: 1,
     show_team_all_by_category_option: 1,
@@ -1207,9 +1588,9 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     scoring_mode: 'highest_wins',
   })
   const [cats, setCats] = useState([])
-  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '' })
+  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual' })
   const [phases, setPhases] = useState([])
-  const [newPhase, setNewPhase] = useState({ nombre: '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two' })
+  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' })
   const [questions, setQuestions] = useState([])
   const [paymentMethods, setPaymentMethods] = useState([])
   const [scheduleItems, setScheduleItems] = useState([])
@@ -1224,11 +1605,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     setForm({
       nombre: competition.nombre || '',
       descripcion: competition.descripcion || '',
+      general_info_text: competition.general_info_text || '',
       lugar: competition.lugar || '',
       contact_phone: competition.contact_phone || '',
       website_url: competition.website_url || '',
       imagen_url: competition.imagen_url || '',
       activa: competition.activa || 0,
+      individual_enabled: competition.individual_enabled == null ? 1 : competition.individual_enabled,
+      team_enabled: competition.team_enabled || 0,
+      team_categories_enabled: competition.team_categories_enabled == null ? 1 : competition.team_categories_enabled,
+      team_size: Math.max(1, Number(competition.team_size || 2)),
+      team_membership_rule: competition.team_membership_rule || 'free',
       allow_user_results: competition.allow_user_results || 0,
       show_individual_leaderboard: competition.show_individual_leaderboard == null ? 1 : competition.show_individual_leaderboard,
       show_team_all_by_category_option: competition.show_team_all_by_category_option == null ? 1 : competition.show_team_all_by_category_option,
@@ -1253,14 +1640,24 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       api.get(`/competitions/${competition.id}/categories`),
       api.get(`/competitions/${competition.id}/phases`),
     ]).then(([catRes, phRes]) => {
-      setCats(catRes.data.map(c => ({ id: c.id, nombre: c.nombre, descripcion: c.descripcion || '' })))
+      setCats(catRes.data.map(c => ({
+        id: c.id,
+        nombre: c.nombre,
+        descripcion: c.descripcion || '',
+        modality: c.modality || 'individual',
+      })))
       setPhases(phRes.data.map(p => ({
         id: p.id,
+        modality: p.modality || 'individual',
+        block_name: p.block_name || '',
+        block_order: Number(p.block_order || 0),
         nombre: p.nombre,
         measurement_method: normalizeMeasurementMethod(p.measurement_method, p.tipo),
         tipo: phaseTypeFromMethod(normalizeMeasurementMethod(p.measurement_method, p.tipo)),
         descripcion: p.descripcion || '',
         team_result_mode: p.team_result_mode || 'sum_two',
+        start_at: toDateInput(p.start_at),
+        end_at: toDateInput(p.end_at),
       })))
     }).catch(() => {
       setMsg({ type: 'error', text: 'No se pudo cargar la configuracion actual' })
@@ -1276,8 +1673,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     const nombre = newCat.nombre.trim()
     const descripcion = (newCat.descripcion || '').trim()
     if (!nombre) return
-    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion }])
-    setNewCat({ nombre: '', descripcion: '' })
+    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion, modality: newCat.modality || 'individual' }])
+    setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual' })
   }
 
   const removeCategory = (id) => {
@@ -1292,11 +1689,27 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     setCats(prev => prev.map(c => (c.id === id ? { ...c, descripcion: value } : c)))
   }
 
+  const updateCategoryModality = (id, value) => {
+    setCats(prev => prev.map(c => (c.id === id ? { ...c, modality: value } : c)))
+  }
+
   const addPhase = () => {
     const nombre = newPhase.nombre.trim()
     if (!nombre) return
-    setPhases(prev => [...prev, { id: `new-phase-${Date.now()}`, tipo: phaseTypeFromMethod(newPhase.measurement_method), nombre, measurement_method: newPhase.measurement_method, descripcion: newPhase.descripcion.trim(), team_result_mode: newPhase.team_result_mode }])
-    setNewPhase({ nombre: '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two' })
+    setPhases(prev => [...prev, {
+      id: `new-phase-${Date.now()}`,
+      modality: newPhase.modality || 'individual',
+      block_name: (newPhase.block_name || '').trim(),
+      block_order: prev.length,
+      tipo: phaseTypeFromMethod(newPhase.measurement_method),
+      nombre,
+      measurement_method: newPhase.measurement_method,
+      descripcion: newPhase.descripcion.trim(),
+      team_result_mode: newPhase.team_result_mode,
+      start_at: newPhase.start_at || '',
+      end_at: newPhase.end_at || '',
+    }])
+    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' }))
   }
 
   const removePhase = (id) => {
@@ -1327,21 +1740,35 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       .map(c => ({
         nombre: String(c.nombre || '').trim(),
         descripcion: String(c.descripcion || '').trim(),
+        modality: c.modality === 'teams' ? 'teams' : 'individual',
       }))
       .filter(c => c.nombre)
     const cleanPhases = phases
-      .map(p => ({ ...p, nombre: p.nombre.trim(), descripcion: (p.descripcion || '').trim() }))
+      .map((p, idx) => ({
+        ...p,
+        nombre: p.nombre.trim(),
+        descripcion: (p.descripcion || '').trim(),
+        modality: p.modality === 'teams' ? 'teams' : 'individual',
+        block_name: (p.block_name || '').trim() || null,
+        block_order: Number.isFinite(Number(p.block_order)) ? Number(p.block_order) : idx,
+      }))
       .filter(p => p.nombre)
     const cleanScheduleItems = scheduleItems
       .map((item, idx) => ({
         id: String(item.id || `date_${idx + 1}`),
         label: String(item.label || '').trim(),
         kind: String(item.kind || 'custom').trim().toLowerCase() || 'custom',
-        start_at: dateInputToStartOfDay(item.start_at),
-        end_at: dateInputToEndOfDay(item.end_at),
+        phase_id: item.phase_id ? Number(item.phase_id) : null,
+        use_phase_dates: item.phase_id && item.use_phase_dates ? 1 : 0,
+        start_at: item.phase_id && item.use_phase_dates
+          ? dateInputToStartOfDay(cleanPhases.find(phase => String(phase.id) === String(item.phase_id))?.start_at)
+          : dateInputToStartOfDay(item.start_at),
+        end_at: item.phase_id && item.use_phase_dates
+          ? dateInputToEndOfDay(cleanPhases.find(phase => String(phase.id) === String(item.phase_id))?.end_at)
+          : dateInputToEndOfDay(item.end_at),
         note: String(item.note || '').trim() || null,
       }))
-      .filter(item => item.label || item.start_at || item.end_at || item.note)
+      .filter(item => item.label || item.start_at || item.end_at || item.note || item.phase_id)
     const cleanSocialLinks = socialLinks
       .map((item, idx) => ({
         id: String(item.id || `social_${idx + 1}`),
@@ -1361,12 +1788,18 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     const payload = {
       nombre: form.nombre.trim(),
       descripcion: form.descripcion.trim() || null,
+      general_info_text: form.general_info_text.trim() || null,
       lugar: form.lugar.trim() || null,
       contact_phone: form.contact_phone.trim() || null,
       website_url: form.website_url.trim() || null,
       social_links: cleanSocialLinks,
       imagen_url: form.imagen_url.trim() || null,
       activa: form.activa ? 1 : 0,
+      individual_enabled: form.individual_enabled ? 1 : 0,
+      team_enabled: form.team_enabled ? 1 : 0,
+      team_categories_enabled: form.team_categories_enabled ? 1 : 0,
+      team_size: Math.max(1, Number(form.team_size || 2)),
+      team_membership_rule: form.team_membership_rule === 'same_category' ? 'same_category' : 'free',
       allow_user_results: form.allow_user_results ? 1 : 0,
       show_individual_leaderboard: form.show_individual_leaderboard ? 1 : 0,
       show_team_all_by_category_option: form.show_team_all_by_category_option ? 1 : 0,
@@ -1424,6 +1857,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
           await api.post(`/competitions/${competitionId}/categories`, {
             nombre: cleanCats[i].nombre,
             descripcion: cleanCats[i].descripcion || null,
+            modality: cleanCats[i].modality,
             orden: i,
           })
         }
@@ -1439,9 +1873,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
           const phase = cleanPhases[i]
           const phasePayload = {
             nombre: phase.nombre,
+            modality: phase.modality,
+            block_name: phase.block_name,
+            block_order: Number(phase.block_order || i),
             measurement_method: normalizeMeasurementMethod(phase.measurement_method, phaseTypeFromMethod(phase.measurement_method)),
             descripcion: phase.descripcion || null,
             team_result_mode: phase.team_result_mode || 'sum_two',
+            start_at: dateInputToStartOfDay(phase.start_at),
+            end_at: dateInputToEndOfDay(phase.end_at),
             orden: i,
           }
           if (Number.isInteger(phase.id)) {
@@ -1454,14 +1893,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
         if (createdCompetition) {
           const detail = syncErr.response?.data?.detail || 'no se pudieron guardar todas las categorias o fases'
           onSaved(`Competencia creada, pero ${detail}`)
-          onClose()
+          if (!inline) onClose()
           return
         }
         throw syncErr
       }
 
       onSaved(isEdit ? 'Competencia actualizada' : 'Competencia creada')
-      onClose()
+      if (!inline || !isEdit) onClose()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo guardar la competencia' })
     } finally {
@@ -1470,10 +1909,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   }
 
   const sectionStyle = {
-    border: '1px solid #252a33',
-    borderRadius: 14,
+    border: '1px solid #252A33',
+    borderRadius: 18,
     padding: isMobile ? 14 : 18,
-    background: 'linear-gradient(180deg, rgba(255,107,0,0.08) 0%, rgba(23,27,33,0.98) 26%, rgba(23,27,33,0.98) 100%)',
+    background: 'linear-gradient(180deg, rgba(255,107,0,0.08) 0%, rgba(23,27,33,0.98) 24%, rgba(9,11,14,0.98) 100%)',
     marginBottom: 14,
   }
   const sectionTitleStyle = {
@@ -1493,9 +1932,9 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     gap: 8,
     alignItems: 'center',
     padding: isMobile ? '10px 12px' : '12px 14px',
-    borderRadius: 12,
-    border: '1px solid #252a33',
-    background: 'rgba(13,15,18,0.72)',
+    borderRadius: 14,
+    border: '1px solid #252A33',
+    background: 'rgba(13,15,18,0.82)',
     marginBottom: 8,
   }
   const toggleCardStyle = (enabled) => ({
@@ -1506,7 +1945,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     width: '100%',
     padding: '14px 16px',
     borderRadius: 16,
-    border: `1px solid ${enabled ? 'rgba(255,107,0,0.45)' : '#252a33'}`,
+    border: `1px solid ${enabled ? 'rgba(255,107,0,0.45)' : '#252A33'}`,
     background: enabled ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)',
     color: 'var(--oa-text)',
     textAlign: 'left',
@@ -1525,6 +1964,18 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     flexShrink: 0,
     transition: 'all 0.2s ease',
   })
+  const sectionRowLabelStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    color: 'var(--oa-text-secondary)',
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  }
+  const modeChipBaseStyle = SHARED_MODE_CHIP_BASE_STYLE
   const toggleThumbStyle = {
     width: 22,
     height: 22,
@@ -1567,8 +2018,57 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
   const updateScheduleItem = (id, field, value) => {
     setScheduleItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
   }
+  const resolvePhaseDates = (phaseId) => {
+    const phase = phases.find(item => String(item.id) === String(phaseId))
+    return {
+      start_at: phase?.start_at || '',
+      end_at: phase?.end_at || '',
+    }
+  }
+  const linkScheduleItemToPhase = (id, phaseId) => {
+    setScheduleItems(prev => prev.map(item => {
+      if (item.id !== id) return item
+      const nextPhaseId = phaseId || ''
+      const next = { ...item, phase_id: nextPhaseId }
+      if (!nextPhaseId) {
+        next.use_phase_dates = 0
+        return next
+      }
+      if (next.use_phase_dates) {
+        const phaseDates = resolvePhaseDates(nextPhaseId)
+        next.start_at = phaseDates.start_at
+        next.end_at = phaseDates.end_at
+      }
+      return next
+    }))
+  }
+  const toggleScheduleItemPhaseDates = (id) => {
+    setScheduleItems(prev => prev.map(item => {
+      if (item.id !== id) return item
+      const enabled = item.phase_id && !item.use_phase_dates ? 1 : 0
+      if (!enabled) return { ...item, use_phase_dates: 0 }
+      const phaseDates = resolvePhaseDates(item.phase_id)
+      return {
+        ...item,
+        use_phase_dates: 1,
+        start_at: phaseDates.start_at,
+        end_at: phaseDates.end_at,
+      }
+    }))
+  }
+  useEffect(() => {
+    setScheduleItems(prev => prev.map(item => {
+      if (!item.phase_id || !item.use_phase_dates) return item
+      const phaseDates = resolvePhaseDates(item.phase_id)
+      return {
+        ...item,
+        start_at: phaseDates.start_at,
+        end_at: phaseDates.end_at,
+      }
+    }))
+  }, [phases])
   const addScheduleItem = () => {
-    setScheduleItems(prev => [...prev, { id: `date_${Date.now()}`, label: '', kind: 'custom', start_at: '', end_at: '', note: '' }])
+    setScheduleItems(prev => [...prev, { id: `date_${Date.now()}`, label: '', kind: 'custom', start_at: '', end_at: '', phase_id: '', use_phase_dates: 0, note: '' }])
   }
   const removeScheduleItem = (id) => {
     setScheduleItems(prev => prev.filter(item => item.id !== id))
@@ -1602,7 +2102,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
       setAssetFiles(prev => ({ ...prev, [assetType]: null }))
       setAssetPreviews(prev => ({ ...prev, [assetType]: '' }))
       onSaved('Imagen eliminada')
-      onClose()
+      if (!inline) onClose()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar la imagen' })
     } finally {
@@ -1640,30 +2140,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
     { value: 'other', label: 'Otra' },
   ]
 
-  return (
-    <Modal
-      title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'}
-      onClose={onClose}
-      width={760}
-      panelStyle={{
-        background: '#171b21',
-        border: '1px solid #252a33',
-        borderRadius: 22,
-        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
-      }}
-      titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
-      closeButtonStyle={{
-        width: 34,
-        height: 34,
-        borderRadius: 12,
-        border: '1px solid #252a33',
-        background: 'transparent',
-        color: 'var(--oa-text)',
-        justifyContent: 'center',
-        padding: 0,
-      }}
-    >
-      <form onSubmit={save} style={{ overflowY: 'auto', paddingRight: 4 }}>
+  const formContent = (
+      <form onSubmit={save} style={inline ? { display: 'grid', gap: 0 } : { overflowY: 'auto', paddingRight: 4 }}>
         {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
         <div style={{ ...sectionStyle, paddingBottom: isMobile ? 12 : 16 }}>
@@ -1697,6 +2175,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
             <div className="form-group">
               <label>Descripcion</label>
               <input value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+            </div>
+            <div className="form-group">
+              <label>Informacion general</label>
+              <textarea
+                value={form.general_info_text}
+                onChange={e => setForm(f => ({ ...f, general_info_text: e.target.value }))}
+                rows={6}
+                placeholder="Resumen amplio de la competencia, dinamica general, formato, ambiente, reglas base o lo que el atleta debe entender antes de ver fases y categorias."
+              />
             </div>
           </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
@@ -1781,60 +2268,157 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Configuracion</h4>
-            <div style={sectionHintStyle}>Activa o desactiva rapidamente las opciones clave de la competencia.</div>
+            <div style={sectionHintStyle}>Define primero el alcance operativo y despues la salida publica. Las vistas individuales y de equipos se controlan desde aqui.</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-            {renderToggleCard({
-              label: 'Competencia publicada',
-              hint: 'Define si esta competencia ya debe operar como activa dentro de la plataforma.',
-              enabled: !!form.activa,
-              enabledText: 'Activa',
-              disabledText: 'Inactiva',
-              onClick: () => setForm(f => ({ ...f, activa: f.activa ? 0 : 1 })),
-            })}
-            {renderToggleCard({
-              label: 'Inscripciones habilitadas',
-              hint: 'Permite que el boton "Quiero participar" abra el formulario y reciba solicitudes.',
-              enabled: !!form.enrollment_open,
-              enabledText: 'Abiertas',
-              disabledText: 'Cerradas',
-              onClick: () => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 })),
-            })}
-            {renderToggleCard({
-              label: 'Carga de resultados por usuario',
-              hint: 'Permite que los participantes carguen sus propios resultados cuando aplique.',
-              enabled: !!form.allow_user_results,
-              enabledText: 'Permitida',
-              disabledText: 'Bloqueada',
-              onClick: () => setForm(f => ({ ...f, allow_user_results: f.allow_user_results ? 0 : 1 })),
-            })}
-            {renderToggleCard({
-              label: 'Leaderboard individual visible',
-              hint: 'Muestra la tabla individual de participantes en la experiencia publica.',
-              enabled: !!form.show_individual_leaderboard,
-              enabledText: 'Visible',
-              disabledText: 'Oculto',
-              onClick: () => setForm(f => ({ ...f, show_individual_leaderboard: f.show_individual_leaderboard ? 0 : 1 })),
-            })}
-            {renderToggleCard({
-              label: 'Equipos por categoria',
-              hint: 'Expone la opcion para ver todos los equipos agrupados por categoria.',
-              enabled: !!form.show_team_all_by_category_option,
-              enabledText: 'Visible',
-              disabledText: 'Oculto',
-              onClick: () => setForm(f => ({ ...f, show_team_all_by_category_option: f.show_team_all_by_category_option ? 0 : 1 })),
-            })}
-            {renderToggleCard({
-              label: 'Equipos globales',
-              hint: 'Expone la opcion para ver todos los equipos sin filtrar por categoria.',
-              enabled: !!form.show_team_all_global_option,
-              enabledText: 'Visible',
-              disabledText: 'Oculto',
-              onClick: () => setForm(f => ({ ...f, show_team_all_global_option: f.show_team_all_global_option ? 0 : 1 })),
-            })}
-            <button type="button" className={form.scoring_mode === 'lowest_wins' ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, scoring_mode: f.scoring_mode === 'lowest_wins' ? 'highest_wins' : 'lowest_wins' }))} style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-              {form.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}
-            </button>
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ ...listItemStyle, gridTemplateColumns: '1fr' }}>
+              <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Modelo activo</div>
+              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>Individual y equipos comparten el mismo evento, pero cada vista publica se puede encender o apagar por separado.</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
+                {getCompetitionVisibilitySummary(form).map(item => (
+                  <span
+                    key={item.label}
+                    style={{
+                      ...modeChipBaseStyle,
+                      background: item.tone === 'teal'
+                        ? 'rgba(0,194,168,0.14)'
+                        : item.tone === 'orange'
+                          ? 'rgba(255,107,0,0.14)'
+                          : item.tone === 'slate'
+                            ? 'rgba(170,178,192,0.12)'
+                            : 'rgba(107,114,128,0.12)',
+                      color: item.tone === 'teal'
+                        ? '#8FF3E7'
+                        : item.tone === 'orange'
+                          ? '#FFB36F'
+                          : item.tone === 'slate'
+                            ? 'var(--oa-text-secondary)'
+                            : '#AAB2C0',
+                      border: `1px solid ${item.tone === 'teal'
+                        ? 'rgba(0,194,168,0.22)'
+                        : item.tone === 'orange'
+                          ? 'rgba(255,107,0,0.22)'
+                          : 'rgba(170,178,192,0.2)'}`,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={sectionRowLabelStyle}>Modelo activo</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
+                {renderToggleCard({
+                  label: 'Modalidad individual',
+                  hint: 'Activa rankings y fases para atletas individuales.',
+                  enabled: !!form.individual_enabled,
+                  enabledText: 'Activa',
+                  disabledText: 'Oculta',
+                  onClick: () => setForm(f => ({ ...f, individual_enabled: f.individual_enabled ? 0 : 1 })),
+                })}
+                {renderToggleCard({
+                  label: 'Modalidad equipos',
+                  hint: 'Activa armado de equipos, categorias por equipos y rankings grupales.',
+                  enabled: !!form.team_enabled,
+                  enabledText: 'Activa',
+                  disabledText: 'Oculta',
+                  onClick: () => setForm(f => ({ ...f, team_enabled: f.team_enabled ? 0 : 1 })),
+                })}
+              </div>
+              {form.team_enabled ? (
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                  {renderToggleCard({
+                    label: 'Categorias de equipos',
+                    hint: 'Permite definir divisiones propias para equipos, separadas de las individuales.',
+                    enabled: !!form.team_categories_enabled,
+                    enabledText: 'Separadas',
+                    disabledText: 'Inferidas',
+                    onClick: () => setForm(f => ({ ...f, team_categories_enabled: f.team_categories_enabled ? 0 : 1 })),
+                  })}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Tamano de equipo</label>
+                    <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: Math.max(1, Number(e.target.value || 1)) }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Regla de armado</label>
+                    <select value={form.team_membership_rule} onChange={e => setForm(f => ({ ...f, team_membership_rule: e.target.value }))}>
+                      <option value="free">Libre</option>
+                      <option value="same_category">Misma categoria</option>
+                    </select>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <div style={sectionRowLabelStyle}>Base operativa</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                {renderToggleCard({
+                  label: 'Competencia publicada',
+                  hint: 'Define si esta competencia ya debe operar como activa dentro de la plataforma.',
+                  enabled: !!form.activa,
+                  enabledText: 'Activa',
+                  disabledText: 'Inactiva',
+                  onClick: () => setForm(f => ({ ...f, activa: f.activa ? 0 : 1 })),
+                })}
+                {renderToggleCard({
+                  label: 'Inscripciones habilitadas',
+                  hint: 'Permite que el boton "Quiero participar" abra el formulario y reciba solicitudes.',
+                  enabled: !!form.enrollment_open,
+                  enabledText: 'Abiertas',
+                  disabledText: 'Cerradas',
+                  onClick: () => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 })),
+                })}
+                {renderToggleCard({
+                  label: 'Carga de resultados por usuario',
+                  hint: 'Permite que los participantes carguen sus propios resultados cuando aplique.',
+                  enabled: !!form.allow_user_results,
+                  enabledText: 'Permitida',
+                  disabledText: 'Bloqueada',
+                  onClick: () => setForm(f => ({ ...f, allow_user_results: f.allow_user_results ? 0 : 1 })),
+                })}
+                <button type="button" className={form.scoring_mode === 'lowest_wins' ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, scoring_mode: f.scoring_mode === 'lowest_wins' ? 'highest_wins' : 'lowest_wins' }))} style={{ width: '100%', minHeight: 64 }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--oa-text)' }}>
+                      {form.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}
+                    </div>
+                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4 }}>Define el criterio global de puntaje para tablas y calculos.</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <div style={sectionRowLabelStyle}>Salida publica</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                {renderToggleCard({
+                  label: 'Leaderboard individual visible',
+                  hint: 'Muestra la tabla individual de participantes en la experiencia publica.',
+                  enabled: !!form.show_individual_leaderboard,
+                  enabledText: 'Visible',
+                  disabledText: 'Oculto',
+                  onClick: () => setForm(f => ({ ...f, show_individual_leaderboard: f.show_individual_leaderboard ? 0 : 1 })),
+                })}
+                {renderToggleCard({
+                  label: 'Equipos por categoria',
+                  hint: 'Expone la opcion para ver todos los equipos agrupados por categoria.',
+                  enabled: !!form.show_team_all_by_category_option,
+                  enabledText: 'Visible',
+                  disabledText: 'Oculto',
+                  onClick: () => setForm(f => ({ ...f, show_team_all_by_category_option: f.show_team_all_by_category_option ? 0 : 1 })),
+                })}
+                {renderToggleCard({
+                  label: 'Equipos globales',
+                  hint: 'Expone la opcion para ver todos los equipos sin filtrar por categoria.',
+                  enabled: !!form.show_team_all_global_option,
+                  enabledText: 'Visible',
+                  disabledText: 'Oculto',
+                  onClick: () => setForm(f => ({ ...f, show_team_all_global_option: f.show_team_all_global_option ? 0 : 1 })),
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1917,10 +2501,36 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
                       <option value="competition_day">Dia de competencia</option>
                     </select>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    <input type="date" value={item.start_at} onChange={e => updateScheduleItem(item.id, 'start_at', e.target.value)} />
-                    <input type="date" value={item.end_at} onChange={e => updateScheduleItem(item.id, 'end_at', e.target.value)} />
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 8 }}>
+                    <select
+                      value={item.phase_id || ''}
+                      onChange={e => linkScheduleItemToPhase(item.id, e.target.value)}
+                    >
+                      <option value="">Sin fase enlazada</option>
+                      {phases.map(phase => (
+                        <option key={`schedule-phase-${item.id}-${phase.id}`} value={phase.id}>
+                          {phase.nombre}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className={item.phase_id && item.use_phase_dates ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
+                      onClick={() => toggleScheduleItemPhaseDates(item.id)}
+                      disabled={!item.phase_id}
+                    >
+                      {item.phase_id && item.use_phase_dates ? 'Usa fechas de fase' : 'Usar fechas de fase'}
+                    </button>
                   </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    <input type="date" value={item.start_at} disabled={!!item.phase_id && !!item.use_phase_dates} onChange={e => updateScheduleItem(item.id, 'start_at', e.target.value)} />
+                    <input type="date" value={item.end_at} disabled={!!item.phase_id && !!item.use_phase_dates} onChange={e => updateScheduleItem(item.id, 'end_at', e.target.value)} />
+                  </div>
+                  {item.phase_id && item.use_phase_dates ? (
+                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+                      Esta fecha visible usa el mismo rango de la fase enlazada.
+                    </div>
+                  ) : null}
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
                     <input value={item.note} onChange={e => updateScheduleItem(item.id, 'note', e.target.value)} placeholder="Nota opcional. Ej: Clasificatorio online o puertas abiertas 7:00 am" />
                     <button type="button" className="btn-danger btn-sm" onClick={() => removeScheduleItem(item.id)}>Eliminar</button>
@@ -2005,21 +2615,29 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Categorias</h4>
-            <div style={sectionHintStyle}>Crea las divisiones que se usaran al inscribir atletas o equipos.</div>
+            <h4 style={sectionTitleStyle}>Divisiones</h4>
+            <div style={sectionHintStyle}>Define categorias individuales y por equipos sin mezclar ambas logicas.</div>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr auto', gap: 8, marginBottom: 8 }}>
             <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
+            <select value={newCat.modality} onChange={e => setNewCat(prev => ({ ...prev, modality: e.target.value }))}>
+              <option value="individual">Individual</option>
+              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+            </select>
             <button type="button" className="btn-secondary btn-sm" onClick={addCategory}>Agregar</button>
           </div>
           <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical', marginBottom: 8 }} />
-          {cats.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin categorias</div>}
+          <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>{cats.length ? `${cats.length} division${cats.length === 1 ? '' : 'es'} configurada${cats.length === 1 ? '' : 's'}` : 'Sin divisiones'}</div>
           <div style={{ display: 'grid', gap: 6 }}>
             {cats.map((cat, idx) => (
               <div key={cat.id} style={{ ...listItemStyle, gridTemplateColumns: '28px minmax(0, 1fr) auto' }}>
                 <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <input value={cat.nombre} onChange={e => updateCategoryName(cat.id, e.target.value)} placeholder="Nombre de la categoria" />
+                  <select value={cat.modality || 'individual'} onChange={e => updateCategoryModality(cat.id, e.target.value)}>
+                    <option value="individual">Individual</option>
+                    <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+                  </select>
                   <textarea value={cat.descripcion || ''} onChange={e => updateCategoryDescription(cat.id, e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical' }} />
                 </div>
                 <button type="button" className="btn-danger btn-sm" onClick={() => removeCategory(cat.id)}>x</button>
@@ -2056,52 +2674,145 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved }) {
           </div>
         </div>
 
-        <div style={sectionStyle}>
-          <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Fases</h4>
-            <div style={sectionHintStyle}>Agrega las pruebas o etapas de la competencia con su metodo de medicion.</div>
+        {(!inline || !isEdit) && (
+          <div style={sectionStyle}>
+            <div style={{ marginBottom: 14 }}>
+              <h4 style={sectionTitleStyle}>Bloques y fases</h4>
+              <div style={sectionHintStyle}>Cada fila representa una fase dentro de un bloque. Asigna modalidad para separar individual y equipos con claridad.</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1fr 1fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
+              <input value={newPhase.block_name || ''} onChange={e => setNewPhase(p => ({ ...p, block_name: e.target.value }))} placeholder="Bloque. Ej: Workout 1" />
+              <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Bloque o fase" />
+              <select value={newPhase.modality} onChange={e => setNewPhase(p => ({ ...p, modality: e.target.value }))}>
+                <option value="individual">Individual</option>
+                <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+              </select>
+              <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
+                {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+              </select>
+              <select value={newPhase.team_result_mode} onChange={e => setNewPhase(p => ({ ...p, team_result_mode: e.target.value }))}>
+                <option value="sum_two">Equipo: ambos</option>
+                <option value="total">Equipo: total</option>
+                <option value="single_member">Equipo: uno</option>
+              </select>
+              <input type="date" value={newPhase.start_at || ''} onChange={e => setNewPhase(p => ({ ...p, start_at: e.target.value }))} />
+              <input type="date" value={newPhase.end_at || ''} onChange={e => setNewPhase(p => ({ ...p, end_at: e.target.value }))} />
+              <input value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion (opcional)" />
+              <button type="button" className="btn-secondary btn-sm" onClick={addPhase}>Agregar</button>
+            </div>
+            {phases.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin fases</div>}
+            <div style={{ display: 'grid', gap: 6 }}>
+              {phases.map((phase, idx) => (
+                <div key={phase.id} style={{ ...listItemStyle, gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0, flex: '1 1 320px' }}>
+                      <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 800, letterSpacing: 0.6, paddingTop: 10 }}>{String(idx + 1).padStart(2, '0')}</span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <input value={phase.nombre} onChange={e => updatePhase(phase.id, 'nombre', e.target.value)} />
+                        <input value={phase.block_name || ''} onChange={e => updatePhase(phase.id, 'block_name', e.target.value)} placeholder="Bloque. Ej: Workout 1" style={{ marginTop: 8 }} />
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                          {getPhaseModeSummary(phaseDrafts[phase.id] || phase).map((item, chipIndex) => (
+                            <span
+                              key={`${phase.id}-chip-${chipIndex}`}
+                              style={{
+                                ...modeChipBaseStyle,
+                                background: chipIndex === 0
+                                  ? 'rgba(255,107,0,0.12)'
+                                  : chipIndex === 1
+                                    ? 'rgba(0,194,168,0.12)'
+                                    : chipIndex === 5
+                                      ? 'rgba(170,178,192,0.12)'
+                                      : 'rgba(13,15,18,0.75)',
+                                color: chipIndex === 0
+                                  ? '#FFB36F'
+                                  : chipIndex === 1
+                                    ? '#8FF3E7'
+                                    : 'var(--oa-text-secondary)',
+                                border: `1px solid ${chipIndex === 0
+                                  ? 'rgba(255,107,0,0.22)'
+                                  : chipIndex === 1
+                                    ? 'rgba(0,194,168,0.22)'
+                                    : 'rgba(170,178,192,0.18)'}`,
+                              }}
+                            >
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" className="btn-danger btn-sm" onClick={() => removePhase(phase.id)}>Eliminar</button>
+                  </div>
+                  <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                    <select value={phase.modality || 'individual'} onChange={e => updatePhase(phase.id, 'modality', e.target.value)}>
+                      <option value="individual">Individual</option>
+                      <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+                    </select>
+                    <select value={normalizeMeasurementMethod(phase.measurement_method, phase.tipo)} onChange={e => updatePhase(phase.id, 'measurement_method', e.target.value)}>
+                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                    </select>
+                    <select value={phase.team_result_mode || 'sum_two'} onChange={e => updatePhase(phase.id, 'team_result_mode', e.target.value)}>
+                      <option value="sum_two">Equipo: ambos</option>
+                      <option value="total">Equipo: total</option>
+                      <option value="single_member">Equipo: uno</option>
+                    </select>
+                    <input type="date" value={phase.start_at || ''} onChange={e => updatePhase(phase.id, 'start_at', e.target.value)} />
+                    <input type="date" value={phase.end_at || ''} onChange={e => updatePhase(phase.id, 'end_at', e.target.value)} />
+                    <input style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }} value={phase.descripcion} onChange={e => updatePhase(phase.id, 'descripcion', e.target.value)} placeholder="Descripcion de bloque o fase" />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
-            <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Nombre de fase" />
-            <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
-              {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-            </select>
-            <select value={newPhase.team_result_mode} onChange={e => setNewPhase(p => ({ ...p, team_result_mode: e.target.value }))}>
-              <option value="sum_two">Equipo: ambos</option>
-              <option value="total">Equipo: total</option>
-              <option value="single_member">Equipo: uno</option>
-            </select>
-            <input value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion (opcional)" />
-            <button type="button" className="btn-secondary btn-sm" onClick={addPhase}>Agregar</button>
-          </div>
-          {phases.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin fases</div>}
-          <div style={{ display: 'grid', gap: 6 }}>
-            {phases.map((phase, idx) => (
-              <div key={phase.id} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '28px 2fr 1fr 1fr 2fr auto' }}>
-                <span style={{ color: '#ff6b00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <input value={phase.nombre} onChange={e => updatePhase(phase.id, 'nombre', e.target.value)} />
-                <select value={normalizeMeasurementMethod(phase.measurement_method, phase.tipo)} onChange={e => updatePhase(phase.id, 'measurement_method', e.target.value)}>
-                  {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-                </select>
-                <select value={phase.team_result_mode || 'sum_two'} onChange={e => updatePhase(phase.id, 'team_result_mode', e.target.value)}>
-                  <option value="sum_two">Equipo: ambos</option>
-                  <option value="total">Equipo: total</option>
-                  <option value="single_member">Equipo: uno</option>
-                </select>
-                <input value={phase.descripcion} onChange={e => updatePhase(phase.id, 'descripcion', e.target.value)} />
-                <button type="button" className="btn-danger btn-sm" onClick={() => removePhase(phase.id)}>x</button>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-          <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
+          {!inline && <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>}
           <button type="submit" className="btn-primary" disabled={saving || uploadingAssets}>
             {(saving || uploadingAssets) ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear competencia'}
           </button>
         </div>
       </form>
+  )
+
+  if (inline) {
+    return (
+      <div>
+        <div style={{ marginBottom: 16 }}>
+          <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
+          <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
+            Edita identidad, modelo de salida, registro, pagos, divisiones y fases directamente desde el workspace.
+          </div>
+        </div>
+        {formContent}
+      </div>
+    )
+  }
+
+  return (
+    <Modal
+      title={isEdit ? `Editar competencia - ${competition?.nombre || ''}` : 'Nueva competencia'}
+      onClose={onClose}
+      width={760}
+      panelStyle={{
+        background: '#171b21',
+        border: '1px solid #252a33',
+        borderRadius: 22,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+      }}
+      titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
+      closeButtonStyle={{
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        border: '1px solid #252a33',
+        background: 'transparent',
+        color: 'var(--oa-text)',
+        justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      {formContent}
     </Modal>
   )
 }
@@ -4253,11 +4964,11 @@ function CompetitionsTab() {
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
-  const [catsComp, setCatsComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
   const [pendingCounts, setPendingCounts] = useState({})
   const [selectedCompetition, setSelectedCompetition] = useState(null)
-  const [selectedTab, setSelectedTab] = useState('details')
+  const [selectedTab, setSelectedTab] = useState('summary')
+  const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
   const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
@@ -4318,7 +5029,8 @@ function CompetitionsTab() {
 
   const openCompetition = async (comp) => {
     setSelectedCompetition(comp)
-    setSelectedTab('details')
+    setSelectedTab('summary')
+    setCompetitionTab('phases')
     try {
       const items = await syncCompetitionParticipants(comp.id)
       setSelectedParticipants(items)
@@ -4355,6 +5067,14 @@ function CompetitionsTab() {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
+  useEffect(() => {
+    if (!selectedCompetition?.id) return
+    const fresh = competitions.find(item => item.id === selectedCompetition.id)
+    if (fresh) {
+      setSelectedCompetition(prev => ({ ...prev, ...fresh }))
+    }
+  }, [competitions, selectedCompetition?.id])
+
   const competitionCardStyle = {
     padding: 16,
     display: 'grid',
@@ -4370,6 +5090,71 @@ function CompetitionsTab() {
     padding: '10px 12px',
     background: 'rgba(13,15,18,0.72)',
   }
+  const workspaceHeroCardStyle = {
+    border: '1px solid #252A33',
+    borderRadius: 22,
+    padding: isMobile ? 16 : 20,
+    background: 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.96) 40%, rgba(0,194,168,0.08) 100%)',
+    boxShadow: '0 22px 50px rgba(0,0,0,0.24)',
+    marginBottom: 14,
+  }
+  const workspaceTopSectionStyle = {
+    display: 'grid',
+    gap: 14,
+    marginBottom: 14,
+  }
+  const sectionTabStyle = (active) => ({
+    border: `1px solid ${active ? 'rgba(255,107,0,0.45)' : '#252A33'}`,
+    background: active ? 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(255,154,61,0.05))' : 'rgba(13,15,18,0.7)',
+    color: active ? '#F5F7FA' : '#AAB2C0',
+    borderRadius: 14,
+    padding: isMobile ? '10px 12px' : '12px 14px',
+    display: 'grid',
+    gap: 4,
+    minWidth: isMobile ? '100%' : 0,
+    textAlign: 'left',
+  })
+  const subSectionBtnStyle = (active) => ({
+    border: `1px solid ${active ? 'rgba(0,194,168,0.45)' : '#252A33'}`,
+    background: active ? 'rgba(0,194,168,0.12)' : 'rgba(13,15,18,0.72)',
+    color: active ? '#F5F7FA' : '#AAB2C0',
+    borderRadius: 12,
+    padding: '9px 12px',
+    fontSize: 13,
+    fontWeight: 700,
+  })
+  const workspaceStatTileStyle = {
+    border: '1px solid #252A33',
+    borderRadius: 16,
+    padding: '14px 16px',
+    background: 'rgba(13,15,18,0.72)',
+    display: 'grid',
+    gap: 4,
+  }
+  const setupInfoCardStyle = {
+    border: '1px solid #252A33',
+    borderRadius: 16,
+    padding: isMobile ? 14 : 16,
+    background: 'rgba(13,15,18,0.72)',
+    display: 'grid',
+    gap: 10,
+  }
+  const competitionSubSections = [
+    { id: 'phases', label: 'Fases' },
+    { id: 'schedule', label: 'Cronograma' },
+    { id: 'teams', label: 'Equipos' },
+    { id: 'results', label: 'Resultados' },
+    { id: 'timer', label: 'Cronometro' },
+  ]
+  const currentPendingCount = selectedCompetition ? (pendingCounts[selectedCompetition.id] || 0) : 0
+  const currentEnrollCount = selectedCompetition ? (enrollCounts[selectedCompetition.id] || 0) : 0
+  const currentPhaseStateLabel = competitionTab === 'results'
+    ? 'Carga y ajustes de puntaje'
+    : competitionTab === 'teams'
+      ? 'Armado y control de equipos'
+      : competitionTab === 'timer'
+        ? 'Control de tiempo en vivo'
+        : 'Definicion de bloques y fases'
 
   return (
     <div>
@@ -4426,11 +5211,30 @@ function CompetitionsTab() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn-primary btn-sm" onClick={() => openCompetition(c)}>Gestionar</button>
-                  <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(c)}>
-                    {pendingCount > 0 ? `Inscripciones (${pendingCount})` : 'Inscripciones'}
-                  </button>
-                  <button className="btn-secondary btn-sm" onClick={() => setEditor({ mode: 'edit', competition: c })}>Editar</button>
+                  <button className="btn-primary btn-sm" onClick={() => openCompetition(c)}>Abrir panel</button>
+                  {pendingCount > 0 ? (
+                    <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(c)}>
+                      Inscripciones ({pendingCount})
+                    </button>
+                  ) : null}
+                  <a
+                    className="btn-secondary btn-sm"
+                    href={`/competitions/${c.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Ver competencia
+                  </a>
+                  <a
+                    className="btn-secondary btn-sm"
+                    href={`/leaderboard/${c.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Leaderboard
+                  </a>
                   <button className="btn-danger btn-sm" onClick={() => deleteCompetition(c)}>Eliminar</button>
                 </div>
               </div>
@@ -4446,81 +5250,197 @@ function CompetitionsTab() {
 
       {selectedCompetition && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn-secondary btn-sm" onClick={() => setSelectedCompetition(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <ArrowLeft size={14} />
-                Volver
-              </button>
-              <span style={{ fontWeight: 700, fontSize: isMobile ? 15 : 17 }}>{selectedCompetition.nombre}</span>
+          <div style={workspaceTopSectionStyle}>
+            <div style={workspaceHeroCardStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button className="btn-secondary btn-sm" onClick={() => setSelectedCompetition(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <ArrowLeft size={14} />
+                      Volver
+                    </button>
+                    <span
+                      className="badge"
+                      style={selectedCompetition.activa
+                        ? { background: 'rgba(255,107,0,0.14)', color: '#ff9a3d', border: '1px solid rgba(255,107,0,0.35)' }
+                        : { background: 'rgba(170,178,192,0.12)', color: 'var(--oa-text-secondary)', border: '1px solid rgba(170,178,192,0.25)' }}
+                    >
+                      {selectedCompetition.activa ? 'Activa' : 'Inactiva'}
+                    </span>
+                    {currentPendingCount > 0 ? (
+                      <span className="badge" style={{ background: 'rgba(245,158,11,0.14)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)' }}>
+                        {currentPendingCount} pendiente{currentPendingCount === 1 ? '' : 's'}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: isMobile ? 22 : 28, color: 'var(--oa-text)' }}>{selectedCompetition.nombre}</div>
+                  <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
+                    {selectedCompetition.descripcion || 'Configura el evento, revisa inscripciones, opera fases y controla la salida publica desde un solo panel.'}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                    {getCompetitionVisibilitySummary(selectedCompetition).map(item => (
+                      <span
+                        key={`hero-${item.label}`}
+                        style={{
+                          ...SHARED_MODE_CHIP_BASE_STYLE,
+                          background: item.tone === 'teal'
+                            ? 'rgba(0,194,168,0.14)'
+                            : item.tone === 'orange'
+                              ? 'rgba(255,107,0,0.14)'
+                              : item.tone === 'slate'
+                                ? 'rgba(170,178,192,0.12)'
+                                : 'rgba(107,114,128,0.12)',
+                          color: item.tone === 'teal'
+                            ? '#8FF3E7'
+                            : item.tone === 'orange'
+                              ? '#FFB36F'
+                              : item.tone === 'slate'
+                                ? '#AAB2C0'
+                                : '#AAB2C0',
+                          border: `1px solid ${item.tone === 'teal'
+                            ? 'rgba(0,194,168,0.22)'
+                            : item.tone === 'orange'
+                              ? 'rgba(255,107,0,0.22)'
+                              : 'rgba(170,178,192,0.2)'}`,
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('setup')}>Setup</button>
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('enrollments')}>
+                    {currentPendingCount > 0 ? `Revisar pendientes (${currentPendingCount})` : 'Abrir inscripciones'}
+                  </button>
+                  <a
+                    href={`/competitions/${selectedCompetition.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-secondary btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Ver competencia
+                  </a>
+                  <a
+                    href={`/leaderboard/${selectedCompetition.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-primary btn-sm"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    Abrir leaderboard
+                  </a>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                <div style={workspaceStatTileStyle}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscritos</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 22, fontWeight: 800 }}>{currentEnrollCount}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Confirmados en competencia</div>
+                </div>
+                <div style={workspaceStatTileStyle}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Pendientes</div>
+                  <div style={{ color: currentPendingCount > 0 ? '#fbbf24' : '#F5F7FA', fontSize: 22, fontWeight: 800 }}>{currentPendingCount}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{currentPendingCount > 0 ? 'Solicitudes por revisar' : 'Sin cola pendiente'}</div>
+                </div>
+                <div style={workspaceStatTileStyle}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Resultados usuario</div>
+                  <div style={{ color: selectedCompetition.allow_user_results ? '#00C2A8' : '#F5F7FA', fontSize: 18, fontWeight: 800 }}>
+                    {selectedCompetition.allow_user_results ? 'Habilitados' : 'Bloqueados'}
+                  </div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Carga directa desde atleta</div>
+                </div>
+                <div style={workspaceStatTileStyle}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Operacion</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>
+                    {selectedTab === 'competition' ? currentPhaseStateLabel : selectedTab === 'broadcast' ? 'Salida publica' : 'Panel central'}
+                  </div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Seccion actual del workspace</div>
+                </div>
+              </div>
             </div>
-            <a href={`/leaderboard/${selectedCompetition.id}`} target="_blank" rel="noreferrer" style={{ color: '#284017', fontSize: 13, whiteSpace: 'nowrap' }}>Abrir leaderboard</a>
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+              {COMPETITION_WORKSPACE_SECTIONS.map(section => (
+                <button key={section.id} type="button" onClick={() => setSelectedTab(section.id)} style={sectionTabStyle(selectedTab === section.id)}>
+                  <span style={{ color: selectedTab === section.id ? '#F5F7FA' : '#D7DEE8', fontSize: 14, fontWeight: 800 }}>{section.label}</span>
+                  <span style={{ fontSize: 12, lineHeight: 1.45 }}>{section.description}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          {isMobile ? (
-            <div className="form-group" style={{ marginBottom: 14 }}>
-              <label>Seccion de la competencia</label>
-              <select value={selectedTab} onChange={e => setSelectedTab(e.target.value)}>
-                <option value="details">Detalles</option>
-                <option value="phases">Fases</option>
-                <option value="participants">Participantes</option>
-                <option value="teams">Equipos</option>
-                <option value="results">Resultados</option>
-                <option value="timer">Cronometro</option>
-                <option value="tv">Modo TV</option>
-                <option value="summary">Resumen</option>
-              </select>
-            </div>
-          ) : (
-            <div className="tabs" style={{ marginBottom: 14 }}>
-              <button className={`tab ${selectedTab === 'details' ? 'active' : ''}`} onClick={() => setSelectedTab('details')}>Detalles</button>
-              <button className={`tab ${selectedTab === 'phases' ? 'active' : ''}`} onClick={() => setSelectedTab('phases')}>Fases</button>
-              <button className={`tab ${selectedTab === 'participants' ? 'active' : ''}`} onClick={() => setSelectedTab('participants')}>Participantes</button>
-              <button className={`tab ${selectedTab === 'teams' ? 'active' : ''}`} onClick={() => setSelectedTab('teams')}>Equipos</button>
-              <button className={`tab ${selectedTab === 'results' ? 'active' : ''}`} onClick={() => setSelectedTab('results')}>Resultados</button>
-              <button className={`tab ${selectedTab === 'timer' ? 'active' : ''}`} onClick={() => setSelectedTab('timer')}>Cronometro</button>
-              <button className={`tab ${selectedTab === 'tv' ? 'active' : ''}`} onClick={() => setSelectedTab('tv')}>Modo TV</button>
-              <button className={`tab ${selectedTab === 'summary' ? 'active' : ''}`} onClick={() => setSelectedTab('summary')}>Resumen</button>
-            </div>
-          )}
-
-          {selectedTab === 'details' && (
+          {selectedTab === 'summary' && (
             <div className="card">
-              <h4 style={{ marginBottom: 10, fontSize: 15 }}>Configuracion</h4>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <button className="btn-secondary btn-sm" onClick={() => setEditor({ mode: 'edit', competition: selectedCompetition })}>Editar datos</button>
-                <button className="btn-secondary btn-sm" onClick={() => setCatsComp(selectedCompetition)}>Categorias</button>
-                <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('phases')}>Fases</button>
-                <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>Inscripciones</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Resumen operativo</h4>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Lo urgente primero: solicitudes, setup pendiente y acceso rapido a la competencia.</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('setup')}>Ir a setup</button>
+                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('competition')}>Ir a competencia</button>
+                  <button className="btn-primary btn-sm" onClick={() => setSelectedTab('enrollments')}>
+                    {currentPendingCount > 0 ? `Atender ${currentPendingCount} pendiente${currentPendingCount === 1 ? '' : 's'}` : 'Ver inscripciones'}
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 6 : 10, fontSize: isMobile ? 13 : 14 }}>
-                <div><b>Descripcion:</b> {selectedCompetition.descripcion || '-'}</div>
-                <div><b>Inscritos:</b> {enrollCounts[selectedCompetition.id] ?? 0}</div>
-                <div><b>Solicitudes pendientes:</b> {pendingCounts[selectedCompetition.id] ?? 0}</div>
-                <div><b>Estado:</b> {selectedCompetition.activa ? 'Activa' : 'Inactiva'}</div>
-                <div><b>Modo de puntuacion:</b> {selectedCompetition.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}</div>
-                <div><b>Resultados usuario:</b> {selectedCompetition.allow_user_results ? 'Si' : 'No'}</div>
-                <div><b>Leaderboard individual:</b> {selectedCompetition.show_individual_leaderboard ? 'Si' : 'No'}</div>
-                <div><b>Equipos - Todos por categoria:</b> {selectedCompetition.show_team_all_by_category_option ? 'Si' : 'No'}</div>
-                <div><b>Equipos - Todos global:</b> {selectedCompetition.show_team_all_global_option ? 'Si' : 'No'}</div>
-                <div><b>TV - Mostrar QR:</b> {selectedCompetition.tv_show_qr ? 'Si' : 'No'}</div>
-                <div><b>TV - Mostrar cronometro:</b> {selectedCompetition.tv_show_timer ? 'Si' : 'No'}</div>
-                <div><b>TV - Incluir vista Total:</b> {selectedCompetition.tv_include_total_slide ? 'Si' : 'No'}</div>
-                <div><b>TV - Solo fases finalizadas:</b> {selectedCompetition.tv_only_finalized_phases ? 'Si' : 'No'}</div>
-                <div><b>TV - Modo:</b> {selectedCompetition.tv_mode === 'static' ? 'Estatico' : 'Ciclico'}</div>
-                <div><b>TV - Vista fija:</b> {selectedCompetition.tv_static_view === 'teams' ? 'Equipos' : 'Individual'}</div>
-                <div><b>TV - Rotacion:</b> {selectedCompetition.tv_rotation_interval_seconds || 24}s</div>
-                <div><b>TV - Refresco:</b> {selectedCompetition.tv_data_refresh_interval_seconds || 5}s</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
+                <div style={setupInfoCardStyle}>
+                  <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Alertas</div>
+                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{currentPendingCount > 0 ? `${currentPendingCount} solicitudes por revisar` : 'Sin solicitudes urgentes'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Controla aprobaciones y respuestas del registro desde una sola seccion.</div>
+                </div>
+                <div style={setupInfoCardStyle}>
+                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Setup</div>
+                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{selectedCompetition.enrollment_open ? 'Inscripciones abiertas' : 'Inscripciones cerradas'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Ajusta identidad, copy, reglas, pagos y preguntas antes de operar el evento.</div>
+                </div>
+                <div style={setupInfoCardStyle}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Broadcast</div>
+                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{selectedCompetition.tv_mode === 'static' ? 'TV estatica' : 'TV ciclica'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Gestiona QR, refresco y la vista publica sin salir del workspace.</div>
+                </div>
               </div>
+              <CompetitionSummaryPanel competitionId={selectedCompetition.id} />
             </div>
           )}
 
-          {selectedTab === 'phases' && <PhasesModal competition={selectedCompetition} inline />}
-          {selectedTab === 'participants' && (
+          {selectedTab === 'setup' && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>La configuracion ya no abre otro flujo. Edita identidad, inscripciones, divisiones, modelo de salida y contenido directamente aqui.</div>
+                </div>
+              </div>
+              <CompetitionEditorModal
+                mode="edit"
+                competition={selectedCompetition}
+                inline
+                onClose={() => {}}
+                onSaved={(text) => {
+                  setMsg({ type: 'success', text })
+                  load()
+                  api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                }}
+              />
+            </div>
+          )}
+
+          {selectedTab === 'enrollments' && (
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h4 style={{ margin: 0, fontSize: 15 }}>Participantes de la competencia</h4>
-                <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>Gestionar inscripciones</button>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Solicitudes, confirmados y respuestas del formulario en una sola vista.</div>
+                </div>
+                <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
+                  {currentPendingCount > 0 ? `Gestionar solicitudes (${currentPendingCount})` : 'Gestionar inscripciones'}
+                </button>
               </div>
               {isMobile ? (
                 <div style={{ display: 'grid', gap: 8 }}>
@@ -4561,20 +5481,49 @@ function CompetitionsTab() {
             </div>
           )}
 
-          {selectedTab === 'teams' && <CompetitionTeamsPanel competition={selectedCompetition} />}
-          {selectedTab === 'results' && <CompetitionResultsPanel competition={selectedCompetition} />}
-          {selectedTab === 'timer' && <CompetitionTimerPanel competition={selectedCompetition} />}
-          {selectedTab === 'tv' && (
+          {selectedTab === 'competition' && (
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 16 }}>Operacion de competencia</h4>
+                    <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Separa la operacion por tipo de tarea para evitar botones que hacen lo mismo.</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {competitionSubSections.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setCompetitionTab(item.id)}
+                        style={subSectionBtnStyle(competitionTab === item.id)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                  {currentPhaseStateLabel}
+                </div>
+              </div>
+
+              {competitionTab === 'phases' && <PhasesModal competition={selectedCompetition} inline />}
+              {competitionTab === 'schedule' && <CompetitionSchedulePanel competition={selectedCompetition} />}
+              {competitionTab === 'teams' && <CompetitionTeamsPanel competition={selectedCompetition} />}
+              {competitionTab === 'results' && <CompetitionResultsPanel competition={selectedCompetition} />}
+              {competitionTab === 'timer' && <CompetitionTimerPanel competition={selectedCompetition} />}
+            </div>
+          )}
+
+          {selectedTab === 'broadcast' && (
             <CompetitionTvPanel
               competition={selectedCompetition}
               onSaved={(updated) => setSelectedCompetition(updated)}
             />
           )}
-          {selectedTab === 'summary' && <CompetitionSummaryPanel competitionId={selectedCompetition.id} />}
         </div>
       )}
 
-      {catsComp && <CategoriesModal competition={catsComp} onClose={() => setCatsComp(null)} />}
       {editor && (
         <CompetitionEditorModal
           mode={editor.mode}

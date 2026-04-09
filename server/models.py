@@ -63,6 +63,7 @@ class Competition(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nombre: str
     descripcion: Optional[str] = None
+    general_info_text: Optional[str] = None
     lugar: Optional[str] = None
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
@@ -73,6 +74,11 @@ class Competition(SQLModel, table=True):
     banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = Field(default=0)
+    individual_enabled: int = Field(default=1)
+    team_enabled: int = Field(default=0)
+    team_categories_enabled: int = Field(default=1)
+    team_size: int = Field(default=2)
+    team_membership_rule: str = Field(default="free")  # free | same_category
     allow_user_results: int = Field(default=0)
     show_individual_leaderboard: int = Field(default=1)
     show_team_all_by_category_option: int = Field(default=1)
@@ -135,6 +141,10 @@ class Team(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
+    team_category_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_categories.id", ondelete="SET NULL"), nullable=True),
+    )
     captain_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
@@ -183,6 +193,7 @@ class CompetitionCategory(SQLModel, table=True):
     )
     nombre: str
     descripcion: Optional[str] = None
+    modality: str = Field(default="individual")  # individual | teams
     orden: int = Field(default=0)
 
 
@@ -195,15 +206,85 @@ class CompetitionPhase(SQLModel, table=True):
     )
     nombre: str
     descripcion: Optional[str] = None
+    modality: str = Field(default="individual")  # individual | teams
+    block_name: Optional[str] = None
+    block_order: int = Field(default=0)
+    phase_format: str = Field(default="activity")  # activity / wod
     tipo: str = Field(default="cantidad")  # posicion / cantidad / tiempo
     measurement_method: str = Field(default="unidades")  # unidades / metros / tiempo_hms / repeticiones / kilogramos / gramos / libras / posicion
     winner_rule: str = Field(default="higher_wins")  # higher_wins / lower_wins
     scoring_rules: Optional[str] = None  # JSON string for position scoring rules
+    activities: Optional[str] = None  # JSON string for WOD child activities
     points_mode: str = Field(default="manual")  # manual | position_direct | position_rules
     allow_multiple_results: int = Field(default=0)  # 0 = unico por participante/fase, 1 = multiple
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
     estado: str = Field(default="pendiente")  # pendiente / en_progreso / finalizada
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
     orden: int = Field(default=0)
+
+
+class CompetitionHeat(SQLModel, table=True):
+    __tablename__ = "competition_heats"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    phase_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="CASCADE"), nullable=False)
+    )
+    categoria: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    nombre: str
+    heat_number: int = Field(default=1)
+    lane_count: int = Field(default=0)
+    start_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    end_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    location_name: Optional[str] = None
+    location_detail: Optional[str] = None
+    note: Optional[str] = None
+    is_published: int = Field(default=0)
+    published_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionHeatAssignment(SQLModel, table=True):
+    __tablename__ = "competition_heat_assignments"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    heat_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competition_heats.id", ondelete="CASCADE"), nullable=False)
+    )
+    participant_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=True),
+    )
+    team_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True),
+    )
+    lane_number: int = Field(default=1)
+    seed_order: int = Field(default=0)
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
 
 
 class CompetitionParticipant(SQLModel, table=True):
@@ -370,6 +451,7 @@ class ParticipantSelfUpdate(SQLModel):
 class CompetitionCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    general_info_text: Optional[str] = None
     lugar: Optional[str] = None
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
@@ -380,6 +462,11 @@ class CompetitionCreate(SQLModel):
     banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: int = 0
+    individual_enabled: int = 1
+    team_enabled: int = 0
+    team_categories_enabled: int = 1
+    team_size: int = 2
+    team_membership_rule: str = "free"
     allow_user_results: int = 0
     show_individual_leaderboard: int = 1
     show_team_all_by_category_option: int = 1
@@ -412,6 +499,7 @@ class CompetitionCreate(SQLModel):
 class CompetitionUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    general_info_text: Optional[str] = None
     lugar: Optional[str] = None
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
@@ -422,6 +510,11 @@ class CompetitionUpdate(SQLModel):
     banner_mobile_url: Optional[str] = None
     imagen_url: Optional[str] = None
     activa: Optional[int] = None
+    individual_enabled: Optional[int] = None
+    team_enabled: Optional[int] = None
+    team_categories_enabled: Optional[int] = None
+    team_size: Optional[int] = None
+    team_membership_rule: Optional[str] = None
     allow_user_results: Optional[int] = None
     show_individual_leaderboard: Optional[int] = None
     show_team_all_by_category_option: Optional[int] = None
@@ -458,12 +551,14 @@ class TeamCreate(SQLModel):
     competition_id: int
     member_ids: List[int] = []
     captain_id: Optional[int] = None
+    team_category_id: Optional[int] = None
 
 
 class TeamUpdate(SQLModel):
     nombre: Optional[str] = None
     member_ids: Optional[List[int]] = None
     captain_id: Optional[int] = None
+    team_category_id: Optional[int] = None
 
 
 class TeamInviteRequest(SQLModel):
@@ -509,40 +604,56 @@ class EnrollBody(SQLModel):
 class CategoryCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    modality: str = "individual"
     orden: int = 0
 
 
 class CategoryUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    modality: Optional[str] = None
     orden: Optional[int] = None
 
 
 class PhaseCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    modality: str = "individual"
+    block_name: Optional[str] = None
+    block_order: int = 0
+    phase_format: str = "activity"
     tipo: str = "cantidad"
     measurement_method: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
+    activities: Optional[List[dict]] = None
     points_mode: str = "manual"
     allow_multiple_results: int = 0
     team_result_mode: str = "sum_two"
     estado: str = "pendiente"
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
     orden: int = 0
 
 
 class PhaseUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    modality: Optional[str] = None
+    block_name: Optional[str] = None
+    block_order: Optional[int] = None
+    phase_format: Optional[str] = None
     tipo: Optional[str] = None
     measurement_method: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
+    activities: Optional[List[dict]] = None
     points_mode: Optional[str] = None
     allow_multiple_results: Optional[int] = None
     team_result_mode: Optional[str] = None
     estado: Optional[str] = None
+    start_at: Optional[datetime] = None
+    end_at: Optional[datetime] = None
     orden: Optional[int] = None
 
 
@@ -570,6 +681,8 @@ class CompetitionDateItem(SQLModel):
     kind: str = "custom"  # enrollment_start | enrollment_end | competition_start | competition_end | competition_day | custom
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
+    phase_id: Optional[int] = None
+    use_phase_dates: int = 0
     note: Optional[str] = None
 
 

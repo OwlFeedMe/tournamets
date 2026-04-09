@@ -36,6 +36,46 @@ function resolveCompetitionAsset(competition, asset) {
   return legacy
 }
 
+function competitionSearchText(competition) {
+  return [
+    competition?.nombre,
+    competition?.descripcion,
+    competition?.general_info_text,
+    competition?.lugar,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function filterCompetitionsByQuery(items, query) {
+  const value = String(query || '').trim().toLowerCase()
+  if (!value) return items
+  return (items || []).filter((competition) => competitionSearchText(competition).includes(value))
+}
+
+function SearchInput({ value, onChange, placeholder }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: '100%',
+          borderRadius: 16,
+          border: '1px solid #252A33',
+          background: '#171B21',
+          color: '#F5F7FA',
+          padding: '14px 16px',
+          fontSize: 14,
+          outline: 'none',
+        }}
+      />
+    </div>
+  )
+}
+
 function useCompetitions() {
   const [competitions, setCompetitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -90,6 +130,8 @@ function enrollmentBadge(status) {
 
 export function EventsPage() {
   const { competitions, loading } = useCompetitions()
+  const [query, setQuery] = useState('')
+  const filteredCompetitions = useMemo(() => filterCompetitionsByQuery(competitions, query), [competitions, query])
 
   return (
     <div style={pageStyle}>
@@ -99,12 +141,14 @@ export function EventsPage() {
           title="Eventos para seguir, compartir y competir."
           text="Revisa las competencias visibles, mira sus fechas principales y entra al leaderboard de cada una."
         />
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar competencia por nombre, lugar o descripcion" />
 
         {loading ? <div style={{ color: '#AAB2C0' }}>Cargando eventos...</div> : null}
         {!loading && !competitions.length ? <div style={{ color: '#AAB2C0' }}>Todavia no hay eventos publicados.</div> : null}
+        {!loading && !!competitions.length && !filteredCompetitions.length ? <div style={{ color: '#AAB2C0' }}>No hay competencias que coincidan con tu busqueda.</div> : null}
 
         <div style={{ display: 'grid', gap: 14 }}>
-          {competitions.map((competition) => {
+          {filteredCompetitions.map((competition) => {
             const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
 
             return (
@@ -147,13 +191,13 @@ export function EventsPage() {
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <Trophy size={14} color="#D4A537" />
-                        Leaderboard publico
+                        Pagina publica
                       </span>
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                      <Link to={`/leaderboard/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        Abrir evento
+                      <Link to={`/competitions/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        Ver competencia
                         <ChevronRight size={16} />
                       </Link>
                     </div>
@@ -223,9 +267,16 @@ export function WorkoutsPage() {
                   <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
                     {phases.slice(0, 3).map((phase, index) => (
                       <div key={phase.id || `${competition.id}-${index}`} style={{ borderRadius: 16, background: 'rgba(13,15,18,0.55)', border: '1px solid rgba(37,42,51,0.9)', padding: 14 }}>
-                        <div style={{ fontSize: 14, color: '#00C2A8', fontWeight: 800 }}>Workout {index + 1}</div>
+                        <div style={{ fontSize: 14, color: '#00C2A8', fontWeight: 800 }}>
+                          {(phase.phase_format || 'activity') === 'wod' ? `WOD ${index + 1}` : `Actividad ${index + 1}`}
+                        </div>
                         <div style={{ marginTop: 4, fontWeight: 700 }}>{phase.nombre}</div>
                         <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>{truncate(phase.descripcion, 90)}</div>
+                        {Array.isArray(phase.activities) && phase.activities.length > 1 ? (
+                          <div style={{ marginTop: 8, color: '#D7DEE8', fontSize: 12, lineHeight: 1.5 }}>
+                            {phase.activities.map((activity) => activity?.nombre).filter(Boolean).join(' • ')}
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -247,6 +298,7 @@ export function MyEventsPage() {
   const { participantId } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
 
   useEffect(() => {
     if (!participantId) {
@@ -276,6 +328,8 @@ export function MyEventsPage() {
     }
   }, [participantId])
 
+  const filteredItems = useMemo(() => filterCompetitionsByQuery(items, query), [items, query])
+
   return (
     <div style={pageStyle}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 18px 140px' }}>
@@ -284,12 +338,14 @@ export function MyEventsPage() {
           title="Tus inscripciones y eventos en un solo lugar."
           text="Consulta en que competencias estas inscrito, revisa tu estado y entra rapido al detalle o al leaderboard."
         />
+        <SearchInput value={query} onChange={setQuery} placeholder="Buscar en tus competencias" />
 
         {loading ? <div style={{ color: '#AAB2C0' }}>Cargando tus eventos...</div> : null}
         {!loading && !items.length ? <div style={{ color: '#AAB2C0' }}>Todavia no tienes eventos asociados a tu cuenta.</div> : null}
+        {!loading && !!items.length && !filteredItems.length ? <div style={{ color: '#AAB2C0' }}>No hay competencias que coincidan con tu busqueda.</div> : null}
 
         <div style={{ display: 'grid', gap: 14 }}>
-          {items.map((competition) => {
+          {filteredItems.map((competition) => {
             const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
             const badge = enrollmentBadge(competition.enrollment_estado)
 
@@ -355,7 +411,7 @@ export function MyEventsPage() {
 
                     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14 }}>
                       <Link to={`/competitions/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        Ver evento
+                        Ver competencia
                         <ChevronRight size={16} />
                       </Link>
                       <Link to={`/leaderboard/${competition.id}`} style={{ color: '#00C2A8', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
