@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(psql -U postgres -c \"CREATE DATABASE loyalty_race;\")"
-    ]
-  }
-}
