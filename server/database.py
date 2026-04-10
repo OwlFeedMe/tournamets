@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from auth import ADMIN_ID, ADMIN_PASSWORD, hash_password
+from constants import EstadoParticipante, Role
 from models import AppUser, Participant
 
 load_dotenv()
@@ -213,7 +214,7 @@ def init_db():
             session,
             username=ADMIN_ID,
             display_name="Administrador",
-            role="admin",
+            role=Role.ADMIN,
             password=ADMIN_PASSWORD,
         )
 
@@ -232,12 +233,12 @@ def init_db():
                 session,
                 username=organizer_username,
                 display_name=organizer_display_name,
-                role="organizer",
+                role=Role.ORGANIZER,
                 password=organizer_password,
                 participant_id=organizer_participant_id,
             )
 
-        participants = session.exec(select(Participant).where(Participant.estado == "activo")).all()
+        participants = session.exec(select(Participant).where(Participant.estado == EstadoParticipante.ACTIVO)).all()
         for participant in participants:
             existing = session.exec(
                 select(AppUser).where(AppUser.participant_id == participant.id)
@@ -254,8 +255,8 @@ def init_db():
                 if existing.display_name != display_name:
                     existing.display_name = display_name
                     changed = True
-                if existing.role not in {"admin", "organizer"} and existing.role != "user":
-                    existing.role = "user"
+                if existing.role not in Role.STAFF and existing.role != Role.USER:
+                    existing.role = Role.USER
                     changed = True
                 if existing.is_active != 1:
                     existing.is_active = 1
@@ -278,7 +279,7 @@ def init_db():
                 AppUser(
                     username=preferred_username,
                     display_name=display_name,
-                    role="user",
+                    role=Role.USER,
                     password_hash=hash_password(participant.cedula),
                     participant_id=participant.id,
                     is_active=1,

@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from constants import EstadoFase
 from models import CompetitionPhase
 
 
@@ -48,10 +49,10 @@ def _count_loaded_teams_for_phase(session: Session, competition_id: int, phase_i
 
 def _status_from_counts(expected: int, loaded: int) -> str:
     if loaded <= 0:
-        return "pendiente"
+        return EstadoFase.PENDIENTE
     if expected > 0 and loaded >= expected:
-        return "finalizada"
-    return "en_progreso"
+        return EstadoFase.FINALIZADA
+    return EstadoFase.EN_PROGRESO
 
 
 def compute_phase_status_map(session: Session, competition_id: int) -> dict[int, str]:

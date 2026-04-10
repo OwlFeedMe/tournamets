@@ -11,6 +11,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 
+from constants import Role
+
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret")
@@ -79,7 +81,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
     payload = decode_token(credentials.credentials)
-    if payload.get("role") == "participant" and payload.get("participant_id") is None:
+    if payload.get("role") == Role.PARTICIPANT and payload.get("participant_id") is None:
         try:
             payload["participant_id"] = int(payload.get("sub"))
         except (TypeError, ValueError):
@@ -94,13 +96,13 @@ def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depend
 
 
 def require_admin(user: dict = Depends(get_current_user)):
-    if user.get("role") != "admin":
+    if user.get("role") != Role.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol admin")
     return user
 
 
 def require_staff(user: dict = Depends(get_current_user)):
-    if user.get("role") not in {"admin", "organizer"}:
+    if user.get("role") not in Role.STAFF:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol staff")
     return user
 
@@ -110,7 +112,7 @@ def require_organizer_or_admin(user: dict = Depends(get_current_user)):
 
 
 def is_end_user(user: dict) -> bool:
-    return user.get("role") in {"participant", "user"}
+    return user.get("role") in Role.END_USER_ROLES
 
 
 def get_effective_participant_id(user: dict) -> Optional[int]:
@@ -120,7 +122,7 @@ def get_effective_participant_id(user: dict) -> Optional[int]:
             return int(participant_id)
         except (TypeError, ValueError):
             return None
-    if user.get("role") == "participant":
+    if user.get("role") == Role.PARTICIPANT:
         try:
             return int(user.get("sub"))
         except (TypeError, ValueError):
