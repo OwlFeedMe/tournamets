@@ -245,7 +245,7 @@ export function WorkoutsPage() {
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Workouts"
-          title="Una capa para mostrar pruebas, fases y el tipo de reto que viene."
+          title="Una capa para mostrar pruebas, eventos y el tipo de reto que viene."
           text="Explora los workouts publicados para entender el formato del reto y lo que viene en cada evento."
         />
 
@@ -440,7 +440,7 @@ export function NotificationsPage() {
         <TopBlock
           kicker="Notificaciones"
           title="Avisos clave de competencias y actividad reciente."
-          text="Encuentra novedades importantes, aperturas, cambios de fase y actualizaciones relacionadas con tu cuenta o con los eventos visibles."
+          text="Encuentra novedades importantes, aperturas, cambios de evento y actualizaciones relacionadas con tu cuenta o con los eventos visibles."
         />
 
         <section style={{ display: 'grid', gap: 14 }}>
@@ -451,7 +451,7 @@ export function NotificationsPage() {
             </div>
             <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
               {session
-                ? 'Revisa aperturas de eventos, recordatorios de fase, movimientos del leaderboard y mensajes relacionados con tu participacion.'
+                ? 'Revisa aperturas de eventos, recordatorios de evento, movimientos del leaderboard y mensajes relacionados con tu participacion.'
                 : 'Consulta novedades generales e ingresa para ver alertas personalizadas de tus competencias.'}
             </div>
           </article>

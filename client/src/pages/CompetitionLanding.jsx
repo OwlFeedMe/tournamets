@@ -596,7 +596,7 @@ export default function CompetitionLanding() {
                 {detailTab === 'phases' ? (
                   <div>
                     <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                      Fases
+                      Eventos
                     </div>
                     <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Panorama de la competencia</h2>
                     <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
@@ -650,7 +650,7 @@ export default function CompetitionLanding() {
                           </div>
                         </div>
                       )) : (
-                        <div style={{ color: theme.textSecondary, fontSize: 14 }}>Todavia no hay fases publicadas para esta competencia.</div>
+                        <div style={{ color: theme.textSecondary, fontSize: 14 }}>Todavia no hay eventos publicados para esta competencia.</div>
                       )}
                     </div>
                   </div>

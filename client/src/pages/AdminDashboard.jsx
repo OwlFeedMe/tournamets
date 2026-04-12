@@ -755,8 +755,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
     return () => window.removeEventListener('resize', onResize)
   }, [])
 
-  const add = async (e) => {
-    e.preventDefault()
+  const add = async () => {
     if (!form.nombre.trim()) return
     await api.post(`/competitions/${competition.id}/phases`, buildPhasePayload(form, phases.length))
     setForm(createPhaseFormState())
@@ -897,14 +896,14 @@ function PhasesModal({ competition, onClose, inline = false }) {
   const phaseManagerContent = (
     <>
       <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
-        Crea cada fase paso a paso. Una fase puede tener una sola actividad o varios bloques dentro del mismo WOD.
+        Crea cada evento paso a paso. Un evento puede tener una sola actividad o varios bloques dentro del mismo WOD.
       </div>
-      <form onSubmit={add} style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
+      <div style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
         <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', padding: isMobile ? 14 : 18, display: 'grid', gap: 14, boxShadow: '0 20px 50px rgba(0,0,0,0.22)' }}>
           <div style={{ display: 'grid', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.9 }}>Wizard de fase</div>
+                <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.9 }}>Wizard de evento</div>
                 <div style={{ color: '#F5F7FA', fontSize: isMobile ? 18 : 20, fontWeight: 800, marginTop: 4 }}>{wizardSteps[createStep].label}</div>
               </div>
               <div style={{ color: '#AAB2C0', fontSize: 12 }}>{`Paso ${createStep + 1} de ${wizardSteps.length}`}</div>
@@ -942,7 +941,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Descripcion</label>
-                <textarea value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Resumen visible de la fase" rows={4} style={{ resize: 'vertical' }} />
+                <textarea value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Resumen visible del evento" rows={4} style={{ resize: 'vertical' }} />
               </div>
             </div>
           )}
@@ -990,7 +989,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades de la fase</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades del evento</div>
                   <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>Usa una actividad para una prueba simple o varias para un WOD por bloques.</div>
                 </div>
                 <button type="button" className="btn-secondary btn-sm" onClick={appendFormActivity}>+ Actividad</button>
@@ -1025,7 +1024,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
           {createStep === 3 && (
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
-                <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nueva fase'}</div>
+                <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nuevo evento'}</div>
                 {form.descripcion ? <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{form.descripcion}</div> : null}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 12, fontWeight: 700 }}>{`${createActivities.length} ${createActivities.length === 1 ? 'actividad' : 'actividades'}`}</span>
@@ -1061,20 +1060,20 @@ function PhasesModal({ competition, onClose, inline = false }) {
                   Continuar
                 </button>
               ) : (
-                <button type="submit" className="btn-primary btn-sm" disabled={!canAdvanceCreateStep.slice(0, 3).every(Boolean)}>
-                  + Agregar fase
+                <button type="button" className="btn-primary btn-sm" onClick={add} disabled={!canAdvanceCreateStep.slice(0, 3).every(Boolean)}>
+                  + Agregar evento
                 </button>
               )}
             </div>
           </div>
         </div>
-      </form>
+      </div>
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {phases.length === 0 && <p style={{ color: '#647063', textAlign: 'center', padding: 20 }}>Sin fases definidas</p>}
         {phases.map((ph, i) => (
           <div key={ph.id} style={{ display: 'grid', gap: 10, padding: 14, borderRadius: 16, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', marginBottom: 10, boxShadow: '0 18px 40px rgba(0,0,0,0.22)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>{`Fase ${i + 1}`}</span>
+              <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>{`Evento ${i + 1}`}</span>
               <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 11, fontWeight: 800 }}>
                 {normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length === 1 ? '1 actividad' : `${normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length} actividades`}
               </span>
@@ -1146,8 +1145,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
             <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades de la fase</div>
-                  <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>La primera actividad define la medicion principal de la fase.</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades del evento</div>
+                  <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>La primera actividad define la medicion principal del evento.</div>
                 </div>
                 <button type="button" className="btn-secondary btn-sm" onClick={() => appendDraftActivity(ph.id)}>+ Actividad</button>
               </div>
@@ -1191,7 +1190,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
       {rulesModalOpen && (
         <Modal title="Puntaje por posicion" onClose={() => setRulesModalOpen(false)} width={620}>
           <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>
-            Define rangos de posiciones y puntos para esta fase.
+            Define rangos de posiciones y puntos para este evento.
           </div>
           <div style={{ display: 'grid', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
             {rulesDraft.map((r, idx) => (
@@ -1227,14 +1226,14 @@ function PhasesModal({ competition, onClose, inline = false }) {
   if (inline) {
     return (
       <div className="card">
-        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Bloques y fases</h4>
+        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Bloques y eventos</h4>
         {phaseManagerContent}
       </div>
     )
   }
 
   return (
-    <Modal title={`Fases - ${competition.nombre}`} onClose={onClose} width={540}>
+    <Modal title={`Eventos - ${competition.nombre}`} onClose={onClose} width={540}>
       {phaseManagerContent}
     </Modal>
   )
@@ -1970,7 +1969,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         }
       } catch (syncErr) {
         if (createdCompetition) {
-          const detail = syncErr.response?.data?.detail || 'no se pudieron guardar todas las categorias o fases'
+          const detail = syncErr.response?.data?.detail || 'no se pudieron guardar todas las categorias o eventos'
           onSaved(`Competencia creada, pero ${detail}`)
           if (!inline) onClose()
           return
@@ -2261,7 +2260,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 value={form.general_info_text}
                 onChange={e => setForm(f => ({ ...f, general_info_text: e.target.value }))}
                 rows={6}
-                placeholder="Resumen amplio de la competencia, dinamica general, formato, ambiente, reglas base o lo que el atleta debe entender antes de ver fases y categorias."
+                placeholder="Resumen amplio de la competencia, dinamica general, formato, ambiente, reglas base o lo que el atleta debe entender antes de ver eventos y categorias."
               />
             </div>
           </div>
@@ -2449,7 +2448,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
                 {renderToggleCard({
                   label: 'Modalidad individual',
-                  hint: 'Activa rankings y fases para atletas individuales.',
+                  hint: 'Activa rankings y eventos para atletas individuales.',
                   enabled: !!form.individual_enabled,
                   enabledText: 'Activa',
                   disabledText: 'Oculta',
@@ -2643,7 +2642,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       value={item.phase_id || ''}
                       onChange={e => linkScheduleItemToPhase(item.id, e.target.value)}
                     >
-                      <option value="">Sin fase enlazada</option>
+                      <option value="">Sin evento enlazado</option>
                       {phases.map(phase => (
                         <option key={`schedule-phase-${item.id}-${phase.id}`} value={phase.id}>
                           {phase.nombre}
@@ -2665,7 +2664,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   </div>
                   {item.phase_id && item.use_phase_dates ? (
                     <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
-                      Esta fecha visible usa el mismo rango de la fase enlazada.
+                      Esta fecha visible usa el mismo rango del evento enlazado.
                     </div>
                   ) : null}
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
@@ -2814,12 +2813,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         {(!inline || !isEdit) && (
           <div style={sectionStyle}>
             <div style={{ marginBottom: 14 }}>
-              <h4 style={sectionTitleStyle}>Bloques y fases</h4>
-              <div style={sectionHintStyle}>Cada fila representa una fase dentro de un bloque. Asigna modalidad para separar individual y equipos con claridad.</div>
+              <h4 style={sectionTitleStyle}>Bloques y eventos</h4>
+              <div style={sectionHintStyle}>Cada fila representa un evento dentro de un bloque. Asigna modalidad para separar individual y equipos con claridad.</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1fr 1fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
               <input value={newPhase.block_name || ''} onChange={e => setNewPhase(p => ({ ...p, block_name: e.target.value }))} placeholder="Bloque. Ej: Workout 1" />
-              <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Bloque o fase" />
+              <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Bloque o evento" />
               <select value={newPhase.modality} onChange={e => setNewPhase(p => ({ ...p, modality: e.target.value }))}>
                 <option value="individual">Individual</option>
                 <option value="teams" disabled={!form.team_enabled}>Equipos</option>
@@ -2919,7 +2918,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div style={{ marginBottom: 16 }}>
             <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
             <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
-              Edita identidad, modelo de salida, registro, pagos, divisiones y fases directamente desde el workspace.
+              Edita identidad, modelo de salida, registro, pagos, divisiones y eventos directamente desde el workspace.
             </div>
           </div>
           {formContent}
@@ -3480,7 +3479,7 @@ function CompetitionTvPanel({ competition, onSaved }) {
             {form.tv_include_total_slide ? 'TV: Incluye vista Total' : 'TV: Sin vista Total'}
           </button>
           <button type="button" className={form.tv_only_finalized_phases ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, tv_only_finalized_phases: f.tv_only_finalized_phases ? 0 : 1 }))}>
-            {form.tv_only_finalized_phases ? 'TV: Solo fases finalizadas' : 'TV: Todas las fases'}
+            {form.tv_only_finalized_phases ? 'TV: Solo eventos finalizados' : 'TV: Todos los eventos'}
           </button>
         </div>
 
@@ -3505,7 +3504,7 @@ function CompetitionTvPanel({ competition, onSaved }) {
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Fase fija</label>
+              <label>Evento fijo</label>
               <select value={form.tv_static_phase_id} onChange={e => setForm(f => ({ ...f, tv_static_phase_id: e.target.value }))}>
                 {form.tv_include_total_slide && <option value="total">Total</option>}
                 {phases.map(ph => (
@@ -3607,16 +3606,16 @@ function CompetitionSummaryPanel({ competitionId }) {
       </div>
 
       <div className="card">
-        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Puntajes por fase</h4>
+        <h4 style={{ marginBottom: 12, fontSize: 15 }}>Puntajes por evento</h4>
         {(data.phases || []).length === 0 ? (
-          <div style={{ color: '#666' }}>Esta competencia no tiene fases</div>
+          <div style={{ color: '#666' }}>Esta competencia no tiene eventos</div>
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
             {data.phases.map(ph => (
               <div key={ph.id}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{ph.nombre} <span style={{ color: '#647063', fontWeight: 400 }}>({ph.tipo})</span></div>
                 {Object.keys(ph.individual || {}).length === 0 ? (
-                  <div style={{ color: '#666' }}>Sin resultados en esta fase</div>
+                  <div style={{ color: '#666' }}>Sin resultados en este evento</div>
                 ) : (
                   <table>
                     <thead>
@@ -4133,7 +4132,7 @@ function CompetitionResultsPanel({ competition }) {
           String(r.phase_id || '') === String(form.phase_id)
         )
         if (duplicate) {
-          setMsg({ type: 'error', text: 'Esta fase permite un solo resultado por participante' })
+          setMsg({ type: 'error', text: 'Este evento permite un solo resultado por participante' })
           return
         }
       }
@@ -4164,7 +4163,7 @@ function CompetitionResultsPanel({ competition }) {
       return
     }
     if (quickAutoByPhase && rows.some(({ r }) => r.posicion === '')) {
-      setMsg({ type: 'error', text: 'Esta fase requiere posicion en todas las filas cargadas' })
+      setMsg({ type: 'error', text: 'Este evento requiere posicion en todas las filas cargadas' })
       return
     }
     if (quick.phase_id && !quickAllowMultiple) {
@@ -4173,7 +4172,7 @@ function CompetitionResultsPanel({ competition }) {
         String(r.phase_id || '') === String(quick.phase_id)
       ))
       if (blocked.length > 0) {
-        setMsg({ type: 'error', text: 'La fase seleccionada permite un solo resultado por participante' })
+        setMsg({ type: 'error', text: 'El evento seleccionado permite un solo resultado por participante' })
         return
       }
     }
@@ -4217,7 +4216,7 @@ function CompetitionResultsPanel({ competition }) {
       return
     }
     if (teamQuickAutoByPhase && rows.some(({ r }) => r.posicion === '')) {
-      setMsg({ type: 'error', text: 'Esta fase requiere posicion en todas las filas de equipos' })
+      setMsg({ type: 'error', text: 'Este evento requiere posicion en todas las filas de equipos' })
       return
     }
     if (teamQuick.phase_id && !teamQuickAllowMultiple) {
@@ -4227,7 +4226,7 @@ function CompetitionResultsPanel({ competition }) {
         String(r.phase_id || '') === String(teamQuick.phase_id)
       ))
       if (blocked.length > 0) {
-        setMsg({ type: 'error', text: 'La fase seleccionada permite un solo resultado por equipo' })
+        setMsg({ type: 'error', text: 'El evento seleccionado permite un solo resultado por equipo' })
         return
       }
     }
@@ -4272,11 +4271,11 @@ function CompetitionResultsPanel({ competition }) {
       return
     }
     if (!teamMembersQuick.phase_id) {
-      setMsg({ type: 'error', text: 'Selecciona una fase para cargar por integrantes' })
+      setMsg({ type: 'error', text: 'Selecciona un evento para cargar por integrantes' })
       return
     }
     if (teamMembersAutoByPhase && rows.some(({ r }) => r.posicion === '')) {
-      setMsg({ type: 'error', text: 'Esta fase requiere posicion en todas las filas de equipos' })
+      setMsg({ type: 'error', text: 'Este evento requiere posicion en todas las filas de equipos' })
       return
     }
     setTeamMembersQuickSaving(true)
@@ -4528,7 +4527,7 @@ function CompetitionResultsPanel({ competition }) {
         ? fromQuick
         : fallback
     if (!target) {
-      setMsg({ type: 'error', text: 'No hay fases de tipo posicion para configurar' })
+      setMsg({ type: 'error', text: 'No hay eventos de tipo posicion para configurar' })
       return
     }
     setRulesPhaseId(String(target.id))
@@ -4587,11 +4586,11 @@ function CompetitionResultsPanel({ competition }) {
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div className="card" style={{ padding: 12 }}>
-        <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Seleccion rapida de fase</div>
+        <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Seleccion rapida de evento</div>
         {isMobile ? (
           <div style={{ display: 'grid', gap: 8 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: 12, color: '#647063' }}>Fase</label>
+              <label style={{ fontSize: 12, color: '#647063' }}>Evento</label>
               <select value={activePhaseId} onChange={e => applyPhaseSelection(e.target.value)}>
                 {phases.map(ph => <option key={`results-phase-mobile-${ph.id}`} value={ph.id}>{ph.nombre}</option>)}
               </select>
@@ -4651,7 +4650,7 @@ function CompetitionResultsPanel({ competition }) {
                 className="btn-danger btn-sm"
                 onClick={() => openDeletePhaseModal(ph)}
                 disabled={massDeleteLoading}
-                title={`Borrar resultados de la fase ${ph.nombre}`}
+                title={`Borrar resultados del evento ${ph.nombre}`}
               >
                 Borrar {ph.nombre}
               </button>
@@ -4692,7 +4691,7 @@ function CompetitionResultsPanel({ competition }) {
           <div style={{ maxHeight: isMobile ? 'none' : 360, overflowY: isMobile ? 'visible' : 'auto' }}>
             {teamsForEntry.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#647063', padding: 18 }}>
-                No hay equipos pendientes por cargar en esta fase.
+                No hay equipos pendientes por cargar en este evento.
               </div>
             ) : isMobile ? (
               <div style={{ display: 'grid', gap: 10 }}>
@@ -4823,7 +4822,7 @@ function CompetitionResultsPanel({ competition }) {
                     <th>Equipo</th>
                     <th>Integrante A</th>
                     <th>Integrante B</th>
-                    {teamMembersMode === 'single_member' && <th>Quien hizo la fase</th>}
+                    {teamMembersMode === 'single_member' && <th>Quien hizo el evento</th>}
                     {teamMembersMode === 'single_member' && <th>Puntos</th>}
                     {teamMembersMode === 'total' && <th>Total equipo</th>}
                     {teamMembersMode === 'sum_two' && <th>Puntos A</th>}
@@ -4950,7 +4949,7 @@ function CompetitionResultsPanel({ competition }) {
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
             <button className="btn-primary" onClick={saveBulkTeamMembers} disabled={teamMembersQuickSaving}>
-              {teamMembersQuickSaving ? 'Guardando...' : 'Guardar por fase'}
+              {teamMembersQuickSaving ? 'Guardando...' : 'Guardar por evento'}
             </button>
           </div>
         </div>
@@ -4959,7 +4958,7 @@ function CompetitionResultsPanel({ competition }) {
       {rulesModalOpen && (
         <Modal title="Configurar puntos por posicion" onClose={() => setRulesModalOpen(false)} width={620}>
           <div className="form-group">
-            <label>Fase de posicion</label>
+            <label>Evento de posicion</label>
             <select
               value={rulesPhaseId}
               onChange={e => {
@@ -5047,7 +5046,7 @@ function CompetitionResultsPanel({ competition }) {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
           <h4 style={{ margin: 0, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}><ClipboardList size={16} />Resultados cargados</h4>
           <span style={{ fontSize: 12, color: '#647063' }}>
-            Fase: <b style={{ color: '#ddd' }}>{activePhase?.nombre || '-'}</b>
+            Evento: <b style={{ color: '#ddd' }}>{activePhase?.nombre || '-'}</b>
             {categoryFilter ? ` | Categoria: ${categoryFilter}` : ' | Categoria: Sin categorias'}
           </span>
         </div>
@@ -5311,7 +5310,7 @@ function CompetitionsTab() {
     gap: 10,
   }
   const competitionSubSections = [
-    { id: 'phases', label: 'Fases' },
+    { id: 'phases', label: 'Eventos' },
     { id: 'schedule', label: 'Cronograma' },
     { id: 'teams', label: 'Equipos' },
     { id: 'results', label: 'Resultados' },
@@ -5325,7 +5324,7 @@ function CompetitionsTab() {
       ? 'Armado y control de equipos'
       : competitionTab === 'timer'
         ? 'Control de tiempo en vivo'
-        : 'Definicion de bloques y fases'
+        : 'Definicion de bloques y eventos'
 
   return (
     <div>
@@ -5446,7 +5445,7 @@ function CompetitionsTab() {
                   </div>
                   <div style={{ fontWeight: 800, fontSize: isMobile ? 22 : 28, color: 'var(--oa-text)' }}>{selectedCompetition.nombre}</div>
                   <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
-                    {selectedCompetition.descripcion || 'Configura el evento, revisa inscripciones, opera fases y controla la salida publica desde un solo panel.'}
+                    {selectedCompetition.descripcion || 'Configura el evento, revisa inscripciones, opera eventos y controla la salida publica desde un solo panel.'}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
                     {getCompetitionVisibilitySummary(selectedCompetition).map(item => (

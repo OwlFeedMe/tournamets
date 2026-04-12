@@ -218,7 +218,7 @@ export function CompetitionSchedulePanel({ competition }) {
           <div>
             <h4 style={{ margin: 0, fontSize: 16 }}>Cronograma y heats</h4>
             <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
-              Genera el primer armado por inscripcion y deja que las siguientes fases usen leaderboard.
+              Genera el primer armado por inscripcion y deja que los siguientes eventos usen leaderboard.
             </div>
           </div>
           <button type="button" className="btn-secondary btn-sm" onClick={load} disabled={loading || busy}>Recargar</button>
@@ -226,9 +226,9 @@ export function CompetitionSchedulePanel({ competition }) {
 
         <form onSubmit={handleGenerate} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Fase</span>
+            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Evento</span>
             <select value={form.phase_id} onChange={(e) => setForm(prev => ({ ...prev, phase_id: e.target.value }))}>
-              <option value="">Selecciona una fase</option>
+              <option value="">Selecciona un evento</option>
               {payload.phases.map((phase) => (
                 <option key={phase.id} value={phase.id}>{phase.nombre}</option>
               ))}
@@ -299,7 +299,7 @@ export function CompetitionSchedulePanel({ competition }) {
             <div>
               <h4 style={{ margin: 0, fontSize: 16 }}>Editar heat</h4>
               <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
-                Ajusta horario, fase, ubicacion o publicacion sin perder la asignacion actual.
+                Ajusta horario, evento, ubicacion o publicacion sin perder la asignacion actual.
               </div>
             </div>
             <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingHeat(null)} disabled={editBusy}>Cerrar</button>
@@ -307,9 +307,9 @@ export function CompetitionSchedulePanel({ competition }) {
 
           <form onSubmit={handleUpdateHeat} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
             <label style={{ display: 'grid', gap: 6 }}>
-              <span style={{ color: '#AAB2C0', fontSize: 12 }}>Fase</span>
+              <span style={{ color: '#AAB2C0', fontSize: 12 }}>Evento</span>
               <select value={editingHeat.phase_id} onChange={(e) => setEditingHeat(prev => ({ ...prev, phase_id: e.target.value, categoria: '' }))}>
-                <option value="">Selecciona una fase</option>
+                <option value="">Selecciona un evento</option>
                 {payload.phases.map((phase) => (
                   <option key={phase.id} value={phase.id}>{phase.nombre}</option>
                 ))}

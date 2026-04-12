@@ -28,7 +28,7 @@ export const COMPETITION_WORKSPACE_SECTIONS = [
     label: 'Competencia',
     shortLabel: 'Competencia',
     group: 'operacion',
-    description: 'Fases, equipos, resultados y cronometro operativo.',
+    description: 'Eventos, equipos, resultados y cronometro operativo.',
     primaryAction: 'Operar competencia',
   },
   {

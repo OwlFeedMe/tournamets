@@ -1216,14 +1216,14 @@ export default function ParticipantProfile() {
                   </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Fase en progreso</label>
+                  <label>Evento en progreso</label>
                   {phasesLoading
-                    ? <div style={{ padding: '10px 0', color: 'var(--oa-text-secondary)', fontSize: 13 }}>Cargando fases...</div>
+                    ? <div style={{ padding: '10px 0', color: 'var(--oa-text-secondary)', fontSize: 13 }}>Cargando eventos...</div>
                     : phasesEmpty
-                      ? <div style={{ padding: '10px 0', color: 'var(--oa-error)', fontSize: 13, fontWeight: 600 }}>Sin fases en progreso</div>
+                      ? <div style={{ padding: '10px 0', color: 'var(--oa-error)', fontSize: 13, fontWeight: 600 }}>Sin eventos en progreso</div>
                       : (
                         <select value={form.phase_id} onChange={e => setForm({ ...form, phase_id: e.target.value, puntos: '', posicion: '' })} required>
-                          <option value="">Seleccionar fase...</option>
+                          <option value="">Seleccionar evento...</option>
                           {phasesForComp.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
                         </select>
                       )
@@ -1339,7 +1339,7 @@ export default function ParticipantProfile() {
           ) : (
             <table>
               <thead>
-                <tr><th>Competencia</th><th>Fase</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th></tr>
+                <tr><th>Competencia</th><th>Evento</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th></tr>
               </thead>
               <tbody>
                 {results.map(r => (
