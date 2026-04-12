@@ -163,7 +163,8 @@ def init_db():
         "UPDATE competition_phases SET winner_rule = 'higher_wins' WHERE winner_rule IS NULL OR LOWER(TRIM(winner_rule)) NOT IN ('higher_wins', 'lower_wins')",
         "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method IS NULL OR TRIM(measurement_method) = ''",
         "UPDATE competition_phases SET measurement_method = LOWER(TRIM(measurement_method))",
-        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method NOT IN ('unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion')",
+        # Si se agrega un valor a MedicionFase.ALL en constants.py, actualizar esta lista tambien
+        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method NOT IN ('amrap', 'emom', 'for_time', 'rm', 'unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion')",
         "UPDATE competition_phases SET measurement_method = 'posicion' WHERE LOWER(TRIM(tipo)) = 'posicion'",
         "UPDATE competition_phases SET measurement_method = 'tiempo_hms' WHERE LOWER(TRIM(tipo)) = 'tiempo' AND LOWER(TRIM(measurement_method)) = 'unidades'",
         "UPDATE competition_phases SET winner_rule = 'lower_wins' WHERE LOWER(TRIM(tipo)) IN ('tiempo', 'posicion')",

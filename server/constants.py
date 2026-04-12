@@ -69,3 +69,43 @@ class ReglaMiembro:
     SAME_CATEGORY = "same_category"
 
     ALL = {FREE, SAME_CATEGORY}
+
+
+class MedicionFase:
+    AMRAP = "amrap"
+    EMOM = "emom"
+    FOR_TIME = "for_time"
+    RM = "rm"
+    UNIDADES = "unidades"
+    METROS = "metros"
+    TIEMPO_HMS = "tiempo_hms"
+    REPETICIONES = "repeticiones"
+    KILOGRAMOS = "kilogramos"
+    GRAMOS = "gramos"
+    LIBRAS = "libras"
+    POSICION = "posicion"
+
+    ALL = {AMRAP, EMOM, FOR_TIME, RM, UNIDADES, METROS, TIEMPO_HMS, REPETICIONES, KILOGRAMOS, GRAMOS, LIBRAS, POSICION}
+
+    # Métodos que implican medición de tiempo (gana el menor)
+    TIPO_TIEMPO = {FOR_TIME, TIEMPO_HMS}
+    TIPO_POSICION = {POSICION}
+
+    ALIAS = {
+        "rm": RM,
+        "repetition maximum": RM,
+        "unidad": UNIDADES,
+        "metro": METROS,
+        "tiempo": TIEMPO_HMS,
+        "hh:mm:ss": TIEMPO_HMS,
+        "hms": TIEMPO_HMS,
+        "reps": REPETICIONES,
+        "rep": REPETICIONES,
+        "kg": KILOGRAMOS,
+        "g": GRAMOS,
+        "lb": LIBRAS,
+        "lbs": LIBRAS,
+        "posición": POSICION,
+        "fortime": FOR_TIME,
+        "for time": FOR_TIME,
+    }
