@@ -12,7 +12,7 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
       return [
         {
           title: 'Competencias y resultados',
-          text: 'Aqui veras avisos de aperturas, cambios de fase y movimientos relevantes del leaderboard.',
+          text: 'Aqui veras avisos de aperturas, cambios de evento y movimientos relevantes del leaderboard.',
           tone: 'neutral',
         },
         {

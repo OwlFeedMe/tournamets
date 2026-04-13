@@ -232,7 +232,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 50 }}>Pos Fase</th>
+                    <th style={{ width: 50 }}>Pos Evento</th>
                     <th>Nombre</th>
                     <th>Sexo</th>
                     {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
@@ -369,7 +369,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
     <table>
       <thead>
         <tr>
-          <th style={{ width: 50 }}>Pos Fase</th>
+          <th style={{ width: 50 }}>Pos Evento</th>
           <th>Equipo</th>
           <th>Integrantes</th>
           {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
@@ -1291,7 +1291,7 @@ export default function Leaderboard() {
               <div style={{ marginBottom: 20 }}>
                 {isMobile ? (
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Fase individual</label>
+                    <label>Evento individual</label>
                     <select value={phaseView} onChange={e => switchPhaseView(e.target.value)}>
                       <option value="total">Total</option>
                       {data.phases.map(ph => (
@@ -1333,7 +1333,7 @@ export default function Leaderboard() {
               <div style={{ marginBottom: 20 }}>
                 {isMobile ? (
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Fase equipos</label>
+                    <label>Evento equipos</label>
                     <select value={teamPhaseView} onChange={e => switchTeamPhaseView(e.target.value)}>
                       <option value="total">Total</option>
                       {data.phases.map(ph => (

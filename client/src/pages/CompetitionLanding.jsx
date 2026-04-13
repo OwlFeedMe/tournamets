@@ -149,6 +149,118 @@ function getContactChipStyle(theme) {
   }
 }
 
+function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
+  const [expandedPhaseId, setExpandedPhaseId] = useState(null)
+  const [selectedCatId, setSelectedCatId] = useState({})
+
+  function getBaseActivities(phase) {
+    return (phase.activities || []).filter(a => !a._cat)
+  }
+
+  function getWodForCategory(phase, catId) {
+    if (!catId) return null
+    return (phase.activities || []).find(a => String(a._cat) === String(catId)) || null
+  }
+
+  if (!phases.length) {
+    return (
+      <div>
+        <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>Workouts</div>
+        <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Workouts</h2>
+        <div style={{ color: theme.textSecondary, fontSize: 14, marginTop: 14 }}>Todavia no hay eventos publicados para esta competencia.</div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>Workouts</div>
+      <h2 style={{ margin: '8px 0 16px', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Workouts</h2>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {phases.map((phase) => {
+          const isExpanded = expandedPhaseId === phase.id
+          const catId = selectedCatId[phase.id] ?? null
+          const baseActivities = getBaseActivities(phase)
+          const hasPartB = baseActivities.length > 1
+          const catOverride = catId ? getWodForCategory(phase, catId) : null
+          const wodA = catOverride?.descripcion ?? baseActivities[0]?.descripcion ?? null
+          const wodB = catOverride?.part_b_descripcion ?? baseActivities[1]?.descripcion ?? null
+
+          return (
+            <div key={phase.id} style={{ borderRadius: 16, border: `1px solid ${isExpanded ? hexToRgba(theme.primary, 0.35) : theme.border}`, background: hexToRgba(theme.background, 0.58), overflow: 'hidden', transition: 'border-color 0.2s' }}>
+              {/* Header — click para colapsar */}
+              <div
+                onClick={() => setExpandedPhaseId(isExpanded ? null : phase.id)}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: isMobile ? '12px 14px' : '14px 18px', cursor: 'pointer', userSelect: 'none' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+                  <span style={{ color: '#F5F7FA', fontSize: isMobile ? 15 : 16, fontWeight: 800, lineHeight: 1.25 }}>{phase.nombre}</span>
+                  {/* Selector de categorías en el header */}
+                  {isExpanded && categories.length > 0 && (
+                    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                      <select
+                        value={catId ?? ''}
+                        onChange={e => setSelectedCatId(prev => ({ ...prev, [phase.id]: e.target.value === '' ? null : e.target.value }))}
+                        style={{
+                          appearance: 'none',
+                          WebkitAppearance: 'none',
+                          background: catId ? hexToRgba(theme.primary, 0.14) : hexToRgba(theme.accent, 0.1),
+                          border: catId ? `1px solid ${hexToRgba(theme.primary, 0.5)}` : `1px solid ${hexToRgba(theme.accent, 0.45)}`,
+                          borderRadius: 999,
+                          color: catId ? '#FFD0AE' : '#D9FFFA',
+                          padding: '4px 28px 4px 12px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          width: 'auto',
+                        }}
+                      >
+                        <option value="" style={{ background: '#171B21', color: '#F5F7FA' }}>Base</option>
+                        {categories.map(cat => (
+                          <option key={cat.id} value={cat.id} style={{ background: '#171B21', color: '#F5F7FA' }}>{cat.nombre}</option>
+                        ))}
+                      </select>
+                      <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 9, color: catId ? '#FFD0AE' : '#D9FFFA' }}>▼</span>
+                    </div>
+                  )}
+                </div>
+                <span style={{ color: theme.textSecondary, fontSize: 13, flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+              </div>
+
+              {/* Contenido expandido */}
+              {isExpanded && (
+                <div style={{ padding: isMobile ? '0 14px 14px' : '0 18px 18px', display: 'grid', gap: 12 }}>
+
+
+                  {/* WOD Parte A */}
+                  {wodA && (
+                    <div style={{ borderRadius: 12, border: `1px solid ${hexToRgba(theme.accent, 0.2)}`, background: hexToRgba(theme.accent, 0.06), padding: '10px 14px' }}>
+                      {hasPartB && <div style={{ fontSize: 11, fontWeight: 800, color: theme.accent, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Parte A</div>}
+                      <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{wodA}</div>
+                    </div>
+                  )}
+
+                  {/* WOD Parte B */}
+                  {hasPartB && wodB && (
+                    <div style={{ borderRadius: 12, border: `1px solid ${hexToRgba(theme.primary, 0.2)}`, background: hexToRgba(theme.primary, 0.05), padding: '10px 14px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: theme.primary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Parte B</div>
+                      <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{wodB}</div>
+                    </div>
+                  )}
+
+                  {!wodA && !wodB && (
+                    <div style={{ color: theme.textSecondary, fontSize: 13 }}>WOD por publicar.</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
   const { session, role, participantId } = useAuth()
@@ -594,66 +706,7 @@ export default function CompetitionLanding() {
                 ) : null}
 
                 {detailTab === 'phases' ? (
-                  <div>
-                    <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                      Fases
-                    </div>
-                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Panorama de la competencia</h2>
-                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-                      {phases.length ? phases.map((phase, index) => (
-                        <div key={phase.id || `${phase.nombre}-${index}`} style={{ borderRadius: 18, border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: isMobile ? 14 : 16 }}>
-                          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'stretch' : 'start', flexWrap: 'wrap' }}>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                                <span style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>{phaseFormatLabel(phase)}</span>
-                                <span style={{ padding: '4px 8px', borderRadius: 999, background: (phase.modality || 'individual') === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${(phase.modality || 'individual') === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700 }}>
-                                  {modalityLabel(phase.modality || 'individual')}
-                                </span>
-                              </div>
-                              <div style={{ color: '#F5F7FA', fontSize: isMobile ? 16 : 17, fontWeight: 800, lineHeight: 1.25, wordBreak: 'break-word' }}>{phase.nombre}</div>
-                              {(phase.start_at || phase.end_at) ? (
-                                <div style={{ marginTop: 6, color: theme.text, fontSize: 13, lineHeight: 1.55 }}>
-                                  {formatDateRange(phase.start_at, phase.end_at)}
-                                </div>
-                              ) : null}
-                              {phase.descripcion ? (
-                                <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{phase.descripcion}</div>
-                              ) : null}
-                              {(phase.activities || []).length ? (
-                                <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                                  {(phase.activities || []).map((activity, activityIndex) => (
-                                    <div
-                                      key={`${phase.id || phase.nombre}-activity-${activityIndex}`}
-                                      style={{
-                                        borderRadius: 14,
-                                        border: `1px solid ${hexToRgba(theme.accent, 0.18)}`,
-                                        background: hexToRgba(theme.accent, 0.08),
-                                        padding: '10px 12px',
-                                      }}
-                                    >
-                                      <div style={{ color: '#D9FFFA', fontSize: 13, fontWeight: 700 }}>
-                                        {activity.nombre || `Actividad ${activityIndex + 1}`}
-                                      </div>
-                                      {activity.descripcion ? (
-                                        <div style={{ marginTop: 4, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                                          {activity.descripcion}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                            <span style={{ padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.25)}`, color: theme.text, fontSize: 12, fontWeight: 700, alignSelf: isMobile ? 'flex-start' : 'auto' }}>
-                              {phaseStateLabel(phase.estado)}
-                            </span>
-                          </div>
-                        </div>
-                      )) : (
-                        <div style={{ color: theme.textSecondary, fontSize: 14 }}>Todavia no hay fases publicadas para esta competencia.</div>
-                      )}
-                    </div>
-                  </div>
+                  <PhasesbyDay phases={phases} categories={categories} theme={theme} hexToRgba={hexToRgba} isMobile={isMobile} />
                 ) : null}
 
                 {detailTab === 'categories' ? (

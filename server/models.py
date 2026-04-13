@@ -4,6 +4,11 @@ from typing import Optional, List
 from sqlalchemy import UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
 from sqlmodel import SQLModel, Field, Relationship
 
+from constants import (
+    EstadoParticipante, EstadoInscripcion, EstadoFase,
+    Modalidad, FormatoFase, ReglaGanador, ModoPoints, ModoTV, ReglaMiembro, Role,
+)
+
 
 # ── Table Models (DB) ─────────────────────────────────────────────────────────
 
@@ -27,7 +32,7 @@ class Participant(SQLModel, table=True):
         sa_column=Column(Date, nullable=True),
     )
     ciudad_pais: Optional[str] = None
-    estado: str = Field(default="activo")
+    estado: str = Field(default=EstadoParticipante.ACTIVO)
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -44,7 +49,7 @@ class AppUser(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True)
     display_name: str
-    role: str = Field(default="user", index=True)  # admin | organizer | user
+    role: str = Field(default=Role.USER, index=True)  # admin | organizer | user
     password_hash: str
     participant_id: Optional[int] = Field(
         default=None,
@@ -82,7 +87,7 @@ class Competition(SQLModel, table=True):
     team_enabled: int = Field(default=0)
     team_categories_enabled: int = Field(default=1)
     team_size: int = Field(default=2)
-    team_membership_rule: str = Field(default="free")  # free | same_category
+    team_membership_rule: str = Field(default=ReglaMiembro.FREE)  # free | same_category
     allow_user_results: int = Field(default=0)
     show_individual_leaderboard: int = Field(default=1)
     show_team_all_by_category_option: int = Field(default=1)
@@ -93,8 +98,8 @@ class Competition(SQLModel, table=True):
     tv_only_finalized_phases: int = Field(default=1)
     tv_rotation_interval_seconds: int = Field(default=24)
     tv_data_refresh_interval_seconds: int = Field(default=5)
-    tv_mode: str = Field(default="cyclic")  # cyclic | static
-    tv_static_view: str = Field(default="individual")  # individual | teams
+    tv_mode: str = Field(default=ModoTV.CYCLIC)  # cyclic | static
+    tv_static_view: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
     tv_static_phase_id: Optional[int] = Field(default=None)
     tv_static_individual_category: Optional[str] = None
     tv_static_team_category_mode: str = Field(default="__by_category__")  # __by_category__ | __all__ | category
@@ -125,7 +130,7 @@ class Competition(SQLModel, table=True):
     timer_elapsed_before_pause: int = Field(default=0)  # seconds elapsed before current run
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
-    scoring_mode: str = Field(default="highest_wins")  # highest_wins | lowest_wins
+    scoring_mode: str = Field(default=ReglaGanador.HIGHER_WINS)  # highest_wins | lowest_wins
     organizer_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
@@ -197,7 +202,7 @@ class CompetitionCategory(SQLModel, table=True):
     )
     nombre: str
     descripcion: Optional[str] = None
-    modality: str = Field(default="individual")  # individual | teams
+    modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
     orden: int = Field(default=0)
 
 
@@ -210,19 +215,19 @@ class CompetitionPhase(SQLModel, table=True):
     )
     nombre: str
     descripcion: Optional[str] = None
-    modality: str = Field(default="individual")  # individual | teams
+    modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
     block_name: Optional[str] = None
     block_order: int = Field(default=0)
-    phase_format: str = Field(default="activity")  # activity / wod
+    phase_format: str = Field(default=FormatoFase.ACTIVITY)  # activity / wod
     tipo: str = Field(default="cantidad")  # posicion / cantidad / tiempo
     measurement_method: str = Field(default="unidades")  # unidades / metros / tiempo_hms / repeticiones / kilogramos / gramos / libras / posicion
-    winner_rule: str = Field(default="higher_wins")  # higher_wins / lower_wins
+    winner_rule: str = Field(default=ReglaGanador.HIGHER_WINS)  # higher_wins / lower_wins
     scoring_rules: Optional[str] = None  # JSON string for position scoring rules
     activities: Optional[str] = None  # JSON string for WOD child activities
-    points_mode: str = Field(default="manual")  # manual | position_direct | position_rules
+    points_mode: str = Field(default=ModoPoints.MANUAL)  # manual | position_direct | position_rules
     allow_multiple_results: int = Field(default=0)  # 0 = unico por participante/fase, 1 = multiple
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
-    estado: str = Field(default="pendiente")  # pendiente / en_progreso / finalizada
+    estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     orden: int = Field(default=0)
@@ -305,7 +310,7 @@ class CompetitionParticipant(SQLModel, table=True):
         sa_column=Column(String, nullable=True),
     )
     estado: str = Field(
-        default="confirmado",
+        default=EstadoInscripcion.CONFIRMADO,
         sa_column=Column(String, nullable=False, server_default="confirmado"),
     )
     enrollment_answers: Optional[str] = None
@@ -396,7 +401,7 @@ class ParticipantCreate(SQLModel):
     profile_photo_url: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     ciudad_pais: Optional[str] = None
-    estado: str = "activo"
+    estado: str = EstadoParticipante.ACTIVO
 
 
 class ParticipantUpdate(SQLModel):
@@ -430,7 +435,7 @@ class ParticipantProfile(SQLModel):
     profile_photo_url: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     ciudad_pais: Optional[str] = None
-    estado: str = "activo"
+    estado: str = EstadoParticipante.ACTIVO
     created_at: Optional[datetime] = None
 
 
@@ -474,7 +479,7 @@ class CompetitionCreate(SQLModel):
     team_enabled: int = 0
     team_categories_enabled: int = 1
     team_size: int = 2
-    team_membership_rule: str = "free"
+    team_membership_rule: str = ReglaMiembro.FREE
     allow_user_results: int = 0
     show_individual_leaderboard: int = 1
     show_team_all_by_category_option: int = 1
@@ -485,8 +490,8 @@ class CompetitionCreate(SQLModel):
     tv_only_finalized_phases: int = 1
     tv_rotation_interval_seconds: int = 24
     tv_data_refresh_interval_seconds: int = 5
-    tv_mode: str = "cyclic"
-    tv_static_view: str = "individual"
+    tv_mode: str = ModoTV.CYCLIC
+    tv_static_view: str = Modalidad.INDIVIDUAL
     tv_static_phase_id: Optional[int] = None
     tv_static_individual_category: Optional[str] = None
     tv_static_team_category_mode: str = "__by_category__"
@@ -501,7 +506,7 @@ class CompetitionCreate(SQLModel):
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     enrollment_terms_text: Optional[str] = None
     require_payment_receipt: int = 0
-    scoring_mode: str = "highest_wins"
+    scoring_mode: str = ReglaGanador.HIGHER_WINS
 
 
 class CompetitionUpdate(SQLModel):
@@ -616,7 +621,7 @@ class EnrollBody(SQLModel):
 class CategoryCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
-    modality: str = "individual"
+    modality: str = Modalidad.INDIVIDUAL
     orden: int = 0
 
 
@@ -630,19 +635,19 @@ class CategoryUpdate(SQLModel):
 class PhaseCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
-    modality: str = "individual"
+    modality: str = Modalidad.INDIVIDUAL
     block_name: Optional[str] = None
     block_order: int = 0
-    phase_format: str = "activity"
+    phase_format: str = FormatoFase.ACTIVITY
     tipo: str = "cantidad"
     measurement_method: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
     activities: Optional[List[dict]] = None
-    points_mode: str = "manual"
+    points_mode: str = ModoPoints.MANUAL
     allow_multiple_results: int = 0
     team_result_mode: str = "sum_two"
-    estado: str = "pendiente"
+    estado: str = EstadoFase.PENDIENTE
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     orden: int = 0

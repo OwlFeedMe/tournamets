@@ -458,7 +458,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         id: 'sin-fase',
         phaseId: '',
         phaseName: '',
-        title: 'Sin fase publicada',
+        title: 'Sin evento publicado',
         subtitle: 'Heats sin bloque asignado',
         startAt: null,
         endAt: null,
@@ -603,7 +603,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{sectionCount}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Fases, heats y bloques publicados.</div>
+            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Eventos, heats y bloques publicados.</div>
           </div>
           <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>

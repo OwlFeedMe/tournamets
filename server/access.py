@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from constants import Role
 from models import Competition
 
 
@@ -15,11 +16,11 @@ def get_app_user_id(user: dict | None) -> int | None:
 
 
 def is_admin_user(user: dict | None) -> bool:
-    return bool(user and user.get("role") == "admin")
+    return bool(user and user.get("role") == Role.ADMIN)
 
 
 def is_organizer_user(user: dict | None) -> bool:
-    return bool(user and user.get("role") == "organizer")
+    return bool(user and user.get("role") == Role.ORGANIZER)
 
 
 def get_owned_competition_ids(session: Session, user: dict | None) -> list[int]:

@@ -9,6 +9,7 @@ from access import require_competition_access
 from auth import get_current_user_optional, require_staff
 from database import get_session
 from phase_status import compute_phase_status_map
+from constants import MedicionFase
 from models import (
     Competition, CompetitionCategory, CompetitionPhase,
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
@@ -22,7 +23,7 @@ PHASE_ESTADOS_VALIDOS = {"pendiente", "en_progreso", "finalizada"}
 PHASE_TEAM_MODES_VALIDOS = {"sum_two", "single_member", "total"}
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
-PHASE_MEASUREMENT_METHODS_VALIDOS = {"unidades", "metros", "tiempo_hms", "repeticiones", "kilogramos", "gramos", "libras", "posicion"}
+PHASE_MEASUREMENT_METHODS_VALIDOS = MedicionFase.ALL
 PHASE_TIPO_ALIAS = {
     "puntos": "cantidad",
     "peso": "cantidad",
@@ -37,28 +38,7 @@ PHASE_WINNER_ALIAS = {
     "gana_menor": "lower_wins",
     "lower": "lower_wins",
 }
-PHASE_MEASUREMENT_ALIAS = {
-    "unidad": "unidades",
-    "unidades": "unidades",
-    "metros": "metros",
-    "metro": "metros",
-    "tiempo": "tiempo_hms",
-    "hh:mm:ss": "tiempo_hms",
-    "hms": "tiempo_hms",
-    "tiempo_hms": "tiempo_hms",
-    "reps": "repeticiones",
-    "rep": "repeticiones",
-    "repeticiones": "repeticiones",
-    "kg": "kilogramos",
-    "kilogramos": "kilogramos",
-    "g": "gramos",
-    "gramos": "gramos",
-    "lb": "libras",
-    "lbs": "libras",
-    "libras": "libras",
-    "posicion": "posicion",
-    "posición": "posicion",
-}
+PHASE_MEASUREMENT_ALIAS = MedicionFase.ALIAS
 MODALITY_VALIDOS = {"individual", "teams"}
 MODALITY_ALIAS = {
     "individual": "individual",
@@ -99,17 +79,17 @@ def _default_winner_rule_for_type(phase_type: str | None) -> str:
 
 def _default_measurement_method_for_type(phase_type: str | None) -> str:
     if phase_type == "tiempo":
-        return "tiempo_hms"
+        return MedicionFase.TIEMPO_HMS
     if phase_type == "posicion":
-        return "posicion"
-    return "unidades"
+        return MedicionFase.POSICION
+    return MedicionFase.UNIDADES
 
 
 def _type_from_measurement_method(method: str | None) -> str:
     m = (method or "").strip().lower()
-    if m in {"tiempo_hms"}:
+    if m in MedicionFase.TIPO_TIEMPO:
         return "tiempo"
-    if m in {"posicion"}:
+    if m in MedicionFase.TIPO_POSICION:
         return "posicion"
     return "cantidad"
 

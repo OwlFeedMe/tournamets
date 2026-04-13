@@ -7,12 +7,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, verify_password
+from constants import EstadoParticipante, Role
 from database import get_session
 from models import AppUser, MeResponse, Participant, TokenResponse
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-VALID_APP_ROLES = {"admin", "organizer", "user"}
+VALID_APP_ROLES = Role.APP_ROLES
 VALID_GENEROS = {"M", "F", "Otro"}
 PENDING_CEDULA_PREFIX = "pending:"
 TEXT_ONLY_REGEX = re.compile(r"^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$")
@@ -96,7 +97,7 @@ def _participants_for_email(session: Session, email: str, *, active_only: bool =
 
     query = select(Participant).where(func.lower(Participant.email) == normalized_email)
     if active_only:
-        query = query.where(Participant.estado == "activo")
+        query = query.where(Participant.estado == EstadoParticipante.ACTIVO)
     return session.exec(query).all()
 
 
@@ -188,7 +189,7 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
         participant.celular = celular or participant.celular
         participant.genero = genero or participant.genero
         participant.sexo = participant.genero or participant.sexo
-        participant.estado = "activo"
+        participant.estado = EstadoParticipante.ACTIVO
         session.add(participant)
     else:
         cedula = _generate_pending_cedula()
@@ -200,7 +201,7 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
             celular=celular or None,
             genero=genero or None,
             sexo=genero or None,
-            estado="activo",
+            estado=EstadoParticipante.ACTIVO,
         )
         session.add(participant)
 
@@ -214,7 +215,7 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
     app_user = AppUser(
         username=email,
         display_name=_participant_display_name(participant),
-        role="user",
+        role=Role.USER,
         password_hash=hash_password(password),
         participant_id=participant.id,
         is_active=1,
@@ -248,7 +249,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
     # Legacy admin login remains for compatibility while app_users are introduced.
     if identifier == ADMIN_ID and password == ADMIN_PASSWORD:
         payload = _session_token_payload(
-            role="admin",
+            role=Role.ADMIN,
             display_name="Administrador",
             username=ADMIN_ID,
         )
@@ -271,7 +272,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
         participant = session.exec(
             select(Participant).where(
                 Participant.cedula == identifier,
-                Participant.estado == "activo",
+                Participant.estado == EstadoParticipante.ACTIVO,
             )
         ).first()
 
@@ -297,7 +298,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
         AppUser(
             username=(participant.email or participant.cedula),
             display_name=_participant_display_name(participant),
-            role="user",
+            role=Role.USER,
             password_hash=hash_password(password),
             participant_id=participant.id,
             is_active=1,
@@ -317,7 +318,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
         return _token_response(payload)
 
     payload = _session_token_payload(
-        role="participant",
+        role=Role.PARTICIPANT,
         display_name=_participant_display_name(participant),
         username=participant.email or participant.cedula,
         participant_id=participant.id,
@@ -331,9 +332,9 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
     if not role:
         raise HTTPException(status_code=401, detail="No autenticado")
 
-    if role == "admin" and user.get("app_user_id") is None:
+    if role == Role.ADMIN and user.get("app_user_id") is None:
         payload = _session_token_payload(
-            role="admin",
+            role=Role.ADMIN,
             display_name=user.get("display_name") or "Administrador",
             username=user.get("username") or ADMIN_ID,
         )
@@ -360,7 +361,7 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
         )
         return _me_response(payload)
 
-    if role == "participant":
+    if role == Role.PARTICIPANT:
         participant_id = user.get("participant_id")
         if participant_id is None:
             try:
@@ -372,7 +373,7 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
             raise HTTPException(status_code=401, detail="Sesion invalida")
 
         payload = _session_token_payload(
-            role="participant",
+            role=Role.PARTICIPANT,
             display_name=_participant_display_name(participant),
             username=participant.email or participant.cedula,
             participant_id=participant.id,

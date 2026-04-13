@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from auth import ADMIN_ID, ADMIN_PASSWORD, hash_password
+from constants import EstadoParticipante, Role
 from models import AppUser, Participant
 
 load_dotenv()
@@ -162,7 +163,8 @@ def init_db():
         "UPDATE competition_phases SET winner_rule = 'higher_wins' WHERE winner_rule IS NULL OR LOWER(TRIM(winner_rule)) NOT IN ('higher_wins', 'lower_wins')",
         "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method IS NULL OR TRIM(measurement_method) = ''",
         "UPDATE competition_phases SET measurement_method = LOWER(TRIM(measurement_method))",
-        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method NOT IN ('unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion')",
+        # Si se agrega un valor a MedicionFase.ALL en constants.py, actualizar esta lista tambien
+        "UPDATE competition_phases SET measurement_method = 'unidades' WHERE measurement_method NOT IN ('amrap', 'emom', 'for_time', 'rm', 'unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion')",
         "UPDATE competition_phases SET measurement_method = 'posicion' WHERE LOWER(TRIM(tipo)) = 'posicion'",
         "UPDATE competition_phases SET measurement_method = 'tiempo_hms' WHERE LOWER(TRIM(tipo)) = 'tiempo' AND LOWER(TRIM(measurement_method)) = 'unidades'",
         "UPDATE competition_phases SET winner_rule = 'lower_wins' WHERE LOWER(TRIM(tipo)) IN ('tiempo', 'posicion')",
@@ -213,7 +215,7 @@ def init_db():
             session,
             username=ADMIN_ID,
             display_name="Administrador",
-            role="admin",
+            role=Role.ADMIN,
             password=ADMIN_PASSWORD,
         )
 
@@ -232,12 +234,12 @@ def init_db():
                 session,
                 username=organizer_username,
                 display_name=organizer_display_name,
-                role="organizer",
+                role=Role.ORGANIZER,
                 password=organizer_password,
                 participant_id=organizer_participant_id,
             )
 
-        participants = session.exec(select(Participant).where(Participant.estado == "activo")).all()
+        participants = session.exec(select(Participant).where(Participant.estado == EstadoParticipante.ACTIVO)).all()
         for participant in participants:
             existing = session.exec(
                 select(AppUser).where(AppUser.participant_id == participant.id)
@@ -254,8 +256,8 @@ def init_db():
                 if existing.display_name != display_name:
                     existing.display_name = display_name
                     changed = True
-                if existing.role not in {"admin", "organizer"} and existing.role != "user":
-                    existing.role = "user"
+                if existing.role not in Role.STAFF and existing.role != Role.USER:
+                    existing.role = Role.USER
                     changed = True
                 if existing.is_active != 1:
                     existing.is_active = 1
@@ -278,7 +280,7 @@ def init_db():
                 AppUser(
                     username=preferred_username,
                     display_name=display_name,
-                    role="user",
+                    role=Role.USER,
                     password_hash=hash_password(participant.cedula),
                     participant_id=participant.id,
                     is_active=1,
