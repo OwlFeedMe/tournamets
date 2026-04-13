@@ -154,14 +154,18 @@ export function AuthProvider({ children }) {
         storeSessionPayload(payload, session.token)
         setSession(readStoredSession())
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return
-        window.localStorage.removeItem(STORAGE_KEYS.token)
-        window.localStorage.removeItem(STORAGE_KEYS.role)
-        window.localStorage.removeItem(STORAGE_KEYS.nombre)
-        window.localStorage.removeItem(STORAGE_KEYS.participantId)
-        setSession(null)
-        window.dispatchEvent(new Event(SESSION_EVENT))
+        // Solo limpiar sesión si el servidor explícitamente rechaza el token (401)
+        // Errores de red o timing no deben desloguear al usuario
+        if (err?.message?.includes('401')) {
+          window.localStorage.removeItem(STORAGE_KEYS.token)
+          window.localStorage.removeItem(STORAGE_KEYS.role)
+          window.localStorage.removeItem(STORAGE_KEYS.nombre)
+          window.localStorage.removeItem(STORAGE_KEYS.participantId)
+          setSession(null)
+          window.dispatchEvent(new Event(SESSION_EVENT))
+        }
       })
 
     return () => {

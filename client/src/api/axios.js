@@ -8,13 +8,24 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+let _logoutScheduled = false
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401 && !err.config?.url?.includes('/auth/login')) {
-      localStorage.clear()
-      window.dispatchEvent(new Event('openarena:session-changed'))
-      window.location.href = '/login'
+      if (!_logoutScheduled) {
+        _logoutScheduled = true
+        setTimeout(() => {
+          _logoutScheduled = false
+          localStorage.removeItem('token')
+          localStorage.removeItem('role')
+          localStorage.removeItem('nombre')
+          localStorage.removeItem('participant_id')
+          window.dispatchEvent(new Event('openarena:session-changed'))
+          window.location.href = '/login'
+        }, 300)
+      }
     }
     return Promise.reject(err)
   }

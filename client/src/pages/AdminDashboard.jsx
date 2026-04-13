@@ -676,7 +676,7 @@ function buildPhasePayload(values, orden = 0) {
   const payload = {
     nombre: String(values.nombre || '').trim(),
     phase_format: activities.length > 1 ? 'wod' : 'activity',
-    descripcion: String(values.descripcion || '').trim() || null,
+    descripcion: String(activities[0]?.descripcion || values.descripcion || '').trim() || null,
     time_cap: timeCap,
     allow_multiple_results: Number(values.allow_multiple_results || 0),
     team_result_mode: values.team_result_mode || 'sum_two',
@@ -745,6 +745,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [phaseDrafts, setPhaseDrafts] = useState({})
   const [savingPhaseId, setSavingPhaseId] = useState(null)
+  const [collapsedPhases, setCollapsedPhases] = useState({})
   const [rulesModalOpen, setRulesModalOpen] = useState(false)
   const [rulesPhaseId, setRulesPhaseId] = useState('')
   const [rulesDraft, setRulesDraft] = useState([])
@@ -774,14 +775,12 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
   const add = async () => {
     if (!form.nombre.trim()) return
-    // Sincronizar descripcion de parte B en activities[1]
+    // Filtrar actividades segun toggle de parte B
     let baseActivities = normalizePhaseActivities(form.activities)
-    const hasPartB = form.part_b_enabled
-    if (hasPartB) {
-      if (baseActivities.length < 2) baseActivities = [...baseActivities, createDefaultPhaseActivity(1)]
-      baseActivities = baseActivities.map((a, i) => i === 1 ? { ...a, descripcion: form.part_b_descripcion } : a)
-    } else {
+    if (!form.part_b_enabled) {
       baseActivities = baseActivities.slice(0, 1)
+    } else if (baseActivities.length < 2) {
+      baseActivities = [...baseActivities, createDefaultPhaseActivity(1)]
     }
     // Serializar time_cap de parte B en segundos
     const partBTimeCapMin = parseInt(form.part_b_time_cap, 10)
@@ -826,6 +825,18 @@ function PhasesModal({ competition, onClose, inline = false }) {
       ...prev,
       [id]: { ...(prev[id] || {}), [field]: value },
     }))
+  }
+
+  const patchDraftCatOverride = (phaseId, catId, field, value) => {
+    setPhaseDrafts(prev => {
+      const draft = prev[phaseId] || {}
+      const catOverrides = draft.catOverrides || {}
+      const override = catOverrides[catId] || {}
+      return {
+        ...prev,
+        [phaseId]: { ...draft, catOverrides: { ...catOverrides, [catId]: { ...override, [field]: value } } },
+      }
+    })
   }
 
   const patchFormActivity = (activityIndex, field, value) => {
@@ -893,9 +904,37 @@ function PhasesModal({ competition, onClose, inline = false }) {
     const d = phaseDrafts[phase.id] || {}
     setSavingPhaseId(phase.id)
     try {
+      const base = { ...createPhaseDraftState(phase), ...d }
+      // Merge cat overrides: start from existing _cat entries on phase, then apply draft edits
+      const existingCatEntries = (phase.activities || []).filter(a => a._cat)
+      const draftCatOverrides = d.catOverrides || {}
+      // Build merged cat override list
+      const allCatIds = new Set([
+        ...existingCatEntries.map(a => String(a._cat)),
+        ...Object.keys(draftCatOverrides),
+      ])
+      const catEntries = [...allCatIds].map(catId => {
+        const existing = existingCatEntries.find(a => String(a._cat) === catId) || {}
+        const override = draftCatOverrides[catId] || {}
+        const catTimeCapMin = parseInt(override.time_cap ?? (existing.time_cap ? String(Math.round(existing.time_cap / 60)) : ''), 10)
+        const catTimeCap = Number.isFinite(catTimeCapMin) && catTimeCapMin > 0 ? catTimeCapMin * 60 : (override.time_cap === '' ? null : existing.time_cap ?? null)
+        const catPartBTimeCapMin = parseInt(override.part_b_time_cap ?? (existing.part_b_time_cap ? String(Math.round(existing.part_b_time_cap / 60)) : ''), 10)
+        const catPartBTimeCap = Number.isFinite(catPartBTimeCapMin) && catPartBTimeCapMin > 0 ? catPartBTimeCapMin * 60 : (override.part_b_time_cap === '' ? null : existing.part_b_time_cap ?? null)
+        const modified = 'modified' in override ? override.modified : true
+        if (!modified) return null
+        return {
+          _cat: catId,
+          _cat_name: existing._cat_name || catId,
+          descripcion: 'text' in override ? (String(override.text || '').trim() || null) : (existing.descripcion ?? null),
+          time_cap: catTimeCap,
+          part_b_descripcion: 'part_b_text' in override ? (String(override.part_b_text || '').trim() || null) : (existing.part_b_descripcion ?? null),
+          part_b_time_cap: catPartBTimeCap,
+        }
+      }).filter(Boolean)
+      const baseActivities = normalizePhaseActivities(base.activities)
       await api.put(`/competitions/${competition.id}/phases/${phase.id}`, buildPhasePayload({
-        ...createPhaseDraftState(phase),
-        ...d,
+        ...base,
+        activities: [...baseActivities, ...catEntries],
       }, Number(phase.orden || 0)))
       await load()
     } finally {
@@ -929,15 +968,13 @@ function PhasesModal({ competition, onClose, inline = false }) {
   const createActivities = normalizePhaseActivities(form.activities)
   const currentMethod = createActivities[0]?.measurement_method || 'unidades'
   const wizardSteps = [
-    { id: 'overview', label: 'Resumen' },
-    { id: 'settings', label: 'Ajustes' },
+    { id: 'overview', label: 'Ajustes generales' },
     { id: 'activities', label: 'Actividades' },
     { id: 'review', label: 'Revision' },
   ]
   const canAdvanceCreateStep = [
     form.nombre.trim().length > 0,
-    !!form.start_at,
-    String(form.descripcion || '').trim().length > 0,
+    String(createActivities[0]?.descripcion || '').trim().length > 0,
     true,
   ]
   const goNextCreateStep = () => {
@@ -987,34 +1024,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
             </div>
           </div>
 
-          {createStep === 0 && (
-            <div style={{ display: 'grid', gap: 10 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Nombre *</label>
-                <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: WOD 1, Sprint, Evento final" required />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Descripcion</label>
-                <textarea value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Resumen visible del evento" rows={4} style={{ resize: 'vertical' }} />
-              </div>
-              {/* ---- TOGGLE PARTE B ---- */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-                <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
-                <label htmlFor="toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
-                  <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
-                    <input id="toggle-part-b" type="checkbox" checked={form.part_b_enabled}
-                      onChange={e => setForm(prev => ({ ...prev, part_b_enabled: e.target.checked, part_b_descripcion: '', part_b_time_cap: '' }))}
-                      style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-                    <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: form.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
-                    <span style={{ position: 'absolute', top: 3, left: form.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {createStep === 1 && (() => {
-            // Generar lista de dias a partir de competition_start y competition_end
+          {createStep === 0 && (() => {
             const compStart = competition.competition_start ? new Date(competition.competition_start) : null
             const compEnd = competition.competition_end ? new Date(competition.competition_end) : null
             const competitionDays = []
@@ -1035,35 +1045,57 @@ function PhasesModal({ competition, onClose, inline = false }) {
             }
             return (
               <div style={{ display: 'grid', gap: 10 }}>
-                {/* Selector de dia */}
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {competitionDays.map(day => (
-                      <button
-                        key={day.value}
-                        type="button"
-                        onClick={() => setForm(prev => ({
-                          ...prev,
-                          start_at: prev.start_at === day.value ? '' : day.value,
-                          end_at: prev.end_at === day.value ? '' : day.value,
-                        }))}
-                        style={{
-                          borderRadius: 999,
-                          border: form.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
-                          background: form.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
-                          color: form.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
-                          padding: '8px 14px',
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {day.label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Nombre *</label>
+                  <input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: WOD 1, Sprint, Evento final" required />
                 </div>
+                {/* ---- TOGGLE PARTE B ---- */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+                  <label htmlFor="toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: form.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+                      {form.part_b_enabled ? 'Sí' : 'No'}
+                    </span>
+                    <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                      <input id="toggle-part-b" type="checkbox" checked={form.part_b_enabled}
+                        onChange={e => setForm(prev => ({ ...prev, part_b_enabled: e.target.checked, part_b_descripcion: '', part_b_time_cap: '' }))}
+                        style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+                      <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: form.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                      <span style={{ position: 'absolute', top: 3, left: form.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                    </span>
+                  </label>
+                </div>
+                {/* Selector de dia */}
+                {competitionDays.length > 0 && (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {competitionDays.map(day => (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => setForm(prev => ({
+                            ...prev,
+                            start_at: prev.start_at === day.value ? '' : day.value,
+                            end_at: prev.end_at === day.value ? '' : day.value,
+                          }))}
+                          style={{
+                            borderRadius: 999,
+                            border: form.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
+                            background: form.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                            color: form.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
+                            padding: '8px 14px',
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {day.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* Estado */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Estado</label>
@@ -1075,7 +1107,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
             )
           })()}
 
-          {createStep === 2 && (
+          {createStep === 1 && (
             <div style={{ display: 'grid', gap: 16 }}>
 
               {/* ---- PARTE A ---- */}
@@ -1085,7 +1117,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 return (
                   <div style={{ display: 'grid', gap: 10 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                      Parte A
+                      {form.part_b_enabled ? 'Parte A' : 'WOD'}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1125,8 +1157,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>WOD *</label>
                       <textarea
-                        value={form.descripcion}
-                        onChange={e => setForm(prev => ({ ...prev, descripcion: e.target.value }))}
+                        value={createActivities[0]?.descripcion || ''}
+                        onChange={e => patchFormActivity(0, 'descripcion', e.target.value)}
                         placeholder={'Escribe el WOD aqui...\nEj: 21-15-9\nThrusters 43/29 kg\nPull-ups'}
                         rows={6}
                         style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
@@ -1251,7 +1283,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                                 <textarea
                                   value={override.text || ''}
                                   onChange={e => setCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, text: e.target.value } }))}
-                                  placeholder={`WOD especifico para ${cat.nombre}...`}
+                                  placeholder={createActivities[0]?.descripcion ? `${createActivities[0].descripcion}\n\n(edita para sobreescribir)` : `WOD especifico para ${cat.nombre}...`}
                                   rows={4}
                                   style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
                                 />
@@ -1294,7 +1326,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
             </div>
           )}
 
-          {createStep === 3 && (
+          {createStep === 2 && (
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
                 <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nuevo evento'}</div>
@@ -1319,7 +1351,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
               <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>WOD Base</div>
-                <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{form.descripcion}</div>
+                <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{createActivities[0]?.descripcion}</div>
               </div>
 
               {Object.entries(catOverrides).filter(([, v]) => v.modified && String(v.text || '').trim()).length > 0 && (
@@ -1351,7 +1383,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                   Continuar
                 </button>
               ) : (
-                <button type="button" className="btn-primary btn-sm" onClick={add} disabled={!canAdvanceCreateStep.slice(0, 3).every(Boolean)}>
+                <button type="button" className="btn-primary btn-sm" onClick={add} disabled={!canAdvanceCreateStep.slice(0, 2).every(Boolean)}>
                   + Agregar evento
                 </button>
               )}
@@ -1359,125 +1391,272 @@ function PhasesModal({ competition, onClose, inline = false }) {
           </div>
         </div>
       </div>
-      <div style={{ overflowY: 'auto', flex: 1 }}>
-        {phases.length === 0 && <p style={{ color: '#647063', textAlign: 'center', padding: 20 }}>Sin fases definidas</p>}
-        {phases.map((ph, i) => (
-          <div key={ph.id} style={{ display: 'grid', gap: 10, padding: 14, borderRadius: 16, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', marginBottom: 10, boxShadow: '0 18px 40px rgba(0,0,0,0.22)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>{`Evento ${i + 1}`}</span>
-              <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 11, fontWeight: 800 }}>
-                {normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length === 1 ? '1 actividad' : `${normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).length} actividades`}
-              </span>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Nombre</label>
-              <input
-                value={phaseDrafts[ph.id]?.nombre ?? ph.nombre}
-                onChange={e => patchPhaseDraft(ph.id, 'nombre', e.target.value)}
-              />
-            </div>
-            <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Resultados</label>
-                <select
-                  value={Number(phaseDrafts[ph.id]?.allow_multiple_results ?? ph.allow_multiple_results ?? 0)}
-                  onChange={e => patchPhaseDraft(ph.id, 'allow_multiple_results', Number(e.target.value))}
-                >
-                  <option value={0}>Unico</option>
-                  <option value={1}>Multiples</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Puntaje equipo</label>
-                <select
-                  value={phaseDrafts[ph.id]?.team_result_mode ?? (ph.team_result_mode || 'sum_two')}
-                  onChange={e => patchPhaseDraft(ph.id, 'team_result_mode', e.target.value)}
-                >
-                  <option value="sum_two">Suma de ambos</option>
-                  <option value="total">Total de equipo</option>
-                  <option value="single_member">Solo uno</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Estado</label>
-                <select
-                  value={phaseDrafts[ph.id]?.estado ?? (ph.estado || 'pendiente')}
-                  onChange={e => patchPhaseDraft(ph.id, 'estado', e.target.value)}
-                >
-                  {PHASE_ESTADOS.map(s => <option key={`phase-state-${ph.id}-${s}`} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Fecha inicial</label>
-                <input
-                  type="date"
-                  value={phaseDrafts[ph.id]?.start_at ?? toDateInput(ph.start_at)}
-                  onChange={e => patchPhaseDraft(ph.id, 'start_at', e.target.value)}
-                />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Fecha final</label>
-                <input
-                  type="date"
-                  value={phaseDrafts[ph.id]?.end_at ?? toDateInput(ph.end_at)}
-                  onChange={e => patchPhaseDraft(ph.id, 'end_at', e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Descripcion</label>
-              <textarea
-                value={phaseDrafts[ph.id]?.descripcion ?? (ph.descripcion || '')}
-                onChange={e => patchPhaseDraft(ph.id, 'descripcion', e.target.value)}
-                rows={4}
-                style={{ resize: 'vertical' }}
-              />
-            </div>
-            <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Actividades del evento</div>
-                  <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4 }}>La primera actividad define la medicion principal del evento.</div>
-                </div>
-                <button type="button" className="btn-secondary btn-sm" onClick={() => appendDraftActivity(ph.id)}>+ Actividad</button>
-              </div>
-              {normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph).map((activity, activityIndex, activityList) => (
-                <div key={`phase-${ph.id}-activity-${activityIndex}`} style={{ display: 'grid', gap: 8, borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>{`Actividad ${activityIndex + 1}`}</div>
-                    <button type="button" className="btn-danger btn-sm" onClick={() => removeDraftActivity(ph.id, activityIndex)} disabled={activityList.length <= 1}>Eliminar</button>
+      {/* Master / Detail */}
+      {phases.length === 0 ? (
+        <div style={{ padding: 20, textAlign: 'center', color: '#647063' }}>Sin fases definidas</div>
+      ) : (() => {
+        const selectedPh = phases.find(p => String(p.id) === String(collapsedPhases.__selected)) || phases[0]
+        const ph = selectedPh
+
+        // Calcular competitionDays una vez
+        const compStart = competition.competition_start ? new Date(competition.competition_start) : null
+        const compEnd = competition.competition_end ? new Date(competition.competition_end) : null
+        const competitionDays = []
+        if (compStart && compEnd) {
+          const cursor = new Date(compStart); cursor.setHours(0,0,0,0)
+          const end = new Date(compEnd); end.setHours(0,0,0,0)
+          let di = 1
+          while (cursor <= end) {
+            competitionDays.push({ label: `Dia ${di} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`, value: cursor.toISOString().slice(0,10) })
+            cursor.setDate(cursor.getDate() + 1); di++
+          }
+        }
+
+        const draftActivities = normalizePhaseActivities(phaseDrafts[ph.id]?.activities, ph)
+        const actA = draftActivities[0] || {}
+        const actB = draftActivities[1] || null
+        const hasPartB = draftActivities.length > 1
+        const methodA = actA.measurement_method || 'unidades'
+        const isForTimeA = methodA === 'for_time'
+        const isAmrapOrEmomA = methodA === 'amrap' || methodA === 'emom'
+        const draftTimeCapA = phaseDrafts[ph.id]?.time_cap ?? (ph.time_cap ? String(Math.round(ph.time_cap / 60)) : '')
+        const methodB = actB?.measurement_method || 'unidades'
+        const isForTimeB = methodB === 'for_time'
+        const isAmrapOrEmomB = methodB === 'amrap' || methodB === 'emom'
+        const draftTimeCapB = phaseDrafts[ph.id]?.part_b_time_cap ?? (ph.activities?.find((_,idx) => idx === 1)?.time_cap ? String(Math.round(ph.activities.find((_,idx) => idx === 1).time_cap / 60)) : '')
+        const dateVal = phaseDrafts[ph.id]?.start_at ?? toDateInput(ph.start_at)
+        const toggleId = `edit-toggle-part-b-${ph.id}`
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '200px 1fr', gap: 12, alignItems: 'start' }}>
+            {/* Lista izquierda */}
+            <div style={{ display: 'grid', gap: 4 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Eventos creados</div>
+              {phases.map((p, i) => {
+                const isSelected = String(p.id) === String(ph.id)
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setCollapsedPhases(prev => ({ ...prev, __selected: p.id }))}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 10,
+                      border: isSelected ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
+                      background: isSelected ? 'rgba(255,107,0,0.1)' : 'rgba(23,27,33,0.6)',
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 700 }}>{`Evento ${i + 1}`}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#FFD0AE' : '#F5F7FA', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.nombre}</div>
                   </div>
-                  <input value={activity.nombre} onChange={e => patchDraftActivity(ph.id, activityIndex, 'nombre', e.target.value)} placeholder="Nombre de actividad" />
-                  <textarea value={activity.descripcion} onChange={e => patchDraftActivity(ph.id, activityIndex, 'descripcion', e.target.value)} placeholder="Describe el bloque o esfuerzo" rows={4} style={{ resize: 'vertical' }} />
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
-                    <select value={activity.measurement_method} onChange={e => patchDraftActivity(ph.id, activityIndex, 'measurement_method', e.target.value)}>
-                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={`phase-${ph.id}-activity-method-${activityIndex}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                )
+              })}
+            </div>
+
+            {/* Detalle derecha */}
+            <div style={{ display: 'grid', gap: 12, borderRadius: 16, border: '1px solid #252A33', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', padding: 16 }}>
+              {/* Nombre */}
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Nombre</label>
+                <input value={phaseDrafts[ph.id]?.nombre ?? ph.nombre} onChange={e => patchPhaseDraft(ph.id, 'nombre', e.target.value)} />
+              </div>
+
+              {/* Estado + Fecha */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Estado</label>
+                  <select value={phaseDrafts[ph.id]?.estado ?? (ph.estado || 'pendiente')} onChange={e => patchPhaseDraft(ph.id, 'estado', e.target.value)}>
+                    {PHASE_ESTADOS.map(s => <option key={`phase-state-${ph.id}-${s}`} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fecha</label>
+                  {competitionDays.length > 0 ? (
+                    <select value={dateVal || ''} onChange={e => { patchPhaseDraft(ph.id, 'start_at', e.target.value); patchPhaseDraft(ph.id, 'end_at', e.target.value) }}>
+                      <option value="">Sin fecha</option>
+                      {competitionDays.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                     </select>
-                    <select value={activity.winner_rule} onChange={e => patchDraftActivity(ph.id, activityIndex, 'winner_rule', e.target.value)}>
-                      <option value="higher_wins">Mayor valor</option>
-                      <option value="lower_wins">Menor valor</option>
+                  ) : (
+                    <div style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid var(--oa-border)', background: 'var(--oa-surface)', fontSize: 14, color: 'var(--oa-text-muted)' }}>Sin fechas definidas</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Toggle dos puntajes */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+                <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+                <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#FF6B00' : '#6B7280' }}>{hasPartB ? 'Sí' : 'No'}</span>
+                  <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                    <input id={toggleId} type="checkbox" checked={hasPartB} onChange={e => e.target.checked ? appendDraftActivity(ph.id) : removeDraftActivity(ph.id, 1)} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+                    <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: hasPartB ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                    <span style={{ position: 'absolute', top: 3, left: hasPartB ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                  </span>
+                </label>
+              </div>
+
+              {/* WOD Parte A */}
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>{hasPartB ? 'Parte A' : 'WOD'}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Formato</label>
+                    <select value={methodA} onChange={e => { const n = e.target.value; patchDraftActivity(ph.id, 0, 'measurement_method', n); if (n === 'for_time') patchDraftActivity(ph.id, 0, 'winner_rule', 'lower_wins'); else if (n === 'amrap' || n === 'emom') patchDraftActivity(ph.id, 0, 'winner_rule', 'higher_wins') }}>
+                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={`edit-${ph.id}-a-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                     </select>
-                    <select value={activity.points_mode || 'manual'} onChange={e => patchDraftActivity(ph.id, activityIndex, 'points_mode', e.target.value)}>
-                      <option value="manual">Puntaje manual</option>
-                      <option value="position_direct">Por posicion directa</option>
-                      <option value="position_rules">Por reglas</option>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>{isForTimeA ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                    <input type="number" min="1" max="999" value={draftTimeCapA} onChange={e => patchPhaseDraft(ph.id, 'time_cap', e.target.value.replace(/\D/g,''))} placeholder="Ej: 20" style={{ MozAppearance:'textfield', appearance:'textfield' }} onWheel={e => e.target.blur()} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Puntuacion</label>
+                    <select value={actA.winner_rule || 'higher_wins'} onChange={e => patchDraftActivity(ph.id, 0, 'winner_rule', e.target.value)}>
+                      {isForTimeA ? (<><option value="lower_wins">Menor tiempo gana</option><option value="higher_wins">Mayor tiempo gana</option></>) : isAmrapOrEmomA ? (<><option value="higher_wins">Mas repeticiones gana</option><option value="lower_wins">Menos repeticiones gana</option></>) : (<><option value="higher_wins">Mayor valor gana</option><option value="lower_wins">Menor valor gana</option></>)}
                     </select>
                   </div>
                 </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn-primary btn-sm" onClick={() => savePhase(ph)} disabled={savingPhaseId === ph.id}>
-                {savingPhaseId === ph.id ? 'Guardando...' : 'Actualizar fase'}
-              </button>
-              <button type="button" className="btn-danger btn-sm" onClick={() => remove(ph.id)}>Eliminar</button>
-              <span style={{ fontSize: 11, color: '#647063', alignSelf: 'center' }}>
-                {`Actual: ${normalizePhaseActivities(ph.activities, ph).length === 1 ? '1 actividad' : `${normalizePhaseActivities(ph.activities, ph).length} actividades`} | ${phaseTypeFromPhase(ph)} | ${PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(ph.measurement_method, ph.tipo)] || normalizeMeasurementMethod(ph.measurement_method, ph.tipo)} | ${normalizeWinnerRule(ph.winner_rule, phaseTypeFromPhase(ph)) === 'lower_wins' ? 'gana menor' : 'gana mayor'} | ${Number(ph.allow_multiple_results) ? 'multiples' : 'unico'} | ${(ph.team_result_mode || 'sum_two') === 'single_member' ? 'equipo uno' : ((ph.team_result_mode || 'sum_two') === 'total' ? 'equipo total' : 'equipo ambos')} | ${ph.estado || 'pendiente'}${parseScoringRules(ph.scoring_rules).length ? ` | reglas: ${parseScoringRules(ph.scoring_rules).length}` : ''}`}
-              </span>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>WOD {hasPartB ? 'Parte A' : '*'}</label>
+                  <textarea value={actA.descripcion || ''} onChange={e => patchDraftActivity(ph.id, 0, 'descripcion', e.target.value)} placeholder={'Escribe el WOD aqui...\nEj: 21-15-9\nThrusters 43/29 kg\nPull-ups'} rows={6} style={{ resize:'vertical', fontFamily:'monospace', fontSize:13 }} />
+                </div>
+              </div>
+
+              {/* WOD Parte B */}
+              {hasPartB && (
+                <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Formato</label>
+                      <select value={methodB} onChange={e => { const n = e.target.value; patchDraftActivity(ph.id, 1, 'measurement_method', n); if (n === 'for_time') patchDraftActivity(ph.id, 1, 'winner_rule', 'lower_wins'); else if (n === 'amrap' || n === 'emom') patchDraftActivity(ph.id, 1, 'winner_rule', 'higher_wins') }}>
+                        {PHASE_MEASUREMENT_METHODS.map(m => <option key={`edit-${ph.id}-b-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>{isForTimeB ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                      <input type="number" min="1" max="999" value={draftTimeCapB} onChange={e => patchPhaseDraft(ph.id, 'part_b_time_cap', e.target.value.replace(/\D/g,''))} placeholder="Ej: 5" style={{ MozAppearance:'textfield', appearance:'textfield' }} onWheel={e => e.target.blur()} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Puntuacion</label>
+                      <select value={actB?.winner_rule || 'higher_wins'} onChange={e => patchDraftActivity(ph.id, 1, 'winner_rule', e.target.value)}>
+                        {isForTimeB ? (<><option value="lower_wins">Menor tiempo gana</option><option value="higher_wins">Mayor tiempo gana</option></>) : isAmrapOrEmomB ? (<><option value="higher_wins">Mas repeticiones gana</option><option value="lower_wins">Menos repeticiones gana</option></>) : (<><option value="higher_wins">Mayor valor gana</option><option value="lower_wins">Menor valor gana</option></>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>WOD Parte B</label>
+                    <textarea value={actB?.descripcion || ''} onChange={e => patchDraftActivity(ph.id, 1, 'descripcion', e.target.value)} placeholder={'Describe la parte B...\nEj: 1RM Clean'} rows={4} style={{ resize:'vertical', fontFamily:'monospace', fontSize:13 }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Configuracion por categoria */}
+              {categories.length > 0 && (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+                  {categories.map(cat => {
+                    const existingEntry = (ph.activities || []).find(a => String(a._cat) === String(cat.id))
+                    const draftOverride = (phaseDrafts[ph.id]?.catOverrides || {})[cat.id] || {}
+                    const isModified = 'modified' in draftOverride ? draftOverride.modified : !!existingEntry
+                    const toggleCatId = `edit-cat-toggle-${ph.id}-${cat.id}`
+                    return (
+                      <div key={`edit-cat-${ph.id}-${cat.id}`} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
+                          <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
+                            {cat.nombre.split(' ')[0].toUpperCase()}
+                          </span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                            {isModified ? 'Modificado' : 'Hereda base'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                          <label htmlFor={toggleCatId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                            <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
+                            <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                              <input id={toggleCatId} type="checkbox" checked={isModified}
+                                onChange={e => patchDraftCatOverride(ph.id, cat.id, 'modified', e.target.checked)}
+                                style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                              />
+                              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                              <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                            </span>
+                          </label>
+                        </div>
+                        {isModified && (
+                          <div style={{ padding: '0 14px 14px', display: 'grid', gap: 12 }}>
+                            <div style={{ display: 'grid', gap: 8 }}>
+                              {hasPartB && <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte A</div>}
+                              <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label>{isForTimeA ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                                <input
+                                  type="number" min="1" max="999"
+                                  value={'time_cap' in draftOverride ? draftOverride.time_cap : (existingEntry?.time_cap ? String(Math.round(existingEntry.time_cap / 60)) : '')}
+                                  onChange={e => patchDraftCatOverride(ph.id, cat.id, 'time_cap', e.target.value.replace(/\D/g, ''))}
+                                  placeholder={draftTimeCapA ? `${draftTimeCapA} (hereda base)` : 'Ej: 20'}
+                                  style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                                  onWheel={e => e.target.blur()}
+                                />
+                              </div>
+                              <div className="form-group" style={{ marginBottom: 0 }}>
+                                <label>WOD{hasPartB ? ' Parte A' : ''}</label>
+                                <textarea
+                                  value={'text' in draftOverride ? draftOverride.text : (existingEntry?.descripcion || '')}
+                                  onChange={e => patchDraftCatOverride(ph.id, cat.id, 'text', e.target.value)}
+                                  placeholder={actA.descripcion ? `${actA.descripcion}\n\n(edita para sobreescribir)` : `WOD especifico para ${cat.nombre}...`}
+                                  rows={4}
+                                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                                />
+                              </div>
+                            </div>
+                            {hasPartB && (
+                              <div style={{ display: 'grid', gap: 8, borderTop: '1px solid #252A33', paddingTop: 10 }}>
+                                <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte B</div>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                  <label>{isForTimeB ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                                  <input
+                                    type="number" min="1" max="999"
+                                    value={'part_b_time_cap' in draftOverride ? draftOverride.part_b_time_cap : (existingEntry?.part_b_time_cap ? String(Math.round(existingEntry.part_b_time_cap / 60)) : '')}
+                                    onChange={e => patchDraftCatOverride(ph.id, cat.id, 'part_b_time_cap', e.target.value.replace(/\D/g, ''))}
+                                    placeholder={draftTimeCapB ? `${draftTimeCapB} (hereda base)` : 'Ej: 5'}
+                                    style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                                    onWheel={e => e.target.blur()}
+                                  />
+                                </div>
+                                <div className="form-group" style={{ marginBottom: 0 }}>
+                                  <label>WOD Parte B</label>
+                                  <textarea
+                                    value={'part_b_text' in draftOverride ? draftOverride.part_b_text : (existingEntry?.part_b_descripcion || '')}
+                                    onChange={e => patchDraftCatOverride(ph.id, cat.id, 'part_b_text', e.target.value)}
+                                    placeholder={`Parte B especifica para ${cat.nombre}...`}
+                                    rows={3}
+                                    style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Acciones */}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" className="btn-primary btn-sm" onClick={() => savePhase(ph)} disabled={savingPhaseId === ph.id}>
+                  {savingPhaseId === ph.id ? 'Guardando...' : 'Actualizar fase'}
+                </button>
+                <button type="button" className="btn-danger btn-sm" onClick={() => remove(ph.id)}>Eliminar</button>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
+        )
+      })()}
       {rulesModalOpen && (
         <Modal title="Puntaje por posicion" onClose={() => setRulesModalOpen(false)} width={620}>
           <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>
