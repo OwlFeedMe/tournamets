@@ -46,6 +46,10 @@ docker compose up --build
 ADMIN_ID=admin
 ADMIN_PASSWORD=admin123
 SECRET_KEY=loyalty-race-secret-key-cambiar-en-produccion
+PAYMENT_PROVIDER=bold
+BOLD_IDENTITY_KEY=tu_llave_de_identidad
+BOLD_SECRET_KEY=tu_llave_secreta
+BOLD_WEBHOOK_TEST_MODE=0
 ```
 
 ## Rutas de la app

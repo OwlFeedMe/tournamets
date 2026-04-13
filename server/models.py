@@ -122,6 +122,7 @@ class Competition(SQLModel, table=True):
     enrollment_questions: Optional[str] = None
     enrollment_terms_text: Optional[str] = None
     require_payment_receipt: int = Field(default=0)
+    platform_fee_rate: float = Field(default=0.05)
     # Timer fields
     timer_duration: int = Field(default=0)            # total seconds; 0 = no timer configured
     timer_started_at: Optional[datetime] = Field(
@@ -203,6 +204,7 @@ class CompetitionCategory(SQLModel, table=True):
     nombre: str
     descripcion: Optional[str] = None
     modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
+    enrollment_price: int = Field(default=0)
     orden: int = Field(default=0)
 
 
@@ -314,9 +316,102 @@ class CompetitionParticipant(SQLModel, table=True):
         sa_column=Column(String, nullable=False, server_default="confirmado"),
     )
     enrollment_answers: Optional[str] = None
+    payment_provider: Optional[str] = None
+    payment_reference: Optional[str] = None
+    payment_order_id: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_transaction_id: Optional[str] = None
+    payment_base_amount: int = Field(default=0)
+    payment_platform_fee: int = Field(default=0)
+    payment_processor_fee: int = Field(default=0)
+    payment_platform_net: int = Field(default=0)
+    payment_amount_total: int = Field(default=0)
+    payment_processed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    payment_updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     inscrito_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionPaymentIntent(SQLModel, table=True):
+    __tablename__ = "competition_payment_intents"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    participant_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    categoria: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    enrollment_answers: Optional[str] = None
+    payment_provider: str = Field(default="bold")
+    payment_reference: str = Field(index=True, unique=True)
+    payment_order_id: Optional[str] = None
+    payment_status: str = Field(default="created")
+    payment_transaction_id: Optional[str] = None
+    payment_base_amount: int = Field(default=0)
+    payment_platform_fee: int = Field(default=0)
+    payment_processor_fee: int = Field(default=0)
+    payment_platform_net: int = Field(default=0)
+    payment_amount_total: int = Field(default=0)
+    payment_processed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    payment_updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionWithdrawalRequest(SQLModel, table=True):
+    __tablename__ = "competition_withdrawal_requests"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    requested_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="RESTRICT"), nullable=False)
+    )
+    reviewed_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    amount: int = Field(default=0)
+    status: str = Field(default="pending")  # pending | approved | rejected | paid
+    destination_note: Optional[str] = None
+    requester_note: Optional[str] = None
+    review_note: Optional[str] = None
+    payout_reference: Optional[str] = None
+    terms_accepted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    terms_version: Optional[str] = None
+    requested_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    reviewed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    paid_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
     )
 
 
@@ -502,10 +597,11 @@ class CompetitionCreate(SQLModel):
     competition_end: Optional[datetime] = None
     schedule_items: Optional[List["CompetitionDateItem"]] = None
     enrollment_intro_text: Optional[str] = None
-    enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     enrollment_terms_text: Optional[str] = None
+    enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
     require_payment_receipt: int = 0
+    platform_fee_rate: float = 0.05
     scoring_mode: str = ReglaGanador.HIGHER_WINS
 
 
@@ -558,6 +654,7 @@ class CompetitionUpdate(SQLModel):
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     enrollment_terms_text: Optional[str] = None
     require_payment_receipt: Optional[int] = None
+    platform_fee_rate: Optional[float] = None
     scoring_mode: Optional[str] = None
 
 
@@ -616,12 +713,25 @@ class EnrollBody(SQLModel):
     participants: List[EnrollEntry]
 
 
+class WithdrawalRequestCreate(SQLModel):
+    destination_note: Optional[str] = None
+    requester_note: Optional[str] = None
+    terms_accepted: int = 0
+
+
+class WithdrawalRequestReview(SQLModel):
+    status: str
+    review_note: Optional[str] = None
+    payout_reference: Optional[str] = None
+
+
 # ── Category / Phase schemas ───────────────────────────────────────────────────
 
 class CategoryCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
     modality: str = Modalidad.INDIVIDUAL
+    enrollment_price: int = 0
     orden: int = 0
 
 
@@ -629,6 +739,7 @@ class CategoryUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
     modality: Optional[str] = None
+    enrollment_price: Optional[int] = None
     orden: Optional[int] = None
 
 

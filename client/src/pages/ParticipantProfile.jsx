@@ -112,6 +112,8 @@ function getCompetitionScheduleHref(competitionId, personal = false) {
 
 function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm }) {
   if (!competition) return null
+  const paymentStatus = String(competition.payment_status || '').trim().toLowerCase()
+  const paidOrInProgress = !!competition.payment_reference && !['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
 
   return (
     <div style={{
@@ -144,16 +146,25 @@ function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm })
         </div>
         <div style={{ padding: 20 }}>
           <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
-            Esta accion retirara tu inscripcion de la competencia, sin importar si esta pendiente o confirmada.
+            {paidOrInProgress
+              ? 'Ya existe un pago asociado a esta inscripcion. Si deseas devolucion, debes solicitarla directamente al organizador despues del cierre de inscripciones.'
+              : 'Esta accion retirara tu inscripcion de la competencia.'}
           </div>
           <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(255,107,0,0.24)', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))', color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
             {competition.nombre}
           </div>
+          {paidOrInProgress ? (
+            <div style={{ marginTop: 12, color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+              Estado del pago: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{competition.payment_status || 'en proceso'}</span>
+            </div>
+          ) : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
             <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Volver</button>
-            <button type="button" className="btn-danger" onClick={() => onConfirm(competition)} disabled={busy}>
-              {busy ? 'Cancelando...' : 'Confirmar cancelacion'}
-            </button>
+            {!paidOrInProgress ? (
+              <button type="button" className="btn-danger" onClick={() => onConfirm(competition)} disabled={busy}>
+                {busy ? 'Cancelando...' : 'Confirmar cancelacion'}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1284,6 +1295,8 @@ export default function ParticipantProfile() {
                 const badge = statusBadge(c.enrollment_estado)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
                 const isBusy = cancelEnrollmentBusy === c.id
+                const paymentStatus = String(c.payment_status || '').trim().toLowerCase()
+                const canCancel = !c.payment_reference || ['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
                 return (
                   <div
                     key={c.id}
@@ -1295,7 +1308,7 @@ export default function ParticipantProfile() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => setCancelEnrollmentTarget(c)} disabled={isBusy}>
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => setCancelEnrollmentTarget(c)} disabled={isBusy || !canCancel} title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}>
                         {isBusy ? 'Cancelando...' : 'Cancelar'}
                       </button>
                       {isConfirmed && <ChevronRight size={14} color="var(--oa-text-secondary)" />}

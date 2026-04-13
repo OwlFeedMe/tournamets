@@ -189,6 +189,18 @@ def _normalize_competition_theme(payload: dict) -> None:
             payload[field] = _normalize_theme_color(payload.get(field))
 
 
+def _normalize_platform_fee_rate(raw: object) -> float:
+    try:
+        value = float(raw if raw is not None else 0.05)
+    except Exception:
+        value = 0.05
+    if value < 0:
+        value = 0.0
+    if value > 1:
+        value = 1.0
+    return round(value, 4)
+
+
 def _normalize_competition_dates(payload: dict):
     if "enrollment_start" in payload:
         payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False)
@@ -422,7 +434,7 @@ def get_public_competition_detail(
 
     categories = session.execute(
         text("""
-            SELECT id, nombre, descripcion, orden, modality
+            SELECT id, nombre, descripcion, orden, modality, enrollment_price
             FROM competition_categories
             WHERE competition_id = :cid
             ORDER BY modality, orden, nombre
@@ -484,6 +496,7 @@ def get_public_competition_detail(
     for category in categories:
         item = dict(category)
         item["modality"] = _normalize_modality(item.get("modality"))
+        item["enrollment_price"] = max(0, int(item.get("enrollment_price") or 0))
         normalized_categories.append(item)
     categories_by_modality = _group_rows_by_modality(normalized_categories)
     phases_by_modality = _group_rows_by_modality(normalized_phases)
@@ -573,14 +586,14 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
         payload["general_info_text"] = str(payload.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in payload:
         payload["enrollment_terms_text"] = str(payload.get("enrollment_terms_text") or "").strip() or None
-    if "require_payment_receipt" in payload:
-        payload["require_payment_receipt"] = 1 if payload.get("require_payment_receipt") else 0
+    payload["platform_fee_rate"] = _normalize_platform_fee_rate(payload.get("platform_fee_rate"))
+    payload["require_payment_receipt"] = 0
+    payload["enrollment_payment_methods"] = None
     _normalize_competition_theme(payload)
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
     _serialize_social_links(payload)
-    _serialize_enrollment_payment_methods(payload)
     _serialize_enrollment_questions(payload)
     if user.get("role") == "organizer":
         payload["organizer_user_id"] = user.get("app_user_id")
@@ -621,14 +634,15 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         data["general_info_text"] = str(data.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in data:
         data["enrollment_terms_text"] = str(data.get("enrollment_terms_text") or "").strip() or None
-    if "require_payment_receipt" in data:
-        data["require_payment_receipt"] = 1 if data.get("require_payment_receipt") else 0
+    if "platform_fee_rate" in data:
+        data["platform_fee_rate"] = _normalize_platform_fee_rate(data.get("platform_fee_rate"))
+    data["require_payment_receipt"] = 0
+    data["enrollment_payment_methods"] = None
     _normalize_competition_theme(data)
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)
     _serialize_social_links(data)
-    _serialize_enrollment_payment_methods(data)
     _serialize_enrollment_questions(data)
     for field, value in data.items():
         setattr(c, field, value)

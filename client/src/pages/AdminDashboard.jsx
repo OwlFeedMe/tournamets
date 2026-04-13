@@ -36,22 +36,41 @@ function parseEnrollmentQuestions(raw) {
   }
 }
 
-function parseEnrollmentPaymentMethods(raw) {
-  if (!raw) return []
+const PLATFORM_FEE_RATE = 0.05
+
+function normalizeEnrollmentPrice(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.round(parsed))
+}
+
+function calculateEnrollmentPricing(basePrice, feeRate = PLATFORM_FEE_RATE) {
+  const organizerPrice = normalizeEnrollmentPrice(basePrice)
+  const platformFee = Math.round(organizerPrice * feeRate)
+  return {
+    organizerPrice,
+    platformFee,
+    totalPrice: organizerPrice + platformFee,
+  }
+}
+
+function formatCop(value) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+}
+
+function formatDate(value) {
+  if (!value) return ''
   try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .map((item, idx) => ({
-        id: String(item?.id || `pm_${idx + 1}`),
-        label: String(item?.label || '').trim(),
-        account_name: String(item?.account_name || '').trim(),
-        account_number: String(item?.account_number || '').trim(),
-        notes: String(item?.notes || '').trim(),
-      }))
-      .filter(item => item.label || item.account_name || item.account_number || item.notes)
+    return new Date(value).toLocaleString('es-CO', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
   } catch {
-    return []
+    return String(value)
   }
 }
 
@@ -2155,15 +2174,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     competition_end: '',
     enrollment_intro_text: '',
     enrollment_terms_text: '',
-    require_payment_receipt: 0,
+    platform_fee_rate: PLATFORM_FEE_RATE,
     scoring_mode: 'highest_wins',
   })
   const [cats, setCats] = useState([])
-  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual' })
+  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0 })
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' })
   const [questions, setQuestions] = useState([])
-  const [paymentMethods, setPaymentMethods] = useState([])
   const [scheduleItems, setScheduleItems] = useState([])
   const [socialLinks, setSocialLinks] = useState([])
   const [assetFiles, setAssetFiles] = useState({ profile: null, banner: null })
@@ -2203,11 +2221,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       competition_end: toDateInput(competition.competition_end),
       enrollment_intro_text: competition.enrollment_intro_text || '',
       enrollment_terms_text: competition.enrollment_terms_text || '',
-      require_payment_receipt: competition.require_payment_receipt || 0,
+      platform_fee_rate: Number(competition.platform_fee_rate || PLATFORM_FEE_RATE),
       scoring_mode: competition.scoring_mode || 'highest_wins',
     })
     setQuestions(parseEnrollmentQuestions(competition.enrollment_questions))
-    setPaymentMethods(parseEnrollmentPaymentMethods(competition.enrollment_payment_methods))
     setScheduleItems(parseScheduleItems(competition.schedule_items))
     setSocialLinks(parseSocialLinks(competition.social_links))
     setAssetFiles({ profile: null, banner: null })
@@ -2221,6 +2238,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         nombre: c.nombre,
         descripcion: c.descripcion || '',
         modality: c.modality || 'individual',
+        enrollment_price: normalizeEnrollmentPrice(c.enrollment_price),
       })))
       setPhases(phRes.data.map(p => ({
         id: p.id,
@@ -2250,8 +2268,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     const nombre = newCat.nombre.trim()
     const descripcion = (newCat.descripcion || '').trim()
     if (!nombre) return
-    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion, modality: newCat.modality || 'individual' }])
-    setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual' })
+    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion, modality: newCat.modality || 'individual', enrollment_price: normalizeEnrollmentPrice(newCat.enrollment_price) }])
+    setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual', enrollment_price: 0 })
   }
 
   const removeCategory = (id) => {
@@ -2268,6 +2286,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   const updateCategoryModality = (id, value) => {
     setCats(prev => prev.map(c => (c.id === id ? { ...c, modality: value } : c)))
+  }
+
+  const updateCategoryPrice = (id, value) => {
+    setCats(prev => prev.map(c => (c.id === id ? { ...c, enrollment_price: value } : c)))
   }
 
   const addPhase = () => {
@@ -2318,6 +2340,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         nombre: String(c.nombre || '').trim(),
         descripcion: String(c.descripcion || '').trim(),
         modality: c.modality === 'teams' ? 'teams' : 'individual',
+        enrollment_price: normalizeEnrollmentPrice(c.enrollment_price),
       }))
       .filter(c => c.nombre)
     const cleanPhases = phases
@@ -2393,16 +2416,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       schedule_items: cleanScheduleItems,
       enrollment_intro_text: form.enrollment_intro_text.trim() || null,
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
-      require_payment_receipt: form.require_payment_receipt ? 1 : 0,
-      enrollment_payment_methods: paymentMethods
-        .map((method, idx) => ({
-          id: String(method.id || `pm_${idx + 1}`),
-          label: String(method.label || '').trim(),
-          account_name: String(method.account_name || '').trim() || null,
-          account_number: String(method.account_number || '').trim() || null,
-          notes: String(method.notes || '').trim() || null,
-        }))
-        .filter(method => method.label || method.account_name || method.account_number || method.notes),
+      platform_fee_rate: Number(form.platform_fee_rate || PLATFORM_FEE_RATE),
       enrollment_questions: questions
         .map((question, idx) => ({
           id: String(question.id || `q_${idx + 1}`),
@@ -2439,6 +2453,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             nombre: cleanCats[i].nombre,
             descripcion: cleanCats[i].descripcion || null,
             modality: cleanCats[i].modality,
+            enrollment_price: cleanCats[i].enrollment_price,
             orden: i,
           })
         }
@@ -2586,15 +2601,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   }
   const removeQuestion = (id) => {
     setQuestions(prev => prev.filter(question => question.id !== id))
-  }
-  const updatePaymentMethod = (id, field, value) => {
-    setPaymentMethods(prev => prev.map(method => method.id === id ? { ...method, [field]: value } : method))
-  }
-  const addPaymentMethod = () => {
-    setPaymentMethods(prev => [...prev, { id: `pm_${Date.now()}`, label: '', account_name: '', account_number: '', notes: '' }])
-  }
-  const removePaymentMethod = (id) => {
-    setPaymentMethods(prev => prev.filter(method => method.id !== id))
   }
   const updateScheduleItem = (id, field, value) => {
     setScheduleItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
@@ -3217,38 +3223,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Metodos de pago</h4>
-            <div style={sectionHintStyle}>Estos datos se muestran en el paso de pago del registro para que el participante sepa a donde consignar.</div>
+            <h4 style={sectionTitleStyle}>Pago Bold</h4>
+            <div style={sectionHintStyle}>FinalRep cobrara un unico pago por inscripcion. El valor se define por categoria y el checkout se mostrara directo en el registro.</div>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            {renderToggleCard({
-              label: 'Solicitar comprobante de pago',
-              hint: 'Si activas esta opcion, el formulario de inscripcion mostrara una seccion fija para cargar el comprobante. Ya no sera necesario crear una pregunta manual para eso.',
-              enabled: !!form.require_payment_receipt,
-              onClick: () => setForm(f => ({ ...f, require_payment_receipt: f.require_payment_receipt ? 0 : 1 })),
-              enabledText: 'Comprobante obligatorio',
-              disabledText: 'Comprobante opcional',
-            })}
-          </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {paymentMethods.map((method, idx) => (
-              <div key={method.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
-                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                  <input value={method.label} onChange={e => updatePaymentMethod(method.id, 'label', e.target.value)} placeholder="Nombre del metodo. Ej: Bancolombia ahorro" />
-                  <input value={method.account_name} onChange={e => updatePaymentMethod(method.id, 'account_name', e.target.value)} placeholder="Titular de la cuenta" />
-                  <input value={method.account_number} onChange={e => updatePaymentMethod(method.id, 'account_number', e.target.value)} placeholder="Numero de cuenta" />
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input value={method.notes} onChange={e => updatePaymentMethod(method.id, 'notes', e.target.value)} placeholder="Nota opcional" />
-                    <button type="button" className="btn-danger btn-sm" onClick={() => removePaymentMethod(method.id)}>x</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {!paymentMethods.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin metodos de pago configurados.</div>}
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <button type="button" className="btn-secondary btn-sm" onClick={addPaymentMethod}>+ Agregar metodo de pago</button>
+          <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
+            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Comision de plataforma</div>
+            <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+              Se suma automaticamente un {Math.round((Number(form.platform_fee_rate || PLATFORM_FEE_RATE)) * 100)}% sobre el precio base de cada categoria.
+            </div>
+            <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.6 }}>
+              Organizador define <b style={{ color: '#F5F7FA' }}>X</b>, FinalRep cobra <b style={{ color: '#FFB36F' }}>Y</b> y el atleta paga <b style={{ color: '#8DF1E4' }}>Z</b>.
+            </div>
           </div>
         </div>
 
@@ -3257,12 +3242,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <h4 style={sectionTitleStyle}>Divisiones</h4>
             <div style={sectionHintStyle}>Define categorias individuales y por equipos sin mezclar ambas logicas.</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr auto', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr 0.8fr auto', gap: 8, marginBottom: 8 }}>
             <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
             <select value={newCat.modality} onChange={e => setNewCat(prev => ({ ...prev, modality: e.target.value }))}>
               <option value="individual">Individual</option>
               <option value="teams" disabled={!form.team_enabled}>Equipos</option>
             </select>
+            <input type="number" min="0" step="1" value={newCat.enrollment_price || 0} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value }))} placeholder="Precio base" />
             <button type="button" className="btn-secondary btn-sm" onClick={addCategory}>Agregar</button>
           </div>
           <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical', marginBottom: 8 }} />
@@ -3277,6 +3263,21 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     <option value="individual">Individual</option>
                     <option value="teams" disabled={!form.team_enabled}>Equipos</option>
                   </select>
+                  <input type="number" min="0" step="1" value={cat.enrollment_price || 0} onChange={e => updateCategoryPrice(cat.id, e.target.value)} placeholder="Precio base de inscripcion" />
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tu precio</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).organizerPrice)}</div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
+                      <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).platformFee)}</div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Paga el atleta</div>
+                      <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).totalPrice)}</div>
+                    </div>
+                  </div>
                   <textarea value={cat.descripcion || ''} onChange={e => updateCategoryDescription(cat.id, e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical' }} />
                 </div>
                 <button type="button" className="btn-danger btn-sm" onClick={() => removeCategory(cat.id)}>x</button>
@@ -3288,7 +3289,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
-            <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen, por ejemplo un comprobante de pago.</div>
+            <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen para validar informacion del atleta.</div>
           </div>
           <div style={{ display: 'grid', gap: 6 }}>
             {questions.map((question, idx) => (
@@ -6930,6 +6931,369 @@ function TeamsTab() {
   )
 }
 
+function FinanceTab() {
+  const { role } = useAuth()
+  const isOrganizer = role === 'organizer'
+  const withdrawalTerms = [
+    'El retiro solicitado corresponde al saldo disponible total de la competencia.',
+    'FinalRep procesa la transferencia una vez iniciada la competencia y validada la solicitud.',
+    'El organizador debe haber cerrado inscripciones y suministrar correctamente su destino de pago.',
+    'Despues de enviada la transferencia, cualquier reclamo con atletas, equipos o terceros sera gestionado directamente por el organizador.',
+    'FinalRep no asume responsabilidad por errores en la informacion bancaria o digital entregada por el organizador.',
+  ]
+  const [overview, setOverview] = useState({ totals: null, competitions: [] })
+  const [selectedCompetitionId, setSelectedCompetitionId] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [destinationNote, setDestinationNote] = useState('')
+  const [requesterNote, setRequesterNote] = useState('')
+  const [savingRequest, setSavingRequest] = useState(false)
+  const [termsReachedEnd, setTermsReachedEnd] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+
+  const loadOverview = async (preferredCompetitionId = null) => {
+    setLoading(true)
+    try {
+      const { data } = await api.get('/finance/overview')
+      const competitions = Array.isArray(data?.competitions) ? data.competitions : []
+      setOverview({ totals: data?.totals || null, competitions })
+      const nextId = preferredCompetitionId || selectedCompetitionId || competitions[0]?.competition_id || null
+      setSelectedCompetitionId(nextId)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar el panel financiero.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadDetail = async (competitionId) => {
+    if (!competitionId) {
+      setDetail(null)
+      return
+    }
+    setDetailLoading(true)
+    try {
+      const { data } = await api.get(`/finance/competitions/${competitionId}`)
+      setDetail(data || null)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar el bolsillo de la competencia.' })
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadOverview()
+  }, [])
+
+  useEffect(() => {
+    if (selectedCompetitionId) loadDetail(selectedCompetitionId)
+    else setDetail(null)
+  }, [selectedCompetitionId])
+
+  useEffect(() => {
+    setTermsReachedEnd(false)
+    setTermsAccepted(false)
+  }, [selectedCompetitionId])
+
+  const submitWithdrawalRequest = async () => {
+    if (!selectedCompetitionId) return
+    if (!summary?.available_balance) {
+      setMsg({ type: 'error', text: 'No hay saldo disponible para retirar.' })
+      return
+    }
+    if (!summary?.withdrawal_request_allowed) {
+      setMsg({ type: 'error', text: 'Solo puedes solicitar retiro cuando las inscripciones esten cerradas.' })
+      return
+    }
+    if (!termsAccepted) {
+      setMsg({ type: 'error', text: 'Debes aceptar las condiciones de retiro para continuar.' })
+      return
+    }
+    setSavingRequest(true)
+    setMsg(null)
+    try {
+      await api.post(`/finance/competitions/${selectedCompetitionId}/withdrawals`, {
+        destination_note: destinationNote || null,
+        requester_note: requesterNote || null,
+        terms_accepted: termsAccepted ? 1 : 0,
+      })
+      setDestinationNote('')
+      setRequesterNote('')
+      setTermsReachedEnd(false)
+      setTermsAccepted(false)
+      setMsg({ type: 'success', text: 'Solicitud de retiro registrada.' })
+      await loadOverview(selectedCompetitionId)
+      await loadDetail(selectedCompetitionId)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo registrar la solicitud de retiro.' })
+    } finally {
+      setSavingRequest(false)
+    }
+  }
+
+  const reviewWithdrawal = async (item, status) => {
+    const promptValue = window.prompt('Nota interna', item.review_note || '')
+    const reviewNote = promptValue ?? item.review_note ?? ''
+    let payoutReference = item.payout_reference || ''
+    if (status === 'paid') {
+      const value = window.prompt('Referencia del pago al organizador', item.payout_reference || '')
+      if (!value) return
+      payoutReference = value
+    }
+    try {
+      await api.put(`/finance/withdrawals/${item.id}`, {
+        status,
+        review_note: reviewNote || null,
+        payout_reference: payoutReference || null,
+      })
+      setMsg({ type: 'success', text: `Solicitud actualizada a ${status}.` })
+      await loadOverview(selectedCompetitionId)
+      await loadDetail(selectedCompetitionId)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la solicitud.' })
+    }
+  }
+
+  const totals = overview.totals || {}
+  const competitions = overview.competitions || []
+  const summary = detail?.summary || null
+  const withdrawals = detail?.withdrawals || []
+  const headlineCollected = isOrganizer ? totals.organizer_revenue : totals.total_collected
+  const selectedCompetitionCollected = summary ? (isOrganizer ? summary.organizer_revenue : summary.total_collected) : 0
+  const canRequestWithdrawal = Boolean(summary?.withdrawal_request_allowed)
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      {msg ? (
+        <div style={{ borderRadius: 14, border: `1px solid ${msg.type === 'success' ? 'rgba(0,194,168,0.26)' : 'rgba(255,107,0,0.26)'}`, background: msg.type === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: '12px 14px', color: '#F5F7FA', fontSize: 14 }}>
+          {msg.text}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Ingresos' : 'Ingresos totales'}</div>
+          <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(headlineCollected)}</div>
+        </div>
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Saldo disponible' : 'Saldo esperado en Bold'}</div>
+          <div style={{ color: '#8DF1E4', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? totals.available_balance : totals.expected_bold_balance)}</div>
+        </div>
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Tus retiros en proceso' : 'Saldo retenido organizadores'}</div>
+          <div style={{ color: '#FFB36F', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? totals.pending_withdrawals : totals.organizer_balance_held)}</div>
+        </div>
+        {!isOrganizer && (
+          <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Libre FinalRep</div>
+            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.finalrep_available_balance)}</div>
+          </div>
+        )}
+        {!isOrganizer && (
+          <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Costo Bold</div>
+            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.processor_fees)}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16 }}>
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
+          <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, marginBottom: 12 }}>Competencias</div>
+          {loading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando...</div> : null}
+          {!loading && !competitions.length ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>No hay competencias con ingresos todavia.</div> : null}
+          <div style={{ display: 'grid', gap: 10 }}>
+            {competitions.map((item) => (
+              <button
+                key={item.competition_id}
+                type="button"
+                onClick={() => setSelectedCompetitionId(item.competition_id)}
+                style={{
+                  textAlign: 'left',
+                  borderRadius: 14,
+                  border: `1px solid ${selectedCompetitionId === item.competition_id ? 'rgba(255,107,0,0.38)' : '#252A33'}`,
+                  background: selectedCompetitionId === item.competition_id ? 'rgba(255,107,0,0.08)' : 'rgba(13,15,18,0.62)',
+                  padding: 14,
+                  color: '#F5F7FA',
+                  cursor: 'pointer',
+                }}
+              >
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{item.competition_name}</div>
+                  <div style={{ display: 'grid', gap: 4, marginTop: 8, color: '#AAB2C0', fontSize: 12 }}>
+                  <div>Ingresos: {formatCop(isOrganizer ? item.organizer_revenue : item.total_collected)}</div>
+                  <div>{isOrganizer ? 'Saldo: ' : 'Bold esperado: '}{formatCop(isOrganizer ? item.available_balance : item.expected_bold_balance)}</div>
+                  <div>{isOrganizer ? 'Retiros en proceso: ' : 'Libre FinalRep: '}{formatCop(isOrganizer ? item.pending_withdrawals : item.finalrep_available_balance)}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
+          {detailLoading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando detalle financiero...</div> : null}
+          {!detailLoading && !summary ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Selecciona una competencia.</div> : null}
+          {!detailLoading && summary ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 22, fontWeight: 800 }}>{detail?.competition?.nombre}</div>
+                <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+                  <div style={{ color: summary.can_release_funds ? '#8DF1E4' : '#FFB36F', fontSize: 13 }}>
+                    {summary.can_release_funds
+                      ? 'La competencia ya inicio. Se pueden liberar retiros.'
+                      : 'Los retiros solo se liberan cuando la competencia inicia.'}
+                  </div>
+                  <div style={{ color: summary.enrollment_closed ? '#8DF1E4' : '#AAB2C0', fontSize: 13 }}>
+                    {summary.enrollment_closed
+                      ? 'Las inscripciones ya estan cerradas.'
+                      : 'Las solicitudes de retiro se habilitan cuando las inscripciones se cierren.'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Ingresos' : 'Ingresos por inscripcion'}</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(selectedCompetitionCollected)}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Bolsillo' : 'Bolsillo del organizador'}</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.organizer_revenue)}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Saldo disponible' : 'Saldo esperado en Bold'}</div>
+                  <div style={{ color: '#8DF1E4', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? summary.available_balance : summary.expected_bold_balance)}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Retiros pagados</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.paid_out_total)}</div>
+                </div>
+                {!isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Comision FinalRep bruta</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.platform_revenue_gross)}</div>
+                  </div>
+                ) : null}
+                {!isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Costo Bold</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.processor_fees)}</div>
+                  </div>
+                ) : null}
+                {!isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Comision FinalRep neta</div>
+                    <div style={{ color: '#8DF1E4', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.platform_revenue_net)}</div>
+                  </div>
+                ) : null}
+                {!isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo retenido organizadores</div>
+                    <div style={{ color: '#FFB36F', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.organizer_balance_held)}</div>
+                  </div>
+                ) : null}
+                {!isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Libre FinalRep</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.finalrep_available_balance)}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              {isOrganizer ? (
+                <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 16, display: 'grid', gap: 10 }}>
+                  <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Solicitar retiro</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                    El retiro siempre se solicita por el saldo total disponible de esta competencia.
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', padding: '11px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3 }}>Valor a retirar</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800, marginTop: 4 }}>{formatCop(summary.available_balance)}</div>
+                    </div>
+                    <input value={destinationNote} onChange={(e) => setDestinationNote(e.target.value)} placeholder="Cuenta, nequi o banco destino" />
+                  </div>
+                  <textarea value={requesterNote} onChange={(e) => setRequesterNote(e.target.value)} placeholder="Nota opcional para el retiro" rows={3} style={{ resize: 'vertical' }} />
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: '#0D0F12', padding: 12, display: 'grid', gap: 10 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>Condiciones de retiro</div>
+                    <div
+                      onScroll={(e) => {
+                        const node = e.currentTarget
+                        if (node.scrollTop + node.clientHeight >= node.scrollHeight - 8) {
+                          setTermsReachedEnd(true)
+                        }
+                      }}
+                      style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}
+                    >
+                      {withdrawalTerms.map((item, idx) => (
+                        <div key={idx} style={{ marginBottom: idx === withdrawalTerms.length - 1 ? 0 : 8 }}>
+                          {idx + 1}. {item}
+                        </div>
+                      ))}
+                    </div>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: termsReachedEnd ? '#F5F7FA' : '#6B7280', fontSize: 13 }}>
+                      <input
+                        type="checkbox"
+                        checked={termsAccepted}
+                        disabled={!termsReachedEnd}
+                        onChange={(e) => setTermsAccepted(e.target.checked)}
+                        style={{ width: 'auto', marginTop: 2 }}
+                      />
+                      <span>{termsReachedEnd ? 'Lei y acepto las condiciones de retiro.' : 'Desplazate hasta el final para habilitar la aceptacion.'}</span>
+                    </label>
+                  </div>
+                  {!summary.enrollment_closed ? (
+                    <div style={{ color: '#FFB36F', fontSize: 13 }}>
+                      Debes cerrar las inscripciones antes de solicitar el retiro.
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn-primary" type="button" onClick={submitWithdrawalRequest} disabled={savingRequest || !canRequestWithdrawal || !termsAccepted}>
+                      {savingRequest ? 'Guardando...' : 'Solicitar retiro'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 16, color: '#AAB2C0', fontSize: 13 }}>
+                  Administra las solicitudes y libera el dinero solo cuando la competencia haya iniciado.
+                </div>
+              )}
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                {withdrawals.length ? withdrawals.map((item) => (
+                  <div key={item.id} style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14, display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{formatCop(item.amount)}</div>
+                      <div style={{ color: item.status === 'paid' ? '#8DF1E4' : item.status === 'rejected' ? '#FF8B8B' : '#FFB36F', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>{item.status}</div>
+                    </div>
+                    <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                      Destino: {item.destination_note || 'Sin dato'}{item.payout_reference ? ` | Ref pago: ${item.payout_reference}` : ''}
+                    </div>
+                    {item.requester_note ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Nota: {item.requester_note}</div> : null}
+                    {item.terms_accepted_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Condiciones aceptadas: {formatDate(item.terms_accepted_at)}</div> : null}
+                    {item.review_note ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Revision: {item.review_note}</div> : null}
+                    {!isOrganizer ? (
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => reviewWithdrawal(item, 'approved')}>Aprobar</button>
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => reviewWithdrawal(item, 'rejected')}>Rechazar</button>
+                        <button type="button" className="btn-primary btn-sm" onClick={() => reviewWithdrawal(item, 'paid')}>Marcar pagado</button>
+                      </div>
+                    ) : null}
+                  </div>
+                )) : (
+                  <div style={{ color: '#AAB2C0', fontSize: 14 }}>Aun no hay solicitudes para esta competencia.</div>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { role } = useAuth()
@@ -6950,6 +7314,9 @@ export default function AdminDashboard() {
           <button className={`tab ${mainTab === 'competitions' ? 'active' : ''}`} onClick={() => setMainTab('competitions')} style={{ flexShrink: 0 }}>
             Competencias
           </button>
+          <button className={`tab ${mainTab === 'finance' ? 'active' : ''}`} onClick={() => setMainTab('finance')} style={{ flexShrink: 0 }}>
+            Finanzas
+          </button>
           {!isOrganizer && (
             <button className={`tab ${mainTab === 'athletes' ? 'active' : ''}`} onClick={() => setMainTab('athletes')} style={{ flexShrink: 0 }}>
               Atletas / Usuarios
@@ -6957,6 +7324,7 @@ export default function AdminDashboard() {
           )}
         </div>
         {mainTab === 'competitions' && <CompetitionsTab />}
+        {mainTab === 'finance' && <FinanceTab />}
         {!isOrganizer && mainTab === 'athletes' && <ParticipantsTab />}
       </div>
     </div>

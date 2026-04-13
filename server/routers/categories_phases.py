@@ -123,6 +123,14 @@ def _normalize_modality(raw: str | None) -> str:
     return value if value in MODALITY_VALIDOS else "individual"
 
 
+def _normalize_enrollment_price(raw: object) -> int:
+    try:
+        value = int(raw if raw is not None else 0)
+    except Exception:
+        value = 0
+    return max(0, value)
+
+
 def _normalize_block_name(raw: str | None) -> str | None:
     value = (raw or "").strip()
     return value or None
@@ -307,6 +315,7 @@ def list_categories(
         {
             **cat.model_dump(),
             "modality": _normalize_modality(getattr(cat, "modality", None)),
+            "enrollment_price": _normalize_enrollment_price(getattr(cat, "enrollment_price", 0)),
         }
         for cat in items
     ]
@@ -321,6 +330,7 @@ def create_category(competition_id: int, body: CategoryCreate,
         nombre=body.nombre,
         descripcion=body.descripcion,
         modality=_normalize_modality(body.modality),
+        enrollment_price=_normalize_enrollment_price(body.enrollment_price),
         orden=body.orden,
     )
     session.add(cat)
@@ -344,6 +354,8 @@ def update_category(
     data = body.model_dump(exclude_unset=True)
     if "modality" in data:
         data["modality"] = _normalize_modality(data["modality"])
+    if "enrollment_price" in data:
+        data["enrollment_price"] = _normalize_enrollment_price(data["enrollment_price"])
     for key, value in data.items():
         setattr(cat, key, value)
     session.add(cat)
@@ -351,6 +363,7 @@ def update_category(
     session.refresh(cat)
     payload = cat.model_dump()
     payload["modality"] = _normalize_modality(getattr(cat, "modality", None))
+    payload["enrollment_price"] = _normalize_enrollment_price(getattr(cat, "enrollment_price", 0))
     return payload
 
 

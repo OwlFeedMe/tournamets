@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
@@ -41,21 +41,89 @@ function parseEnrollmentQuestions(raw) {
   }
 }
 
-function parseEnrollmentPaymentMethods(raw) {
-  if (!raw) return []
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (!Array.isArray(parsed)) return []
-    return parsed.map((item, idx) => ({
-      id: String(item?.id || `pm_${idx + 1}`),
-      label: String(item?.label || '').trim(),
-      account_name: String(item?.account_name || '').trim(),
-      account_number: String(item?.account_number || '').trim(),
-      notes: String(item?.notes || '').trim(),
-    })).filter(item => item.label || item.account_name || item.account_number || item.notes)
-  } catch {
-    return []
+function normalizeEnrollmentPrice(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.round(parsed))
+}
+
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
+  const organizerPrice = normalizeEnrollmentPrice(basePrice)
+  const platformFee = Math.round(organizerPrice * feeRate)
+  return {
+    organizerPrice,
+    platformFee,
+    totalPrice: organizerPrice + platformFee,
   }
+}
+
+function formatCop(value) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+}
+
+const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
+const BOLD_BUTTON_LIBRARY_ID = 'bold-payment-button-library'
+
+function ensureBoldButtonLibrary({ reload = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById(BOLD_BUTTON_LIBRARY_ID)
+    if (reload && existing) existing.remove()
+    if (!reload && document.getElementById(BOLD_BUTTON_LIBRARY_ID)) {
+      resolve()
+      return
+    }
+    const script = document.createElement('script')
+    script.id = BOLD_BUTTON_LIBRARY_ID
+    script.src = BOLD_BUTTON_LIBRARY_SRC
+    script.async = true
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('No se pudo cargar el boton de Bold'))
+    document.head.appendChild(script)
+  })
+}
+
+function BoldPaymentButton({ config, onError }) {
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (!config || !containerRef.current) return undefined
+    let active = true
+    const render = async () => {
+      try {
+        if (!active || !containerRef.current) return
+        containerRef.current.innerHTML = ''
+        const script = document.createElement('script')
+        script.setAttribute('data-bold-button', 'dark-L')
+        script.setAttribute('data-api-key', config.api_key)
+        script.setAttribute('data-order-id', config.order_id)
+        script.setAttribute('data-currency', config.currency)
+        script.setAttribute('data-amount', config.amount)
+        script.setAttribute('data-integrity-signature', config.integrity_signature)
+        script.setAttribute('data-description', config.description)
+        script.setAttribute('data-redirection-url', config.redirection_url)
+        script.setAttribute('data-render-mode', 'embedded')
+        if (config.customer_data) {
+          script.setAttribute('data-customer-data', JSON.stringify(config.customer_data))
+        }
+        containerRef.current.appendChild(script)
+        await new Promise((resolve) => window.requestAnimationFrame(resolve))
+        await ensureBoldButtonLibrary({ reload: true })
+      } catch (err) {
+        onError?.(err)
+      }
+    }
+    render()
+    return () => {
+      active = false
+      if (containerRef.current) containerRef.current.innerHTML = ''
+    }
+  }, [config, onError])
+
+  return <div ref={containerRef} />
 }
 
 function parseScheduleItems(raw) {
@@ -98,7 +166,7 @@ Uso de la app
 Datos personales
 
 5. Autorizas el tratamiento de los datos que diligencias en la app para gestionar tu cuenta, tu inscripcion, validar informacion del evento y comunicarnos contigo sobre tu participacion.
-6. Los archivos e imagenes que cargues, incluido el comprobante de pago cuando aplique, podran ser revisados por el organizador del evento y por el equipo administrador de la plataforma para fines operativos y de validacion.
+6. Los archivos e imagenes que cargues podran ser revisados por el organizador del evento y por el equipo administrador de la plataforma para fines operativos y de validacion.
 7. Tus datos no deben incluir informacion falsa ni de terceros sin autorizacion.
 
 Responsabilidad y disponibilidad
@@ -108,9 +176,13 @@ Responsabilidad y disponibilidad
 10. Si no estas de acuerdo con estos terminos, no debes continuar con el registro en la plataforma.
 `.trim()
 
-function enrollmentStateLabel(value) {
+function enrollmentStateLabel(value, paymentStatus) {
   if (value === 'confirmado') return 'Ya estas inscrito en esta competencia.'
-  if (value === 'pendiente') return 'Tu solicitud ya fue enviada y esta pendiente de revision.'
+  if (value === 'pendiente') return 'Tu pago fue aprobado y tu solicitud ya quedo registrada para revision del organizador.'
+  if (value === 'pago_pendiente') {
+    if (['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)) return 'El pago no fue aprobado por Bold. Puedes intentarlo de nuevo mientras las inscripciones sigan abiertas.'
+    return 'Tu pago esta en proceso. Cuando Bold lo apruebe registraremos tu solicitud automaticamente.'
+  }
   if (value === 'rechazado') return 'Tu solicitud anterior fue rechazada. Puedes volver a intentarlo si las inscripciones siguen abiertas.'
   return ''
 }
@@ -173,13 +245,16 @@ export default function CompetitionEnrollmentPage() {
   const [payload, setPayload] = useState(null)
   const [categories, setCategories] = useState([])
   const [enrollmentState, setEnrollmentState] = useState(null)
+  const [paymentStatus, setPaymentStatus] = useState(null)
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentTransactionId, setPaymentTransactionId] = useState('')
+  const [boldButtonConfig, setBoldButtonConfig] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState('')
   const [expandedCategoryId, setExpandedCategoryId] = useState(null)
   const [answers, setAnswers] = useState({})
-  const [paymentReceiptUrl, setPaymentReceiptUrl] = useState('')
   const [uploadingQuestionId, setUploadingQuestionId] = useState(null)
-  const [uploadingReceipt, setUploadingReceipt] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [syncingPayment, setSyncingPayment] = useState(false)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState(null)
   const [submitted, setSubmitted] = useState(false)
@@ -190,7 +265,6 @@ export default function CompetitionEnrollmentPage() {
   const [appTermsScrolledToEnd, setAppTermsScrolledToEnd] = useState(false)
   const [competitionTermsAccepted, setCompetitionTermsAccepted] = useState(false)
   const [appTermsAccepted, setAppTermsAccepted] = useState(false)
-  const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
   useEffect(() => {
@@ -220,6 +294,9 @@ export default function CompetitionEnrollmentPage() {
       setSelectedCategory(mineRecord?.enrollment_categoria || categoryItems[0]?.nombre || '')
       setExpandedCategoryId(categoryItems[0]?.id ?? null)
       setEnrollmentState(mineRecord?.enrollment_estado || null)
+      setPaymentStatus(mineRecord?.payment_status || null)
+      setPaymentReference(mineRecord?.payment_reference || '')
+      setPaymentTransactionId(mineRecord?.payment_transaction_id || '')
     }).catch((err) => {
       if (!active) return
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la informacion de inscripcion' })
@@ -232,25 +309,25 @@ export default function CompetitionEnrollmentPage() {
 
   const competition = payload?.competition || null
   const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])
-  const paymentMethods = useMemo(() => parseEnrollmentPaymentMethods(competition?.enrollment_payment_methods), [competition])
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   const selectedCategoryData = useMemo(() => categories.find(category => category.nombre === selectedCategory) || null, [categories, selectedCategory])
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
-  const requirePaymentReceipt = !!competition?.require_payment_receipt
+  const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
+  const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate), [selectedCategoryData?.enrollment_price, platformFeeRate])
   const userCanSubmit = !!session && role === 'user'
   const enrollmentClosed = !competition?.enrollment_open
-  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || enrollmentClosed || !userCanSubmit
+  const paymentInProgress = enrollmentState === 'pago_pendiente'
+  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit
 
-  const questionAnswers = useMemo(() => (
-    questions.map(question => ({
-      id: question.id,
-      label: question.label,
-      value: answers[question.id] || '',
-      type: question.field_type || 'text',
-    }))
-  ), [answers, questions])
+  useEffect(() => {
+    setSubmitted(enrollmentState === 'pendiente' || enrollmentState === 'confirmado')
+  }, [enrollmentState])
+
+  useEffect(() => {
+    setBoldButtonConfig(null)
+  }, [selectedCategory, competitionTermsAccepted, appTermsAccepted, JSON.stringify(answers)])
 
   const uploadEnrollmentImage = async (file, onSuccess, onState) => {
     if (!file) return ''
@@ -279,10 +356,6 @@ export default function CompetitionEnrollmentPage() {
     setUploadingQuestionId(null)
   }
 
-  const uploadReceiptImage = async (file) => {
-    await uploadEnrollmentImage(file, setPaymentReceiptUrl, setUploadingReceipt)
-  }
-
   const validateBeforeConfirmation = () => {
     if (categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
     for (const question of questions) {
@@ -291,7 +364,6 @@ export default function CompetitionEnrollmentPage() {
     }
     if (termsText && !competitionTermsAccepted) return 'Debes leer y aceptar los terminos y condiciones de la competencia.'
     if (appTermsText && !appTermsAccepted) return 'Debes leer y aceptar los terminos de uso de la app.'
-    if (requirePaymentReceipt && !paymentReceiptUrl) return 'Debes adjuntar el comprobante de pago.'
     return ''
   }
 
@@ -307,18 +379,7 @@ export default function CompetitionEnrollmentPage() {
       if (termsText && !competitionTermsAccepted) return 'Debes leer y aceptar los terminos y condiciones de la competencia.'
       if (appTermsText && !appTermsAccepted) return 'Debes leer y aceptar los terminos de uso de la app.'
     }
-    if (step === 5 && requirePaymentReceipt && !paymentReceiptUrl) return 'Debes adjuntar el comprobante de pago.'
     return ''
-  }
-
-  const goNextStep = () => {
-    const validationError = validateStep(currentStep)
-    if (validationError) {
-      setMsg({ type: 'error', text: validationError })
-      return
-    }
-    setMsg(null)
-    setCurrentStep(step => Math.min(4, step + 1))
   }
 
   const goPrevStep = () => {
@@ -326,37 +387,97 @@ export default function CompetitionEnrollmentPage() {
     setCurrentStep(step => Math.max(1, step - 1))
   }
 
-  const submit = async () => {
-    if (!competition || submissionBlocked) return
+  const buildEnrollmentPayload = () => ({
+    categoria: selectedCategory || null,
+    answers: questions.map(question => ({
+      question_id: question.id,
+      question_label: question.label,
+      question_type: question.field_type || 'text',
+      answer: answers[question.id] || '',
+    })),
+    terms_accepted: competitionTermsAccepted && appTermsAccepted ? 1 : 0,
+  })
+
+  const syncPaymentStatus = async ({ silent = false } = {}) => {
+    if (!competition) return null
+    setSyncingPayment(true)
+    if (!silent) setMsg(null)
+    try {
+      const { data } = await api.post(`/competitions/${competition.id}/payment-status/sync`)
+      const nextState = data?.estado || null
+      const nextPaymentStatus = data?.payment_status || null
+      setEnrollmentState(nextState)
+      setPaymentStatus(nextPaymentStatus)
+      setPaymentReference(data?.payment_reference || '')
+      setPaymentTransactionId(data?.payment_transaction_id || '')
+      if (nextState === 'pendiente' || nextState === 'confirmado') {
+        setMsg({ type: 'success', text: 'Pago aprobado. Tu solicitud ya quedo registrada.' })
+      } else if (!silent) {
+        const waitingMessage = ['rejected', 'failed', 'voided', 'void_rejected'].includes(nextPaymentStatus)
+          ? 'Bold reporto que el pago no fue aprobado. Puedes intentarlo de nuevo.'
+          : 'El pago aun no aparece aprobado en Bold. Consulta de nuevo en unos segundos.'
+        setMsg({ type: 'error', text: waitingMessage })
+      }
+      return data
+    } catch (err) {
+      if (!silent) {
+        setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo consultar el estado del pago en Bold.' })
+      }
+      return null
+    } finally {
+      setSyncingPayment(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!competition?.id || !paymentInProgress || !userCanSubmit) return
+    syncPaymentStatus({ silent: true })
+  }, [competition?.id, paymentInProgress, userCanSubmit])
+
+  const prepareBoldCheckout = async () => {
+    if (!competition) return false
     const validationError = validateBeforeConfirmation()
     if (validationError) {
       setMsg({ type: 'error', text: validationError })
-      setShowConfirmModal(false)
-      return
+      return false
     }
-    setSaving(true)
+    if (!selectedCategoryData) {
+      setMsg({ type: 'error', text: 'Selecciona una categoria antes de pagar.' })
+      return false
+    }
+    if (pricing.totalPrice <= 0) {
+      setMsg({ type: 'error', text: 'Esta categoria no tiene un precio de inscripcion valido.' })
+      return false
+    }
+    setCheckoutLoading(true)
     setMsg(null)
     try {
-      await api.post(`/competitions/${competition.id}/enroll`, {
-        categoria: selectedCategory || null,
-        answers: questions.map(question => ({
-          question_id: question.id,
-          question_label: question.label,
-          question_type: question.field_type || 'text',
-          answer: answers[question.id] || '',
-        })),
-        payment_receipt_url: paymentReceiptUrl || null,
-        terms_accepted: competitionTermsAccepted && appTermsAccepted ? 1 : 0,
-      })
-      setSubmitted(true)
-      setEnrollmentState('pendiente')
-      setShowConfirmModal(false)
-      setMsg({ type: 'success', text: 'Solicitud enviada correctamente. El organizador la revisara.' })
+      const { data } = await api.post(`/competitions/${competition.id}/bold-checkout`, buildEnrollmentPayload())
+      setPaymentStatus(null)
+      setPaymentReference('')
+      setPaymentTransactionId('')
+      setBoldButtonConfig(data || null)
+      return true
     } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la solicitud' })
+      setMsg({ type: 'error', text: err.response?.data?.detail || err.message || 'No se pudo preparar el pago con Bold.' })
+      return false
     } finally {
-      setSaving(false)
+      setCheckoutLoading(false)
     }
+  }
+
+  const handleNextStep = async () => {
+    const validationError = validateStep(currentStep)
+    if (validationError) {
+      setMsg({ type: 'error', text: validationError })
+      return
+    }
+    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig) {
+      const ready = await prepareBoldCheckout()
+      if (!ready) return
+    }
+    setMsg(null)
+    setCurrentStep(step => Math.min(4, step + 1))
   }
 
   if (loading) return <div style={{ minHeight: '100vh', background: pageBg, color: '#AAB2C0', padding: '28px 18px' }}>Cargando pagina de inscripcion...</div>
@@ -385,7 +506,7 @@ export default function CompetitionEnrollmentPage() {
             </span>
             <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 'clamp(34px, 6vw, 60px)', lineHeight: 0.95 }}>Registro a {competition.nombre}</h1>
             <p style={{ margin: '14px 0 0', maxWidth: 720, color: '#D7DEE8', fontSize: isMobile ? 14 : 16, lineHeight: 1.7 }}>
-              {(competition.enrollment_intro_text || competition.descripcion || '').trim() || 'Selecciona tu categoria, completa tu informacion y envia la solicitud al organizador.'}
+              {(competition.enrollment_intro_text || competition.descripcion || '').trim() || 'Selecciona tu categoria, completa tu informacion y finaliza el pago para registrar tu solicitud.'}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#00C2A8" />{competition.lugar || 'Lugar por confirmar'}</span>
@@ -401,13 +522,13 @@ export default function CompetitionEnrollmentPage() {
           <section style={{ borderRadius: 24, border: '1px solid rgba(0,194,168,0.28)', background: 'linear-gradient(180deg, rgba(0,194,168,0.08), rgba(23,27,33,0.96))', padding: isMobile ? 18 : 24 }}>
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ color: '#8DF1E4', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                Solicitud enviada
+                Pago aprobado
               </div>
               <div style={{ color: '#F5F7FA', fontSize: isMobile ? 24 : 30, fontWeight: 800, lineHeight: 1.05 }}>
-                Tu registro fue enviado correctamente.
+                Tu solicitud quedo registrada.
               </div>
               <div style={{ color: '#D7DEE8', fontSize: 14, lineHeight: 1.7 }}>
-                El organizador revisara tu solicitud y recibiras una notificacion cuando sea confirmada o rechazada.
+                Bold aprobo el pago y ahora el organizador puede revisar tu solicitud desde FinalRep.
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
                 <button type="button" className="btn-secondary" onClick={() => navigate('/profile')}>
@@ -460,6 +581,9 @@ export default function CompetitionEnrollmentPage() {
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(0,194,168,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(255,107,0,0.14)', color: '#FFB36F', fontSize: 11, fontWeight: 800 }}>
+                                  {formatCop(calculateEnrollmentPricing(category.enrollment_price, platformFeeRate).totalPrice)}
+                                </span>
                               </div>
                               <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
                                 {category.descripcion?.trim() ? (category.descripcion.length > 120 ? `${category.descripcion.slice(0, 119)}...` : category.descripcion) : 'Sin descripcion adicional.'}
@@ -536,41 +660,64 @@ export default function CompetitionEnrollmentPage() {
           ) : null}
 
           {currentStep === 4 ? (
-            <StepCard number="4" title="Metodos de pago y comprobante" hint="Revisa a donde realizar el pago. Si el evento exige comprobante, cargalo aqui antes de enviar la solicitud.">
+            <StepCard number="4" title="Pago de inscripcion" hint="FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, la solicitud se registra automaticamente.">
               <div style={{ display: 'grid', gap: 14 }}>
-                {paymentMethods.length ? (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {paymentMethods.map((method) => (
-                      <div key={method.id} style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
-                        <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>{method.label || 'Metodo de pago'}</div>
-                        {method.account_name ? <div style={{ color: '#D7DEE8', fontSize: 13, marginTop: 8 }}>Titular: <b style={{ color: '#F5F7FA' }}>{method.account_name}</b></div> : null}
-                        {method.account_number ? <div style={{ color: '#D7DEE8', fontSize: 13, marginTop: 4 }}>Cuenta: <b style={{ color: '#F5F7FA' }}>{method.account_number}</b></div> : null}
-                        {method.notes ? <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 8, lineHeight: 1.55 }}>{method.notes}</div> : null}
-                      </div>
-                    ))}
+                {!selectedCategoryData ? (
+                  <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+                    Selecciona una categoria para habilitar el pago.
                   </div>
-                ) : <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>El organizador no ha publicado metodos de pago para esta competencia.</div>}
-
-                {requirePaymentReceipt ? (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Comprobante de pago *</label>
-                    <div style={{ display: 'grid', gap: 10 }}>
-                      <label htmlFor="payment-receipt-upload" style={{ borderRadius: 16, border: '1px dashed #3B4452', background: 'rgba(13,15,18,0.55)', padding: '16px 14px', display: 'flex', alignItems: 'center', gap: 10, color: '#D7DEE8', cursor: 'pointer' }}>
-                        <Upload size={16} color="#00C2A8" />
-                        <span>{uploadingReceipt ? 'Subiendo comprobante...' : 'Seleccionar comprobante'}</span>
-                      </label>
-                      <input
-                        id="payment-receipt-upload"
-                        type="file"
-                        accept="image/*"
-                        onChange={e => uploadReceiptImage(e.target.files?.[0])}
-                        style={{ display: 'none' }}
-                      />
-                      <div style={{ color: '#AAB2C0', fontSize: 12 }}>{paymentReceiptUrl ? 'Comprobante cargado correctamente.' : 'Debes subir el comprobante de pago para completar la solicitud.'}</div>
-                      {paymentReceiptUrl ? <a href={paymentReceiptUrl} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12 }}>Ver comprobante cargado</a> : null}
+                ) : (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 16, display: 'grid', gap: 12 }}>
+                      <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 16 }}>{selectedCategoryData.nombre}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                        <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
+                          <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Precio inscripcion</div>
+                          <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.organizerPrice)}</div>
+                        </div>
+                        <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
+                          <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
+                          <div style={{ color: '#FFB36F', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.platformFee)}</div>
+                        </div>
+                        <div style={{ borderRadius: 14, border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.08)', padding: 12 }}>
+                          <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Total a pagar</div>
+                          <div style={{ color: '#8DF1E4', fontSize: 18, fontWeight: 900 }}>{formatCop(pricing.totalPrice)}</div>
+                        </div>
+                      </div>
+                      <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                        El pago se procesa en Bold. FinalRep calcula automaticamente la comision de plataforma sobre el valor base de la categoria.
+                      </div>
+                      {paymentReference && paymentInProgress ? (
+                        <div style={{ display: 'grid', gap: 6, borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
+                          <div style={{ color: '#AAB2C0', fontSize: 11 }}>Referencia</div>
+                          <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, wordBreak: 'break-word' }}>{paymentReference}</div>
+                          {paymentTransactionId ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Transaccion Bold: {paymentTransactionId}</div> : null}
+                        </div>
+                      ) : null}
+                      {boldButtonConfig ? (
+                        <div style={{ display: 'grid', gap: 10 }}>
+                          <BoldPaymentButton
+                            config={boldButtonConfig}
+                            onError={(err) => setMsg({ type: 'error', text: err.message || 'No se pudo cargar el boton de Bold.' })}
+                          />
+                          <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
+                            Completa el pago con Bold. Solo cuando Bold confirme la transaccion registraremos la solicitud.
+                          </div>
+                        </div>
+                      ) : paymentInProgress ? (
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn-secondary" onClick={() => syncPaymentStatus()} disabled={checkoutLoading || syncingPayment}>
+                            {syncingPayment ? 'Consultando...' : 'Consultar estado del pago'}
+                          </button>
+                        </div>
+                      ) : (
+                        <button type="button" className="btn-secondary" onClick={prepareBoldCheckout} disabled={checkoutLoading || syncingPayment || pricing.totalPrice <= 0}>
+                          {checkoutLoading ? 'Preparando pago...' : 'Reintentar carga del pago'}
+                        </button>
+                      )}
                     </div>
                   </div>
-                ) : <div style={{ borderRadius: 16, border: '1px solid rgba(0,194,168,0.22)', background: 'rgba(0,194,168,0.08)', padding: 14, color: '#D7DEE8', fontSize: 14 }}>Este evento no exige comprobante de pago obligatorio.</div>}
+                )}
               </div>
             </StepCard>
           ) : null}
@@ -592,42 +739,41 @@ export default function CompetitionEnrollmentPage() {
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
-                  {enrollmentStateLabel(enrollmentState) ? (
+                  {enrollmentStateLabel(enrollmentState, paymentStatus) ? (
                     <div
                       style={{
                         borderRadius: 16,
-                        border: `1px solid ${enrollmentState === 'rechazado' ? 'rgba(255,69,58,0.28)' : 'rgba(0,194,168,0.22)'}`,
-                        background: enrollmentState === 'rechazado' ? 'rgba(255,69,58,0.08)' : 'rgba(0,194,168,0.08)',
+                        border: `1px solid ${
+                          enrollmentState === 'rechazado' || ['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
+                            ? 'rgba(255,69,58,0.28)'
+                            : 'rgba(0,194,168,0.22)'
+                        }`,
+                        background: enrollmentState === 'rechazado' || ['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
+                          ? 'rgba(255,69,58,0.08)'
+                          : 'rgba(0,194,168,0.08)',
                         padding: 14,
                         color: '#F5F7FA',
                         fontSize: 14,
                       }}
                     >
-                      {enrollmentStateLabel(enrollmentState)}
+                      {enrollmentStateLabel(enrollmentState, paymentStatus)}
                     </div>
                   ) : null}
                   {enrollmentClosed ? <div style={{ borderRadius: 16, border: '1px solid rgba(126,135,150,0.24)', background: 'rgba(126,135,150,0.08)', padding: 14, color: '#D7DEE8', fontSize: 14 }}>Las inscripciones estan cerradas en este momento.</div> : null}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || saving}>Anterior</button>
+                    <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || syncingPayment || checkoutLoading}>Anterior</button>
                     {currentStep < 4 ? (
-                      <button type="button" className="btn-primary" onClick={goNextStep} disabled={saving || submissionBlocked || uploadingReceipt || !!uploadingQuestionId}>Siguiente</button>
-                    ) : (
+                      <button type="button" className="btn-primary" onClick={handleNextStep} disabled={submissionBlocked || syncingPayment || checkoutLoading || !!uploadingQuestionId}>Siguiente</button>
+                    ) : paymentInProgress && !boldButtonConfig ? (
                       <button
                         type="button"
-                        className="btn-primary"
-                        disabled={saving || submissionBlocked || uploadingReceipt || !!uploadingQuestionId}
-                        onClick={() => {
-                          const validationError = validateBeforeConfirmation()
-                          if (validationError) {
-                            setMsg({ type: 'error', text: validationError })
-                            return
-                          }
-                          setShowConfirmModal(true)
-                        }}
+                        className="btn-secondary"
+                        disabled={checkoutLoading || syncingPayment}
+                        onClick={() => syncPaymentStatus()}
                       >
-                        {enrollmentState === 'rechazado' ? 'Revisar y reenviar solicitud' : 'Revisar y enviar solicitud'}
+                        {syncingPayment ? 'Consultando...' : 'Consultar estado del pago'}
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -670,39 +816,6 @@ export default function CompetitionEnrollmentPage() {
           </Modal>
         ) : null}
 
-        {showConfirmModal ? (
-          <Modal title="Confirmar solicitud" onClose={() => !saving && setShowConfirmModal(false)} width={820}>
-            <div style={{ padding: 20, display: 'grid', gap: 16, overflowY: 'auto' }}>
-              <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>Revisa la informacion antes de enviar. Esta accion registrara tu solicitud para revision del organizador.</div>
-              <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 16 }}>
-                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15 }}>Categoria</div>
-                <div style={{ color: '#D7DEE8', fontSize: 14, marginTop: 8 }}>{selectedCategoryData?.nombre || 'Sin categoria'}</div>
-                {selectedCategoryData?.descripcion ? <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>{selectedCategoryData.descripcion}</div> : null}
-              </div>
-              <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 16 }}>
-                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15 }}>Respuestas</div>
-                <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
-                  {questionAnswers.length ? questionAnswers.map((item) => (
-                    <div key={item.id} style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
-                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>{item.label}</div>
-                      <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>{item.type === 'image' ? (item.value ? 'Imagen cargada correctamente.' : 'Sin archivo adjunto.') : (item.value || 'Sin respuesta')}</div>
-                    </div>
-                  )) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay preguntas adicionales.</div>}
-                </div>
-              </div>
-              <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 16, display: 'grid', gap: 10 }}>
-                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15 }}>Validaciones</div>
-                <div style={{ color: competitionTermsAccepted || !termsText ? '#8DF1E4' : '#FFB36F', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={14} />{termsText ? (competitionTermsAccepted ? 'Terminos de competencia aceptados' : 'Terminos de competencia pendientes') : 'Sin terminos de competencia obligatorios'}</div>
-                <div style={{ color: appTermsAccepted ? '#8DF1E4' : '#FFB36F', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={14} />{appTermsAccepted ? 'Terminos de la app aceptados' : 'Terminos de la app pendientes'}</div>
-                <div style={{ color: !requirePaymentReceipt || paymentReceiptUrl ? '#8DF1E4' : '#FFB36F', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}><CheckCircle2 size={14} />{requirePaymentReceipt ? (paymentReceiptUrl ? 'Comprobante de pago adjunto' : 'Falta comprobante de pago') : 'Sin comprobante obligatorio'}</div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button type="button" className="btn-secondary" onClick={() => setShowConfirmModal(false)} disabled={saving}>Volver</button>
-                <button type="button" className="btn-primary" onClick={submit} disabled={saving}>{saving ? 'Enviando solicitud...' : 'Confirmar y enviar'}</button>
-              </div>
-            </div>
-          </Modal>
-        ) : null}
       </div>
     </div>
   )
