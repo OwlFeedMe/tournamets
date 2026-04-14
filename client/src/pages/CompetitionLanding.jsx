@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Globe, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
+import { ArrowRight, CalendarDays, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -28,6 +28,74 @@ function formatDateRange(start, end) {
   if (!startLabel) return `Hasta ${endLabel}`
   if (!endLabel) return `Desde ${startLabel}`
   return `${startLabel} - ${endLabel}`
+}
+
+function normalizeEnrollmentPrice(value) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.round(parsed))
+}
+
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
+  const organizerPrice = normalizeEnrollmentPrice(basePrice)
+  const platformFee = Math.round(organizerPrice * feeRate)
+  return {
+    organizerPrice,
+    platformFee,
+    totalPrice: organizerPrice + platformFee,
+  }
+}
+
+function formatCop(value) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0))
+}
+
+function splitCategoryDescription(raw) {
+  const text = String(raw || '').trim()
+  if (!text) return { shortDescription: '', longDescription: '' }
+  const parts = text.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean)
+  if (parts.length <= 1) {
+    return { shortDescription: text, longDescription: '' }
+  }
+  return {
+    shortDescription: parts[0],
+    longDescription: parts.slice(1).join('\n\n'),
+  }
+}
+
+function parseLandingSections(raw) {
+  if (!raw) return null
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    const normalizeItems = (items) => (Array.isArray(items) ? items : [])
+      .map((item, idx) => ({
+        id: String(item?.id || `item_${idx + 1}`),
+        title: String(item?.title || '').trim(),
+        body: String(item?.body || '').trim(),
+      }))
+      .filter(item => item.title || item.body)
+    return {
+      experience: {
+        title: String(parsed?.experience?.title || '').trim(),
+        intro: String(parsed?.experience?.intro || '').trim(),
+        items: normalizeItems(parsed?.experience?.items),
+      },
+      format: {
+        title: String(parsed?.format?.title || '').trim(),
+        items: normalizeItems(parsed?.format?.items),
+      },
+      highlights: {
+        title: String(parsed?.highlights?.title || '').trim(),
+        items: normalizeItems(parsed?.highlights?.items),
+      },
+    }
+  } catch {
+    return null
+  }
 }
 
 function parseScheduleItems(raw) {
@@ -66,6 +134,28 @@ function resolveScheduleItemsWithPhases(items, phases) {
       linked_phase_name: linkedPhase.nombre || '',
     }
   })
+}
+
+function parseDateValue(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function getNextMilestone(items) {
+  const now = new Date()
+  return (items || [])
+    .map(item => ({ ...item, parsedStart: parseDateValue(item.start_at), parsedEnd: parseDateValue(item.end_at) }))
+    .filter(item => item.parsedStart || item.parsedEnd)
+    .sort((a, b) => {
+      const aTime = (a.parsedStart || a.parsedEnd)?.getTime?.() || 0
+      const bTime = (b.parsedStart || b.parsedEnd)?.getTime?.() || 0
+      return aTime - bTime
+    })
+    .find(item => {
+      const end = item.parsedEnd || item.parsedStart
+      return end && end.getTime() >= now.getTime()
+    }) || null
 }
 
 function getStatusLabel(competition, theme) {
@@ -132,11 +222,12 @@ function resolveCompetitionAsset(competition, asset, isMobile = false) {
 
 function getContactChipStyle(theme) {
   return {
-    display: 'inline-flex',
+    display: 'flex',
     alignItems: 'center',
     gap: 6,
-    justifySelf: 'start',
-    width: 'fit-content',
+    justifySelf: 'stretch',
+    width: '100%',
+    minWidth: 0,
     padding: '8px 10px',
     borderRadius: 999,
     background: hexToRgba(theme.background, 0.62),
@@ -340,6 +431,7 @@ export default function CompetitionLanding() {
     () => resolveScheduleItemsWithPhases(parseScheduleItems(competition?.schedule_items), phases),
     [competition, phases]
   )
+  const nextMilestone = useMemo(() => getNextMilestone(scheduleItems), [scheduleItems])
   const stats = payload?.stats || {}
   const status = getStatusLabel(competition, theme)
   const socialLinks = useMemo(() => {
@@ -353,6 +445,21 @@ export default function CompetitionLanding() {
   const hasContactInfo = !!(competition?.contact_phone || competition?.website_url || socialLinks.length)
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+  const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
+  const categoryPricingSummary = useMemo(() => {
+    const valid = categories
+      .map(category => ({
+        category,
+        pricing: calculateEnrollmentPricing(category?.enrollment_price, platformFeeRate),
+      }))
+      .filter(item => item.pricing.organizerPrice > 0)
+    if (!valid.length) return null
+    const totals = valid.map(item => item.pricing.totalPrice)
+    return {
+      min: Math.min(...totals),
+      max: Math.max(...totals),
+    }
+  }, [categories, platformFeeRate])
   const detailTabs = [
     { id: 'overview', label: 'Resumen' },
     { id: 'schedule', label: 'Calendario' },
@@ -360,6 +467,12 @@ export default function CompetitionLanding() {
     { id: 'categories', label: 'Categorias' },
   ]
   const overviewText = (competition?.general_info_text || competition?.descripcion || '').trim()
+  const competitionStory = useMemo(() => {
+    if (overviewText.length <= 220) return overviewText
+    const trimmed = overviewText.slice(0, 220).trim()
+    return `${trimmed}...`
+  }, [overviewText])
+  const landingSections = useMemo(() => parseLandingSections(competition?.landing_sections), [competition?.landing_sections])
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
@@ -367,6 +480,14 @@ export default function CompetitionLanding() {
   const enrollmentButton = enrollmentButtonState(competition, role, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : role === 'user' ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label
+  const experienceItems = landingSections?.experience?.items || []
+  const formatItems = landingSections?.format?.items || []
+  const highlightItems = landingSections?.highlights?.items || []
+  const heroHighlights = [
+    `${stats.fases_total || phases.length || 0} eventos`,
+    `${stats.categorias_total || categories.length || 0} categorias`,
+    competitionMode.label,
+  ]
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
@@ -441,6 +562,53 @@ export default function CompetitionLanding() {
                 <p style={{ margin: '14px 0 0', maxWidth: 680, color: theme.text, fontSize: isMobile ? 14 : 16, lineHeight: 1.7 }}>
                   {(competition.descripcion || '').trim() || 'Esta competencia ya tiene pagina publica. Aqui podras revisar su panorama general y entrar al leaderboard.'}
                 </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                  {heroHighlights.map((item) => (
+                    <span
+                      key={item}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        padding: '8px 12px',
+                        borderRadius: 999,
+                        background: hexToRgba(theme.background, 0.68),
+                        border: `1px solid ${theme.border}`,
+                        color: theme.text,
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+                {nextMilestone ? (
+                  <div
+                    style={{
+                      marginTop: 16,
+                      maxWidth: 560,
+                      borderRadius: 18,
+                      padding: isMobile ? '12px 14px' : '14px 16px',
+                      background: hexToRgba(theme.background, 0.72),
+                      border: `1px solid ${hexToRgba(theme.primary, 0.28)}`,
+                    }}
+                  >
+                    <div style={{ color: theme.primary, fontSize: 12, fontWeight: 800, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                      Proximo hito
+                    </div>
+                    <div style={{ marginTop: 6, color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>
+                      {nextMilestone.label}
+                    </div>
+                    <div style={{ marginTop: 4, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>
+                      {formatDateRange(nextMilestone.start_at, nextMilestone.end_at)}
+                    </div>
+                    {nextMilestone.note ? (
+                      <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>
+                        {nextMilestone.note}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 18 }}>
                   <a
                     href={`/leaderboard/${competition.id}`}
@@ -518,6 +686,66 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
+            {landingSections && (experienceItems.length || formatItems.length || highlightItems.length || landingSections.experience?.title || landingSections.experience?.intro || landingSections.format?.title || landingSections.highlights?.title) ? (
+              <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 14, marginBottom: 18 }}>
+                <div style={{ borderRadius: 24, border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
+                  <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                    {landingSections.experience?.title ? 'Experiencia' : 'Portada'}
+                  </div>
+                  <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 30, lineHeight: 1.02 }}>
+                    {landingSections.experience?.title || 'Experiencia de competencia'}
+                  </h2>
+                  <div style={{ marginTop: 12, color: theme.text, fontSize: 14, lineHeight: 1.7 }}>
+                    {landingSections.experience?.intro || competitionStory || 'Competencia con fases, categorias y cronograma listos para publicar.'}
+                  </div>
+                  {experienceItems.length ? (
+                    <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+                      {experienceItems.map((item) => (
+                        <div key={item.id} style={{ borderRadius: 16, border: `1px solid ${hexToRgba(theme.border, 0.96)}`, background: hexToRgba(theme.background, 0.42), padding: '12px 14px' }}>
+                          <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{item.title}</div>
+                          {item.body ? <div style={{ marginTop: 4, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.body}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ display: 'grid', gap: 14 }}>
+                  {(landingSections.format?.title || formatItems.length) ? (
+                    <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+                      <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase' }}>
+                        {landingSections.format?.title || 'Formato'}
+                      </div>
+                      <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                        {formatItems.map((item) => (
+                          <div key={item.id}>
+                            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{item.title}</div>
+                            {item.body ? <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.body}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(landingSections.highlights?.title || highlightItems.length) ? (
+                    <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+                      <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase' }}>
+                        {landingSections.highlights?.title || 'Puntos clave'}
+                      </div>
+                      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+                        {highlightItems.map((item) => (
+                          <div key={item.id} style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
+                            {item.title}
+                            {item.body ? <span style={{ color: theme.textSecondary, fontWeight: 500 }}> {item.body}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
             <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
               <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -546,6 +774,13 @@ export default function CompetitionLanding() {
                 <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13 }}>
                   {stats.categorias_total || 0} categorias y {stats.fases_total || 0} fases
                 </div>
+                {categoryPricingSummary ? (
+                  <div style={{ marginTop: 10, color: '#F5F7FA', fontSize: 13, lineHeight: 1.55 }}>
+                    {categoryPricingSummary.min === categoryPricingSummary.max
+                      ? `Inscripcion total: ${formatCop(categoryPricingSummary.min)}`
+                      : `Inscripcion total segun categoria: ${formatCop(categoryPricingSummary.min)} a ${formatCop(categoryPricingSummary.max)}`}
+                  </div>
+                ) : null}
               </div>
               <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -554,38 +789,38 @@ export default function CompetitionLanding() {
                 </div>
                 <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                   {competition.contact_phone ? (
-                    <span style={contactChipStyle}>
+                    <span style={contactChipStyle} title={competition.contact_phone}>
                       <Phone size={13} color={theme.accent} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {competition.contact_phone}
                       </span>
                     </span>
                   ) : null}
                   {competition.website_url ? (
-                    <a href={competition.website_url} target="_blank" rel="noreferrer" style={contactChipStyle}>
+                    <a href={competition.website_url} target="_blank" rel="noreferrer" style={contactChipStyle} title={competition.website_url}>
                       <Globe size={13} color={theme.accent} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {competition.website_url}
                       </span>
                     </a>
                   ) : null}
                   {socialLinks.length ? (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'grid', gap: 8 }}>
                       {socialLinks.slice(0, 2).map((item) => {
                         const Icon = socialIconForLabel(item.label, item.url)
+                        const chipLabel = item.label || item.url
                         return (
                           <a
                             key={`main-contact-${item.id || `${item.label}-${item.url}`}`}
                             href={item.url}
                             target="_blank"
                             rel="noreferrer"
-                            style={{
-                              ...contactChipStyle,
-                            }}
+                            style={contactChipStyle}
+                            title={chipLabel}
                           >
                             <Icon size={13} color={theme.accent} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {item.label || item.url}
+                            <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {chipLabel}
                             </span>
                           </a>
                         )
@@ -629,10 +864,20 @@ export default function CompetitionLanding() {
                 {detailTab === 'overview' ? (
                   <div>
                     <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                      Resumen
+                      Panorama
                     </div>
-                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Informacion general</h2>
-                    <div style={{ marginTop: 14, color: theme.text, fontSize: 15, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Contexto del evento</h2>
+                    {experienceItems.length ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14 }}>
+                        {experienceItems.map((item) => (
+                          <div key={`overview-${item.id}`} style={{ borderRadius: 18, border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: 14 }}>
+                            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{item.title}</div>
+                            {item.body ? <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.body}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: 14, color: theme.text, fontSize: 14, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
                       {overviewText || 'Todavia no hay informacion general publicada para esta competencia.'}
                     </div>
                   </div>
@@ -727,35 +972,87 @@ export default function CompetitionLanding() {
                             {items.map((category) => {
                               const categoryKey = `${modality}-${category.id || category.nombre}`
                               const isExpanded = expandedCategoryKey === categoryKey
+                              const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate)
+                              const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
+                              const canExpand = !!longDescription
+                              const CardTag = canExpand ? 'button' : 'div'
                               return (
-                                <button
+                                <CardTag
                                   key={category.id}
-                                  type="button"
-                                  onClick={() => setExpandedCategoryKey(prev => (prev === categoryKey ? '' : categoryKey))}
+                                  type={canExpand ? 'button' : undefined}
+                                  onClick={canExpand ? () => setExpandedCategoryKey(prev => (prev === categoryKey ? '' : categoryKey)) : undefined}
                                   style={{
-                                    padding: '12px 14px',
+                                    padding: isMobile ? '12px' : '13px 14px',
                                     borderRadius: 18,
                                     background: 'rgba(13,15,18,0.62)',
                                     border: `1px solid ${theme.border}`,
                                     textAlign: 'left',
-                                    cursor: 'pointer',
+                                    cursor: canExpand ? 'pointer' : 'default',
                                     color: 'inherit',
                                   }}
                                 >
                                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                    <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
-                                      {category.nombre}
+                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                      <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
+                                        {category.nombre}
+                                      </div>
+                                      <div
+                                        style={{
+                                          marginTop: 8,
+                                          color: theme.textSecondary,
+                                          fontSize: 13,
+                                          lineHeight: 1.55,
+                                          display: '-webkit-box',
+                                          WebkitLineClamp: isExpanded ? 'unset' : (isMobile ? 2 : 3),
+                                          WebkitBoxOrient: 'vertical',
+                                          overflow: 'hidden',
+                                        }}
+                                      >
+                                        {shortDescription || 'Categoria pendiente por detallar.'}
+                                      </div>
                                     </div>
-                                    <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700 }}>
-                                      {modalityLabel(modality)}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                      {canExpand ? (
+                                        <span style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                          {isExpanded ? 'Ocultar info' : 'Mas info'}
+                                        </span>
+                                      ) : null}
+                                      <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                        {modalityLabel(modality)}
+                                      </span>
+                                    </div>
                                   </div>
-                                  {isExpanded && category.descripcion ? (
-                                    <div style={{ marginTop: 8, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>
-                                      {category.descripcion}
+                                  {!isExpanded && canExpand ? (
+                                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                                      <span style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 1.5 }}>
+                                        Toca para ver detalles
+                                      </span>
                                     </div>
                                   ) : null}
-                                </button>
+                                  {isExpanded && canExpand ? (
+                                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, lineHeight: 1.6 }}>
+                                      <div style={{ color: theme.text, fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                                        {longDescription}
+                                      </div>
+                                      <div style={{ marginTop: 12, display: 'grid', gap: 4, justifyItems: 'end', textAlign: 'right' }}>
+                                        <div style={{ color: '#D4A537', fontSize: 15, fontWeight: 800 }}>
+                                          Inscripcion total: {formatCop(pricing.totalPrice)}
+                                        </div>
+                                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'end', gap: 6, flexWrap: 'wrap' }}>
+                                          <span>
+                                          Base {formatCop(pricing.organizerPrice)} + plataforma {formatCop(pricing.platformFee)}
+                                          </span>
+                                          <span
+                                            title="El total incluye la comision de plataforma aplicada al valor base de esta categoria."
+                                            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, border: `1px solid ${theme.border}`, color: theme.textSecondary }}
+                                          >
+                                            <Info size={11} />
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </CardTag>
                               )
                             })}
                           </div>

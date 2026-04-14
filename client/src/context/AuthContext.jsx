@@ -6,6 +6,7 @@ const STORAGE_KEYS = {
   role: 'role',
   nombre: 'nombre',
   participantId: 'participant_id',
+  organizerEnabled: 'organizer_enabled',
 }
 
 const SESSION_EVENT = 'openarena:session-changed'
@@ -48,6 +49,11 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+function normalizeOrganizerEnabled(value) {
+  if (value === true || value === 1 || value === '1' || value === 'true') return true
+  return false
+}
+
 export function getHomePath(role) {
   const normalized = normalizeRole(role)
   if (normalized === 'admin') return '/admin'
@@ -61,10 +67,12 @@ function storeSessionPayload(payload, token) {
   if (!token || !role) return
   const displayName = payload?.display_name || payload?.nombre || payload?.displayName || ''
   const participantId = toNumber(payload?.participant_id)
+  const organizerEnabled = normalizeOrganizerEnabled(payload?.organizer_enabled)
 
   window.localStorage.setItem(STORAGE_KEYS.token, token)
   window.localStorage.setItem(STORAGE_KEYS.role, role)
   window.localStorage.setItem(STORAGE_KEYS.nombre, displayName)
+  window.localStorage.setItem(STORAGE_KEYS.organizerEnabled, organizerEnabled ? '1' : '0')
   if (participantId != null) {
     window.localStorage.setItem(STORAGE_KEYS.participantId, String(participantId))
   } else {
@@ -88,6 +96,9 @@ export function readStoredSession() {
   if (!role) return null
 
   const participantId = toNumber(window.localStorage.getItem(STORAGE_KEYS.participantId) || payload?.participant_id || payload?.sub)
+  const organizerEnabled = normalizeOrganizerEnabled(
+    window.localStorage.getItem(STORAGE_KEYS.organizerEnabled) ?? payload?.organizer_enabled
+  )
   const displayName =
     window.localStorage.getItem(STORAGE_KEYS.nombre) ||
     payload?.display_name ||
@@ -99,6 +110,7 @@ export function readStoredSession() {
     role,
     displayName,
     participantId,
+    organizerEnabled,
     claims: payload,
   }
 }
@@ -163,6 +175,7 @@ export function AuthProvider({ children }) {
           window.localStorage.removeItem(STORAGE_KEYS.role)
           window.localStorage.removeItem(STORAGE_KEYS.nombre)
           window.localStorage.removeItem(STORAGE_KEYS.participantId)
+          window.localStorage.removeItem(STORAGE_KEYS.organizerEnabled)
           setSession(null)
           window.dispatchEvent(new Event(SESSION_EVENT))
         }
@@ -178,6 +191,7 @@ export function AuthProvider({ children }) {
     window.localStorage.removeItem(STORAGE_KEYS.role)
     window.localStorage.removeItem(STORAGE_KEYS.nombre)
     window.localStorage.removeItem(STORAGE_KEYS.participantId)
+    window.localStorage.removeItem(STORAGE_KEYS.organizerEnabled)
     setSession(null)
     window.dispatchEvent(new Event(SESSION_EVENT))
   }, [])
@@ -193,13 +207,16 @@ export function AuthProvider({ children }) {
       roleRank,
       displayName: session?.displayName || '',
       participantId: session?.participantId || null,
+      organizerEnabled: !!session?.organizerEnabled,
       refreshSession,
       persistSession: persistAndRefreshSession,
       signOut,
       canAccess: (allowedRoles = []) => {
         if (!session) return false
         if (!Array.isArray(allowedRoles) || allowedRoles.length === 0) return true
-        return allowedRoles.includes(session.role)
+        if (allowedRoles.includes(session.role)) return true
+        if (allowedRoles.includes('organizer') && session.organizerEnabled) return true
+        return false
       },
     }
   }, [persistAndRefreshSession, refreshSession, session, signOut])

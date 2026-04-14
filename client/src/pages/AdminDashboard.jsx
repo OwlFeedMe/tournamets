@@ -152,6 +152,46 @@ function parseSocialLinks(raw) {
   }
 }
 
+function parseLandingSections(raw) {
+  const defaultItems = () => ([
+    { title: '', body: '' },
+    { title: '', body: '' },
+    { title: '', body: '' },
+  ])
+  const empty = {
+    experience_title: '',
+    experience_intro: '',
+    experience_items: defaultItems(),
+    format_title: '',
+    format_items: defaultItems(),
+    highlights_title: '',
+    highlights_items: defaultItems(),
+  }
+  if (!raw) return empty
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    const withDefaults = (items) => {
+      const arr = Array.isArray(items) ? items : []
+      if (!arr.length) return defaultItems()
+      return arr.map((item) => ({
+        title: String(item?.title || '').trim(),
+        body: String(item?.body || '').trim(),
+      }))
+    }
+    return {
+      experience_title: String(parsed?.experience?.title || '').trim(),
+      experience_intro: String(parsed?.experience?.intro || '').trim(),
+      experience_items: withDefaults(parsed?.experience?.items),
+      format_title: String(parsed?.format?.title || '').trim(),
+      format_items: withDefaults(parsed?.format?.items),
+      highlights_title: String(parsed?.highlights?.title || '').trim(),
+      highlights_items: withDefaults(parsed?.highlights?.items),
+    }
+  } catch {
+    return empty
+  }
+}
+
 const COMPETITION_ASSET_RECOMMENDATIONS = {
   profile: 'Recomendado 512 x 512 px. Formato cuadrado.',
   banner: 'Recomendado 1920 x 1080 px. Banner horizontal.',
@@ -1830,8 +1870,8 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
 
 // ── Enrollment Modal ──────────────────────────────────────────────────────────
 function EnrollmentModal({ competition, onClose, onSaved }) {
-  const { role } = useAuth()
-  const isOrganizer = role === 'organizer'
+  const { role, organizerEnabled } = useAuth()
+  const isOrganizer = role === 'organizer' || organizerEnabled
   const [modalTab, setModalTab] = useState('pendientes')
   const [previewImage, setPreviewImage] = useState(null)
   const [viewedParticipant, setViewedParticipant] = useState(null)
@@ -2184,6 +2224,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [questions, setQuestions] = useState([])
   const [scheduleItems, setScheduleItems] = useState([])
   const [socialLinks, setSocialLinks] = useState([])
+  const [landingSections, setLandingSections] = useState(() => parseLandingSections(null))
   const [assetFiles, setAssetFiles] = useState({ profile: null, banner: null })
   const [assetPreviews, setAssetPreviews] = useState({ profile: '', banner: '' })
   const [uploadingAssets, setUploadingAssets] = useState(false)
@@ -2192,47 +2233,55 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   useEffect(() => {
     if (!isEdit || !competition) return
-    setForm({
-      nombre: competition.nombre || '',
-      descripcion: competition.descripcion || '',
-      general_info_text: competition.general_info_text || '',
-      lugar: competition.lugar || '',
-      contact_phone: competition.contact_phone || '',
-      website_url: competition.website_url || '',
-      theme_background_color: competition.theme_background_color || '',
-      theme_surface_color: competition.theme_surface_color || '',
-      theme_primary_color: competition.theme_primary_color || '',
-      theme_accent_color: competition.theme_accent_color || '',
-      imagen_url: competition.imagen_url || '',
-      activa: competition.activa || 0,
-      individual_enabled: competition.individual_enabled == null ? 1 : competition.individual_enabled,
-      team_enabled: competition.team_enabled || 0,
-      team_categories_enabled: competition.team_categories_enabled == null ? 1 : competition.team_categories_enabled,
-      team_size: Math.max(1, Number(competition.team_size || 2)),
-      team_membership_rule: competition.team_membership_rule || 'free',
-      allow_user_results: competition.allow_user_results || 0,
-      show_individual_leaderboard: competition.show_individual_leaderboard == null ? 1 : competition.show_individual_leaderboard,
-      show_team_all_by_category_option: competition.show_team_all_by_category_option == null ? 1 : competition.show_team_all_by_category_option,
-      show_team_all_global_option: competition.show_team_all_global_option == null ? 1 : competition.show_team_all_global_option,
-      enrollment_open: competition.enrollment_open || 0,
-      enrollment_start: toDateInput(competition.enrollment_start),
-      enrollment_end: toDateInput(competition.enrollment_end),
-      competition_start: toDateInput(competition.competition_start),
-      competition_end: toDateInput(competition.competition_end),
-      enrollment_intro_text: competition.enrollment_intro_text || '',
-      enrollment_terms_text: competition.enrollment_terms_text || '',
-      platform_fee_rate: Number(competition.platform_fee_rate || PLATFORM_FEE_RATE),
-      scoring_mode: competition.scoring_mode || 'highest_wins',
-    })
-    setQuestions(parseEnrollmentQuestions(competition.enrollment_questions))
-    setScheduleItems(parseScheduleItems(competition.schedule_items))
-    setSocialLinks(parseSocialLinks(competition.social_links))
-    setAssetFiles({ profile: null, banner: null })
-    setAssetPreviews({ profile: '', banner: '' })
+    const applyCompetitionData = (source) => {
+      setForm({
+        nombre: source.nombre || '',
+        descripcion: source.descripcion || '',
+        general_info_text: source.general_info_text || '',
+        lugar: source.lugar || '',
+        contact_phone: source.contact_phone || '',
+        website_url: source.website_url || '',
+        theme_background_color: source.theme_background_color || '',
+        theme_surface_color: source.theme_surface_color || '',
+        theme_primary_color: source.theme_primary_color || '',
+        theme_accent_color: source.theme_accent_color || '',
+        imagen_url: source.imagen_url || '',
+        activa: source.activa || 0,
+        individual_enabled: source.individual_enabled == null ? 1 : source.individual_enabled,
+        team_enabled: source.team_enabled || 0,
+        team_categories_enabled: source.team_categories_enabled == null ? 1 : source.team_categories_enabled,
+        team_size: Math.max(1, Number(source.team_size || 2)),
+        team_membership_rule: source.team_membership_rule || 'free',
+        allow_user_results: source.allow_user_results || 0,
+        show_individual_leaderboard: source.show_individual_leaderboard == null ? 1 : source.show_individual_leaderboard,
+        show_team_all_by_category_option: source.show_team_all_by_category_option == null ? 1 : source.show_team_all_by_category_option,
+        show_team_all_global_option: source.show_team_all_global_option == null ? 1 : source.show_team_all_global_option,
+        enrollment_open: source.enrollment_open || 0,
+        enrollment_start: toDateInput(source.enrollment_start),
+        enrollment_end: toDateInput(source.enrollment_end),
+        competition_start: toDateInput(source.competition_start),
+        competition_end: toDateInput(source.competition_end),
+        enrollment_intro_text: source.enrollment_intro_text || '',
+        enrollment_terms_text: source.enrollment_terms_text || '',
+        platform_fee_rate: Number(source.platform_fee_rate || PLATFORM_FEE_RATE),
+        scoring_mode: source.scoring_mode || 'highest_wins',
+      })
+      setQuestions(parseEnrollmentQuestions(source.enrollment_questions))
+      setScheduleItems(parseScheduleItems(source.schedule_items))
+      setSocialLinks(parseSocialLinks(source.social_links))
+      setLandingSections(parseLandingSections(source.landing_sections))
+      setAssetFiles({ profile: null, banner: null })
+      setAssetPreviews({ profile: '', banner: '' })
+    }
+
+    applyCompetitionData(competition)
+
     Promise.all([
+      api.get(`/competitions/${competition.id}`),
       api.get(`/competitions/${competition.id}/categories`),
       api.get(`/competitions/${competition.id}/phases`),
-    ]).then(([catRes, phRes]) => {
+    ]).then(([competitionRes, catRes, phRes]) => {
+      if (competitionRes?.data) applyCompetitionData(competitionRes.data)
       setCats(catRes.data.map(c => ({
         id: c.id,
         nombre: c.nombre,
@@ -2290,6 +2339,33 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   const updateCategoryPrice = (id, value) => {
     setCats(prev => prev.map(c => (c.id === id ? { ...c, enrollment_price: value } : c)))
+  }
+
+  const updateLandingSectionField = (field, value) => {
+    setLandingSections(prev => ({ ...prev, [field]: value }))
+  }
+
+  const updateLandingSectionItem = (sectionKey, index, field, value) => {
+    setLandingSections(prev => ({
+      ...prev,
+      [sectionKey]: prev[sectionKey].map((item, itemIdx) => (
+        itemIdx === index ? { ...item, [field]: value } : item
+      )),
+    }))
+  }
+
+  const addLandingSectionItem = (sectionKey) => {
+    setLandingSections(prev => ({
+      ...prev,
+      [sectionKey]: [...prev[sectionKey], { title: '', body: '' }],
+    }))
+  }
+
+  const removeLandingSectionItem = (sectionKey, index) => {
+    setLandingSections(prev => ({
+      ...prev,
+      [sectionKey]: prev[sectionKey].filter((_, itemIdx) => itemIdx !== index),
+    }))
   }
 
   const addPhase = () => {
@@ -2414,6 +2490,39 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       competition_start: dateInputToStartOfDay(form.competition_start),
       competition_end: dateInputToEndOfDay(form.competition_end),
       schedule_items: cleanScheduleItems,
+      landing_sections: {
+        experience: {
+          title: String(landingSections.experience_title || '').trim() || null,
+          intro: String(landingSections.experience_intro || '').trim() || null,
+          items: landingSections.experience_items
+            .map((item, idx) => ({
+              id: `exp_${idx + 1}`,
+              title: String(item.title || '').trim(),
+              body: String(item.body || '').trim(),
+            }))
+            .filter(item => item.title || item.body),
+        },
+        format: {
+          title: String(landingSections.format_title || '').trim() || null,
+          items: landingSections.format_items
+            .map((item, idx) => ({
+              id: `fmt_${idx + 1}`,
+              title: String(item.title || '').trim(),
+              body: String(item.body || '').trim(),
+            }))
+            .filter(item => item.title || item.body),
+        },
+        highlights: {
+          title: String(landingSections.highlights_title || '').trim() || null,
+          items: landingSections.highlights_items
+            .map((item, idx) => ({
+              id: `hl_${idx + 1}`,
+              title: String(item.title || '').trim(),
+              body: String(item.body || '').trim(),
+            }))
+            .filter(item => item.title || item.body),
+        },
+      },
       enrollment_intro_text: form.enrollment_intro_text.trim() || null,
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
       platform_fee_rate: Number(form.platform_fee_rate || PLATFORM_FEE_RATE),
@@ -2771,6 +2880,72 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 rows={6}
                 placeholder="Resumen amplio de la competencia, dinamica general, formato, ambiente, reglas base o lo que el atleta debe entender antes de ver eventos y categorias."
               />
+            </div>
+          </div>
+          <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <div>
+              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Bloques narrativos de portada</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 4 }}>
+                Estos textos construyen el feeling de la landing publica. Cada competencia puede tener su propio tono, enfoque y narrativa.
+              </div>
+            </div>
+
+            <div style={{ ...listItemStyle, marginBottom: 0 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Titulo de experiencia</label>
+                <input value={landingSections.experience_title} onChange={e => updateLandingSectionField('experience_title', e.target.value)} placeholder="Ej: Tres dias para construir el ranking y cerrar la final." />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Intro de experiencia</label>
+                <textarea value={landingSections.experience_intro} onChange={e => updateLandingSectionField('experience_intro', e.target.value)} rows={4} placeholder="Explica en pocas lineas como se vive esta competencia y que tipo de exigencia propone." />
+              </div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Momentos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              {landingSections.experience_items.map((item, idx) => (
+                <div key={`exp-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
+                  <input value={item.title} onChange={e => updateLandingSectionItem('experience_items', idx, 'title', e.target.value)} placeholder={`Momento ${idx + 1}`} />
+                  <input value={item.body} onChange={e => updateLandingSectionItem('experience_items', idx, 'body', e.target.value)} placeholder="Texto corto del momento" />
+                  <button type="button" className="btn-danger btn-sm" onClick={() => removeLandingSectionItem('experience_items', idx)}>Quitar</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => addLandingSectionItem('experience_items')}>+ Agregar momento</button>
+              </div>
+            </div>
+
+            <div style={{ ...listItemStyle, marginBottom: 0 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Titulo de pasos del formato</label>
+                <input value={landingSections.format_title} onChange={e => updateLandingSectionField('format_title', e.target.value)} placeholder="Ej: Asi se compite" />
+              </div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Pasos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              {landingSections.format_items.map((item, idx) => (
+                <div key={`format-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
+                  <input value={item.title} onChange={e => updateLandingSectionItem('format_items', idx, 'title', e.target.value)} placeholder={`Paso ${idx + 1}`} />
+                  <input value={item.body} onChange={e => updateLandingSectionItem('format_items', idx, 'body', e.target.value)} placeholder="Explicacion breve del paso" />
+                  <button type="button" className="btn-danger btn-sm" onClick={() => removeLandingSectionItem('format_items', idx)}>Quitar</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => addLandingSectionItem('format_items')}>+ Agregar paso</button>
+              </div>
+            </div>
+
+            <div style={{ ...listItemStyle, marginBottom: 0 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Titulo de puntos clave</label>
+                <input value={landingSections.highlights_title} onChange={e => updateLandingSectionField('highlights_title', e.target.value)} placeholder="Ej: Lo clave" />
+              </div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Puntos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              {landingSections.highlights_items.map((item, idx) => (
+                <div key={`highlight-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
+                  <input value={item.title} onChange={e => updateLandingSectionItem('highlights_items', idx, 'title', e.target.value)} placeholder={`Punto ${idx + 1}`} />
+                  <input value={item.body} onChange={e => updateLandingSectionItem('highlights_items', idx, 'body', e.target.value)} placeholder="Aclaracion breve opcional" />
+                  <button type="button" className="btn-danger btn-sm" onClick={() => removeLandingSectionItem('highlights_items', idx)}>Quitar</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => addLandingSectionItem('highlights_items')}>+ Agregar punto</button>
+              </div>
             </div>
           </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
@@ -5634,6 +5809,8 @@ function CompetitionResultsPanel({ competition }) {
 }
 
 function CompetitionsTab() {
+  const { role, organizerEnabled } = useAuth()
+  const isOrganizer = role === 'organizer' || organizerEnabled
   const [competitions, setCompetitions] = useState([])
   const [msg, setMsg] = useState(null)
   const [editor, setEditor] = useState(null)
@@ -5655,13 +5832,13 @@ function CompetitionsTab() {
     return items
   }
 
-  const load = () => api.get('/competitions').then(r => {
+  const load = () => api.get(isOrganizer ? '/competitions?scope=owned' : '/competitions').then(r => {
     setCompetitions(r.data)
     r.data.forEach(c => {
       syncCompetitionParticipants(c.id).catch(() => {})
     })
   })
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [isOrganizer])
   useEffect(() => {
     let active = true
     const refresh = () => {
@@ -6654,6 +6831,8 @@ function ParticipantsTab() {
 const MAX_TEAM_SIZE = 10
 
 function TeamsTab() {
+  const { role, organizerEnabled } = useAuth()
+  const isOrganizer = role === 'organizer' || organizerEnabled
   const [competitions, setCompetitions] = useState([])
   const [teams, setTeams] = useState([])
   const [filterComp, setFilterComp] = useState('')
@@ -6668,11 +6847,11 @@ function TeamsTab() {
   const [searchEdit, setSearchEdit] = useState('')
 
   useEffect(() => {
-    api.get('/competitions').then(r => {
+    api.get(isOrganizer ? '/competitions?scope=owned' : '/competitions').then(r => {
       setCompetitions(r.data)
       if (!filterComp && r.data.length) setFilterComp(String(r.data[0].id))
     })
-  }, [])
+  }, [isOrganizer])
 
   const loadTeams = async () => {
     const params = filterComp ? `?competition_id=${filterComp}` : ''
@@ -6932,8 +7111,8 @@ function TeamsTab() {
 }
 
 function FinanceTab() {
-  const { role } = useAuth()
-  const isOrganizer = role === 'organizer'
+  const { role, organizerEnabled } = useAuth()
+  const isOrganizer = role === 'organizer' || organizerEnabled
   const withdrawalTerms = [
     'El retiro solicitado corresponde al saldo disponible total de la competencia.',
     'FinalRep procesa la transferencia una vez iniciada la competencia y validada la solicitud.',
@@ -7294,10 +7473,162 @@ function FinanceTab() {
   )
 }
 
+function OrganizerApplicationsTab() {
+  const [items, setItems] = useState([])
+  const [statusFilter, setStatusFilter] = useState('pending')
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState(null)
+  const [msg, setMsg] = useState(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : ''
+      const { data } = await api.get(`/organizer-applications${query}`)
+      setItems(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudieron cargar las solicitudes' })
+      setItems([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [statusFilter])
+
+  const review = async (item, status) => {
+    const review_note = window.prompt(
+      status === 'approved'
+        ? 'Nota opcional para aprobar y promover a organizador:'
+        : 'Motivo o nota de rechazo:'
+    ) || ''
+    setBusyId(item.id)
+    setMsg(null)
+    try {
+      await api.put(`/organizer-applications/${item.id}/review`, { status, review_note })
+      setMsg({ type: 'success', text: status === 'approved' ? 'Solicitud aprobada y cuenta actualizada.' : 'Solicitud rechazada.' })
+      load()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la solicitud' })
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800 }}>Solicitudes de organizador</div>
+            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Revisa perfiles completos, contexto del evento y decide si la cuenta pasa a organizador.</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {['pending', 'approved', 'rejected'].map(status => (
+              <button key={status} type="button" className="btn-secondary btn-sm" onClick={() => setStatusFilter(status)} style={{ opacity: statusFilter === status ? 1 : 0.72 }}>
+                {status === 'pending' ? 'Pendientes' : status === 'approved' ? 'Aprobadas' : 'Rechazadas'}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {msg ? <div className={`alert alert-${msg.type}`}>{msg.text}</div> : null}
+      {loading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando solicitudes...</div> : null}
+      {!loading && !items.length ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>No hay solicitudes en este estado.</div> : null}
+
+      <div style={{ display: 'grid', gap: 14 }}>
+        {items.map((item) => {
+          const snapshot = item.profile_snapshot || {}
+          const applicantName = snapshot.nombre && snapshot.apellido ? `${snapshot.nombre} ${snapshot.apellido}` : (item.app_user?.display_name || 'Usuario')
+          const statusTone = item.status === 'approved' ? '#22C55E' : item.status === 'rejected' ? '#EF4444' : '#F59E0B'
+          return (
+            <div key={item.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18, display: 'grid', gap: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>{applicantName}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{item.app_user?.username || snapshot.email || 'Sin usuario'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Recibida: {formatDate(item.created_at)}</div>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 999, border: `1px solid ${statusTone}55`, background: `${statusTone}1A`, color: statusTone, fontSize: 12, fontWeight: 800 }}>
+                  {item.status === 'pending' ? 'Pendiente' : item.status === 'approved' ? 'Aprobada' : 'Rechazada'}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11 }}>Cedula</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{snapshot.cedula || '-'}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11 }}>Celular</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{snapshot.celular || '-'}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11 }}>Ciudad / Pais</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{snapshot.ciudad_pais || '-'}</div>
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11 }}>Fecha nacimiento</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{snapshot.fecha_nacimiento || '-'}</div>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
+                  <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Evento propuesto</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, marginTop: 6 }}>{item.requested_event_name}</div>
+                  <div style={{ color: '#D7DEE8', fontSize: 13, marginTop: 6 }}>
+                    {[item.requested_event_location, item.requested_event_date].filter(Boolean).join(' · ') || 'Sin fecha o lugar definidos'}
+                  </div>
+                  {item.requested_event_description ? <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{item.requested_event_description}</div> : null}
+                </div>
+                <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
+                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Por que quiere ser organizador</div>
+                  <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>{item.why_organizer}</div>
+                </div>
+                {item.prior_events_summary ? (
+                  <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Experiencia previa</div>
+                    <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>{item.prior_events_summary}</div>
+                  </div>
+                ) : null}
+                <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
+                  <div style={{ color: '#F5F7FA', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Por que con FinalRep</div>
+                  <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>{item.why_finalrep}</div>
+                </div>
+                {item.review_note ? (
+                  <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Nota de revision</div>
+                    <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>{item.review_note}</div>
+                  </div>
+                ) : null}
+              </div>
+
+              {item.status === 'pending' ? (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn-danger btn-sm" onClick={() => review(item, 'rejected')} disabled={busyId === item.id}>
+                    {busyId === item.id ? 'Guardando...' : 'Rechazar'}
+                  </button>
+                  <button type="button" className="btn-primary btn-sm" onClick={() => review(item, 'approved')} disabled={busyId === item.id}>
+                    {busyId === item.id ? 'Guardando...' : 'Aprobar'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 export default function AdminDashboard() {
-  const { role } = useAuth()
-  const isOrganizer = role === 'organizer'
+  const { role, organizerEnabled } = useAuth()
+  const isOrganizer = role === 'organizer' || organizerEnabled
   const [mainTab, setMainTab] = useState('competitions')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
@@ -7322,10 +7653,16 @@ export default function AdminDashboard() {
               Atletas / Usuarios
             </button>
           )}
+          {!isOrganizer && (
+            <button className={`tab ${mainTab === 'organizer-requests' ? 'active' : ''}`} onClick={() => setMainTab('organizer-requests')} style={{ flexShrink: 0 }}>
+              Solicitudes organizador
+            </button>
+          )}
         </div>
         {mainTab === 'competitions' && <CompetitionsTab />}
         {mainTab === 'finance' && <FinanceTab />}
         {!isOrganizer && mainTab === 'athletes' && <ParticipantsTab />}
+        {!isOrganizer && mainTab === 'organizer-requests' && <OrganizerApplicationsTab />}
       </div>
     </div>
   )

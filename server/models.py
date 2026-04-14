@@ -51,6 +51,7 @@ class AppUser(SQLModel, table=True):
     display_name: str
     role: str = Field(default=Role.USER, index=True)  # admin | organizer | user
     password_hash: str
+    organizer_enabled: int = Field(default=0)
     participant_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
@@ -59,6 +60,47 @@ class AppUser(SQLModel, table=True):
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class OrganizerApplication(SQLModel, table=True):
+    __tablename__ = "organizer_applications"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    app_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    participant_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    status: str = Field(default="pending", index=True)  # pending | approved | rejected
+    requested_event_name: str
+    requested_event_location: Optional[str] = None
+    requested_event_date: Optional[date] = Field(
+        default=None,
+        sa_column=Column(Date, nullable=True),
+    )
+    requested_event_description: Optional[str] = None
+    why_organizer: str
+    prior_events_summary: Optional[str] = None
+    why_finalrep: str
+    profile_snapshot_json: str
+    review_note: Optional[str] = None
+    reviewed_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    reviewed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
     )
 
 
@@ -117,6 +159,7 @@ class Competition(SQLModel, table=True):
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     schedule_items: Optional[str] = None
+    landing_sections: Optional[str] = None
     enrollment_intro_text: Optional[str] = None
     enrollment_payment_methods: Optional[str] = None
     enrollment_questions: Optional[str] = None
@@ -469,6 +512,7 @@ class TokenResponse(SQLModel):
     username: Optional[str] = None
     app_user_id: Optional[int] = None
     participant_id: Optional[int] = None
+    organizer_enabled: bool = False
 
 
 class MeResponse(SQLModel):
@@ -478,6 +522,7 @@ class MeResponse(SQLModel):
     username: Optional[str] = None
     app_user_id: Optional[int] = None
     participant_id: Optional[int] = None
+    organizer_enabled: bool = False
 
 
 # ── Participant schemas ────────────────────────────────────────────────────────
@@ -550,6 +595,23 @@ class ParticipantSelfUpdate(SQLModel):
     ciudad_pais: Optional[str] = None
 
 
+# ── Organizer application schemas ─────────────────────────────────────────────
+
+class OrganizerApplicationCreate(SQLModel):
+    requested_event_name: str
+    requested_event_location: Optional[str] = None
+    requested_event_date: Optional[date] = None
+    requested_event_description: Optional[str] = None
+    why_organizer: str
+    prior_events_summary: Optional[str] = None
+    why_finalrep: str
+
+
+class OrganizerApplicationReview(SQLModel):
+    status: str  # approved | rejected
+    review_note: Optional[str] = None
+
+
 # ── Competition schemas ────────────────────────────────────────────────────────
 
 class CompetitionCreate(SQLModel):
@@ -596,6 +658,7 @@ class CompetitionCreate(SQLModel):
     competition_start: Optional[datetime] = None
     competition_end: Optional[datetime] = None
     schedule_items: Optional[List["CompetitionDateItem"]] = None
+    landing_sections: Optional[dict] = None
     enrollment_intro_text: Optional[str] = None
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None
     enrollment_terms_text: Optional[str] = None
@@ -649,6 +712,7 @@ class CompetitionUpdate(SQLModel):
     competition_start: Optional[datetime] = None
     competition_end: Optional[datetime] = None
     schedule_items: Optional[List["CompetitionDateItem"]] = None
+    landing_sections: Optional[dict] = None
     enrollment_intro_text: Optional[str] = None
     enrollment_payment_methods: Optional[List["EnrollmentPaymentMethodItem"]] = None
     enrollment_questions: Optional[List["EnrollmentQuestionItem"]] = None

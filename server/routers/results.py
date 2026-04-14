@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from access import get_owned_competition_ids, require_competition_access
+from access import get_owned_competition_ids, is_organizer_user, require_competition_access
 from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
@@ -342,7 +342,7 @@ def list_results(
         query = query.where(Result.competition_id == competition_id)
     else:
         owned_ids = get_owned_competition_ids(session, user)
-        if user.get("role") == "organizer":
+        if is_organizer_user(user):
             query = query.where(Result.competition_id.in_(owned_ids))
     if participant_id:
         query = query.where(Result.participant_id == participant_id)

@@ -1,23 +1,26 @@
-# FinalRep 🏆
+# FinalRep
 
-App de gestión de competencias fitness con leaderboard en tiempo real.
+App de gestion de competencias fitness con leaderboard en tiempo real.
 
 ## Estructura
-```
-server/   → FastAPI + SQLite (Python)
-client/   → React + Vite (Node.js)
+```text
+server/   -> FastAPI + PostgreSQL
+client/   -> React + Vite
 ```
 
-## Arranque rápido
+## Arranque rapido
 
 ### Backend (Python 3.9+)
+Configura `DATABASE_URL` con una conexion PostgreSQL valida antes de iniciar el backend.
+
 ```bash
 cd server
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
-API disponible en http://localhost:8000
-Docs en http://localhost:8000/docs
+
+API disponible en `http://localhost:8000`
+Docs en `http://localhost:8000/docs`
 
 ### Frontend
 ```bash
@@ -25,7 +28,8 @@ cd client
 npm install
 npm run dev
 ```
-App disponible en http://localhost:5173
+
+App disponible en `http://localhost:5173`
 
 ### Docker local
 ```bash
@@ -39,13 +43,12 @@ docker compose up --build
 - En Docker: backend `http://localhost:8001`
 - En Docker: docs `http://localhost:8001/docs`
 
----
-
-## Variables de entorno (`server/.env`)
-```
+## Variables de entorno
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/finalrep
 ADMIN_ID=admin
 ADMIN_PASSWORD=admin123
-SECRET_KEY=loyalty-race-secret-key-cambiar-en-produccion
+SECRET_KEY=finalrep-secret-key-cambiar-en-produccion
 PAYMENT_PROVIDER=bold
 BOLD_IDENTITY_KEY=tu_llave_de_identidad
 BOLD_SECRET_KEY=tu_llave_secreta
@@ -54,13 +57,13 @@ BOLD_WEBHOOK_TEST_MODE=0
 
 ## Rutas de la app
 
-| Ruta | Descripción |
+| Ruta | Descripcion |
 |------|-------------|
 | `/login` | Login admin y participantes |
-| `/admin` | Panel de administración |
+| `/admin` | Panel de administracion |
 | `/profile` | Perfil del participante |
-| `/leaderboard` | Leaderboard público |
-| `/leaderboard/:id` | Leaderboard de competencia específica |
+| `/leaderboard` | Leaderboard publico |
+| `/leaderboard/:id` | Leaderboard de competencia especifica |
 
 ## Importar participantes (CSV)
 
@@ -73,15 +76,12 @@ cedula,nombre,apellido,email,sexo,categoria
 87654321,Maria,Lopez,maria@mail.com,F,Scaled
 ```
 
-## Categorías disponibles
+## Categorias disponibles
 Rx · Scaled · Masters · Teens · Otro
 
 ## Equipos
-- Se crean desde **Admin → Equipos**
-- Mínimo 2, máximo 10 miembros por equipo
+- Se crean desde **Admin -> Equipos**
+- Minimo 2, maximo 10 miembros por equipo
 - Cada participante solo puede estar en **un equipo por competencia**
-- El leaderboard muestra tab "Equipos" automáticamente si hay equipos registrados
-- Los resultados de equipo se cargan desde **Admin → Resultados** seleccionando "Equipo" en lugar de participante
-
-## Nota: actualización de schema
-Si ya tenías una base de datos corriendo, elimina `server/loyalty_race.db` para aplicar el nuevo schema con las tablas `teams` y `team_members`.
+- El leaderboard muestra la tab `Equipos` automaticamente si hay equipos registrados
+- Los resultados de equipo se cargan desde **Admin -> Resultados** seleccionando `Equipo` en lugar de participante

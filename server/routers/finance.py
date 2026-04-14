@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from access import get_owned_competition_ids, require_competition_access
+from access import get_owned_competition_ids, is_organizer_user, require_competition_access
 from auth import require_admin, require_staff
 from database import get_session
 from models import Competition, CompetitionWithdrawalRequest, WithdrawalRequestCreate, WithdrawalRequestReview
@@ -142,7 +142,7 @@ def _serialize_withdrawal(item: CompetitionWithdrawalRequest) -> dict:
 @router.get("/overview")
 def finance_overview(session: Session = Depends(get_session), user=Depends(require_staff)):
     competitions_query = select(Competition).order_by(Competition.created_at.desc())
-    if user.get("role") == "organizer":
+    if is_organizer_user(user):
         owned_ids = get_owned_competition_ids(session, user)
         competitions_query = competitions_query.where(Competition.id.in_(owned_ids))
     competitions = session.exec(competitions_query).all()
@@ -234,7 +234,7 @@ def list_withdrawals(session: Session = Depends(get_session), user=Depends(requi
         .join(Competition, Competition.id == CompetitionWithdrawalRequest.competition_id)
         .order_by(CompetitionWithdrawalRequest.requested_at.desc(), CompetitionWithdrawalRequest.id.desc())
     )
-    if user.get("role") == "organizer":
+    if is_organizer_user(user):
         owned_ids = get_owned_competition_ids(session, user)
         query = query.where(CompetitionWithdrawalRequest.competition_id.in_(owned_ids))
     rows = session.exec(query).all()

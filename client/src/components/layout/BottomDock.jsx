@@ -45,7 +45,18 @@ export function BottomDock() {
   const location = useLocation()
   const { session } = useAuth()
 
-  const items = session ? (DOCKS[session.role] || DOCKS.user) : DOCKS.public
+  const items = (() => {
+    if (!session) return DOCKS.public
+    if (session.role === 'user' && session.organizerEnabled) {
+      return [
+        { label: 'Inicio', icon: House, to: '/' },
+        { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
+        { label: 'Panel', icon: UserCircle2, to: '/organizer' },
+        { label: 'Perfil', icon: UserCircle2, to: '/profile' },
+      ]
+    }
+    return DOCKS[session.role] || DOCKS.user
+  })()
 
   return (
     <nav

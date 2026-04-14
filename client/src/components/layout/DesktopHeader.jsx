@@ -51,7 +51,17 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
   const location = useLocation()
   const { session, signOut } = useAuth()
 
-  const items = session ? (NAV_ITEMS[session.role] || NAV_ITEMS.user) : NAV_ITEMS.public
+  const items = (() => {
+    if (!session) return NAV_ITEMS.public
+    if (session.role === 'user' && session.organizerEnabled) {
+      return [
+        ...NAV_ITEMS.user.slice(0, 4),
+        { label: 'Panel', icon: UserCircle2, to: '/organizer' },
+        NAV_ITEMS.user[4],
+      ]
+    }
+    return NAV_ITEMS[session.role] || NAV_ITEMS.user
+  })()
 
   const iconButtonStyle = {
     width: 42,

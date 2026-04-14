@@ -28,6 +28,7 @@ def _session_token_payload(
     username: str | None = None,
     app_user_id: int | None = None,
     participant_id: int | None = None,
+    organizer_enabled: bool = False,
     legacy_role: str | None = None,
 ) -> dict:
     sub = f"app:{app_user_id}" if app_user_id is not None else (str(participant_id) if participant_id is not None else role)
@@ -42,6 +43,7 @@ def _session_token_payload(
         payload["app_user_id"] = app_user_id
     if participant_id is not None:
         payload["participant_id"] = participant_id
+    payload["organizer_enabled"] = bool(organizer_enabled)
     if legacy_role is not None:
         payload["legacy_role"] = legacy_role
     return payload
@@ -56,6 +58,7 @@ def _token_response(payload: dict) -> TokenResponse:
         username=payload.get("username"),
         app_user_id=payload.get("app_user_id"),
         participant_id=payload.get("participant_id"),
+        organizer_enabled=bool(payload.get("organizer_enabled")),
     )
 
 
@@ -67,6 +70,7 @@ def _me_response(payload: dict) -> MeResponse:
         username=payload.get("username"),
         app_user_id=payload.get("app_user_id"),
         participant_id=payload.get("participant_id"),
+        organizer_enabled=bool(payload.get("organizer_enabled")),
     )
 
 
@@ -234,6 +238,7 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
         username=app_user.username,
         app_user_id=app_user.id,
         participant_id=participant.id,
+        organizer_enabled=bool(app_user.organizer_enabled),
     )
     return _token_response(payload)
 
@@ -263,6 +268,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
             username=app_user.username,
             app_user_id=app_user.id,
             participant_id=app_user.participant_id,
+            organizer_enabled=bool(app_user.organizer_enabled),
         )
         return _token_response(payload)
 
@@ -287,6 +293,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
             username=linked_user.username,
             app_user_id=linked_user.id,
             participant_id=participant.id,
+            organizer_enabled=bool(linked_user.organizer_enabled),
             legacy_role="participant",
         )
         return _token_response(payload)
@@ -313,6 +320,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
             username=created_user.username,
             app_user_id=created_user.id,
             participant_id=participant.id,
+            organizer_enabled=bool(created_user.organizer_enabled),
             legacy_role="participant",
         )
         return _token_response(payload)
@@ -358,6 +366,7 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
             username=app_user.username,
             app_user_id=app_user.id,
             participant_id=app_user.participant_id,
+            organizer_enabled=bool(app_user.organizer_enabled),
         )
         return _me_response(payload)
 

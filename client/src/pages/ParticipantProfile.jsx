@@ -108,6 +108,12 @@ function getCompetitionScheduleHref(competitionId, personal = false) {
   return personal ? `/competitions/${competitionId}/my-schedule` : `/competitions/${competitionId}/schedule`
 }
 
+function organizerApplicationBadge(status) {
+  if (status === 'approved') return { label: 'Aprobada', color: '#22C55E', border: 'rgba(34,197,94,0.28)', background: 'rgba(34,197,94,0.12)' }
+  if (status === 'rejected') return { label: 'Rechazada', color: '#EF4444', border: 'rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.12)' }
+  return { label: 'Pendiente', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
+}
+
 // ── Competition Detail Modal ──────────────────────────────────────────────────
 
 function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm }) {
@@ -530,7 +536,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ParticipantProfile() {
-  const { participantId, displayName } = useAuth()
+  const { participantId, displayName, organizerEnabled } = useAuth()
   const nombre = displayName || 'Participante'
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
@@ -564,6 +570,20 @@ export default function ParticipantProfile() {
   const [photoDraftUrl, setPhotoDraftUrl] = useState('')
   const [photoDraftImage, setPhotoDraftImage] = useState(null)
   const [photoZoom, setPhotoZoom] = useState(1.15)
+  const [organizerApplication, setOrganizerApplication] = useState(null)
+  const [organizerMissingFields, setOrganizerMissingFields] = useState([])
+  const [organizerRequestOpen, setOrganizerRequestOpen] = useState(false)
+  const [organizerRequestBusy, setOrganizerRequestBusy] = useState(false)
+  const [organizerRequestMsg, setOrganizerRequestMsg] = useState(null)
+  const [organizerRequestForm, setOrganizerRequestForm] = useState({
+    requested_event_name: '',
+    requested_event_location: '',
+    requested_event_date: '',
+    requested_event_description: '',
+    why_organizer: '',
+    prior_events_summary: '',
+    why_finalrep: '',
+  })
   const displayGenero = myProfile?.genero || myProfile?.sexo || '-'
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
@@ -592,7 +612,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget)
+    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -618,7 +638,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -662,6 +682,16 @@ export default function ParticipantProfile() {
       })
     } catch { /* silent */ }
   }
+  const loadOrganizerApplication = async () => {
+    try {
+      const res = await api.get('/organizer-applications/me')
+      setOrganizerApplication(res.data?.application || null)
+      setOrganizerMissingFields(Array.isArray(res.data?.missing_profile_fields) ? res.data.missing_profile_fields : [])
+    } catch {
+      setOrganizerApplication(null)
+      setOrganizerMissingFields([])
+    }
+  }
 
   useEffect(() => {
     if (!countries.length || !editForm.ciudad_pais || editForm.countryCode) return
@@ -675,7 +705,7 @@ export default function ParticipantProfile() {
 
   useEffect(() => {
     if (!participantId) return
-    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile()]).catch(() => {})
+    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile(), loadOrganizerApplication()]).catch(() => {})
   }, [participantId])
 
   const enrollmentByComp = useMemo(() => {
@@ -762,11 +792,47 @@ export default function ParticipantProfile() {
         ciudad_pais: res.data.ciudad_pais || '',
       }))
       setEditMsg({ type: 'success', text: 'Datos actualizados correctamente' })
+      loadOrganizerApplication()
       setShowEditProfile(false)
     } catch (err) {
       setEditMsg({ type: 'error', text: err.response?.data?.detail || 'Error al guardar' })
     } finally {
       setEditBusy(false)
+    }
+  }
+
+  const submitOrganizerApplication = async (e) => {
+    e.preventDefault()
+    setOrganizerRequestBusy(true)
+    setOrganizerRequestMsg(null)
+    try {
+      const payload = {
+        requested_event_name: organizerRequestForm.requested_event_name.trim(),
+        requested_event_location: organizerRequestForm.requested_event_location.trim() || null,
+        requested_event_date: organizerRequestForm.requested_event_date || null,
+        requested_event_description: organizerRequestForm.requested_event_description.trim() || null,
+        why_organizer: organizerRequestForm.why_organizer.trim(),
+        prior_events_summary: organizerRequestForm.prior_events_summary.trim() || null,
+        why_finalrep: organizerRequestForm.why_finalrep.trim(),
+      }
+      const { data } = await api.post('/organizer-applications', payload)
+      setOrganizerApplication(data?.application || null)
+      setOrganizerRequestMsg({ type: 'success', text: 'Tu solicitud fue enviada para revision del equipo FinalRep.' })
+      setOrganizerRequestOpen(false)
+      setOrganizerRequestForm({
+        requested_event_name: '',
+        requested_event_location: '',
+        requested_event_date: '',
+        requested_event_description: '',
+        why_organizer: '',
+        prior_events_summary: '',
+        why_finalrep: '',
+      })
+      loadOrganizerApplication()
+    } catch (err) {
+      setOrganizerRequestMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la solicitud' })
+    } finally {
+      setOrganizerRequestBusy(false)
     }
   }
 
@@ -888,6 +954,8 @@ export default function ParticipantProfile() {
   const totalPuntos = results.reduce((acc, r) => acc + (r.puntos || 0), 0)
   const initial = nombre.trim().charAt(0).toUpperCase() || 'P'
   const profilePhotoUrl = resolveProfilePhoto(myProfile?.profile_photo_url)
+  const organizerBadge = organizerApplication ? organizerApplicationBadge(organizerApplication.status) : null
+  const canOpenOrganizerRequest = !organizerApplication || organizerApplication.status === 'rejected'
 
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
@@ -987,6 +1055,69 @@ export default function ParticipantProfile() {
               <button type="button" className="btn-primary btn-sm" onClick={saveProfilePhoto} disabled={photoBusy}>
                 {photoBusy ? 'Guardando...' : 'Guardar foto'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {organizerRequestOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 760, height: 'min(88dvh, 88vh)', maxHeight: '100%', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '16px 18px', background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#F5F7FA' }}>Crear competencia</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Solicitud para convertir tu cuenta en organizador.</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setOrganizerRequestOpen(false)}>Cerrar</button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
+              {organizerRequestMsg && <div className={`alert alert-${organizerRequestMsg.type}`} style={{ marginBottom: 12 }}>{organizerRequestMsg.text}</div>}
+              <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14, color: '#D7DEE8', fontSize: 13, lineHeight: 1.65, marginBottom: 14 }}>
+                FinalRep tomara una captura de tu perfil actual para revisar la solicitud. Debes tener completos cedula, email, celular, genero, fecha de nacimiento y ciudad o pais.
+              </div>
+              {!!organizerMissingFields.length && (
+                <div style={{ borderRadius: 16, border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.08)', padding: 14, color: '#F5F7FA', fontSize: 13, lineHeight: 1.6, marginBottom: 14 }}>
+                  Antes de enviar esta solicitud completa tu perfil. Faltan: {organizerMissingFields.join(', ')}.
+                </div>
+              )}
+              <form onSubmit={submitOrganizerApplication}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Evento que quieres hacer</label>
+                    <input value={organizerRequestForm.requested_event_name} onChange={e => setOrganizerRequestForm(f => ({ ...f, requested_event_name: e.target.value }))} placeholder="Nombre tentativo del evento" required />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Lugar estimado</label>
+                    <input value={organizerRequestForm.requested_event_location} onChange={e => setOrganizerRequestForm(f => ({ ...f, requested_event_location: e.target.value }))} placeholder="Ciudad, box o sede" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Fecha estimada</label>
+                    <input type="date" value={organizerRequestForm.requested_event_date} onChange={e => setOrganizerRequestForm(f => ({ ...f, requested_event_date: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                    <label>Que evento quieres hacer</label>
+                    <textarea rows={4} value={organizerRequestForm.requested_event_description} onChange={e => setOrganizerRequestForm(f => ({ ...f, requested_event_description: e.target.value }))} placeholder="Formato, categoria de atletas, volumen esperado, sede o enfoque del evento" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                    <label>Por que quieres ser organizador</label>
+                    <textarea rows={4} value={organizerRequestForm.why_organizer} onChange={e => setOrganizerRequestForm(f => ({ ...f, why_organizer: e.target.value }))} placeholder="Cuentanos por que quieres organizar dentro de FinalRep" required />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                    <label>Ya has hecho eventos</label>
+                    <textarea rows={4} value={organizerRequestForm.prior_events_summary} onChange={e => setOrganizerRequestForm(f => ({ ...f, prior_events_summary: e.target.value }))} placeholder="Describe eventos previos, resultados, volumen o experiencia organizando" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                    <label>Por que quieres hacerlo con FinalRep</label>
+                    <textarea rows={4} value={organizerRequestForm.why_finalrep} onChange={e => setOrganizerRequestForm(f => ({ ...f, why_finalrep: e.target.value }))} placeholder="Cuentanos por que elegiste FinalRep" required />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setOrganizerRequestOpen(false)}>Cancelar</button>
+                  <button type="submit" className="btn-primary" disabled={organizerRequestBusy || !!organizerMissingFields.length}>
+                    {organizerRequestBusy ? 'Enviando...' : 'Enviar solicitud'}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -1319,6 +1450,38 @@ export default function ParticipantProfile() {
             </div>
           </div>
         )}
+
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 18, border: '1px dashed rgba(170,178,192,0.22)', background: 'rgba(23,27,33,0.78)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: '#6B7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Acceso especial</div>
+              <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, marginTop: 6 }}>Crear competencia</div>
+              <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, marginTop: 6 }}>
+                Si quieres organizar un evento dentro de FinalRep, envia una solicitud con tu perfil completo y el contexto del evento.
+              </div>
+              {organizerBadge && (
+                <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 999, border: `1px solid ${organizerBadge.border}`, background: organizerBadge.background, color: organizerBadge.color, fontSize: 12, fontWeight: 800 }}>
+                  <Clock3 size={13} />
+                  Solicitud {organizerBadge.label.toLowerCase()}
+                </div>
+              )}
+              {organizerApplication?.review_note ? (
+                <div style={{ marginTop: 10, color: '#D7DEE8', fontSize: 13, lineHeight: 1.55 }}>
+                  Nota de revision: {organizerApplication.review_note}
+                </div>
+              ) : null}
+            </div>
+            {organizerEnabled ? (
+              <Link to="/organizer" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+                Ir al panel
+              </Link>
+            ) : canOpenOrganizerRequest ? (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setOrganizerRequestMsg(null); setOrganizerRequestOpen(true) }}>
+                Crear competencia
+              </button>
+            ) : null}
+          </div>
+        </div>
 
         {/* My results */}
         <div className="card" style={{ padding: isMobile ? 14 : 20 }}>

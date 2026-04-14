@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from access import get_owned_competition_ids, require_competition_access
+from access import get_owned_competition_ids, is_organizer_user, require_competition_access
 from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import MAX_TEAM_SIZE, get_session
 from models import (
@@ -311,7 +311,7 @@ def list_teams(
         query = query.where(Team.competition_id == competition_id)
     else:
         owned_ids = get_owned_competition_ids(session, user)
-        if user.get("role") == "organizer":
+        if is_organizer_user(user):
             query = query.where(Team.competition_id.in_(owned_ids))
     teams = session.exec(query).all()
     return [_with_members(session, t) for t in teams]

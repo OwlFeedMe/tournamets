@@ -101,10 +101,22 @@ def require_admin(user: dict = Depends(get_current_user)):
     return user
 
 
+def has_organizer_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if user.get("role") == Role.ORGANIZER:
+        return True
+    return bool(user.get("organizer_enabled"))
+
+
 def require_staff(user: dict = Depends(get_current_user)):
-    if user.get("role") not in Role.STAFF:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol staff")
-    return user
+    if user.get("role") == Role.ADMIN:
+        return user
+    if has_organizer_access(user):
+        enriched = dict(user)
+        enriched["staff_mode"] = Role.ORGANIZER
+        return enriched
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol staff")
 
 
 def require_organizer_or_admin(user: dict = Depends(get_current_user)):
@@ -112,7 +124,9 @@ def require_organizer_or_admin(user: dict = Depends(get_current_user)):
 
 
 def is_end_user(user: dict) -> bool:
-    return user.get("role") in Role.END_USER_ROLES
+    if user.get("role") in Role.END_USER_ROLES:
+        return True
+    return has_organizer_access(user) and get_effective_participant_id(user) is not None
 
 
 def get_effective_participant_id(user: dict) -> Optional[int]:

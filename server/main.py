@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from database import init_db
-from routers import auth, participants, competitions, results, leaderboard, teams, enrollments, categories_phases, schedule, finance
+from routers import auth, participants, competitions, results, leaderboard, teams, enrollments, categories_phases, schedule, finance, organizer_applications
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
@@ -36,6 +36,7 @@ app.include_router(enrollments.router)
 app.include_router(categories_phases.router)
 app.include_router(schedule.router)
 app.include_router(finance.router)
+app.include_router(organizer_applications.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 

@@ -16,8 +16,8 @@ import qrcode
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from access import get_owned_competition_ids, require_competition_access
-from auth import get_current_user_optional, require_staff
+from access import get_owned_competition_ids, is_organizer_user, require_competition_access
+from auth import get_current_user_optional, has_organizer_access, require_staff
 from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 from phase_status import compute_phase_status_map
@@ -138,6 +138,62 @@ def _serialize_schedule_items(payload: dict):
             "note": note,
         })
     payload["schedule_items"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _serialize_landing_sections(payload: dict):
+    if "landing_sections" not in payload:
+        return
+    raw = payload.get("landing_sections")
+    if not raw or not isinstance(raw, dict):
+        payload["landing_sections"] = None
+        return
+
+    experience = raw.get("experience") if isinstance(raw.get("experience"), dict) else {}
+    format_section = raw.get("format") if isinstance(raw.get("format"), dict) else {}
+    highlights_section = raw.get("highlights") if isinstance(raw.get("highlights"), dict) else {}
+
+    def _clean_items(items, fallback_prefix):
+        normalized = []
+        for idx, item in enumerate(items or []):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            body = str(item.get("body") or "").strip()
+            if not title and not body:
+                continue
+            normalized.append({
+                "id": str(item.get("id") or f"{fallback_prefix}_{idx + 1}").strip() or f"{fallback_prefix}_{idx + 1}",
+                "title": title or f"Item {idx + 1}",
+                "body": body or None,
+            })
+        return normalized
+
+    normalized = {
+        "experience": {
+            "title": str(experience.get("title") or "").strip() or None,
+            "intro": str(experience.get("intro") or "").strip() or None,
+            "items": _clean_items(experience.get("items"), "exp"),
+        },
+        "format": {
+            "title": str(format_section.get("title") or "").strip() or None,
+            "items": _clean_items(format_section.get("items"), "fmt"),
+        },
+        "highlights": {
+            "title": str(highlights_section.get("title") or "").strip() or None,
+            "items": _clean_items(highlights_section.get("items"), "hl"),
+        },
+    }
+
+    has_content = (
+        normalized["experience"]["title"]
+        or normalized["experience"]["intro"]
+        or normalized["experience"]["items"]
+        or normalized["format"]["title"]
+        or normalized["format"]["items"]
+        or normalized["highlights"]["title"]
+        or normalized["highlights"]["items"]
+    )
+    payload["landing_sections"] = json.dumps(normalized, ensure_ascii=False) if has_content else None
 
 
 def _serialize_social_links(payload: dict):
@@ -404,12 +460,16 @@ def _leaderboard_public_url(competition_id: int) -> str:
 
 @router.get("", response_model=List[Competition])
 def list_competitions(
+    scope: str | None = None,
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
     query = select(Competition).order_by(Competition.created_at.desc())
-    owned_ids = get_owned_competition_ids(session, user)
-    if user and user.get("role") == "organizer":
+    scoped_user = user
+    if scope == "owned" and user and user.get("role") != "admin" and has_organizer_access(user):
+        scoped_user = {**user, "staff_mode": "organizer"}
+    owned_ids = get_owned_competition_ids(session, scoped_user)
+    if scope == "owned" and is_organizer_user(scoped_user):
         query = query.where(Competition.id.in_(owned_ids))
     return session.exec(query).all()
 
@@ -593,9 +653,10 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
+    _serialize_landing_sections(payload)
     _serialize_social_links(payload)
     _serialize_enrollment_questions(payload)
-    if user.get("role") == "organizer":
+    if is_organizer_user(user):
         payload["organizer_user_id"] = user.get("app_user_id")
     competition = Competition.model_validate(payload)
     session.add(competition)
@@ -642,6 +703,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)
+    _serialize_landing_sections(data)
     _serialize_social_links(data)
     _serialize_enrollment_questions(data)
     for field, value in data.items():

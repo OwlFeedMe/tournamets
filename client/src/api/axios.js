@@ -22,6 +22,7 @@ api.interceptors.response.use(
           localStorage.removeItem('role')
           localStorage.removeItem('nombre')
           localStorage.removeItem('participant_id')
+          localStorage.removeItem('organizer_enabled')
           window.dispatchEvent(new Event('openarena:session-changed'))
           window.location.href = '/login'
         }, 300)

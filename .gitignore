@@ -38,6 +38,11 @@ build/
 *.log
 npm-debug.log*
 
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
 # Test artifacts
 test/*.xlsx
 test/*.pdf

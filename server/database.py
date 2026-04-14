@@ -13,11 +13,13 @@ load_dotenv()
 
 MAX_TEAM_SIZE = 10
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./loyalty_race.db")
+DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL es obligatorio y debe apuntar a PostgreSQL.")
+if not DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://")):
+    raise RuntimeError("Solo se admite PostgreSQL en DATABASE_URL.")
 
 engine_options = {"echo": False}
-if DATABASE_URL.startswith("sqlite"):
-    engine_options["connect_args"] = {"check_same_thread": False}
 
 engine = create_engine(DATABASE_URL, **engine_options)
 
@@ -34,6 +36,7 @@ def _ensure_app_user(
     display_name: str,
     role: str,
     password: str,
+    organizer_enabled: int = 0,
     participant_id: int | None = None,
 ):
     existing = session.exec(select(AppUser).where(AppUser.username == username)).first()
@@ -44,6 +47,9 @@ def _ensure_app_user(
             changed = True
         if existing.role != role:
             existing.role = role
+            changed = True
+        if int(existing.organizer_enabled or 0) != int(organizer_enabled or 0):
+            existing.organizer_enabled = int(organizer_enabled or 0)
             changed = True
         if participant_id is not None and existing.participant_id != participant_id:
             existing.participant_id = participant_id
@@ -62,6 +68,7 @@ def _ensure_app_user(
             display_name=display_name,
             role=role,
             password_hash=hash_password(password),
+            organizer_enabled=int(organizer_enabled or 0),
             participant_id=participant_id,
             is_active=1,
         )
@@ -104,6 +111,7 @@ def init_db():
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS competition_start TIMESTAMPTZ",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS competition_end TIMESTAMPTZ",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS schedule_items TEXT",
+        "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS landing_sections TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS contact_phone TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS website_url TEXT",
         "ALTER TABLE competitions ADD COLUMN IF NOT EXISTS social_links TEXT",
@@ -238,10 +246,14 @@ def init_db():
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name TEXT",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password_hash TEXT",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS organizer_enabled INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1",
         "UPDATE participants SET genero = sexo WHERE genero IS NULL AND sexo IS NOT NULL",
         "UPDATE app_users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''",
+        "UPDATE app_users SET organizer_enabled = 0 WHERE organizer_enabled IS NULL",
+        "UPDATE app_users SET organizer_enabled = 1 WHERE role = 'organizer'",
+        "UPDATE app_users SET role = 'user' WHERE role = 'organizer' AND participant_id IS NOT NULL",
         "UPDATE app_users SET is_active = 1 WHERE is_active IS NULL",
         "UPDATE competition_participants SET payment_base_amount = 0 WHERE payment_base_amount IS NULL OR payment_base_amount < 0",
         "UPDATE competition_participants SET payment_platform_fee = 0 WHERE payment_platform_fee IS NULL OR payment_platform_fee < 0",
@@ -252,6 +264,30 @@ def init_db():
         "ALTER TABLE competition_payment_intents ADD COLUMN IF NOT EXISTS payment_platform_net INTEGER NOT NULL DEFAULT 0",
         "UPDATE competition_payment_intents SET payment_processor_fee = CASE WHEN COALESCE(payment_amount_total, 0) > 0 THEN CAST(ROUND(COALESCE(payment_amount_total, 0) * 0.0269) AS INTEGER) + 300 ELSE 0 END WHERE payment_processor_fee IS NULL OR payment_processor_fee < 0 OR payment_processor_fee = 0",
         "UPDATE competition_payment_intents SET payment_platform_net = COALESCE(payment_platform_fee, 0) - COALESCE(payment_processor_fee, 0) WHERE payment_platform_net IS NULL OR payment_platform_net = 0",
+        """
+        CREATE TABLE IF NOT EXISTS organizer_applications (
+            id SERIAL PRIMARY KEY,
+            app_user_id INTEGER NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_event_name TEXT NOT NULL,
+            requested_event_location TEXT,
+            requested_event_date DATE,
+            requested_event_description TEXT,
+            why_organizer TEXT NOT NULL,
+            prior_events_summary TEXT,
+            why_finalrep TEXT NOT NULL,
+            profile_snapshot_json TEXT NOT NULL,
+            review_note TEXT,
+            reviewed_by_user_id INTEGER REFERENCES app_users(id) ON DELETE SET NULL,
+            reviewed_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_organizer_applications_app_user_id ON organizer_applications(app_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_organizer_applications_participant_id ON organizer_applications(participant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_organizer_applications_status ON organizer_applications(status)",
     ]
     with engine.connect() as conn:
         for sql in _migrations:
@@ -287,6 +323,7 @@ def init_db():
                 display_name=organizer_display_name,
                 role=Role.ORGANIZER,
                 password=organizer_password,
+                organizer_enabled=1,
                 participant_id=organizer_participant_id,
             )
 
@@ -333,6 +370,7 @@ def init_db():
                     display_name=display_name,
                     role=Role.USER,
                     password_hash=hash_password(participant.cedula),
+                    organizer_enabled=0,
                     participant_id=participant.id,
                     is_active=1,
                 )

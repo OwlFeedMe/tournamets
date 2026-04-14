@@ -48,10 +48,10 @@ function RequireSession() {
 }
 
 function RoleGate({ allowedRoles, children }) {
-  const { session, ready } = useAuth()
+  const { session, ready, canAccess } = useAuth()
   if (!ready) return null
   if (!session) return <Navigate to="/login" replace />
-  if (allowedRoles.length && !allowedRoles.includes(session.role)) {
+  if (allowedRoles.length && !canAccess(allowedRoles)) {
     return <Navigate to={getHomePath(session.role)} replace />
   }
   return children
