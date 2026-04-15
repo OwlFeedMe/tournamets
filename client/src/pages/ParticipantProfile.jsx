@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { useAuth } from '../context/AuthContext'
+import { formatMissingParticipantProfileFields } from '../utils/participantProfile'
 import {
   Trophy, PlusCircle, Medal,
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3,
@@ -536,6 +537,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ParticipantProfile() {
+  const location = useLocation()
   const { participantId, displayName, organizerEnabled } = useAuth()
   const nombre = displayName || 'Participante'
 
@@ -956,6 +958,9 @@ export default function ParticipantProfile() {
   const profilePhotoUrl = resolveProfilePhoto(myProfile?.profile_photo_url)
   const organizerBadge = organizerApplication ? organizerApplicationBadge(organizerApplication.status) : null
   const canOpenOrganizerRequest = !organizerApplication || organizerApplication.status === 'rejected'
+  const profileRequirementNotice = location.state?.profileRequiredForEnrollment
+    ? `Completa tu perfil antes de participar${location.state?.competitionName ? ` en ${location.state.competitionName}` : ''}. Faltan: ${formatMissingParticipantProfileFields(location.state?.missingFields || [])}.`
+    : ''
 
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
@@ -1124,6 +1129,11 @@ export default function ParticipantProfile() {
       )}
 
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
+        {profileRequirementNotice ? (
+          <div style={{ marginBottom: 16, borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+            {profileRequirementNotice}
+          </div>
+        ) : null}
 
         {/* Profile hero */}
         <div style={{

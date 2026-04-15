@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import { getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
@@ -409,7 +410,7 @@ export default function Home() {
     [featuredCompetitions, query]
   )
 
-  const handleParticipate = (competition) => {
+  const handleParticipate = async (competition) => {
     if (!session) {
       navigate('/login')
       return
@@ -420,6 +421,29 @@ export default function Home() {
     }
     if (enrollmentByComp[competition.id] && enrollmentByComp[competition.id] !== 'rechazado') return
     if (!competition.enrollment_open) return
+    try {
+      const { data } = await api.get('/participants/me')
+      const missingFields = getMissingParticipantProfileFields(data)
+      if (missingFields.length) {
+        navigate('/profile', {
+          state: {
+            profileRequiredForEnrollment: true,
+            missingFields,
+            competitionName: competition.nombre || '',
+          },
+        })
+        return
+      }
+    } catch {
+      navigate('/profile', {
+        state: {
+          profileRequiredForEnrollment: true,
+          missingFields: ['perfil'],
+          competitionName: competition.nombre || '',
+        },
+      })
+      return
+    }
     navigate(`/competitions/${competition.id}/register`)
   }
 

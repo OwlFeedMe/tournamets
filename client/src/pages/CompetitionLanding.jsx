@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, CalendarDays, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
+import { getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 function buildPageBackground(theme) {
   return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.18)}, transparent 28%), radial-gradient(circle at 85% 20%, ${hexToRgba(theme.accent, 0.12)}, transparent 24%), ${theme.background}`
@@ -354,7 +355,9 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
 
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
+  const navigate = useNavigate()
   const { session, role, participantId } = useAuth()
+  const [ctaBusy, setCtaBusy] = useState(false)
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -483,11 +486,63 @@ export default function CompetitionLanding() {
   const experienceItems = landingSections?.experience?.items || []
   const formatItems = landingSections?.format?.items || []
   const highlightItems = landingSections?.highlights?.items || []
+  const hasExperienceSection = !!(
+    landingSections?.experience?.title ||
+    landingSections?.experience?.intro ||
+    experienceItems.length
+  )
+  const hasFormatSection = !!(
+    landingSections?.format?.title ||
+    formatItems.length
+  )
+  const hasHighlightSection = !!(
+    landingSections?.highlights?.title ||
+    highlightItems.length
+  )
+  const hasRightNarrativeColumn = hasFormatSection || hasHighlightSection
   const heroHighlights = [
     `${stats.fases_total || phases.length || 0} eventos`,
     `${stats.categorias_total || categories.length || 0} categorias`,
     competitionMode.label,
   ]
+
+  const handleEnrollmentClick = async () => {
+    if (!session) {
+      navigate(secondaryCtaHref)
+      return
+    }
+    if (role !== 'user') {
+      navigate(getHomePath(role))
+      return
+    }
+    if (enrollmentButton.disabled || !competition?.enrollment_open) return
+    setCtaBusy(true)
+    try {
+      const { data } = await api.get('/participants/me')
+      const missingFields = getMissingParticipantProfileFields(data)
+      if (missingFields.length) {
+        navigate('/profile', {
+          state: {
+            profileRequiredForEnrollment: true,
+            missingFields,
+            competitionName: competition?.nombre || '',
+          },
+        })
+        return
+      }
+      navigate(registerHref)
+    } catch {
+      navigate('/profile', {
+        state: {
+          profileRequiredForEnrollment: true,
+          missingFields: ['perfil'],
+          competitionName: competition?.nombre || '',
+        },
+      })
+    } finally {
+      setCtaBusy(false)
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
@@ -663,31 +718,34 @@ export default function CompetitionLanding() {
                       Mi cronograma
                     </Link>
                   ) : null}
-                  <Link
-                    to={secondaryCtaHref}
+                  <button
+                    type="button"
+                    onClick={handleEnrollmentClick}
+                    disabled={enrollmentButton.disabled || ctaBusy}
                     style={{
-                      textDecoration: 'none',
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 8,
                       padding: '12px 16px',
                       borderRadius: 14,
+                      cursor: enrollmentButton.disabled || ctaBusy ? 'not-allowed' : 'pointer',
                       border: `1px solid ${theme.border}`,
                       background: !enrollmentButton.disabled ? hexToRgba(theme.background, 0.36) : hexToRgba(theme.background, 0.62),
                       color: theme.text,
                       fontWeight: 700,
-                      pointerEvents: enrollmentButton.disabled ? 'none' : 'auto',
+                      pointerEvents: enrollmentButton.disabled || ctaBusy ? 'none' : 'auto',
                       opacity: enrollmentButton.disabled ? 0.65 : 1,
+                      appearance: 'none',
                     }}
                   >
-                    {secondaryCtaLabel}
-                  </Link>
+                    {ctaBusy ? 'Validando perfil...' : secondaryCtaLabel}
+                  </button>
                 </div>
               </div>
             </section>
 
-            {landingSections && (experienceItems.length || formatItems.length || highlightItems.length || landingSections.experience?.title || landingSections.experience?.intro || landingSections.format?.title || landingSections.highlights?.title) ? (
-              <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 14, marginBottom: 18 }}>
+            {landingSections && (hasExperienceSection || hasFormatSection || hasHighlightSection) ? (
+              <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (hasRightNarrativeColumn ? '1.2fr 0.8fr' : '1fr'), gap: 14, marginBottom: 18 }}>
                 <div style={{ borderRadius: 24, border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
                   <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                     {landingSections.experience?.title ? 'Experiencia' : 'Portada'}
@@ -710,7 +768,8 @@ export default function CompetitionLanding() {
                   ) : null}
                 </div>
 
-                <div style={{ display: 'grid', gap: 14 }}>
+                {hasRightNarrativeColumn ? (
+                  <div style={{ display: 'grid', gap: 14 }}>
                   {(landingSections.format?.title || formatItems.length) ? (
                     <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                       <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase' }}>
@@ -742,7 +801,8 @@ export default function CompetitionLanding() {
                       </div>
                     </div>
                   ) : null}
-                </div>
+                  </div>
+                ) : null}
               </section>
             ) : null}
 

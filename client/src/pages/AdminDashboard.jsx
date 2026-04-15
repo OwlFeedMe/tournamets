@@ -3,7 +3,7 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
-import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
@@ -3463,7 +3463,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', color: '#D7FFFA', fontSize: 11, fontWeight: 700 }}>
+                <Info size={12} />
+                No agregues preguntas con informacion que ya existe en el perfil del atleta.
+              </span>
+            </div>
             <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen para validar informacion del atleta.</div>
           </div>
           <div style={{ display: 'grid', gap: 6 }}>

@@ -55,6 +55,20 @@ BOLD_SECRET_KEY=tu_llave_secreta
 BOLD_WEBHOOK_TEST_MODE=0
 ```
 
+## Deploy automatico
+
+`deploy.sh` levanta produccion con `docker-compose.prod.yml` y, si existe, tambien carga `docker-compose.server.local.yml`.
+
+`deploy.auto.sh` hace:
+- `git fetch origin main`
+- compara `HEAD` vs `origin/main`
+- `git pull --ff-only` si hay cambios
+- ejecuta `./deploy.sh`
+
+En servidor se puede programar con systemd usando:
+- `ops/finalrep-autodeploy.service`
+- `ops/finalrep-autodeploy.timer`
+
 ## Rutas de la app
 
 | Ruta | Descripcion |

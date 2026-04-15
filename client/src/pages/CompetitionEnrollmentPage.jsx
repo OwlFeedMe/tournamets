@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
+import { formatMissingParticipantProfileFields, getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
@@ -266,6 +267,7 @@ export default function CompetitionEnrollmentPage() {
   const [competitionTermsAccepted, setCompetitionTermsAccepted] = useState(false)
   const [appTermsAccepted, setAppTermsAccepted] = useState(false)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [profileMissingFields, setProfileMissingFields] = useState([])
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -283,12 +285,14 @@ export default function CompetitionEnrollmentPage() {
       role === 'user' && participantId
         ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
-    ]).then(([publicRes, categoriesRes, mineRes]) => {
+      role === 'user' ? api.get('/participants/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+    ]).then(([publicRes, categoriesRes, mineRes, profileRes]) => {
       if (!active) return
       const publicPayload = publicRes.data || null
       const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
       const mine = Array.isArray(mineRes.data) ? mineRes.data : []
       const mineRecord = mine.find(item => String(item.id) === String(competitionId))
+      const missingFields = role === 'user' ? getMissingParticipantProfileFields(profileRes.data) : []
       setPayload(publicPayload)
       setCategories(categoryItems)
       setSelectedCategory(mineRecord?.enrollment_categoria || categoryItems[0]?.nombre || '')
@@ -297,6 +301,7 @@ export default function CompetitionEnrollmentPage() {
       setPaymentStatus(mineRecord?.payment_status || null)
       setPaymentReference(mineRecord?.payment_reference || '')
       setPaymentTransactionId(mineRecord?.payment_transaction_id || '')
+      setProfileMissingFields(missingFields)
     }).catch((err) => {
       if (!active) return
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la informacion de inscripcion' })
@@ -319,7 +324,8 @@ export default function CompetitionEnrollmentPage() {
   const userCanSubmit = !!session && role === 'user'
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente'
-  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit
+  const profileIncomplete = role === 'user' && profileMissingFields.length > 0
+  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit || profileIncomplete
 
   useEffect(() => {
     setSubmitted(enrollmentState === 'pendiente' || enrollmentState === 'confirmado')
@@ -622,7 +628,7 @@ export default function CompetitionEnrollmentPage() {
                     )}
                   </div>
                 ))}
-                {!questions.length ? <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene preguntas adicionales.</div> : null}
+                {!questions.length ? <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene preguntas adicionales. Usaremos la informacion de tu perfil para completar la solicitud.</div> : null}
               </div>
             </StepCard>
           ) : null}
@@ -739,6 +745,11 @@ export default function CompetitionEnrollmentPage() {
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
+                  {profileIncomplete ? (
+                    <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+                      Completa tu perfil antes de continuar con esta inscripcion. Faltan: {formatMissingParticipantProfileFields(profileMissingFields)}.
+                    </div>
+                  ) : null}
                   {enrollmentStateLabel(enrollmentState, paymentStatus) ? (
                     <div
                       style={{
@@ -761,6 +772,11 @@ export default function CompetitionEnrollmentPage() {
                   ) : null}
                   {enrollmentClosed ? <div style={{ borderRadius: 16, border: '1px solid rgba(126,135,150,0.24)', background: 'rgba(126,135,150,0.08)', padding: 14, color: '#D7DEE8', fontSize: 14 }}>Las inscripciones estan cerradas en este momento.</div> : null}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    {profileIncomplete ? (
+                      <button type="button" className="btn-primary" onClick={() => navigate('/profile')}>
+                        Completar perfil
+                      </button>
+                    ) : null}
                     <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || syncingPayment || checkoutLoading}>Anterior</button>
                     {currentStep < 4 ? (
                       <button type="button" className="btn-primary" onClick={handleNextStep} disabled={submissionBlocked || syncingPayment || checkoutLoading || !!uploadingQuestionId}>Siguiente</button>
