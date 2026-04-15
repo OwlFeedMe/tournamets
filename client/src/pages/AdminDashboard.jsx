@@ -7206,6 +7206,17 @@ function CompetitionsTab() {
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  style={isMobile ? { width: '100%' } : undefined}
+                  onClick={() => {
+                    if (!selectedCompetition?.id || typeof window === 'undefined') return
+                    window.open(`/competitions/${selectedCompetition.id}`, '_blank', 'noopener,noreferrer')
+                  }}
+                >
+                  Vista previa
+                </button>
+                <button
                   className="btn-primary btn-sm"
                   style={isMobile ? { width: '100%' } : undefined}
                   disabled={launchProgress < 100}
@@ -7241,6 +7252,9 @@ function CompetitionsTab() {
                 >
                   {selectedCompetition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}
                 </button>
+              </div>
+              <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                Vista previa abre la pagina del evento para revisar textos, imagenes y estados antes de publicar.
               </div>
               {!selectedCompetition.activa && (
                 <div style={{ color: '#AAB2C0', fontSize: 13 }}>
