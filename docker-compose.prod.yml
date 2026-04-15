@@ -5,7 +5,7 @@ services:
     container_name: loyalty-tournament-backend
     restart: unless-stopped
     env_file:
-      - .env.production
+      - ./server/.env
     command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
     volumes:
       - ./server/uploads:/app/uploads
