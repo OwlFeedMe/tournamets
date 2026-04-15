@@ -2,6 +2,28 @@ let countriesCache = null
 let citiesDataPromise = null
 const citiesCache = new Map()
 
+function normalizeCityRow(row) {
+  if (!row) return null
+  if (Array.isArray(row)) {
+    const [name, countryCode] = row
+    if (!name || !countryCode) return null
+    return {
+      name: String(name).trim(),
+      countryCode: String(countryCode).trim().toUpperCase(),
+    }
+  }
+  if (typeof row === 'object') {
+    const name = row.name || row.city || row.cityName
+    const countryCode = row.countryCode || row.country_code || row.isoCode
+    if (!name || !countryCode) return null
+    return {
+      name: String(name).trim(),
+      countryCode: String(countryCode).trim().toUpperCase(),
+    }
+  }
+  return null
+}
+
 async function loadJson(url) {
   const response = await fetch(url)
   if (!response.ok) {
@@ -37,15 +59,17 @@ export async function loadCountries() {
 
 export async function loadCitiesByCountry(countryCode) {
   if (!countryCode) return []
-  if (citiesCache.has(countryCode)) return citiesCache.get(countryCode)
+  const normalizedCountryCode = String(countryCode).trim().toUpperCase()
+  if (citiesCache.has(normalizedCountryCode)) return citiesCache.get(normalizedCountryCode)
 
   const cityRows = await loadCitiesData()
   const cities = cityRows
-    .filter((city) => city.countryCode === countryCode)
+    .map(normalizeCityRow)
+    .filter((city) => city?.countryCode === normalizedCountryCode)
     .map((city) => city.name)
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, 'es'))
-  citiesCache.set(countryCode, cities)
+  citiesCache.set(normalizedCountryCode, cities)
   return cities
 }
 

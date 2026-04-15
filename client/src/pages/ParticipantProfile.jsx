@@ -589,14 +589,15 @@ export default function ParticipantProfile() {
   const displayGenero = myProfile?.genero || myProfile?.sexo || '-'
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false)
   const photoInputRef = useRef(null)
   const countryNameByCode = useMemo(() => Object.fromEntries(countries.map(c => [c.code, c.name])), [countries])
   const countryCodeByName = useMemo(() => Object.fromEntries(countries.map(c => [c.name.toLowerCase(), c.code])), [countries])
   const cityOptions = useMemo(() => {
     const list = allCities
     const query = (editForm.city || '').trim().toLowerCase()
-    if (!query) return list.slice(0, 150)
-    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
+    if (!query) return list.slice(0, 5)
+    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 5)
   }, [allCities, editForm.city])
 
   useEffect(() => {
@@ -649,10 +650,17 @@ export default function ParticipantProfile() {
   useEffect(() => {
     if (!editForm.countryCode) {
       setAllCities([])
+      setShowCitySuggestions(false)
       return
     }
     loadCitiesByCountry(editForm.countryCode).then(setAllCities).catch(() => setAllCities([]))
   }, [editForm.countryCode])
+
+  useEffect(() => {
+    if (!showEditProfile) {
+      setShowCitySuggestions(false)
+    }
+  }, [showEditProfile])
 
   const loadResults = () => api.get('/results').then(r => setResults(r.data))
   const loadMyCompetitions = async () => { const res = await api.get(`/participants/${participantId}/competitions`); setMyComps(res.data) }
@@ -1263,21 +1271,63 @@ export default function ParticipantProfile() {
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
                   <label>Ciudad / Pais</label>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    <select value={editForm.countryCode || ''} onChange={e => setEditForm(f => ({ ...f, countryCode: e.target.value, city: '' }))}>
+                    <select value={editForm.countryCode || ''} onChange={e => { setShowCitySuggestions(false); setEditForm(f => ({ ...f, countryCode: e.target.value, city: '' })) }}>
                       <option value="">Selecciona pais</option>
                       {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
                     </select>
-                    <div>
+                    <div style={{ position: 'relative' }}>
                       <input
-                        list="participant-city-options"
                         value={editForm.city || ''}
-                        onChange={e => setEditForm(f => ({ ...f, city: e.target.value }))}
+                        onChange={e => {
+                          setEditForm(f => ({ ...f, city: e.target.value }))
+                          setShowCitySuggestions(true)
+                        }}
+                        onFocus={() => {
+                          if (editForm.countryCode) setShowCitySuggestions(true)
+                        }}
+                        onBlur={() => {
+                          window.setTimeout(() => setShowCitySuggestions(false), 120)
+                        }}
                         placeholder={editForm.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
                         disabled={!editForm.countryCode}
                       />
-                      <datalist id="participant-city-options">
-                        {cityOptions.map(city => <option key={city} value={city} />)}
-                      </datalist>
+                      {showCitySuggestions && editForm.countryCode && cityOptions.length > 0 ? (
+                        <div style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          left: 0,
+                          right: 0,
+                          zIndex: 30,
+                          background: '#171B21',
+                          border: '1px solid #252A33',
+                          borderRadius: 8,
+                          boxShadow: '0 16px 32px rgba(0,0,0,0.28)',
+                          overflow: 'hidden',
+                        }}>
+                          {cityOptions.map(city => (
+                            <button
+                              key={city}
+                              type="button"
+                              onMouseDown={() => {
+                                setEditForm(f => ({ ...f, city }))
+                                setShowCitySuggestions(false)
+                              }}
+                              style={{
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '10px 12px',
+                                border: 'none',
+                                borderBottom: city === cityOptions[cityOptions.length - 1] ? 'none' : '1px solid #252A33',
+                                background: '#171B21',
+                                color: '#F5F7FA',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              {city}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
