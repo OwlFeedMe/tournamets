@@ -27,6 +27,6 @@ if [[ "$LOCAL_SHA" == "$REMOTE_SHA" ]]; then
 fi
 
 echo "$LOG_PREFIX new commit $LOCAL_SHA -> $REMOTE_SHA"
-git pull --ff-only "$REMOTE_NAME" "$BRANCH_NAME"
+git reset --hard "$REMOTE_SHA"
 "$ROOT_DIR/deploy.sh"
 echo "$LOG_PREFIX deploy done"
