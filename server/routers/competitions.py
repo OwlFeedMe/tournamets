@@ -470,6 +470,9 @@ def list_competitions(
     user=Depends(get_current_user_optional),
 ):
     query = select(Competition).order_by(Competition.created_at.desc())
+    if scope == "public":
+        query = query.where(Competition.activa == 1)
+        return session.exec(query).all()
     scoped_user = user
     if scope == "owned" and user and user.get("role") != "admin" and has_organizer_access(user):
         scoped_user = {**user, "staff_mode": "organizer"}

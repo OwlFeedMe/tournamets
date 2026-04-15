@@ -1,10 +1,8 @@
-import { useNavigate } from 'react-router-dom'
-import { Crown, LayoutDashboard, LogOut, Trophy } from 'lucide-react'
+import { Crown, LayoutDashboard, LogOut } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
 
 export function RolePlaceholder({ role }) {
-  const navigate = useNavigate()
   const { displayName, signOut } = useAuth()
 
   const meta =
@@ -56,9 +54,6 @@ export function RolePlaceholder({ role }) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/leaderboard')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Trophy size={14} /> Leaderboard
-            </button>
             <button type="button" className="btn-secondary btn-sm" onClick={signOut} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <LogOut size={14} /> Salir
             </button>

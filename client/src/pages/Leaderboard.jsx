@@ -571,7 +571,7 @@ export default function Leaderboard() {
   const loggedNombre = displayName || ''
 
   useEffect(() => {
-    api.get('/competitions').then(r => {
+    api.get('/competitions?scope=public').then(r => {
       setCompetitions(r.data)
       if (!selectedComp && r.data.length) {
         const active = r.data.find(c => c.activa) || r.data[0]

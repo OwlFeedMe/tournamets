@@ -83,7 +83,7 @@ function useCompetitions() {
 
   useEffect(() => {
     let mounted = true
-    api.get('/competitions')
+    api.get('/competitions?scope=public')
       .then(({ data }) => {
         if (!mounted) return
         setCompetitions(Array.isArray(data) ? data : [])

@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, House, LogIn, LogOut, Trophy, UserCircle2 } from 'lucide-react'
+import { Bell, CalendarDays, House, LogIn, LogOut, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
@@ -7,26 +7,22 @@ const NAV_ITEMS = {
   public: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
   ],
   user: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
     { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
     { label: 'Perfil', icon: UserCircle2, to: '/profile' },
   ],
   organizer: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
     { label: 'Panel', icon: UserCircle2, to: '/organizer' },
   ],
   admin: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
     { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
     { label: 'Perfil', icon: UserCircle2, to: '/profile' },
     { label: 'Admin', icon: UserCircle2, to: '/admin' },
   ],
@@ -37,7 +33,6 @@ function isActivePath(pathname, target) {
   if (target === '/') return pathname === '/'
   if (target === '/events') return pathname.startsWith('/events')
   if (target === '/my-events') return pathname.startsWith('/my-events')
-  if (target === '/leaderboard') return pathname.startsWith('/leaderboard')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')
   if (target === '/profile') return pathname.startsWith('/profile')
@@ -53,9 +48,9 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
     if (!session) return NAV_ITEMS.public
     if (session.participantId && session.organizerEnabled && session.role !== 'admin') {
       return [
-        ...NAV_ITEMS.user.slice(0, 4),
+        ...NAV_ITEMS.user.slice(0, 3),
         { label: 'Panel', icon: UserCircle2, to: '/organizer' },
-        NAV_ITEMS.user[4],
+        NAV_ITEMS.user[3],
       ]
     }
     return NAV_ITEMS[session.role] || NAV_ITEMS.user

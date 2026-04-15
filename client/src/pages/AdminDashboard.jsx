@@ -306,14 +306,18 @@ function getPhaseModeSummary(phase) {
   const formatLabel = activityCount === 1 ? '1 actividad' : `${activityCount} actividades`
   const measurement = PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)] || normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
   const winner = normalizeWinnerRule(phase?.winner_rule, phaseTypeFromPhase(phase)) === 'lower_wins' ? 'Gana menor' : 'Gana mayor'
-  const teamMode = (phase?.team_result_mode || 'sum_two') === 'single_member'
-    ? 'Equipo: uno'
-    : (phase?.team_result_mode || 'sum_two') === 'total'
-      ? 'Equipo: total'
-      : 'Equipo: ambos'
   const resultCount = Number(phase?.allow_multiple_results) ? 'Multiples' : 'Unico'
   const status = phase?.estado || 'pendiente'
-  return [formatLabel, measurement, winner, teamMode, resultCount, status]
+  const summary = [formatLabel, measurement, winner, resultCount, status]
+  if ((phase?.modality || 'individual') === 'teams') {
+    const teamMode = (phase?.team_result_mode || 'sum_two') === 'single_member'
+      ? 'Equipo: uno'
+      : (phase?.team_result_mode || 'sum_two') === 'total'
+        ? 'Equipo: total'
+        : 'Equipo: ambos'
+    summary.splice(3, 0, teamMode)
+  }
+  return summary
 }
 
 function ImagePreviewModal({ item, onClose }) {
@@ -2312,6 +2316,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     basics: false,
     registration: false,
   })
+  const [showAddPhaseModal, setShowAddPhaseModal] = useState(false)
+  const [editingPhaseId, setEditingPhaseId] = useState(null)
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -2399,6 +2405,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       basics: false,
       registration: false,
     })
+    setShowAddPhaseModal(false)
+    setEditingPhaseId(null)
   }, [competition?.id, isEdit])
   const previewTheme = useMemo(() => resolveCompetitionTheme(form), [form])
 
@@ -2459,7 +2467,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   const addPhase = () => {
     const nombre = newPhase.nombre.trim()
-    if (!nombre) return
+    if (!nombre) return false
     setPhases(prev => [...prev, {
       id: `new-phase-${Date.now()}`,
       modality: newPhase.modality || 'individual',
@@ -2474,6 +2482,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       end_at: newPhase.end_at || '',
     }])
     setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' }))
+    return true
   }
 
   const removePhase = (id) => {
@@ -2892,6 +2901,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const removeScheduleItem = (id) => {
     setScheduleItems(prev => prev.filter(item => item.id !== id))
   }
+  const visibleScheduleItems = useMemo(
+    () => scheduleItems.filter(item => item.label || item.start_at || item.end_at || item.note || item.phase_id),
+    [scheduleItems]
+  )
+  const visibleScheduleSummary = useMemo(() => {
+    if (!visibleScheduleItems.length) return 'Sin fechas visibles.'
+    if (visibleScheduleItems.length === 1) return '1 fecha visible configurada.'
+    return `${visibleScheduleItems.length} fechas visibles configuradas.`
+  }, [visibleScheduleItems])
   const updateSocialLink = (id, field, value) => {
     setSocialLinks(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
   }
@@ -3432,7 +3450,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </button>
           </div>
           ) : (
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin fechas visibles.</div>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{visibleScheduleSummary}</div>
           )}
         </div>
 
@@ -3577,85 +3595,75 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               <h4 style={sectionTitleStyle}>Bloques y eventos</h4>
               <div style={sectionHintStyle}>Agrega cada prueba una por una. Si algo es opcional, dejalo vacio y ajustalo despues.</div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1fr 1fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
-              <input value={newPhase.block_name || ''} onChange={e => setNewPhase(p => ({ ...p, block_name: e.target.value }))} placeholder="Bloque. Ej: Workout 1" />
-              <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Bloque o evento" />
-              <select value={newPhase.modality} onChange={e => setNewPhase(p => ({ ...p, modality: e.target.value }))}>
-                <option value="individual">Individual</option>
-                <option value="teams" disabled={!form.team_enabled}>Equipos</option>
-              </select>
-              <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
-                {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-              </select>
-              <select value={newPhase.team_result_mode} onChange={e => setNewPhase(p => ({ ...p, team_result_mode: e.target.value }))}>
-                <option value="sum_two">Equipo: ambos</option>
-                <option value="total">Equipo: total</option>
-                <option value="single_member">Equipo: uno</option>
-              </select>
-              <input type="date" value={newPhase.start_at || ''} onChange={e => setNewPhase(p => ({ ...p, start_at: e.target.value }))} />
-              <input type="date" value={newPhase.end_at || ''} onChange={e => setNewPhase(p => ({ ...p, end_at: e.target.value }))} />
-              <input value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion (opcional)" />
-              <button type="button" className="btn-secondary btn-sm" onClick={addPhase}>Agregar</button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+                {phases.length ? `${phases.length} evento${phases.length === 1 ? '' : 's'} configurado${phases.length === 1 ? '' : 's'}.` : 'Todavia no has agregado eventos.'}
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddPhaseModal(true)}>
+                + Agregar evento
+              </button>
             </div>
             {phases.length === 0 && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>Sin fases</div>}
             <div style={{ display: 'grid', gap: 6 }}>
               {phases.map((phase, idx) => (
                 <div key={phase.id} style={{ ...listItemStyle, gap: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0, flex: '1 1 320px' }}>
-                      <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 800, letterSpacing: 0.6, paddingTop: 10 }}>{String(idx + 1).padStart(2, '0')}</span>
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <input value={phase.nombre} onChange={e => updatePhase(phase.id, 'nombre', e.target.value)} />
-                        <input value={phase.block_name || ''} onChange={e => updatePhase(phase.id, 'block_name', e.target.value)} placeholder="Bloque. Ej: Workout 1" style={{ marginTop: 8 }} />
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                          {getPhaseModeSummary(phase).map((item, chipIndex) => (
-                            <span
-                              key={`${phase.id}-chip-${chipIndex}`}
-                              style={{
-                                ...modeChipBaseStyle,
-                                background: chipIndex === 0
-                                  ? 'rgba(255,107,0,0.12)'
-                                  : chipIndex === 1
-                                    ? 'rgba(0,194,168,0.12)'
-                                    : chipIndex === 5
-                                      ? 'rgba(170,178,192,0.12)'
-                                      : 'rgba(13,15,18,0.75)',
-                                color: chipIndex === 0
-                                  ? '#FFB36F'
-                                  : chipIndex === 1
-                                    ? '#8FF3E7'
-                                    : 'var(--oa-text-secondary)',
-                                border: `1px solid ${chipIndex === 0
-                                  ? 'rgba(255,107,0,0.22)'
-                                  : chipIndex === 1
-                                    ? 'rgba(0,194,168,0.22)'
-                                    : 'rgba(170,178,192,0.18)'}`,
-                              }}
-                            >
-                              {item}
-                            </span>
-                          ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ color: '#FF6B00', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                          EVENTO {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        {phase.block_name ? (
+                          <span style={{ color: '#AAB2C0', fontSize: 12 }}>
+                            {phase.block_name}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, lineHeight: 1.2, marginTop: 6 }}>
+                        {phase.nombre || `Evento ${idx + 1}`}
+                      </div>
+                    </div>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingPhaseId(phase.id)} style={{ flexShrink: 0 }}>
+                      Editar
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                      <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Modalidad</div>
+                        <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                          {phase.modality === 'teams' ? 'Equipos' : 'Individual'}
+                        </div>
+                      </div>
+                      <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Medicion</div>
+                        <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                          {PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase.measurement_method, phase.tipo)] || normalizeMeasurementMethod(phase.measurement_method, phase.tipo)}
                         </div>
                       </div>
                     </div>
-                    <button type="button" className="btn-danger btn-sm" onClick={() => removePhase(phase.id)}>Eliminar</button>
-                  </div>
-                  <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    <select value={phase.modality || 'individual'} onChange={e => updatePhase(phase.id, 'modality', e.target.value)}>
-                      <option value="individual">Individual</option>
-                      <option value="teams" disabled={!form.team_enabled}>Equipos</option>
-                    </select>
-                    <select value={normalizeMeasurementMethod(phase.measurement_method, phase.tipo)} onChange={e => updatePhase(phase.id, 'measurement_method', e.target.value)}>
-                      {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-                    </select>
-                    <select value={phase.team_result_mode || 'sum_two'} onChange={e => updatePhase(phase.id, 'team_result_mode', e.target.value)}>
-                      <option value="sum_two">Equipo: ambos</option>
-                      <option value="total">Equipo: total</option>
-                      <option value="single_member">Equipo: uno</option>
-                    </select>
-                    <input type="date" value={phase.start_at || ''} onChange={e => updatePhase(phase.id, 'start_at', e.target.value)} />
-                    <input type="date" value={phase.end_at || ''} onChange={e => updatePhase(phase.id, 'end_at', e.target.value)} />
-                    <input style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }} value={phase.descripcion} onChange={e => updatePhase(phase.id, 'descripcion', e.target.value)} placeholder="Descripcion de bloque o fase" />
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${phase.modality === 'teams' ? 2 : 1}, minmax(0, 1fr))`, gap: 8 }}>
+                      {phase.modality === 'teams' ? (
+                        <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                          <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Resultado por equipo</div>
+                          <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                            {phase.team_result_mode === 'total' ? 'Total' : phase.team_result_mode === 'single_member' ? 'Uno' : 'Ambos'}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Fechas</div>
+                        <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                          {phase.start_at || phase.end_at ? `${phase.start_at || '-'}${phase.end_at ? ` -> ${phase.end_at}` : ''}` : 'Sin fecha'}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Descripcion</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
+                        {phase.descripcion || 'Sin descripcion'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -3689,6 +3697,156 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       </form>
   )
 
+  const addPhaseModal = showAddPhaseModal ? (
+    <Modal
+      title="Agregar evento"
+      onClose={() => setShowAddPhaseModal(false)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          Completa los datos del evento y agrégalo a la competencia.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Bloque</label>
+            <input value={newPhase.block_name || ''} onChange={e => setNewPhase(p => ({ ...p, block_name: e.target.value }))} placeholder="Ej: Workout 1" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre del evento</label>
+            <input value={newPhase.nombre} onChange={e => setNewPhase(p => ({ ...p, nombre: e.target.value }))} placeholder="Nombre visible" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Modalidad</label>
+            <select value={newPhase.modality} onChange={e => setNewPhase(p => ({ ...p, modality: e.target.value }))}>
+              <option value="individual">Individual</option>
+              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Medicion</label>
+            <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
+              {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+            </select>
+          </div>
+          {form.team_enabled && newPhase.modality === 'teams' ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Resultado por equipo</label>
+              <select value={newPhase.team_result_mode} onChange={e => setNewPhase(p => ({ ...p, team_result_mode: e.target.value }))}>
+                <option value="sum_two">Equipo: ambos</option>
+                <option value="total">Equipo: total</option>
+                <option value="single_member">Equipo: uno</option>
+              </select>
+            </div>
+          ) : null}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Inicio</label>
+              <input type="date" value={newPhase.start_at || ''} onChange={e => setNewPhase(p => ({ ...p, start_at: e.target.value }))} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Fin</label>
+              <input type="date" value={newPhase.end_at || ''} onChange={e => setNewPhase(p => ({ ...p, end_at: e.target.value }))} />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Descripcion</label>
+            <textarea rows={4} value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion opcional" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddPhaseModal(false)}>Cancelar</button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              if (addPhase()) setShowAddPhaseModal(false)
+            }}
+          >
+            Agregar evento
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const editingPhase = phases.find(phase => String(phase.id) === String(editingPhaseId))
+  const editPhaseModal = editingPhase ? (
+    <Modal
+      title={`Editar evento - ${editingPhase.nombre || ''}`}
+      onClose={() => setEditingPhaseId(null)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Bloque</label>
+            <input value={editingPhase.block_name || ''} onChange={e => updatePhase(editingPhase.id, 'block_name', e.target.value)} placeholder="Ej: Workout 1" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre del evento</label>
+            <input value={editingPhase.nombre || ''} onChange={e => updatePhase(editingPhase.id, 'nombre', e.target.value)} placeholder="Nombre visible" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Modalidad</label>
+            <select value={editingPhase.modality || 'individual'} onChange={e => updatePhase(editingPhase.id, 'modality', e.target.value)}>
+              <option value="individual">Individual</option>
+              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Medicion</label>
+            <select value={normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo)} onChange={e => updatePhase(editingPhase.id, 'measurement_method', e.target.value)}>
+              {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+            </select>
+          </div>
+          {form.team_enabled && editingPhase.modality === 'teams' ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Resultado por equipo</label>
+              <select value={editingPhase.team_result_mode || 'sum_two'} onChange={e => updatePhase(editingPhase.id, 'team_result_mode', e.target.value)}>
+                <option value="sum_two">Equipo: ambos</option>
+                <option value="total">Equipo: total</option>
+                <option value="single_member">Equipo: uno</option>
+              </select>
+            </div>
+          ) : null}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Inicio</label>
+              <input type="date" value={editingPhase.start_at || ''} onChange={e => updatePhase(editingPhase.id, 'start_at', e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Fin</label>
+              <input type="date" value={editingPhase.end_at || ''} onChange={e => updatePhase(editingPhase.id, 'end_at', e.target.value)} />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Descripcion</label>
+            <textarea rows={4} value={editingPhase.descripcion || ''} onChange={e => updatePhase(editingPhase.id, 'descripcion', e.target.value)} placeholder="Descripcion opcional" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-danger btn-sm"
+            onClick={() => {
+              removePhase(editingPhase.id)
+              setEditingPhaseId(null)
+            }}
+          >
+            Eliminar
+          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingPhaseId(null)}>Cerrar</button>
+            <button type="button" className="btn-primary" onClick={() => setEditingPhaseId(null)}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
   if (inline) {
     return (
       <>
@@ -3701,6 +3859,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           {formContent}
         </div>
+        {addPhaseModal}
+        {editPhaseModal}
         {showThemePreview ? (
           <Modal
             title="Preview del tema"
@@ -3746,6 +3906,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       >
         {formContent}
       </Modal>
+      {addPhaseModal}
+      {editPhaseModal}
       {showThemePreview ? (
         <Modal
           title="Preview del tema"

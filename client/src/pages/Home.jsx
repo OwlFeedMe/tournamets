@@ -367,7 +367,7 @@ export default function Home() {
   useEffect(() => {
     let active = true
     Promise.all([
-      api.get('/competitions').catch(() => ({ data: [] })),
+      api.get('/competitions?scope=public').catch(() => ({ data: [] })),
       isAthlete && participantId
         ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
