@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, X } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, X, CheckCircle } from 'lucide-react'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { loadCountries } from '../utils/locations'
@@ -369,6 +369,218 @@ function RegisterModal({ open, onClose, onRegistered }) {
   )
 }
 
+function ForgotPasswordModal({ open, onClose }) {
+  const [step, setStep] = useState('email') // 'email' | 'code' | 'done'
+  const [email, setEmail] = useState('')
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setStep('email')
+      setEmail('')
+      setCode('')
+      setPassword('')
+      setConfirmPassword('')
+      setError('')
+      setLoading(false)
+      setShowPassword(false)
+      setShowConfirmPassword(false)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: true } }))
+    return () => window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+  }, [open])
+
+  if (!open) return null
+
+  const handleSendCode = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!BASIC_EMAIL_REGEX.test(email.trim())) {
+      setError('Ingresa un email valido')
+      return
+    }
+    setLoading(true)
+    try {
+      await api.post('/auth/forgot-password', { email: email.trim().toLowerCase() })
+      setStep('code')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo enviar el codigo. Intenta de nuevo.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (code.trim().length !== 6) {
+      setError('El codigo debe tener 6 digitos')
+      return
+    }
+    if (!STRONG_PASSWORD_REGEX.test(password)) {
+      setError('La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Las contrasenas no coinciden')
+      return
+    }
+    setLoading(true)
+    try {
+      await api.post('/auth/reset-password', {
+        email: email.trim().toLowerCase(),
+        code: code.trim(),
+        password,
+      })
+      setStep('done')
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'No se pudo cambiar la contrasena. Verifica el codigo e intenta de nuevo.'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Cerrar"
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', border: 'none', zIndex: 79 }}
+      />
+      <div style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Recuperar contrasena"
+          style={{ width: '100%', maxWidth: 400, borderRadius: 28, border: '1px solid #252A33', background: '#171B21', padding: '18px 16px', maxHeight: '100%', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+            <div style={{ color: '#F4F7FB', fontWeight: 800, fontSize: 16 }}>
+              {step === 'done' ? 'Listo' : 'Recuperar contrasena'}
+            </div>
+            <button type="button" onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+              <X size={18} />
+            </button>
+          </div>
+
+          {step === 'email' && (
+            <form onSubmit={handleSendCode}>
+              <p style={{ color: '#AAB2C0', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>
+                Ingresa tu correo y te enviaremos un codigo de 6 digitos para restablecer tu contrasena.
+              </p>
+              {error && <div className="alert alert-error">{error}</div>}
+              <div className="form-group">
+                <label>Correo electronico</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="tu@correo.com"
+                  required
+                  autoFocus
+                  inputMode="email"
+                />
+              </div>
+              <button type="submit" className="btn-primary" style={{ width: '100%', padding: '12px', marginBottom: 10 }} disabled={loading}>
+                {loading ? 'Enviando...' : 'Enviar codigo'}
+              </button>
+              <button type="button" className="btn-secondary" style={{ width: '100%', padding: '12px' }} onClick={onClose}>
+                Cancelar
+              </button>
+            </form>
+          )}
+
+          {step === 'code' && (
+            <form onSubmit={handleResetPassword}>
+              <p style={{ color: '#AAB2C0', fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>
+                Enviamos un codigo a <strong style={{ color: '#F4F7FB' }}>{email}</strong>. Ingressalo junto con tu nueva contrasena.
+              </p>
+              {error && <div className="alert alert-error">{error}</div>}
+              <div className="form-group">
+                <label>Codigo de verificacion</label>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  style={{ letterSpacing: 6, fontSize: 22, textAlign: 'center' }}
+                />
+              </div>
+              <div className="form-group">
+                <label>Nueva contrasena</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    style={{ paddingRight: 48 }}
+                  />
+                  <button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? 'Ocultar' : 'Ver'} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#AAB2C0', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+                <small style={{ color: '#AAB2C0', display: 'block', marginTop: 6 }}>
+                  Minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.
+                </small>
+              </div>
+              <div className="form-group">
+                <label>Confirmar contrasena</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    style={{ paddingRight: 48 }}
+                  />
+                  <button type="button" onClick={() => setShowConfirmPassword(v => !v)} aria-label={showConfirmPassword ? 'Ocultar' : 'Ver'} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#AAB2C0', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <button type="submit" className="btn-primary" style={{ width: '100%', padding: '12px', marginBottom: 10 }} disabled={loading}>
+                {loading ? 'Cambiando...' : 'Cambiar contrasena'}
+              </button>
+              <button type="button" className="btn-secondary" style={{ width: '100%', padding: '12px' }} onClick={() => { setStep('email'); setCode(''); setPassword(''); setConfirmPassword(''); setError('') }}>
+                Volver
+              </button>
+            </form>
+          )}
+
+          {step === 'done' && (
+            <div style={{ textAlign: 'center', padding: '12px 0' }}>
+              <CheckCircle size={48} color="#22c55e" style={{ margin: '0 auto 16px' }} />
+              <p style={{ color: '#F4F7FB', fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Contrasena cambiada</p>
+              <p style={{ color: '#AAB2C0', fontSize: 14, marginBottom: 24, lineHeight: 1.5 }}>
+                Tu contrasena fue actualizada exitosamente. Ya puedes iniciar sesion con tu nueva contrasena.
+              </p>
+              <button type="button" className="btn-primary" style={{ width: '100%', padding: '12px' }} onClick={onClose}>
+                Ir a iniciar sesion
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const { persistSession } = useAuth()
@@ -376,6 +588,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [registerOpen, setRegisterOpen] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -445,8 +658,16 @@ export default function Login() {
               {loading ? 'Iniciando sesion...' : 'Iniciar sesion'}
             </button>
 
-            <button type="button" className="btn-secondary" style={{ width: '100%', padding: '12px' }} onClick={() => setRegisterOpen(true)}>
+            <button type="button" className="btn-secondary" style={{ width: '100%', padding: '12px', marginBottom: 10 }} onClick={() => setRegisterOpen(true)}>
               Crear cuenta
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setForgotOpen(true)}
+              style={{ width: '100%', background: 'transparent', border: 'none', color: '#AAB2C0', fontSize: 13, cursor: 'pointer', padding: '6px 0' }}
+            >
+              ¿Olvidaste tu contrasena?
             </button>
           </form>
         </div>
@@ -460,6 +681,11 @@ export default function Login() {
         open={registerOpen}
         onClose={() => setRegisterOpen(false)}
         onRegistered={handleRegistered}
+      />
+
+      <ForgotPasswordModal
+        open={forgotOpen}
+        onClose={() => setForgotOpen(false)}
       />
     </div>
   )

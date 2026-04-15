@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,7 +14,8 @@ from jose import JWTError, jwt
 
 from constants import Role
 
-load_dotenv()
+ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(ROOT_ENV_PATH)
 
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret")
 ALGORITHM = "HS256"

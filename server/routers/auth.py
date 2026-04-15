@@ -1,15 +1,22 @@
+import logging
 import re
+import secrets
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, verify_password
+from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, require_auth, verify_password
 from constants import EstadoParticipante, Role
 from database import get_session
-from models import AppUser, MeResponse, Participant, TokenResponse
+from models import AppUser, MeResponse, Participant, PasswordResetCode, TokenResponse
+from services.emailer import send_email
+from services.email_templates import render_welcome, render_password_reset_code
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -240,6 +247,14 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
         participant_id=participant.id,
         organizer_enabled=bool(app_user.organizer_enabled),
     )
+
+    if email:
+        try:
+            subject, body, html = render_welcome(nombre=nombre)
+            send_email(to_email=email, subject=subject, body=body, html_body=html)
+        except Exception:
+            logger.exception("Failed to send welcome email to %s", email)
+
     return _token_response(payload)
 
 
@@ -390,3 +405,131 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
         return _me_response(payload)
 
     raise HTTPException(status_code=401, detail="Sesion invalida")
+
+
+@router.post("/change-password", status_code=200)
+def change_password(body: dict = Body(...), session: Session = Depends(get_session), user=Depends(require_auth)):
+    current_password = str(body.get("current_password") or "")
+    new_password = str(body.get("new_password") or "")
+
+    if not current_password or not new_password:
+        raise HTTPException(status_code=400, detail="Completa todos los campos")
+
+    if not STRONG_PASSWORD_REGEX.fullmatch(new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial",
+        )
+
+    app_user_id = user.get("app_user_id")
+    if not app_user_id:
+        raise HTTPException(status_code=403, detail="Solo usuarios de app pueden cambiar su contrasena")
+
+    app_user = session.get(AppUser, int(app_user_id))
+    if not app_user or app_user.is_active != 1:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not verify_password(current_password, app_user.password_hash):
+        raise HTTPException(status_code=400, detail="La contrasena actual es incorrecta")
+
+    app_user.password_hash = hash_password(new_password)
+    session.add(app_user)
+    session.commit()
+    return {"ok": True}
+
+
+RESET_CODE_EXPIRY_MINUTES = 20
+RESET_CODE_MAX_ACTIVE = 3
+
+
+@router.post("/forgot-password", status_code=200)
+def forgot_password(body: dict = Body(...), session: Session = Depends(get_session)):
+    email = str(body.get("email") or "").strip().lower()
+    if not email or not BASIC_EMAIL_REGEX.fullmatch(email):
+        raise HTTPException(status_code=400, detail="Ingresa un email valido")
+
+    # Always respond 200 to not leak whether the email exists
+    app_user = session.exec(
+        select(AppUser).where(
+            func.lower(AppUser.username) == email,
+            AppUser.is_active == 1,
+            AppUser.role.in_(VALID_APP_ROLES),
+        )
+    ).first()
+    if not app_user:
+        return {"ok": True}
+
+    # Rate-limit: max RESET_CODE_MAX_ACTIVE unused + non-expired codes per email
+    now = datetime.now(timezone.utc)
+    active_codes = session.exec(
+        select(PasswordResetCode).where(
+            func.lower(PasswordResetCode.email) == email,
+            PasswordResetCode.used_at == None,  # noqa: E711
+            PasswordResetCode.expires_at > now,
+        )
+    ).all()
+    if len(active_codes) >= RESET_CODE_MAX_ACTIVE:
+        latest_active = max(active_codes, key=lambda item: item.created_at or now)
+        code = str(latest_active.code)
+    else:
+        code = str(secrets.randbelow(900000) + 100000)  # 6-digit code
+        expires_at = now + timedelta(minutes=RESET_CODE_EXPIRY_MINUTES)
+        session.add(PasswordResetCode(email=email, code=code, expires_at=expires_at))
+        session.commit()
+
+    nombre = str(app_user.display_name or email).strip()
+    try:
+        subject, mail_body, html = render_password_reset_code(nombre=nombre, code=code)
+        sent = send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
+        if not sent:
+            logger.warning("Password reset email was not accepted by provider for %s", email)
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", email)
+
+    return {"ok": True}
+
+
+@router.post("/reset-password", status_code=200)
+def reset_password(body: dict = Body(...), session: Session = Depends(get_session)):
+    email = str(body.get("email") or "").strip().lower()
+    code = str(body.get("code") or "").strip()
+    new_password = str(body.get("password") or "")
+
+    if not email or not code or not new_password:
+        raise HTTPException(status_code=400, detail="Completa todos los campos")
+
+    if not STRONG_PASSWORD_REGEX.fullmatch(new_password):
+        raise HTTPException(
+            status_code=400,
+            detail="La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial",
+        )
+
+    now = datetime.now(timezone.utc)
+    reset_code = session.exec(
+        select(PasswordResetCode).where(
+            func.lower(PasswordResetCode.email) == email,
+            PasswordResetCode.code == code,
+            PasswordResetCode.used_at == None,  # noqa: E711
+            PasswordResetCode.expires_at > now,
+        )
+    ).first()
+    if not reset_code:
+        raise HTTPException(status_code=400, detail="El codigo es invalido o ya expiro")
+
+    app_user = session.exec(
+        select(AppUser).where(
+            func.lower(AppUser.username) == email,
+            AppUser.is_active == 1,
+            AppUser.role.in_(VALID_APP_ROLES),
+        )
+    ).first()
+    if not app_user:
+        raise HTTPException(status_code=400, detail="El codigo es invalido o ya expiro")
+
+    app_user.password_hash = hash_password(new_password)
+    reset_code.used_at = now
+    session.add(app_user)
+    session.add(reset_code)
+    session.commit()
+
+    return {"ok": True}

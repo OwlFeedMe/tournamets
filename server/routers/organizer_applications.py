@@ -1,4 +1,6 @@
 import json
+import logging
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +16,15 @@ from models import (
     OrganizerApplicationReview,
     Participant,
 )
+from services.emailer import send_email
+from services.email_templates import (
+    render_organizer_application_received,
+    render_organizer_application_admin_notice,
+    render_organizer_application_approved,
+    render_organizer_application_rejected,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/organizer-applications", tags=["organizer-applications"])
 
@@ -156,6 +167,28 @@ def create_organizer_application(
     session.add(item)
     session.commit()
     session.refresh(item)
+
+    participant_email = str(getattr(participant, "email", "") or "").strip()
+    participant_name = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+    if participant_email:
+        try:
+            subject, body, html = render_organizer_application_received(nombre=participant_name)
+            send_email(to_email=participant_email, subject=subject, body=body, html_body=html)
+        except Exception:
+            logger.exception("Failed to send organizer application received email")
+
+    admin_email = os.getenv("ADMIN_NOTIFICATION_EMAIL", "").strip()
+    if admin_email:
+        try:
+            subject, body, html = render_organizer_application_admin_notice(
+                nombre=participant_name,
+                email=participant_email,
+                requested_event_name=requested_event_name,
+            )
+            send_email(to_email=admin_email, subject=subject, body=body, html_body=html)
+        except Exception:
+            logger.exception("Failed to send organizer application admin notice email")
+
     return {"ok": True, "application": _serialize_application(item, app_user=app_user, participant=participant)}
 
 
@@ -230,6 +263,23 @@ def review_organizer_application(
     session.refresh(item)
     session.refresh(app_user)
     participant = session.get(Participant, int(item.participant_id))
+
+    if participant:
+        participant_email = str(getattr(participant, "email", "") or "").strip()
+        participant_name = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+        if participant_email:
+            try:
+                if next_status == "approved":
+                    subject, body, html = render_organizer_application_approved(nombre=participant_name)
+                else:
+                    subject, body, html = render_organizer_application_rejected(
+                        nombre=participant_name,
+                        review_note=str(item.review_note or "").strip() or None,
+                    )
+                send_email(to_email=participant_email, subject=subject, body=body, html_body=html)
+            except Exception:
+                logger.exception("Failed to send organizer application review email")
+
     return {
         "ok": True,
         "application": _serialize_application(item, app_user=app_user, participant=participant),

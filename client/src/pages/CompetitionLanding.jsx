@@ -479,7 +479,7 @@ export default function CompetitionLanding() {
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
-  const canSeeMySchedule = !!(session && role === 'user' && myEnrollmentState === 'confirmado')
+  const canSeeMySchedule = !!(session && participantId && (role === 'user' || role === 'admin') && myEnrollmentState === 'confirmado')
   const enrollmentButton = enrollmentButtonState(competition, role, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : role === 'user' ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label

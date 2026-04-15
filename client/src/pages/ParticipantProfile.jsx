@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext'
 import { formatMissingParticipantProfileFields } from '../utils/participantProfile'
 import {
   Trophy, PlusCircle, Medal,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
 
 const PENDING_CEDULA_PREFIX = 'pending:'
@@ -572,6 +572,11 @@ export default function ParticipantProfile() {
   const [photoDraftUrl, setPhotoDraftUrl] = useState('')
   const [photoDraftImage, setPhotoDraftImage] = useState(null)
   const [photoZoom, setPhotoZoom] = useState(1.15)
+  const [changePwOpen, setChangePwOpen] = useState(false)
+  const [changePwForm, setChangePwForm] = useState({ current: '', next: '', confirm: '' })
+  const [changePwShow, setChangePwShow] = useState({ current: false, next: false, confirm: false })
+  const [changePwMsg, setChangePwMsg] = useState(null)
+  const [changePwBusy, setChangePwBusy] = useState(false)
   const [organizerApplication, setOrganizerApplication] = useState(null)
   const [organizerMissingFields, setOrganizerMissingFields] = useState([])
   const [organizerRequestOpen, setOrganizerRequestOpen] = useState(false)
@@ -714,8 +719,15 @@ export default function ParticipantProfile() {
   }, [countries, countryCodeByName, editForm.ciudad_pais, editForm.countryCode])
 
   useEffect(() => {
-    if (!participantId) return
-    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations(), loadMyProfile(), loadOrganizerApplication()]).catch(() => {})
+    loadMyProfile().catch(() => {})
+    loadOrganizerApplication().catch(() => {})
+    if (!participantId) {
+      setMyComps([])
+      setPendingInvitations([])
+      setResults([])
+      return
+    }
+    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations()]).catch(() => {})
   }, [participantId])
 
   const enrollmentByComp = useMemo(() => {
@@ -843,6 +855,32 @@ export default function ParticipantProfile() {
       setOrganizerRequestMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la solicitud' })
     } finally {
       setOrganizerRequestBusy(false)
+    }
+  }
+
+  const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/
+
+  const submitChangePassword = async (e) => {
+    e.preventDefault()
+    setChangePwMsg(null)
+    if (!STRONG_PASSWORD_REGEX.test(changePwForm.next)) {
+      setChangePwMsg({ type: 'error', text: 'La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial' })
+      return
+    }
+    if (changePwForm.next !== changePwForm.confirm) {
+      setChangePwMsg({ type: 'error', text: 'Las contrasenas no coinciden' })
+      return
+    }
+    setChangePwBusy(true)
+    try {
+      await api.post('/auth/change-password', { current_password: changePwForm.current, new_password: changePwForm.next })
+      setChangePwMsg({ type: 'success', text: 'Contrasena actualizada correctamente' })
+      setChangePwForm({ current: '', next: '', confirm: '' })
+      setChangePwOpen(false)
+    } catch (err) {
+      setChangePwMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cambiar la contrasena' })
+    } finally {
+      setChangePwBusy(false)
     }
   }
 
@@ -1541,6 +1579,69 @@ export default function ParticipantProfile() {
               </button>
             ) : null}
           </div>
+        </div>
+
+        {/* Change password */}
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 18, border: '1px dashed rgba(170,178,192,0.22)', background: 'rgba(23,27,33,0.78)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <KeyRound size={16} color="#AAB2C0" />
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>Contrasena</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 2 }}>Cambia tu contrasena de acceso</div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              onClick={() => { setChangePwOpen(v => !v); setChangePwMsg(null); setChangePwForm({ current: '', next: '', confirm: '' }) }}
+            >
+              {changePwOpen ? 'Cancelar' : 'Cambiar'}
+            </button>
+          </div>
+
+          {changePwOpen && (
+            <form onSubmit={submitChangePassword} style={{ marginTop: 16, borderTop: '1px solid #252A33', paddingTop: 16 }}>
+              {changePwMsg && <div className={`alert alert-${changePwMsg.type}`} style={{ marginBottom: 12, fontSize: 13 }}>{changePwMsg.text}</div>}
+
+              {[
+                { field: 'current', label: 'Contrasena actual', key: 'current' },
+                { field: 'next', label: 'Nueva contrasena', key: 'next' },
+                { field: 'confirm', label: 'Confirmar nueva contrasena', key: 'confirm' },
+              ].map(({ field, label, key }) => (
+                <div key={key} className="form-group" style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 13 }}>{label}</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={changePwShow[field] ? 'text' : 'password'}
+                      value={changePwForm[field]}
+                      onChange={(e) => setChangePwForm(f => ({ ...f, [field]: e.target.value }))}
+                      required
+                      style={{ paddingRight: 44 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setChangePwShow(s => ({ ...s, [field]: !s[field] }))}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#AAB2C0', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+                    >
+                      {changePwShow[field] ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {field === 'next' && (
+                    <small style={{ color: '#AAB2C0', display: 'block', marginTop: 4 }}>
+                      Minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.
+                    </small>
+                  )}
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="submit" className="btn-primary" disabled={changePwBusy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Check size={14} /> {changePwBusy ? 'Guardando...' : 'Guardar contrasena'}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
 
         {/* My results */}

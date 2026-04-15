@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Generator
 
 from dotenv import load_dotenv
@@ -7,9 +8,10 @@ from sqlmodel import SQLModel, Session, create_engine, select
 
 from auth import ADMIN_ID, ADMIN_PASSWORD, hash_password
 from constants import EstadoParticipante, Role
-from models import AppUser, Participant
+from models import AppUser, Participant, PlatformConfig
 
-load_dotenv()
+ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(ROOT_ENV_PATH)
 
 MAX_TEAM_SIZE = 10
 
@@ -288,6 +290,32 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS idx_organizer_applications_app_user_id ON organizer_applications(app_user_id)",
         "CREATE INDEX IF NOT EXISTS idx_organizer_applications_participant_id ON organizer_applications(participant_id)",
         "CREATE INDEX IF NOT EXISTS idx_organizer_applications_status ON organizer_applications(status)",
+        # platform_config table
+        """
+        CREATE TABLE IF NOT EXISTS platform_config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        # seed default config values (INSERT … ON CONFLICT DO NOTHING so existing values are preserved)
+        "INSERT INTO platform_config (key, value) VALUES ('default_platform_fee_rate', '0.05') ON CONFLICT (key) DO NOTHING",
+        "INSERT INTO platform_config (key, value) VALUES ('bold_processor_rate', '0.0269') ON CONFLICT (key) DO NOTHING",
+        "INSERT INTO platform_config (key, value) VALUES ('bold_processor_fixed_fee', '300') ON CONFLICT (key) DO NOTHING",
+        # fee_rate snapshot columns on payment tables
+        "ALTER TABLE competition_participants ADD COLUMN IF NOT EXISTS payment_platform_fee_rate DOUBLE PRECISION NOT NULL DEFAULT 0.05",
+        "ALTER TABLE competition_payment_intents ADD COLUMN IF NOT EXISTS payment_platform_fee_rate DOUBLE PRECISION NOT NULL DEFAULT 0.05",
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_codes (
+            id SERIAL PRIMARY KEY,
+            email TEXT NOT NULL,
+            code TEXT NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_password_reset_codes_email ON password_reset_codes(email)",
     ]
     with engine.connect() as conn:
         for sql in _migrations:

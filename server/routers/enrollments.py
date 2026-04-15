@@ -3,6 +3,7 @@ import io
 import base64
 import hashlib
 import hmac
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,16 @@ from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
 )
+from routers.config import get_pricing_config
+from services.emailer import send_email
+from services.email_templates import (
+    render_payment_approved,
+    render_payment_rejected,
+    render_enrollment_confirmed,
+    render_enrollment_rejected,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["enrollments"])
 ENROLLMENT_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "enrollment_answers"
@@ -129,11 +140,11 @@ def _normalize_platform_fee_rate(raw: object) -> float:
     return round(value, 4)
 
 
-def _price_breakdown(base_price: int, fee_rate: float) -> dict:
+def _price_breakdown(base_price: int, fee_rate: float, processor_rate: float = 0.0269, processor_fixed: int = 300) -> dict:
     organizer_price = max(0, int(base_price or 0))
     platform_fee = int(round(organizer_price * fee_rate))
     total_price = organizer_price + platform_fee
-    processor_fee = _bold_processor_fee(total_price)
+    processor_fee = _bold_processor_fee(total_price, processor_rate, processor_fixed)
     return {
         "organizer_price": organizer_price,
         "platform_fee": platform_fee,
@@ -144,15 +155,15 @@ def _price_breakdown(base_price: int, fee_rate: float) -> dict:
     }
 
 
-def _bold_processor_fee(total_amount: int) -> int:
+def _bold_processor_fee(total_amount: int, processor_rate: float = 0.0269, processor_fixed: int = 300) -> int:
     gross = max(0, int(total_amount or 0))
     if gross <= 0:
         return 0
-    return int(round(gross * 0.0269)) + 300
+    return int(round(gross * processor_rate)) + processor_fixed
 
 
-def _platform_net_amount(platform_fee: int, total_amount: int) -> int:
-    return int(platform_fee or 0) - _bold_processor_fee(total_amount)
+def _platform_net_amount(platform_fee: int, total_amount: int, processor_rate: float = 0.0269, processor_fixed: int = 300) -> int:
+    return int(platform_fee or 0) - _bold_processor_fee(total_amount, processor_rate, processor_fixed)
 
 
 def _bold_integrity_signature(order_id: str, amount: int, currency: str, secret_key: str) -> str:
@@ -225,6 +236,10 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
     if not reference:
         return {"matched": False, "reason": "missing_reference", "payment_status": payment_status}
 
+    pricing_cfg = get_pricing_config(session)
+    proc_rate = pricing_cfg["bold_processor_rate"]
+    proc_fixed = pricing_cfg["bold_processor_fixed_fee"]
+
     enrollment = session.exec(
         select(CompetitionParticipant).where(CompetitionParticipant.payment_reference == reference)
     ).first()
@@ -235,13 +250,21 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         enrollment.payment_updated_at = now
         if total_amount > 0:
             enrollment.payment_amount_total = total_amount
-            enrollment.payment_processor_fee = _bold_processor_fee(total_amount)
-            enrollment.payment_platform_net = _platform_net_amount(enrollment.payment_platform_fee, total_amount)
+            enrollment.payment_processor_fee = _bold_processor_fee(total_amount, proc_rate, proc_fixed)
+            enrollment.payment_platform_net = _platform_net_amount(enrollment.payment_platform_fee, total_amount, proc_rate, proc_fixed)
         if payment_status == "approved":
             enrollment.payment_processed_at = now
             if enrollment.estado == PAYMENT_PENDING_STATE:
                 enrollment.estado = "pendiente"
         session.add(enrollment)
+        _try_send_payment_email(
+            session,
+            participant_id=enrollment.participant_id,
+            competition_id=enrollment.competition_id,
+            categoria=enrollment.categoria,
+            payment_status=payment_status,
+            order_id=reference,
+        )
         return {
             "matched": True,
             "reference": reference,
@@ -256,13 +279,14 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
     if not intent:
         return {"matched": False, "reason": "reference_not_found", "reference": reference, "payment_status": payment_status}
 
+    intent_fee_rate = float(getattr(intent, "payment_platform_fee_rate", 0) or 0)
     intent.payment_status = payment_status
     intent.payment_transaction_id = transaction_id
     intent.payment_updated_at = now
     if total_amount > 0:
         intent.payment_amount_total = total_amount
-        intent.payment_processor_fee = _bold_processor_fee(total_amount)
-        intent.payment_platform_net = _platform_net_amount(intent.payment_platform_fee, total_amount)
+        intent.payment_processor_fee = _bold_processor_fee(total_amount, proc_rate, proc_fixed)
+        intent.payment_platform_net = _platform_net_amount(intent.payment_platform_fee, total_amount, proc_rate, proc_fixed)
     if payment_status == "approved":
         intent.payment_processed_at = now
         existing = session.get(CompetitionParticipant, (intent.competition_id, intent.participant_id))
@@ -277,6 +301,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
             existing.payment_transaction_id = transaction_id
             existing.payment_base_amount = intent.payment_base_amount
             existing.payment_platform_fee = intent.payment_platform_fee
+            existing.payment_platform_fee_rate = intent_fee_rate
             existing.payment_processor_fee = intent.payment_processor_fee
             existing.payment_platform_net = intent.payment_platform_net
             existing.payment_amount_total = intent.payment_amount_total
@@ -297,6 +322,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 payment_transaction_id=transaction_id,
                 payment_base_amount=intent.payment_base_amount,
                 payment_platform_fee=intent.payment_platform_fee,
+                payment_platform_fee_rate=intent_fee_rate,
                 payment_processor_fee=intent.payment_processor_fee,
                 payment_platform_net=intent.payment_platform_net,
                 payment_amount_total=intent.payment_amount_total,
@@ -304,6 +330,14 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 payment_updated_at=now,
             ))
     session.add(intent)
+    _try_send_payment_email(
+        session,
+        participant_id=intent.participant_id,
+        competition_id=intent.competition_id,
+        categoria=intent.categoria,
+        payment_status=payment_status,
+        order_id=reference,
+    )
     return {
         "matched": True,
         "reference": reference,
@@ -311,6 +345,44 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         "payment_status": payment_status,
         "transaction_id": transaction_id,
     }
+
+
+def _try_send_payment_email(
+    session: Session,
+    *,
+    participant_id: int,
+    competition_id: int,
+    categoria: str | None,
+    payment_status: str,
+    order_id: str,
+) -> None:
+    if payment_status not in {"approved", "rejected"}:
+        return
+    try:
+        participant = session.get(Participant, participant_id)
+        competition = session.get(Competition, competition_id)
+        email = str(getattr(participant, "email", "") or "").strip()
+        if not email:
+            return
+        nombre = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+        comp_name = str(getattr(competition, "nombre", "") or competition_id)
+        cat_name = str(categoria or "")
+        if payment_status == "approved":
+            subject, body, html = render_payment_approved(
+                nombre=nombre,
+                competition_name=comp_name,
+                category_name=cat_name,
+                order_id=order_id,
+            )
+        else:
+            subject, body, html = render_payment_rejected(
+                nombre=nombre,
+                competition_name=comp_name,
+                category_name=cat_name,
+            )
+        send_email(to_email=email, subject=subject, body=body, html_body=html)
+    except Exception:
+        logger.exception("Failed to send payment email (participant_id=%s, status=%s)", participant_id, payment_status)
 
 
 def _sync_bold_notification_by_reference(reference: str) -> dict | None:
@@ -429,6 +501,30 @@ def update_enrollment_status(
     cp.estado = body.estado
     session.add(cp)
     session.commit()
+
+    if body.estado in ("confirmado", "rechazado"):
+        try:
+            participant = session.get(Participant, participant_id)
+            competition = session.get(Competition, competition_id)
+            email = str(getattr(participant, "email", "") or "").strip()
+            if email:
+                nombre = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+                comp_name = str(getattr(competition, "nombre", "") or competition_id)
+                if body.estado == "confirmado":
+                    subject, mail_body, html = render_enrollment_confirmed(
+                        nombre=nombre,
+                        competition_name=comp_name,
+                        category_name=str(cp.categoria or ""),
+                    )
+                else:
+                    subject, mail_body, html = render_enrollment_rejected(
+                        nombre=nombre,
+                        competition_name=comp_name,
+                    )
+                send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
+        except Exception:
+            logger.exception("Failed to send enrollment status email (participant_id=%s, estado=%s)", participant_id, body.estado)
+
     return {"ok": True, "estado": cp.estado}
 
 
@@ -533,8 +629,14 @@ def create_bold_checkout(
         })
     serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
 
-    fee_rate = _normalize_platform_fee_rate(getattr(comp, "platform_fee_rate", BOLD_PLATFORM_FEE_RATE_DEFAULT))
-    breakdown = _price_breakdown(getattr(category, "enrollment_price", 0), fee_rate)
+    pricing_cfg = get_pricing_config(session)
+    fee_rate = _normalize_platform_fee_rate(getattr(comp, "platform_fee_rate", pricing_cfg["default_platform_fee_rate"]))
+    breakdown = _price_breakdown(
+        getattr(category, "enrollment_price", 0),
+        fee_rate,
+        pricing_cfg["bold_processor_rate"],
+        pricing_cfg["bold_processor_fixed_fee"],
+    )
     if breakdown["total_price"] <= 0:
         raise HTTPException(400, "Esta categoria no tiene un valor de inscripcion valido")
 
@@ -569,6 +671,7 @@ def create_bold_checkout(
         payment_transaction_id=None,
         payment_base_amount=breakdown["organizer_price"],
         payment_platform_fee=breakdown["platform_fee"],
+        payment_platform_fee_rate=breakdown["fee_rate"],
         payment_processor_fee=breakdown["processor_fee"],
         payment_platform_net=breakdown["platform_net"],
         payment_amount_total=breakdown["total_price"],

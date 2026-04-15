@@ -15,7 +15,6 @@ const Login = lazy(() => import('./pages/Login'))
 const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.MyEventsPage })))
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
 const ParticipantProfile = lazy(() => import('./pages/ParticipantProfile'))
-const WorkoutsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.WorkoutsPage })))
 
 function AppFallback() {
   return (
@@ -76,7 +75,6 @@ export default function App() {
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />
               <Route path="/events" element={<EventsPage />} />
-              <Route path="/workouts" element={<WorkoutsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/leaderboard/:competitionId" element={<Leaderboard />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
@@ -95,7 +93,7 @@ export default function App() {
                 <Route
                   path="/profile"
                   element={
-                    <RoleGate allowedRoles={['user']}>
+                    <RoleGate allowedRoles={['user', 'admin']}>
                       <ParticipantProfile />
                     </RoleGate>
                   }
@@ -103,7 +101,7 @@ export default function App() {
                 <Route
                   path="/competitions/:competitionId/my-schedule"
                   element={
-                    <RoleGate allowedRoles={['user']}>
+                    <RoleGate allowedRoles={['user', 'admin']}>
                       <CompetitionSchedule scope="personal" />
                     </RoleGate>
                   }
@@ -111,7 +109,7 @@ export default function App() {
                 <Route
                   path="/my-events"
                   element={
-                    <RoleGate allowedRoles={['user']}>
+                    <RoleGate allowedRoles={['user', 'admin']}>
                       <MyEventsPage />
                     </RoleGate>
                   }

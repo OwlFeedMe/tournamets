@@ -36,15 +36,13 @@ function parseEnrollmentQuestions(raw) {
   }
 }
 
-const PLATFORM_FEE_RATE = 0.05
-
 function normalizeEnrollmentPrice(value) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed)) return 0
   return Math.max(0, Math.round(parsed))
 }
 
-function calculateEnrollmentPricing(basePrice, feeRate = PLATFORM_FEE_RATE) {
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
   const organizerPrice = normalizeEnrollmentPrice(basePrice)
   const platformFee = Math.round(organizerPrice * feeRate)
   return {
@@ -2214,7 +2212,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     competition_end: '',
     enrollment_intro_text: '',
     enrollment_terms_text: '',
-    platform_fee_rate: PLATFORM_FEE_RATE,
+    platform_fee_rate: 0.05,
     scoring_mode: 'highest_wins',
   })
   const [cats, setCats] = useState([])
@@ -2263,7 +2261,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         competition_end: toDateInput(source.competition_end),
         enrollment_intro_text: source.enrollment_intro_text || '',
         enrollment_terms_text: source.enrollment_terms_text || '',
-        platform_fee_rate: Number(source.platform_fee_rate || PLATFORM_FEE_RATE),
+        platform_fee_rate: Number(source.platform_fee_rate || 0.05),
         scoring_mode: source.scoring_mode || 'highest_wins',
       })
       setQuestions(parseEnrollmentQuestions(source.enrollment_questions))
@@ -2525,7 +2523,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       },
       enrollment_intro_text: form.enrollment_intro_text.trim() || null,
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
-      platform_fee_rate: Number(form.platform_fee_rate || PLATFORM_FEE_RATE),
+      platform_fee_rate: Number(form.platform_fee_rate || 0.05),
       enrollment_questions: questions
         .map((question, idx) => ({
           id: String(question.id || `q_${idx + 1}`),
@@ -3404,7 +3402,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
             <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Comision de plataforma</div>
             <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
-              Se suma automaticamente un {Math.round((Number(form.platform_fee_rate || PLATFORM_FEE_RATE)) * 100)}% sobre el precio base de cada categoria.
+              Se suma automaticamente un {Math.round((Number(form.platform_fee_rate || 0.05)) * 100)}% sobre el precio base de cada categoria.
             </div>
             <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.6 }}>
               Organizador define <b style={{ color: '#F5F7FA' }}>X</b>, FinalRep cobra <b style={{ color: '#FFB36F' }}>Y</b> y el atleta paga <b style={{ color: '#8DF1E4' }}>Z</b>.
@@ -4270,6 +4268,7 @@ function CompetitionSummaryPanel({ competitionId }) {
             {categories.map(([cat, rows]) => (
               <div key={cat}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>{cat}</div>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <table>
                   <thead>
                     <tr><th>#</th><th>Participante</th><th>Puntos</th></tr>
@@ -4284,6 +4283,7 @@ function CompetitionSummaryPanel({ competitionId }) {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             ))}
           </div>
@@ -4302,6 +4302,7 @@ function CompetitionSummaryPanel({ competitionId }) {
                 {Object.keys(ph.individual || {}).length === 0 ? (
                   <div style={{ color: '#666' }}>Sin resultados en este evento</div>
                 ) : (
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <table>
                     <thead>
                       <tr><th>Categoria</th><th>Lider</th><th>Puntos</th></tr>
@@ -4316,6 +4317,7 @@ function CompetitionSummaryPanel({ competitionId }) {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             ))}
@@ -5776,6 +5778,7 @@ function CompetitionResultsPanel({ competition }) {
               {!filteredResults.length && <div style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin resultados</div>}
             </div>
           ) : (
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
             <table>
               <thead><tr><th>Participante / Equipo</th><th>Valor</th><th>Posicion</th><th></th></tr></thead>
               <tbody>
@@ -5807,6 +5810,7 @@ function CompetitionResultsPanel({ competition }) {
                 {!filteredResults.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin resultados</td></tr>}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>
@@ -6315,6 +6319,7 @@ function CompetitionsTab() {
                   ))}
                 </div>
               ) : (
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <table>
                   <thead><tr><th>Participante</th><th>Cedula</th><th>Categoria</th><th>Estado</th><th>Respuestas</th></tr></thead>
                   <tbody>
@@ -6334,6 +6339,7 @@ function CompetitionsTab() {
                     {!selectedParticipants.length && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           )}
@@ -6729,6 +6735,7 @@ function ParticipantsTab() {
           {!participants.length && <div className="card" style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</div>}
         </div>
       ) : (
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
             <tr><th>#</th><th>Cedula</th><th>Nombre</th><th>Categoria</th><th>Genero</th><th>Box</th><th>Ciudad / Pais</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
@@ -6760,6 +6767,7 @@ function ParticipantsTab() {
             {!participants.length && <tr><td colSpan={10} style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</td></tr>}
           </tbody>
         </table>
+        </div>
       )}
 
       {editingParticipant && (
@@ -7119,6 +7127,57 @@ function TeamsTab() {
 function FinanceTab() {
   const { role, organizerEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
+  const isAdmin = role === 'admin'
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
+
+  // Platform config (admin only: fee rate editor)
+  const [pricingConfig, setPricingConfig] = useState(null)
+  const [editingConfig, setEditingConfig] = useState(false)
+  const [configForm, setConfigForm] = useState({ default_platform_fee_rate: '', bold_processor_rate: '', bold_processor_fixed_fee: '' })
+  const [savingConfig, setSavingConfig] = useState(false)
+  const [configMsg, setConfigMsg] = useState(null)
+
+  useEffect(() => {
+    api.get('/config/pricing').then(({ data }) => {
+      setPricingConfig(data)
+      setConfigForm({
+        default_platform_fee_rate: String(Math.round((data.default_platform_fee_rate || 0.05) * 1000) / 10),
+        bold_processor_rate: String(data.bold_processor_rate ?? 0.0269),
+        bold_processor_fixed_fee: String(data.bold_processor_fixed_fee ?? 300),
+      })
+    }).catch(() => {})
+  }, [])
+
+  const saveConfig = async () => {
+    setSavingConfig(true)
+    setConfigMsg(null)
+    try {
+      const rate = parseFloat(configForm.default_platform_fee_rate) / 100
+      const procRate = parseFloat(configForm.bold_processor_rate)
+      const procFixed = parseInt(configForm.bold_processor_fixed_fee, 10)
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1) { setConfigMsg({ type: 'error', text: 'Tasa invalida (0-100%)' }); return }
+      if (!Number.isFinite(procRate) || procRate < 0) { setConfigMsg({ type: 'error', text: 'Tasa procesador invalida' }); return }
+      if (!Number.isFinite(procFixed) || procFixed < 0) { setConfigMsg({ type: 'error', text: 'Fee fijo invalido' }); return }
+      const { data } = await api.put('/config/pricing', {
+        default_platform_fee_rate: rate,
+        bold_processor_rate: procRate,
+        bold_processor_fixed_fee: procFixed,
+      })
+      setPricingConfig(data.config)
+      setEditingConfig(false)
+      setConfigMsg({ type: 'success', text: 'Configuracion guardada.' })
+    } catch (err) {
+      setConfigMsg({ type: 'error', text: err.response?.data?.detail || 'Error guardando config.' })
+    } finally {
+      setSavingConfig(false)
+    }
+  }
+
   const withdrawalTerms = [
     'El retiro solicitado corresponde al saldo disponible total de la competencia.',
     'FinalRep procesa la transferencia una vez iniciada la competencia y validada la solicitud.',
@@ -7126,7 +7185,9 @@ function FinanceTab() {
     'Despues de enviada la transferencia, cualquier reclamo con atletas, equipos o terceros sera gestionado directamente por el organizador.',
     'FinalRep no asume responsabilidad por errores en la informacion bancaria o digital entregada por el organizador.',
   ]
+  const detailRef = useRef(null)
   const [overview, setOverview] = useState({ totals: null, competitions: [] })
+  const [competitionSearch, setCompetitionSearch] = useState('')
   const [selectedCompetitionId, setSelectedCompetitionId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -7247,7 +7308,6 @@ function FinanceTab() {
   const summary = detail?.summary || null
   const withdrawals = detail?.withdrawals || []
   const headlineCollected = isOrganizer ? totals.organizer_revenue : totals.total_collected
-  const selectedCompetitionCollected = summary ? (isOrganizer ? summary.organizer_revenue : summary.total_collected) : 0
   const canRequestWithdrawal = Boolean(summary?.withdrawal_request_allowed)
 
   return (
@@ -7258,44 +7318,108 @@ function FinanceTab() {
         </div>
       ) : null}
 
+      {isAdmin && pricingConfig && (
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Configuracion de comisiones</div>
+            {!editingConfig && (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setEditingConfig(true); setConfigMsg(null) }}>Editar</button>
+            )}
+          </div>
+          {configMsg && (
+            <div style={{ borderRadius: 10, border: `1px solid ${configMsg.type === 'success' ? 'rgba(0,194,168,0.26)' : 'rgba(255,107,0,0.26)'}`, background: configMsg.type === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: '8px 12px', color: '#F5F7FA', fontSize: 13, marginBottom: 10 }}>
+              {configMsg.text}
+            </div>
+          )}
+          {!editingConfig ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', padding: '10px 12px' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 11 }}>Comision FinalRep (default)</div>
+                <div style={{ color: '#FFB36F', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{Math.round((pricingConfig.default_platform_fee_rate || 0) * 1000) / 10}%</div>
+              </div>
+              <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', padding: '10px 12px' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 11 }}>Tasa Bold</div>
+                <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{((pricingConfig.bold_processor_rate || 0) * 100).toFixed(2)}%</div>
+              </div>
+              <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', padding: '10px 12px' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 11 }}>Fee fijo Bold</div>
+                <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{formatCop(pricingConfig.bold_processor_fixed_fee)}</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Comision FinalRep % (default)</div>
+                  <input type="number" min="0" max="100" step="0.1" value={configForm.default_platform_fee_rate} onChange={e => setConfigForm(p => ({ ...p, default_platform_fee_rate: e.target.value }))} placeholder="5" />
+                </div>
+                <div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Tasa Bold (decimal, ej: 0.0269)</div>
+                  <input type="number" min="0" max="1" step="0.0001" value={configForm.bold_processor_rate} onChange={e => setConfigForm(p => ({ ...p, bold_processor_rate: e.target.value }))} placeholder="0.0269" />
+                </div>
+                <div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Fee fijo Bold (COP)</div>
+                  <input type="number" min="0" step="1" value={configForm.bold_processor_fixed_fee} onChange={e => setConfigForm(p => ({ ...p, bold_processor_fixed_fee: e.target.value }))} placeholder="300" />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingConfig(false)}>Cancelar</button>
+                <button type="button" className="btn-primary btn-sm" onClick={saveConfig} disabled={savingConfig}>{savingConfig ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
         <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
-          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Ingresos' : 'Ingresos totales'}</div>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Total recaudado' : 'Ingresos totales'}</div>
           <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(headlineCollected)}</div>
         </div>
-        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
-          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Saldo disponible' : 'Saldo esperado en Bold'}</div>
-          <div style={{ color: '#8DF1E4', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? totals.available_balance : totals.expected_bold_balance)}</div>
-        </div>
-        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
-          <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Tus retiros en proceso' : 'Saldo retenido organizadores'}</div>
-          <div style={{ color: '#FFB36F', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? totals.pending_withdrawals : totals.organizer_balance_held)}</div>
-        </div>
+        {!isOrganizer && (
+          <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo esperado en Bold</div>
+            <div style={{ color: '#8DF1E4', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.expected_bold_balance)}</div>
+          </div>
+        )}
+        {!isOrganizer && (
+          <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo retenido organizadores</div>
+            <div style={{ color: '#FFB36F', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.organizer_balance_held)}</div>
+          </div>
+        )}
         {!isOrganizer && (
           <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
             <div style={{ color: '#AAB2C0', fontSize: 12 }}>Libre FinalRep</div>
             <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.finalrep_available_balance)}</div>
           </div>
         )}
-        {!isOrganizer && (
-          <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
-            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Costo Bold</div>
-            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.processor_fees)}</div>
-          </div>
-        )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16 }}>
-        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
-          <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, marginBottom: 12 }}>Competencias</div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(280px, 360px) minmax(0, 1fr)', gap: 16 }}>
+        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16, display: 'grid', gridTemplateRows: 'auto auto 1fr', minHeight: 0 }}>
+          <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, marginBottom: 10 }}>Competencias</div>
+          {competitions.length > 4 && (
+            <input
+              value={competitionSearch}
+              onChange={e => setCompetitionSearch(e.target.value)}
+              placeholder="Buscar competencia..."
+              style={{ marginBottom: 10, fontSize: 13 }}
+            />
+          )}
           {loading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando...</div> : null}
           {!loading && !competitions.length ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>No hay competencias con ingresos todavia.</div> : null}
-          <div style={{ display: 'grid', gap: 10 }}>
-            {competitions.map((item) => (
+          <div style={{ display: 'grid', gap: 10, overflowY: 'auto', maxHeight: isMobile ? 'none' : 520, paddingRight: 2 }}>
+            {competitions.filter(item =>
+              !competitionSearch.trim() || item.competition_name?.toLowerCase().includes(competitionSearch.trim().toLowerCase())
+            ).map((item) => (
               <button
                 key={item.competition_id}
                 type="button"
-                onClick={() => setSelectedCompetitionId(item.competition_id)}
+                onClick={() => {
+                  setSelectedCompetitionId(item.competition_id)
+                  if (isMobile) setTimeout(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+                }}
                 style={{
                   textAlign: 'left',
                   borderRadius: 14,
@@ -7308,16 +7432,25 @@ function FinanceTab() {
               >
                   <div style={{ fontSize: 14, fontWeight: 800 }}>{item.competition_name}</div>
                   <div style={{ display: 'grid', gap: 4, marginTop: 8, color: '#AAB2C0', fontSize: 12 }}>
-                  <div>Ingresos: {formatCop(isOrganizer ? item.organizer_revenue : item.total_collected)}</div>
-                  <div>{isOrganizer ? 'Saldo: ' : 'Bold esperado: '}{formatCop(isOrganizer ? item.available_balance : item.expected_bold_balance)}</div>
-                  <div>{isOrganizer ? 'Retiros en proceso: ' : 'Libre FinalRep: '}{formatCop(isOrganizer ? item.pending_withdrawals : item.finalrep_available_balance)}</div>
+                  <div>Total recaudado: {formatCop(isOrganizer ? item.organizer_revenue : item.total_collected)}</div>
+                  {isOrganizer
+                    ? <div>Desembolso: <span style={{ color: item.disbursement_status === 'paid' ? '#8DF1E4' : item.disbursement_status === 'approved' ? '#FFB36F' : '#AAB2C0', fontWeight: 700, textTransform: 'uppercase' }}>{item.disbursement_status === 'paid' ? 'Transferido' : item.disbursement_status === 'approved' ? 'Aprobado' : item.disbursement_status === 'pending' ? 'En revision' : 'Pendiente solicitud'}</span></div>
+                    : <>
+                        <div>Bold esperado: {formatCop(item.expected_bold_balance)}</div>
+                        <div>Libre FinalRep: {formatCop(item.finalrep_available_balance)}</div>
+                      </>
+                  }
                 </div>
               </button>
             ))}
+            {!loading && competitions.length > 0 && competitionSearch.trim() &&
+              !competitions.some(item => item.competition_name?.toLowerCase().includes(competitionSearch.trim().toLowerCase())) && (
+              <div style={{ color: '#AAB2C0', fontSize: 13, padding: '8px 4px' }}>Sin resultados para "{competitionSearch}"</div>
+            )}
           </div>
         </div>
 
-        <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
+        <div ref={detailRef} className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
           {detailLoading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando detalle financiero...</div> : null}
           {!detailLoading && !summary ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Selecciona una competencia.</div> : null}
           {!detailLoading && summary ? (
@@ -7340,21 +7473,29 @@ function FinanceTab() {
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
                 <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Ingresos' : 'Ingresos por inscripcion'}</div>
-                  <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(selectedCompetitionCollected)}</div>
-                </div>
-                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Bolsillo' : 'Bolsillo del organizador'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Total recaudado ({summary.approved_payments} inscritos)</div>
                   <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.organizer_revenue)}</div>
                 </div>
-                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Saldo disponible' : 'Saldo esperado en Bold'}</div>
-                  <div style={{ color: '#8DF1E4', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(isOrganizer ? summary.available_balance : summary.expected_bold_balance)}</div>
-                </div>
-                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Retiros pagados</div>
-                  <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.paid_out_total)}</div>
-                </div>
+                {isOrganizer ? (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Estado del desembolso</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginTop: 6, color: summary.disbursement_status === 'paid' ? '#8DF1E4' : summary.disbursement_status === 'approved' ? '#FFB36F' : '#AAB2C0' }}>
+                      {summary.disbursement_status === 'paid' ? 'Transferido' : summary.disbursement_status === 'approved' ? 'Aprobado, en transferencia' : summary.disbursement_status === 'pending' ? 'En revision' : 'Sin solicitud'}
+                    </div>
+                    {summary.paid_out_total > 0 && <div style={{ color: '#8DF1E4', fontSize: 13, marginTop: 4 }}>{formatCop(summary.paid_out_total)}</div>}
+                  </div>
+                ) : (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo esperado en Bold</div>
+                    <div style={{ color: '#8DF1E4', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.expected_bold_balance)}</div>
+                  </div>
+                )}
+                {!isOrganizer && (
+                  <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>Retiros pagados</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 6 }}>{formatCop(summary.paid_out_total)}</div>
+                  </div>
+                )}
                 {!isOrganizer ? (
                   <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
                     <div style={{ color: '#AAB2C0', fontSize: 12 }}>Comision FinalRep bruta</div>

@@ -185,6 +185,25 @@ class Competition(SQLModel, table=True):
     )
 
 
+class PasswordResetCode(SQLModel, table=True):
+    __tablename__ = "password_reset_codes"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True)
+    code: str
+    expires_at: datetime = Field(
+        sa_column=Column(DateTime(timezone=True), nullable=False)
+    )
+    used_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("nombre", "competition_id"),)
@@ -366,6 +385,7 @@ class CompetitionParticipant(SQLModel, table=True):
     payment_transaction_id: Optional[str] = None
     payment_base_amount: int = Field(default=0)
     payment_platform_fee: int = Field(default=0)
+    payment_platform_fee_rate: float = Field(default=0.05)
     payment_processor_fee: int = Field(default=0)
     payment_platform_net: int = Field(default=0)
     payment_amount_total: int = Field(default=0)
@@ -402,6 +422,7 @@ class CompetitionPaymentIntent(SQLModel, table=True):
     payment_transaction_id: Optional[str] = None
     payment_base_amount: int = Field(default=0)
     payment_platform_fee: int = Field(default=0)
+    payment_platform_fee_rate: float = Field(default=0.05)
     payment_processor_fee: int = Field(default=0)
     payment_platform_net: int = Field(default=0)
     payment_amount_total: int = Field(default=0)
@@ -416,6 +437,17 @@ class CompetitionPaymentIntent(SQLModel, table=True):
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class PlatformConfig(SQLModel, table=True):
+    __tablename__ = "platform_config"
+
+    key: str = Field(sa_column=Column(String, primary_key=True))
+    value: str = Field(default="")
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
     )
 
 
@@ -899,3 +931,11 @@ class SelfEnrollRequest(SQLModel):
 
 class EnrollStatusUpdate(SQLModel):
     estado: str  # confirmado / rechazado
+
+
+# ── Platform config schemas ────────────────────────────────────────────────────
+
+class PlatformConfigUpdate(SQLModel):
+    default_platform_fee_rate: Optional[float] = None   # 0.0 – 1.0
+    bold_processor_rate: Optional[float] = None          # e.g. 0.0269
+    bold_processor_fixed_fee: Optional[int] = None       # e.g. 300 (COP)

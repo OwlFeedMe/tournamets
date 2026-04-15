@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, Dumbbell, House, LogIn, LogOut, Trophy, UserCircle2 } from 'lucide-react'
+import { Bell, CalendarDays, House, LogIn, LogOut, Trophy, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
@@ -7,7 +7,6 @@ const NAV_ITEMS = {
   public: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
     { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
   ],
   user: [
@@ -20,15 +19,15 @@ const NAV_ITEMS = {
   organizer: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
     { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
     { label: 'Panel', icon: UserCircle2, to: '/organizer' },
   ],
   admin: [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Workouts', icon: Dumbbell, to: '/workouts' },
+    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
     { label: 'Leaderboard', icon: Trophy, to: '/leaderboard' },
+    { label: 'Perfil', icon: UserCircle2, to: '/profile' },
     { label: 'Admin', icon: UserCircle2, to: '/admin' },
   ],
 }
@@ -38,7 +37,6 @@ function isActivePath(pathname, target) {
   if (target === '/') return pathname === '/'
   if (target === '/events') return pathname.startsWith('/events')
   if (target === '/my-events') return pathname.startsWith('/my-events')
-  if (target === '/workouts') return pathname.startsWith('/workouts')
   if (target === '/leaderboard') return pathname.startsWith('/leaderboard')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')

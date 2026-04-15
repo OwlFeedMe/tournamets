@@ -77,13 +77,28 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
     approved_payments = int((payment_rows.get("approved_payments") if payment_rows else 0) or 0)
     payments_in_progress = int((payment_rows.get("payments_in_progress") if payment_rows else 0) or 0)
 
-    pending_withdrawals = sum(
-        _normalize_amount(item.amount) for item in withdrawals if item.status in {"pending", "approved"}
-    )
+    # Disbursement state: what happened with the organizer's payout
+    paid_withdrawal = next((item for item in withdrawals if item.status == "paid"), None)
+    pending_withdrawal = next((item for item in withdrawals if item.status in {"pending", "approved"}), None)
     paid_out_total = sum(
         _normalize_amount(item.amount) for item in withdrawals if item.status == "paid"
     )
+    pending_withdrawals = sum(
+        _normalize_amount(item.amount) for item in withdrawals if item.status in {"pending", "approved"}
+    )
     available_balance = max(0, organizer_revenue - pending_withdrawals - paid_out_total)
+
+    # disbursement_status: what the organizer should see
+    if paid_withdrawal:
+        disbursement_status = "paid"
+    elif pending_withdrawal and pending_withdrawal.status == "approved":
+        disbursement_status = "approved"
+    elif pending_withdrawal:
+        disbursement_status = "pending"
+    else:
+        disbursement_status = "none"
+
+    # Admin-only metrics (full picture)
     organizer_balance_held = max(0, organizer_revenue - paid_out_total)
     expected_bold_balance = max(0, total_collected - processor_fees - paid_out_total)
     finalrep_available_balance = expected_bold_balance - organizer_balance_held
@@ -99,8 +114,16 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
         "withdrawal_request_allowed": enrollment_closed and available_balance > 0,
         "competition_start": competition.competition_start,
         "competition_end": competition.competition_end,
+        # Organizer-facing: total collected + disbursement status only
         "total_collected": total_collected,
         "organizer_revenue": organizer_revenue,
+        "approved_payments": approved_payments,
+        "payments_in_progress": payments_in_progress,
+        "disbursement_status": disbursement_status,       # none | pending | approved | paid
+        "paid_out_total": paid_out_total,
+        "available_balance": available_balance,
+        "pending_withdrawals": pending_withdrawals,
+        # Admin-only metrics
         "platform_revenue": platform_revenue_gross,
         "platform_revenue_gross": platform_revenue_gross,
         "platform_revenue_net": platform_revenue_net,
@@ -108,11 +131,6 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
         "organizer_balance_held": organizer_balance_held,
         "expected_bold_balance": expected_bold_balance,
         "finalrep_available_balance": finalrep_available_balance,
-        "approved_payments": approved_payments,
-        "payments_in_progress": payments_in_progress,
-        "pending_withdrawals": pending_withdrawals,
-        "paid_out_total": paid_out_total,
-        "available_balance": available_balance,
         "event_started": event_started,
         "can_release_funds": event_started,
         "withdrawal_requests_count": len(withdrawals),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Dumbbell, Flame, Lock, Trophy } from 'lucide-react'
+import { Bell, CalendarDays, ChevronRight, Flame, Lock, Trophy } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'

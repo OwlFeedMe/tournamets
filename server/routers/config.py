@@ -1,0 +1,85 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
+
+from auth import require_admin
+from database import get_session
+from models import PlatformConfig, PlatformConfigUpdate
+
+router = APIRouter(prefix="/api/config", tags=["config"])
+
+_DEFAULTS = {
+    "default_platform_fee_rate": "0.05",
+    "bold_processor_rate": "0.0269",
+    "bold_processor_fixed_fee": "300",
+}
+
+
+def _load_config(session: Session) -> dict:
+    rows = session.exec(select(PlatformConfig)).all()
+    cfg = dict(_DEFAULTS)
+    for row in rows:
+        cfg[row.key] = row.value
+    return cfg
+
+
+def get_pricing_config(session: Session) -> dict:
+    cfg = _load_config(session)
+    try:
+        fee_rate = float(cfg["default_platform_fee_rate"])
+    except Exception:
+        fee_rate = 0.05
+    if fee_rate < 0 or fee_rate > 1:
+        fee_rate = 0.05
+    try:
+        proc_rate = float(cfg["bold_processor_rate"])
+    except Exception:
+        proc_rate = 0.0269
+    try:
+        proc_fixed = int(cfg["bold_processor_fixed_fee"])
+    except Exception:
+        proc_fixed = 300
+    return {
+        "default_platform_fee_rate": round(fee_rate, 4),
+        "bold_processor_rate": round(proc_rate, 6),
+        "bold_processor_fixed_fee": proc_fixed,
+    }
+
+
+@router.get("/pricing")
+def read_pricing_config(session: Session = Depends(get_session)):
+    """Public endpoint — frontend reads fee rates from here (no hardcoded constants)."""
+    return get_pricing_config(session)
+
+
+@router.put("/pricing")
+def update_pricing_config(
+    body: PlatformConfigUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_admin),
+):
+    updates = {}
+    if body.default_platform_fee_rate is not None:
+        rate = float(body.default_platform_fee_rate)
+        if rate < 0 or rate > 1:
+            raise HTTPException(400, "default_platform_fee_rate debe estar entre 0 y 1")
+        updates["default_platform_fee_rate"] = str(round(rate, 4))
+    if body.bold_processor_rate is not None:
+        pr = float(body.bold_processor_rate)
+        if pr < 0 or pr > 1:
+            raise HTTPException(400, "bold_processor_rate debe estar entre 0 y 1")
+        updates["bold_processor_rate"] = str(round(pr, 6))
+    if body.bold_processor_fixed_fee is not None:
+        pf = int(body.bold_processor_fixed_fee)
+        if pf < 0:
+            raise HTTPException(400, "bold_processor_fixed_fee no puede ser negativo")
+        updates["bold_processor_fixed_fee"] = str(pf)
+
+    for key, value in updates.items():
+        row = session.get(PlatformConfig, key)
+        if row:
+            row.value = value
+            session.add(row)
+        else:
+            session.add(PlatformConfig(key=key, value=value))
+    session.commit()
+    return {"ok": True, "config": get_pricing_config(session)}

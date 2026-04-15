@@ -475,7 +475,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
   const stats = schedule.summary || {}
   const modeCopy = scheduleCopy[isPersonal ? 'personal' : 'public']
-  const hasPersonalAccess = isPersonal && session && role === 'user' && participantId
+  const hasPersonalAccess = isPersonal && session && !!participantId && (role === 'user' || role === 'admin')
   const heroLink = competition ? `/competitions/${competition.id}` : '/'
   const leaderboardLink = competition ? `/leaderboard/${competition.id}` : '/leaderboard'
   const myScheduleLink = competition ? `/competitions/${competition.id}/my-schedule` : '/profile'
