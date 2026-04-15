@@ -14,7 +14,6 @@ from jose import JWTError, jwt
 from sqlmodel import Session
 
 from constants import Role
-from database import get_session
 from models import AppUser
 
 ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
@@ -30,6 +29,12 @@ ADMIN_ID = os.getenv("ADMIN_ID", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_auth_session():
+    from database import get_session
+
+    yield from get_session()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -150,14 +155,14 @@ def _get_current_user_from_credentials(
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
+    session: Session = Depends(get_auth_session),
 ):
     return _get_current_user_from_credentials(credentials, session, optional=False)
 
 
 def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
+    session: Session = Depends(get_auth_session),
 ):
     return _get_current_user_from_credentials(credentials, session, optional=True)
 
