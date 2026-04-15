@@ -11,8 +11,11 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
+from sqlmodel import Session
 
 from constants import Role
+from database import get_session
+from models import AppUser
 
 ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ROOT_ENV_PATH)
@@ -79,10 +82,64 @@ def decode_token(token: str) -> dict:
         )
 
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+def _effective_role(base_role: str, app_user: AppUser) -> str:
+    if int(app_user.admin_enabled or 0):
+        return Role.ADMIN
+    if int(app_user.organizer_enabled or 0):
+        return Role.ORGANIZER
+    if int(app_user.judge_enabled or 0):
+        return Role.JUDGE
+    return base_role
+
+
+def _refresh_user_access(payload: dict, session: Session) -> dict:
+    refreshed = dict(payload)
+    app_user_id = refreshed.get("app_user_id")
+    if app_user_id is None and isinstance(refreshed.get("sub"), str) and refreshed["sub"].startswith("app:"):
+        try:
+            app_user_id = int(refreshed["sub"].split(":", 1)[1])
+        except (TypeError, ValueError, IndexError):
+            app_user_id = None
+    if app_user_id is None:
+        return refreshed
+
+    app_user = session.get(AppUser, int(app_user_id))
+    if not app_user or int(app_user.is_active or 0) != 1:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesion invalida")
+
+    extra_roles: list[str] = []
+    if int(app_user.organizer_enabled or 0):
+        extra_roles.append(Role.ORGANIZER)
+    if int(app_user.judge_enabled or 0):
+        extra_roles.append(Role.JUDGE)
+    if int(app_user.admin_enabled or 0):
+        extra_roles.append(Role.ADMIN)
+
+    refreshed["app_user_id"] = app_user.id
+    refreshed["username"] = app_user.username
+    refreshed["display_name"] = app_user.display_name
+    refreshed["base_role"] = app_user.role
+    refreshed["extra_roles"] = extra_roles
+    refreshed["role"] = _effective_role(app_user.role, app_user)
+    refreshed["participant_id"] = app_user.participant_id
+    refreshed["organizer_enabled"] = bool(app_user.organizer_enabled)
+    refreshed["judge_enabled"] = bool(app_user.judge_enabled)
+    refreshed["admin_enabled"] = bool(app_user.admin_enabled)
+    return refreshed
+
+
+def _get_current_user_from_credentials(
+    credentials: HTTPAuthorizationCredentials | None,
+    session: Session,
+    *,
+    optional: bool,
+):
     if not credentials:
+        if optional:
+            return None
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
-    payload = decode_token(credentials.credentials)
+
+    payload = _refresh_user_access(decode_token(credentials.credentials), session)
     if payload.get("role") == Role.PARTICIPANT and payload.get("participant_id") is None:
         try:
             payload["participant_id"] = int(payload.get("sub"))
@@ -91,10 +148,18 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
     return payload
 
 
-def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    if not credentials:
-        return None
-    return get_current_user(credentials)
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    session: Session = Depends(get_session),
+):
+    return _get_current_user_from_credentials(credentials, session, optional=False)
+
+
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    session: Session = Depends(get_session),
+):
+    return _get_current_user_from_credentials(credentials, session, optional=True)
 
 
 def has_admin_access(user: dict | None) -> bool:

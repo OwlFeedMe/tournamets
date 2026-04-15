@@ -72,7 +72,7 @@ def _serialize_enrollment_questions(payload: dict):
         question_id = str((raw or {}).get("id") or f"q_{idx + 1}").strip() or f"q_{idx + 1}"
         placeholder = str((raw or {}).get("placeholder") or "").strip() or None
         field_type = str((raw or {}).get("field_type") or "text").strip().lower() or "text"
-        if field_type not in {"text", "image"}:
+        if field_type not in {"text", "number", "image"}:
             field_type = "text"
         normalized.append({
             "id": question_id,

@@ -2303,6 +2303,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' })
   const [questions, setQuestions] = useState([])
+  const [questionDraft, setQuestionDraft] = useState({ label: '', field_type: 'text', required: 0, placeholder: '' })
   const [scheduleItems, setScheduleItems] = useState([])
   const [socialLinks, setSocialLinks] = useState([])
   const [landingSections, setLandingSections] = useState(() => parseLandingSections(null))
@@ -2316,8 +2317,18 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     basics: false,
     registration: false,
   })
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+  const [showAddQuestionModal, setShowAddQuestionModal] = useState(false)
+  const [editingQuestionId, setEditingQuestionId] = useState(null)
   const [showAddPhaseModal, setShowAddPhaseModal] = useState(false)
   const [editingPhaseId, setEditingPhaseId] = useState(null)
+  const [showAddScheduleModal, setShowAddScheduleModal] = useState(false)
+  const [editingScheduleId, setEditingScheduleId] = useState(null)
+  const [scheduleDraft, setScheduleDraft] = useState({ label: '', kind: 'custom', start_at: '', end_at: '', phase_id: '', use_phase_dates: 0, note: '' })
+  const [showAddSocialModal, setShowAddSocialModal] = useState(false)
+  const [editingSocialId, setEditingSocialId] = useState(null)
+  const [socialDraft, setSocialDraft] = useState({ platform: 'instagram', custom_label: '', url: '' })
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -2405,17 +2416,29 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       basics: false,
       registration: false,
     })
+    setShowAddCategoryModal(false)
+    setEditingCategoryId(null)
+    setShowAddQuestionModal(false)
+    setEditingQuestionId(null)
+    setQuestionDraft({ label: '', field_type: 'text', required: 0, placeholder: '' })
     setShowAddPhaseModal(false)
     setEditingPhaseId(null)
+    setShowAddScheduleModal(false)
+    setEditingScheduleId(null)
+    setScheduleDraft({ label: '', kind: 'custom', start_at: '', end_at: '', phase_id: '', use_phase_dates: 0, note: '' })
+    setShowAddSocialModal(false)
+    setEditingSocialId(null)
+    setSocialDraft({ platform: 'instagram', custom_label: '', url: '' })
   }, [competition?.id, isEdit])
   const previewTheme = useMemo(() => resolveCompetitionTheme(form), [form])
 
   const addCategory = () => {
     const nombre = newCat.nombre.trim()
     const descripcion = (newCat.descripcion || '').trim()
-    if (!nombre) return
+    if (!nombre) return false
     setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion, modality: newCat.modality || 'individual', enrollment_price: normalizeEnrollmentPrice(newCat.enrollment_price) }])
     setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual', enrollment_price: 0 })
+    return true
   }
 
   const removeCategory = (id) => {
@@ -2628,7 +2651,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         .map((question, idx) => ({
           id: String(question.id || `q_${idx + 1}`),
           label: String(question.label || '').trim(),
-          field_type: question.field_type === 'image' ? 'image' : 'text',
+          field_type: question.field_type === 'image' ? 'image' : question.field_type === 'number' ? 'number' : 'text',
           required: question.required ? 1 : 0,
           placeholder: String(question.placeholder || '').trim() || null,
         }))
@@ -2838,7 +2861,22 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     setQuestions(prev => prev.map(question => question.id === id ? { ...question, [field]: value } : question))
   }
   const addQuestion = () => {
-    setQuestions(prev => [...prev, { id: `q_${Date.now()}`, label: '', field_type: 'text', required: 0, placeholder: '' }])
+    const item = { id: `q_${Date.now()}`, label: '', field_type: 'text', required: 0, placeholder: '' }
+    setQuestions(prev => [...prev, item])
+    return item
+  }
+  const createQuestionFromDraft = () => {
+    const label = String(questionDraft.label || '').trim()
+    if (!label) return false
+    setQuestions(prev => [...prev, {
+      id: `q_${Date.now()}`,
+      label,
+      field_type: questionDraft.field_type || 'text',
+      required: questionDraft.required ? 1 : 0,
+      placeholder: String(questionDraft.placeholder || '').trim(),
+    }])
+    setQuestionDraft({ label: '', field_type: 'text', required: 0, placeholder: '' })
+    return true
   }
   const removeQuestion = (id) => {
     setQuestions(prev => prev.filter(question => question.id !== id))
@@ -2895,8 +2933,27 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       }
     }))
   }, [phases])
-  const addScheduleItem = () => {
-    setScheduleItems(prev => [...prev, { id: `date_${Date.now()}`, label: '', kind: 'custom', start_at: '', end_at: '', phase_id: '', use_phase_dates: 0, note: '' }])
+  const createScheduleItemFromDraft = () => {
+    const hasContent = scheduleDraft.label || scheduleDraft.start_at || scheduleDraft.end_at || scheduleDraft.note || scheduleDraft.phase_id
+    if (!hasContent) return false
+    const next = {
+      id: `date_${Date.now()}`,
+      label: String(scheduleDraft.label || '').trim(),
+      kind: scheduleDraft.kind || 'custom',
+      start_at: scheduleDraft.start_at || '',
+      end_at: scheduleDraft.end_at || '',
+      phase_id: scheduleDraft.phase_id || '',
+      use_phase_dates: scheduleDraft.phase_id && scheduleDraft.use_phase_dates ? 1 : 0,
+      note: String(scheduleDraft.note || '').trim(),
+    }
+    if (next.phase_id && next.use_phase_dates) {
+      const phaseDates = resolvePhaseDates(next.phase_id)
+      next.start_at = phaseDates.start_at
+      next.end_at = phaseDates.end_at
+    }
+    setScheduleItems(prev => [...prev, next])
+    setScheduleDraft({ label: '', kind: 'custom', start_at: '', end_at: '', phase_id: '', use_phase_dates: 0, note: '' })
+    return true
   }
   const removeScheduleItem = (id) => {
     setScheduleItems(prev => prev.filter(item => item.id !== id))
@@ -2910,11 +2967,49 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     if (visibleScheduleItems.length === 1) return '1 fecha visible configurada.'
     return `${visibleScheduleItems.length} fechas visibles configuradas.`
   }, [visibleScheduleItems])
+  const getScheduleKindLabel = (kind) => ({
+    custom: 'Personalizada',
+    enrollment_start: 'Apertura inscripciones',
+    enrollment_end: 'Cierre inscripciones',
+    competition_start: 'Inicio competencia',
+    competition_end: 'Fin competencia',
+    competition_day: 'Dia de competencia',
+  }[kind] || 'Personalizada')
+  const formatScheduleDate = (value) => {
+    if (!value) return 'Pendiente'
+    try {
+      return new Date(`${value}T00:00:00`).toLocaleDateString('es-CO', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    } catch {
+      return value
+    }
+  }
+  const getScheduleRangeLabel = (item) => {
+    if (item.start_at && item.end_at) return `${formatScheduleDate(item.start_at)} - ${formatScheduleDate(item.end_at)}`
+    if (item.start_at) return `Desde ${formatScheduleDate(item.start_at)}`
+    if (item.end_at) return `Hasta ${formatScheduleDate(item.end_at)}`
+    return 'Sin rango definido'
+  }
   const updateSocialLink = (id, field, value) => {
     setSocialLinks(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item))
   }
-  const addSocialLink = () => {
-    setSocialLinks(prev => [...prev, { id: `social_${Date.now()}`, platform: 'instagram', custom_label: '', url: '' }])
+  const createSocialLinkFromDraft = () => {
+    const url = String(socialDraft.url || '').trim()
+    const customLabel = String(socialDraft.custom_label || '').trim()
+    if (!url) return false
+    if (socialDraft.platform === 'other' && !customLabel) return false
+    setSocialLinks(prev => [...prev, {
+      id: `social_${Date.now()}`,
+      platform: socialDraft.platform || 'instagram',
+      custom_label: customLabel,
+      url,
+    }])
+    setSocialDraft({ platform: socialDraft.platform || 'instagram', custom_label: '', url: '' })
+    return true
   }
   const removeSocialLink = (id) => {
     setSocialLinks(prev => prev.filter(item => item.id !== id))
@@ -2976,6 +3071,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     { value: 'x', label: 'X' },
     { value: 'other', label: 'Otra' },
   ]
+  const getSocialPlatformLabel = (item) => {
+    if (item?.platform === 'other') return String(item.custom_label || '').trim() || 'Otra'
+    return SOCIAL_PLATFORM_OPTIONS.find(option => option.value === item?.platform)?.label || 'Red social'
+  }
 
   const formContent = (
       <form onSubmit={save} style={inline ? { display: 'grid', gap: 0 } : { overflowY: 'auto', paddingRight: 4 }}>
@@ -3326,32 +3425,43 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Redes y contacto</h4>
-            <div style={sectionHintStyle}>Agrega links publicos de Instagram, TikTok, Facebook, WhatsApp o cualquier canal oficial de la competencia.</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <h4 style={sectionTitleStyle}>Redes y contacto</h4>
+                <div style={sectionHintStyle}>Agrega links publicos de Instagram, TikTok, Facebook, WhatsApp o cualquier canal oficial de la competencia.</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddSocialModal(true)}>
+                + Agregar red
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+              {socialLinks.length ? `${socialLinks.length} red${socialLinks.length === 1 ? '' : 'es'} configurada${socialLinks.length === 1 ? '' : 's'}.` : 'Sin redes configuradas.'}
+            </div>
             {socialLinks.map((item, idx) => (
-              <div key={item.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
-                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.8fr 1.2fr auto', gap: 8 }}>
-                    <select value={item.platform || 'instagram'} onChange={e => updateSocialLink(item.id, 'platform', e.target.value)}>
-                      {SOCIAL_PLATFORM_OPTIONS.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                    <input value={item.url} onChange={e => updateSocialLink(item.id, 'url', e.target.value)} placeholder="https://..." />
-                    <button type="button" className="btn-danger btn-sm" onClick={() => removeSocialLink(item.id)}>Eliminar</button>
+              <div key={item.id} style={{ ...listItemStyle, display: 'grid', gap: 12, marginBottom: 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: '#FFB36F', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{`Red ${String(idx + 1).padStart(2, '0')}`}</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, marginTop: 4 }}>{getSocialPlatformLabel(item)}</div>
                   </div>
-                  {item.platform === 'other' ? (
-                    <input value={item.custom_label || ''} onChange={e => updateSocialLink(item.id, 'custom_label', e.target.value)} placeholder="Nombre de la red o canal" />
-                  ) : null}
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingSocialId(item.id)}>
+                    Editar
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 180px) minmax(0, 1fr)', gap: 10 }}>
+                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Canal</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{getSocialPlatformLabel(item)}</div>
+                  </div>
+                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                    <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Link</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{item.url || 'Pendiente'}</div>
+                  </div>
                 </div>
               </div>
             ))}
-            <button type="button" className="btn-secondary btn-sm" onClick={addSocialLink}>
-              + Agregar red social
-            </button>
           </div>
         </div>
 
@@ -3384,74 +3494,58 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <h4 style={sectionTitleStyle}>Fechas visibles</h4>
-              <button type="button" onClick={() => setExtraExpanded('registration')} style={{ ...extraToggleStyle, width: 'auto', padding: '8px 12px', borderRadius: 12 }}>
-                {expandedExtras.registration ? 'Ocultar extra' : 'Configuracion extra'}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <h4 style={sectionTitleStyle}>Fechas visibles</h4>
+                <div style={sectionHintStyle}>Agrega solo las fechas que quieras publicar en el resumen de la competencia.</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddScheduleModal(true)}>
+                + Agregar fecha
               </button>
             </div>
           </div>
-          {expandedExtras.registration ? (
-          <div style={{ display: 'grid', gap: 8 }}>
-            {scheduleItems.map((item, idx) => (
-              <div key={item.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
-                <span style={{ color: '#FF6B00', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 8 }}>
-                    <input value={item.label} onChange={e => updateScheduleItem(item.id, 'label', e.target.value)} placeholder="Ej: Inscripciones abiertas, Dia 1, Final..." />
-                    <select value={item.kind} onChange={e => updateScheduleItem(item.id, 'kind', e.target.value)}>
-                      <option value="custom">Personalizada</option>
-                      <option value="enrollment_start">Apertura inscripciones</option>
-                      <option value="enrollment_end">Cierre inscripciones</option>
-                      <option value="competition_start">Inicio competencia</option>
-                      <option value="competition_end">Fin competencia</option>
-                      <option value="competition_day">Dia de competencia</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr', gap: 8 }}>
-                    <select
-                      value={item.phase_id || ''}
-                      onChange={e => linkScheduleItemToPhase(item.id, e.target.value)}
-                    >
-                      <option value="">Sin evento enlazado</option>
-                      {phases.map(phase => (
-                        <option key={`schedule-phase-${item.id}-${phase.id}`} value={phase.id}>
-                          {phase.nombre}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className={item.phase_id && item.use_phase_dates ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
-                      onClick={() => toggleScheduleItemPhaseDates(item.id)}
-                      disabled={!item.phase_id}
-                    >
-                      {item.phase_id && item.use_phase_dates ? 'Usa fechas de fase' : 'Usar fechas de fase'}
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{visibleScheduleSummary}</div>
+            {scheduleItems.map((item, idx) => {
+              const linkedPhase = phases.find(phase => String(phase.id) === String(item.phase_id))
+              return (
+                <div key={item.id} style={{ ...listItemStyle, gap: 12, marginBottom: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#FFB36F', fontSize: 11, fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{`Fecha ${String(idx + 1).padStart(2, '0')}`}</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, marginTop: 4 }}>{item.label || `Fecha visible ${idx + 1}`}</div>
+                    </div>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingScheduleId(item.id)}>
+                      Editar
                     </button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    <input type="date" value={item.start_at} disabled={!!item.phase_id && !!item.use_phase_dates} onChange={e => updateScheduleItem(item.id, 'start_at', e.target.value)} />
-                    <input type="date" value={item.end_at} disabled={!!item.phase_id && !!item.use_phase_dates} onChange={e => updateScheduleItem(item.id, 'end_at', e.target.value)} />
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tipo</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>{getScheduleKindLabel(item.kind)}</div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Rango</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>{getScheduleRangeLabel(item)}</div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Evento enlazado</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>
+                        {linkedPhase?.nombre || 'Sin evento enlazado'}
+                        {linkedPhase && item.use_phase_dates ? ' · usa fechas del evento' : ''}
+                      </div>
+                    </div>
                   </div>
-                  {item.phase_id && item.use_phase_dates ? (
-                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
-                      Esta fecha visible usa el mismo rango del evento enlazado.
+                  {item.note ? (
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Nota</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>{item.note}</div>
                     </div>
                   ) : null}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
-                    <input value={item.note} onChange={e => updateScheduleItem(item.id, 'note', e.target.value)} placeholder="Nota opcional. Ej: Clasificatorio online o puertas abiertas 7:00 am" />
-                    <button type="button" className="btn-danger btn-sm" onClick={() => removeScheduleItem(item.id)}>Eliminar</button>
-                  </div>
                 </div>
-              </div>
-            ))}
-            <button type="button" className="btn-secondary btn-sm" onClick={addScheduleItem}>
-              + Agregar fecha
-            </button>
+              )
+            })}
           </div>
-          ) : (
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{visibleScheduleSummary}</div>
-          )}
         </div>
 
         <div style={sectionStyle}>
@@ -3509,28 +3603,46 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <h4 style={sectionTitleStyle}>Divisiones</h4>
             <div style={sectionHintStyle}>Crea solo las divisiones que realmente vas a usar. Si una no aplica, dejala fuera.</div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr 0.8fr auto', gap: 8, marginBottom: 8 }}>
-            <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
-            <select value={newCat.modality} onChange={e => setNewCat(prev => ({ ...prev, modality: e.target.value }))}>
-              <option value="individual">Individual</option>
-              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
-            </select>
-            <input type="number" min="0" step="1" value={newCat.enrollment_price || 0} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value }))} placeholder="Precio base" />
-            <button type="button" className="btn-secondary btn-sm" onClick={addCategory}>Agregar</button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+              {cats.length ? `${cats.length} division${cats.length === 1 ? '' : 'es'} configurada${cats.length === 1 ? '' : 's'}.` : 'Todavia no has agregado divisiones.'}
+            </div>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddCategoryModal(true)}>
+              + Agregar division
+            </button>
           </div>
-          <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical', marginBottom: 8 }} />
-          <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>{cats.length ? `${cats.length} division${cats.length === 1 ? '' : 'es'} configurada${cats.length === 1 ? '' : 's'}` : 'Sin divisiones'}</div>
+          <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginBottom: 8 }}>{cats.length ? '' : 'Sin divisiones'}</div>
           <div style={{ display: 'grid', gap: 6 }}>
             {cats.map((cat, idx) => (
-              <div key={cat.id} style={{ ...listItemStyle, gridTemplateColumns: '28px minmax(0, 1fr) auto' }}>
-                <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <input value={cat.nombre} onChange={e => updateCategoryName(cat.id, e.target.value)} placeholder="Nombre de la categoria" />
-                  <select value={cat.modality || 'individual'} onChange={e => updateCategoryModality(cat.id, e.target.value)}>
-                    <option value="individual">Individual</option>
-                    <option value="teams" disabled={!form.team_enabled}>Equipos</option>
-                  </select>
-                  <input type="number" min="0" step="1" value={cat.enrollment_price || 0} onChange={e => updateCategoryPrice(cat.id, e.target.value)} placeholder="Precio base de inscripcion" />
+              <div key={cat.id} style={{ ...listItemStyle, gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                        DIVISION {String(idx + 1).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, lineHeight: 1.2, marginTop: 6 }}>
+                      {cat.nombre || `Division ${idx + 1}`}
+                    </div>
+                  </div>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingCategoryId(cat.id)} style={{ flexShrink: 0 }}>
+                    Editar
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Modalidad</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {cat.modality === 'teams' ? 'Equipos' : 'Individual'}
+                      </div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Precio base</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>{formatCop(normalizeEnrollmentPrice(cat.enrollment_price))}</div>
+                    </div>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                     <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tu precio</div>
@@ -3545,9 +3657,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).totalPrice)}</div>
                     </div>
                   </div>
-                  <textarea value={cat.descripcion || ''} onChange={e => updateCategoryDescription(cat.id, e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ width: '100%', resize: 'vertical' }} />
+                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                    <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Descripcion</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
+                      {cat.descripcion || 'Sin descripcion'}
+                    </div>
+                  </div>
                 </div>
-                <button type="button" className="btn-danger btn-sm" onClick={() => removeCategory(cat.id)}>x</button>
               </div>
             ))}
           </div>
@@ -3564,26 +3680,57 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
             <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen para validar informacion del atleta.</div>
           </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+              {questions.length ? `${questions.length} pregunta${questions.length === 1 ? '' : 's'} configurada${questions.length === 1 ? '' : 's'}.` : 'Todavia no has agregado preguntas.'}
+            </div>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddQuestionModal(true)}>
+              + Agregar pregunta
+            </button>
+          </div>
           <div style={{ display: 'grid', gap: 6 }}>
             {questions.map((question, idx) => (
-              <div key={question.id} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '32px 1.2fr 0.9fr 1fr auto auto' }}>
-                <span style={{ color: '#00c2a8', fontSize: 12, fontWeight: 700 }}>{idx + 1}</span>
-                <input value={question.label} onChange={e => updateQuestion(question.id, 'label', e.target.value)} placeholder="Pregunta" />
-                <select value={question.field_type || 'text'} onChange={e => updateQuestion(question.id, 'field_type', e.target.value)}>
-                  <option value="text">Texto</option>
-                  <option value="image">Imagen</option>
-                </select>
-                <input value={question.placeholder} onChange={e => updateQuestion(question.id, 'placeholder', e.target.value)} placeholder={question.field_type === 'image' ? 'Ayuda opcional. Ej: Sube el comprobante legible' : 'Placeholder (opcional)'} />
-                <button type="button" className={question.required ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => updateQuestion(question.id, 'required', question.required ? 0 : 1)}>
-                  {question.required ? 'Obligatoria' : 'Opcional'}
-                </button>
-                <button type="button" className="btn-danger btn-sm" onClick={() => removeQuestion(question.id)}>x</button>
+              <div key={question.id} style={{ ...listItemStyle, gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                        PREGUNTA {String(idx + 1).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, lineHeight: 1.2, marginTop: 6 }}>
+                      {question.label || `Pregunta ${idx + 1}`}
+                    </div>
+                  </div>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingQuestionId(question.id)} style={{ flexShrink: 0 }}>
+                    Editar
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Tipo</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {question.field_type === 'image' ? 'Imagen' : question.field_type === 'number' ? 'Solo numeros' : 'Solo texto'}
+                      </div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Estado</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {question.required ? 'Obligatoria' : 'Opcional'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                    <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Ayuda</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
+                      {question.placeholder || 'Sin ayuda adicional'}
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
             {!questions.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin preguntas configuradas.</div>}
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <button type="button" className="btn-secondary btn-sm" onClick={addQuestion}>+ Agregar pregunta</button>
           </div>
         </div>
         </div>
@@ -3771,6 +3918,468 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     </Modal>
   ) : null
 
+  const addCategoryModal = showAddCategoryModal ? (
+    <Modal
+      title="Agregar division"
+      onClose={() => setShowAddCategoryModal(false)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          Completa los datos de la division y agrégala a la competencia.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre</label>
+            <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Modalidad</label>
+            <select value={newCat.modality} onChange={e => setNewCat(prev => ({ ...prev, modality: e.target.value }))}>
+              <option value="individual">Individual</option>
+              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Precio base</label>
+            <input type="number" min="0" step="1" value={newCat.enrollment_price || 0} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value }))} placeholder="Precio base" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Descripcion</label>
+            <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={4} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddCategoryModal(false)}>Cancelar</button>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              if (addCategory()) setShowAddCategoryModal(false)
+            }}
+          >
+            Agregar division
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const addQuestionModal = showAddQuestionModal ? (
+    <Modal
+      title="Agregar pregunta"
+      onClose={() => setShowAddQuestionModal(false)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          Configura la pregunta que verá el atleta en la inscripción.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Pregunta</label>
+            <input value={questionDraft.label} onChange={e => setQuestionDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="Escribe la pregunta" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo</label>
+            <select value={questionDraft.field_type || 'text'} onChange={e => setQuestionDraft(prev => ({ ...prev, field_type: e.target.value }))}>
+              <option value="text">Solo texto</option>
+              <option value="number">Solo numeros</option>
+              <option value="image">Imagen</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Estado</label>
+            <select value={questionDraft.required ? 'required' : 'optional'} onChange={e => setQuestionDraft(prev => ({ ...prev, required: e.target.value === 'required' ? 1 : 0 }))}>
+              <option value="optional">Opcional</option>
+              <option value="required">Obligatoria</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Ayuda</label>
+            <input
+              value={questionDraft.placeholder}
+              onChange={e => setQuestionDraft(prev => ({ ...prev, placeholder: e.target.value }))}
+              placeholder={questionDraft.field_type === 'image' ? 'Ej: Sube el comprobante legible' : questionDraft.field_type === 'number' ? 'Ej: Escribe solo numeros' : 'Placeholder opcional'}
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddQuestionModal(false)}>Cancelar</button>
+          <button type="button" className="btn-primary" onClick={() => { if (createQuestionFromDraft()) setShowAddQuestionModal(false) }}>
+            Agregar pregunta
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const editingQuestion = questions.find(question => String(question.id) === String(editingQuestionId))
+  const editQuestionModal = editingQuestion ? (
+    <Modal
+      title={`Editar pregunta - ${editingQuestion.label || ''}`}
+      onClose={() => setEditingQuestionId(null)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Pregunta</label>
+            <input value={editingQuestion.label || ''} onChange={e => updateQuestion(editingQuestion.id, 'label', e.target.value)} placeholder="Escribe la pregunta" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo</label>
+            <select value={editingQuestion.field_type || 'text'} onChange={e => updateQuestion(editingQuestion.id, 'field_type', e.target.value)}>
+              <option value="text">Solo texto</option>
+              <option value="number">Solo numeros</option>
+              <option value="image">Imagen</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Estado</label>
+            <select value={editingQuestion.required ? 'required' : 'optional'} onChange={e => updateQuestion(editingQuestion.id, 'required', e.target.value === 'required' ? 1 : 0)}>
+              <option value="optional">Opcional</option>
+              <option value="required">Obligatoria</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Ayuda</label>
+            <input
+              value={editingQuestion.placeholder || ''}
+              onChange={e => updateQuestion(editingQuestion.id, 'placeholder', e.target.value)}
+              placeholder={editingQuestion.field_type === 'image' ? 'Ej: Sube el comprobante legible' : editingQuestion.field_type === 'number' ? 'Ej: Escribe solo numeros' : 'Placeholder opcional'}
+            />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-danger btn-sm" onClick={() => { removeQuestion(editingQuestion.id); setEditingQuestionId(null) }}>
+            Eliminar
+          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingQuestionId(null)}>Cerrar</button>
+            <button type="button" className="btn-primary" onClick={() => setEditingQuestionId(null)}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const addSocialModal = showAddSocialModal ? (
+    <Modal
+      title="Agregar red social"
+      onClose={() => setShowAddSocialModal(false)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          Agrega un canal oficial para mostrarlo dentro de la competencia.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Plataforma</label>
+            <select value={socialDraft.platform || 'instagram'} onChange={e => setSocialDraft(prev => ({ ...prev, platform: e.target.value }))}>
+              {SOCIAL_PLATFORM_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          {socialDraft.platform === 'other' ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Nombre visible</label>
+              <input value={socialDraft.custom_label || ''} onChange={e => setSocialDraft(prev => ({ ...prev, custom_label: e.target.value }))} placeholder="Nombre de la red o canal" />
+            </div>
+          ) : null}
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Link</label>
+            <input value={socialDraft.url || ''} onChange={e => setSocialDraft(prev => ({ ...prev, url: e.target.value }))} placeholder="https://..." />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddSocialModal(false)}>Cancelar</button>
+          <button type="button" className="btn-primary" onClick={() => { if (createSocialLinkFromDraft()) setShowAddSocialModal(false) }}>
+            Agregar red
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const addScheduleModal = showAddScheduleModal ? (
+    <Modal
+      title="Agregar fecha visible"
+      onClose={() => setShowAddScheduleModal(false)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
+          Agrega una fecha para mostrarla en la vista publica de la competencia.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre visible</label>
+            <input value={scheduleDraft.label} onChange={e => setScheduleDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="Ej: Inscripciones abiertas, Dia 1, Final..." />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo</label>
+            <select value={scheduleDraft.kind} onChange={e => setScheduleDraft(prev => ({ ...prev, kind: e.target.value }))}>
+              <option value="custom">Personalizada</option>
+              <option value="enrollment_start">Apertura inscripciones</option>
+              <option value="enrollment_end">Cierre inscripciones</option>
+              <option value="competition_start">Inicio competencia</option>
+              <option value="competition_end">Fin competencia</option>
+              <option value="competition_day">Dia de competencia</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Evento enlazado</label>
+            <select
+              value={scheduleDraft.phase_id || ''}
+              onChange={e => {
+                const phaseId = e.target.value
+                const phaseDates = resolvePhaseDates(phaseId)
+                setScheduleDraft(prev => ({
+                  ...prev,
+                  phase_id: phaseId,
+                  use_phase_dates: phaseId ? prev.use_phase_dates : 0,
+                  start_at: phaseId && prev.use_phase_dates ? phaseDates.start_at : prev.start_at,
+                  end_at: phaseId && prev.use_phase_dates ? phaseDates.end_at : prev.end_at,
+                }))
+              }}
+            >
+              <option value="">Sin evento enlazado</option>
+              {phases.map(phase => (
+                <option key={`new-schedule-phase-${phase.id}`} value={phase.id}>{phase.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Rango del evento</label>
+            <button
+              type="button"
+              className={scheduleDraft.phase_id && scheduleDraft.use_phase_dates ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
+              onClick={() => {
+                if (!scheduleDraft.phase_id) return
+                const nextUsePhaseDates = scheduleDraft.use_phase_dates ? 0 : 1
+                const phaseDates = resolvePhaseDates(scheduleDraft.phase_id)
+                setScheduleDraft(prev => ({
+                  ...prev,
+                  use_phase_dates: nextUsePhaseDates,
+                  start_at: nextUsePhaseDates ? phaseDates.start_at : prev.start_at,
+                  end_at: nextUsePhaseDates ? phaseDates.end_at : prev.end_at,
+                }))
+              }}
+              disabled={!scheduleDraft.phase_id}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              {scheduleDraft.phase_id && scheduleDraft.use_phase_dates ? 'Usa fechas del evento' : 'Usar fechas del evento'}
+            </button>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Inicio</label>
+            <input type="date" value={scheduleDraft.start_at} disabled={!!scheduleDraft.phase_id && !!scheduleDraft.use_phase_dates} onChange={e => setScheduleDraft(prev => ({ ...prev, start_at: e.target.value }))} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Fin</label>
+            <input type="date" value={scheduleDraft.end_at} disabled={!!scheduleDraft.phase_id && !!scheduleDraft.use_phase_dates} onChange={e => setScheduleDraft(prev => ({ ...prev, end_at: e.target.value }))} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Nota</label>
+            <input value={scheduleDraft.note} onChange={e => setScheduleDraft(prev => ({ ...prev, note: e.target.value }))} placeholder="Nota opcional. Ej: Clasificatorio online o puertas abiertas 7:00 am" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddScheduleModal(false)}>Cancelar</button>
+          <button type="button" className="btn-primary" onClick={() => { if (createScheduleItemFromDraft()) setShowAddScheduleModal(false) }}>
+            Agregar fecha
+          </button>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const editingSchedule = scheduleItems.find(item => String(item.id) === String(editingScheduleId))
+  const editScheduleModal = editingSchedule ? (
+    <Modal
+      title={`Editar fecha - ${editingSchedule.label || 'Fecha visible'}`}
+      onClose={() => setEditingScheduleId(null)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre visible</label>
+            <input value={editingSchedule.label || ''} onChange={e => updateScheduleItem(editingSchedule.id, 'label', e.target.value)} placeholder="Ej: Inscripciones abiertas, Dia 1, Final..." />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo</label>
+            <select value={editingSchedule.kind || 'custom'} onChange={e => updateScheduleItem(editingSchedule.id, 'kind', e.target.value)}>
+              <option value="custom">Personalizada</option>
+              <option value="enrollment_start">Apertura inscripciones</option>
+              <option value="enrollment_end">Cierre inscripciones</option>
+              <option value="competition_start">Inicio competencia</option>
+              <option value="competition_end">Fin competencia</option>
+              <option value="competition_day">Dia de competencia</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Evento enlazado</label>
+            <select value={editingSchedule.phase_id || ''} onChange={e => linkScheduleItemToPhase(editingSchedule.id, e.target.value)}>
+              <option value="">Sin evento enlazado</option>
+              {phases.map(phase => (
+                <option key={`edit-schedule-phase-${editingSchedule.id}-${phase.id}`} value={phase.id}>{phase.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Rango del evento</label>
+            <button
+              type="button"
+              className={editingSchedule.phase_id && editingSchedule.use_phase_dates ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
+              onClick={() => toggleScheduleItemPhaseDates(editingSchedule.id)}
+              disabled={!editingSchedule.phase_id}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              {editingSchedule.phase_id && editingSchedule.use_phase_dates ? 'Usa fechas del evento' : 'Usar fechas del evento'}
+            </button>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Inicio</label>
+            <input type="date" value={editingSchedule.start_at || ''} disabled={!!editingSchedule.phase_id && !!editingSchedule.use_phase_dates} onChange={e => updateScheduleItem(editingSchedule.id, 'start_at', e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Fin</label>
+            <input type="date" value={editingSchedule.end_at || ''} disabled={!!editingSchedule.phase_id && !!editingSchedule.use_phase_dates} onChange={e => updateScheduleItem(editingSchedule.id, 'end_at', e.target.value)} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Nota</label>
+            <input value={editingSchedule.note || ''} onChange={e => updateScheduleItem(editingSchedule.id, 'note', e.target.value)} placeholder="Nota opcional. Ej: Clasificatorio online o puertas abiertas 7:00 am" />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-danger btn-sm" onClick={() => { removeScheduleItem(editingSchedule.id); setEditingScheduleId(null) }}>
+            Eliminar
+          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingScheduleId(null)}>Cerrar</button>
+            <button type="button" className="btn-primary" onClick={() => setEditingScheduleId(null)}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const editingSocial = socialLinks.find(item => String(item.id) === String(editingSocialId))
+  const editSocialModal = editingSocial ? (
+    <Modal
+      title={`Editar red - ${getSocialPlatformLabel(editingSocial)}`}
+      onClose={() => setEditingSocialId(null)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Plataforma</label>
+            <select value={editingSocial.platform || 'instagram'} onChange={e => updateSocialLink(editingSocial.id, 'platform', e.target.value)}>
+              {SOCIAL_PLATFORM_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          {editingSocial.platform === 'other' ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Nombre visible</label>
+              <input value={editingSocial.custom_label || ''} onChange={e => updateSocialLink(editingSocial.id, 'custom_label', e.target.value)} placeholder="Nombre de la red o canal" />
+            </div>
+          ) : null}
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Link</label>
+            <input value={editingSocial.url || ''} onChange={e => updateSocialLink(editingSocial.id, 'url', e.target.value)} placeholder="https://..." />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-danger btn-sm" onClick={() => { removeSocialLink(editingSocial.id); setEditingSocialId(null) }}>
+            Eliminar
+          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingSocialId(null)}>Cerrar</button>
+            <button type="button" className="btn-primary" onClick={() => setEditingSocialId(null)}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
+  const editingCategory = cats.find(cat => String(cat.id) === String(editingCategoryId))
+  const editCategoryModal = editingCategory ? (
+    <Modal
+      title={`Editar division - ${editingCategory.nombre || ''}`}
+      onClose={() => setEditingCategoryId(null)}
+      width={760}
+      panelStyle={{ padding: 18 }}
+    >
+      <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Nombre</label>
+            <input value={editingCategory.nombre || ''} onChange={e => updateCategoryName(editingCategory.id, e.target.value)} placeholder="Nombre de la division" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Modalidad</label>
+            <select value={editingCategory.modality || 'individual'} onChange={e => updateCategoryModality(editingCategory.id, e.target.value)}>
+              <option value="individual">Individual</option>
+              <option value="teams" disabled={!form.team_enabled}>Equipos</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Precio base</label>
+            <input type="number" min="0" step="1" value={editingCategory.enrollment_price || 0} onChange={e => updateCategoryPrice(editingCategory.id, e.target.value)} placeholder="Precio base de inscripcion" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            <label>Descripcion</label>
+            <textarea value={editingCategory.descripcion || ''} onChange={e => updateCategoryDescription(editingCategory.id, e.target.value)} placeholder="Descripcion de la categoria" rows={4} />
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tu precio</div>
+            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).organizerPrice)}</div>
+          </div>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
+            <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).platformFee)}</div>
+          </div>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
+            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Paga el atleta</div>
+            <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).totalPrice)}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-danger btn-sm"
+            onClick={() => {
+              removeCategory(editingCategory.id)
+              setEditingCategoryId(null)
+            }}
+          >
+            Eliminar
+          </button>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingCategoryId(null)}>Cerrar</button>
+            <button type="button" className="btn-primary" onClick={() => setEditingCategoryId(null)}>Guardar</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  ) : null
+
   const editingPhase = phases.find(phase => String(phase.id) === String(editingPhaseId))
   const editPhaseModal = editingPhase ? (
     <Modal
@@ -3859,8 +4468,16 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           {formContent}
         </div>
+        {addCategoryModal}
+        {editCategoryModal}
+        {addQuestionModal}
+        {editQuestionModal}
         {addPhaseModal}
         {editPhaseModal}
+        {addScheduleModal}
+        {editScheduleModal}
+        {addSocialModal}
+        {editSocialModal}
         {showThemePreview ? (
           <Modal
             title="Preview del tema"
@@ -3906,8 +4523,16 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       >
         {formContent}
       </Modal>
+      {addCategoryModal}
+      {editCategoryModal}
+      {addQuestionModal}
+      {editQuestionModal}
       {addPhaseModal}
       {editPhaseModal}
+      {addScheduleModal}
+      {editScheduleModal}
+      {addSocialModal}
+      {editSocialModal}
       {showThemePreview ? (
         <Modal
           title="Preview del tema"

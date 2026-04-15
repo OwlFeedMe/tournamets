@@ -623,6 +623,14 @@ export default function CompetitionEnrollmentPage() {
                         <div style={{ color: '#AAB2C0', fontSize: 12 }}>{answers[question.id] ? 'Imagen cargada correctamente.' : (question.placeholder || 'Sube una imagen clara y legible.')}</div>
                         {answers[question.id] ? <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12 }}>Ver archivo cargado</a> : null}
                       </div>
+                    ) : question.field_type === 'number' ? (
+                      <input
+                        value={answers[question.id] || ''}
+                        onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value.replace(/[^\d]/g, '') }))}
+                        placeholder={question.placeholder || ''}
+                        inputMode="numeric"
+                        required={!!question.required}
+                      />
                     ) : (
                       <input value={answers[question.id] || ''} onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value }))} placeholder={question.placeholder || ''} required={!!question.required} />
                     )}
