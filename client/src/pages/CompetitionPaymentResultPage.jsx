@@ -53,7 +53,7 @@ function friendlySyncError(message) {
 export default function CompetitionPaymentResultPage() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
-  const { session, role } = useAuth()
+  const { session, isAthlete } = useAuth()
   const [searchParams] = useSearchParams()
   const [competition, setCompetition] = useState(null)
   const [syncState, setSyncState] = useState({ loading: true, status: 'pending', enrollmentState: null, reference: '', tx: '', error: '' })
@@ -76,7 +76,7 @@ export default function CompetitionPaymentResultPage() {
   useEffect(() => {
     let active = true
     const fallbackStatus = normalizeStatus(boldTxStatus)
-    if (!session || role !== 'user') {
+    if (!session || !isAthlete) {
       setSyncState((prev) => ({
         ...prev,
         loading: false,
@@ -113,7 +113,7 @@ export default function CompetitionPaymentResultPage() {
     }
     run()
     return () => { active = false }
-  }, [boldOrderId, boldTxStatus, competitionId, role, session])
+  }, [boldOrderId, boldTxStatus, competitionId, isAthlete, session])
 
   const effectiveStatus = useMemo(() => normalizeStatus(syncState.status), [syncState.status])
   const copy = statusCopy(effectiveStatus)

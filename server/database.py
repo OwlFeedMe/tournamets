@@ -375,7 +375,7 @@ def init_db():
                 participant_id=organizer_participant_id,
             )
 
-        participants = session.exec(select(Participant).where(Participant.estado == EstadoParticipante.ACTIVO)).all()
+        participants = session.exec(select(Participant)).all()
         for participant in participants:
             existing = session.exec(
                 select(AppUser).where(AppUser.participant_id == participant.id)

@@ -1,4 +1,21 @@
-const PENDING_CEDULA_PREFIX = 'pending:'
+export const PENDING_CEDULA_PREFIX = 'pending:'
+
+export function isPendingCedula(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  return normalized.startsWith(PENDING_CEDULA_PREFIX)
+}
+
+export function formatCedula(value, fallback = 'Pendiente') {
+  const normalized = String(value || '').trim()
+  if (!normalized || isPendingCedula(normalized)) return fallback
+  return normalized
+}
+
+export function cedulaInputValue(value) {
+  const normalized = String(value || '').trim()
+  if (!normalized || isPendingCedula(normalized)) return ''
+  return normalized
+}
 
 export function getMissingParticipantProfileFields(profile) {
   if (!profile) return ['perfil']
@@ -6,7 +23,7 @@ export function getMissingParticipantProfileFields(profile) {
   const cedula = String(profile.cedula || '').trim()
   const genero = String(profile.genero || profile.sexo || '').trim()
   const checks = {
-    cedula: cedula && !cedula.startsWith(PENDING_CEDULA_PREFIX),
+    cedula: cedula && !isPendingCedula(cedula),
     nombre: String(profile.nombre || '').trim(),
     apellido: String(profile.apellido || '').trim(),
     email: String(profile.email || '').trim(),

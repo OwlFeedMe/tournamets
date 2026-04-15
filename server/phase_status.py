@@ -14,7 +14,6 @@ def _count_expected_participants(session: Session, competition_id: int) -> int:
         JOIN participants p ON p.id = cp.participant_id
         WHERE cp.competition_id = :cid
           AND cp.estado = 'confirmado'
-          AND p.estado = 'activo'
     """), {"cid": competition_id}).scalar() or 0)
 
 

@@ -242,7 +242,7 @@ function TermsContent({ text, onReachedEnd }) {
 export default function CompetitionEnrollmentPage() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
-  const { session, role, participantId } = useAuth()
+  const { session, role, participantId, isAthlete } = useAuth()
   const [payload, setPayload] = useState(null)
   const [categories, setCategories] = useState([])
   const [enrollmentState, setEnrollmentState] = useState(null)
@@ -282,17 +282,17 @@ export default function CompetitionEnrollmentPage() {
     Promise.all([
       api.get(`/competitions/${competitionId}/public`),
       api.get(`/competitions/${competitionId}/categories?modality=individual`).catch(() => ({ data: [] })),
-      role === 'user' && participantId
+      isAthlete && participantId
         ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
-      role === 'user' ? api.get('/participants/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+      isAthlete ? api.get('/participants/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
     ]).then(([publicRes, categoriesRes, mineRes, profileRes]) => {
       if (!active) return
       const publicPayload = publicRes.data || null
       const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
       const mine = Array.isArray(mineRes.data) ? mineRes.data : []
       const mineRecord = mine.find(item => String(item.id) === String(competitionId))
-      const missingFields = role === 'user' ? getMissingParticipantProfileFields(profileRes.data) : []
+      const missingFields = isAthlete ? getMissingParticipantProfileFields(profileRes.data) : []
       setPayload(publicPayload)
       setCategories(categoryItems)
       setSelectedCategory(mineRecord?.enrollment_categoria || categoryItems[0]?.nombre || '')
@@ -310,7 +310,7 @@ export default function CompetitionEnrollmentPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [competitionId, participantId, role])
+  }, [competitionId, isAthlete, participantId, role])
 
   const competition = payload?.competition || null
   const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])
@@ -321,10 +321,10 @@ export default function CompetitionEnrollmentPage() {
   const appTermsText = APP_TERMS_TEXT
   const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
   const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate), [selectedCategoryData?.enrollment_price, platformFeeRate])
-  const userCanSubmit = !!session && role === 'user'
+  const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente'
-  const profileIncomplete = role === 'user' && profileMissingFields.length > 0
+  const profileIncomplete = isAthlete && profileMissingFields.length > 0
   const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit || profileIncomplete
 
   useEffect(() => {
@@ -736,7 +736,7 @@ export default function CompetitionEnrollmentPage() {
                   </div>
                   <button type="button" className="btn-primary" onClick={() => navigate('/login')}>Iniciar sesion</button>
                 </div>
-              ) : role !== 'user' ? (
+              ) : !isAthlete ? (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                     Solo las cuentas de participante pueden inscribirse en competencias.

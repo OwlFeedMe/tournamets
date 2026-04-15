@@ -173,9 +173,8 @@ function getCompetitionMode(config) {
   return { id: 'individual', label: 'Individual' }
 }
 
-function enrollmentButtonState(competition, sessionRole, enrollmentState) {
-  if (!sessionRole) return { label: 'Quiero participar', disabled: false }
-  if (sessionRole !== 'user') return { label: 'Ir a mi panel', disabled: false }
+function enrollmentButtonState(competition, isAthlete, enrollmentState) {
+  if (!isAthlete) return { label: 'Quiero participar', disabled: false }
   if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', disabled: true }
   if (enrollmentState === 'pendiente') return { label: 'Inscripcion en proceso', disabled: true }
   if (enrollmentState === 'rechazado') {
@@ -356,7 +355,7 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
-  const { session, role, participantId } = useAuth()
+  const { session, role, participantId, isAthlete } = useAuth()
   const [ctaBusy, setCtaBusy] = useState(false)
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -397,7 +396,7 @@ export default function CompetitionLanding() {
   useEffect(() => {
     let active = true
     setMyEnrollmentState('')
-    if (!session || role !== 'user' || !participantId) {
+    if (!session || !isAthlete || !participantId) {
       return () => {
         active = false
       }
@@ -415,7 +414,7 @@ export default function CompetitionLanding() {
     return () => {
       active = false
     }
-  }, [session, role, participantId, competitionId])
+  }, [competitionId, isAthlete, participantId, role, session])
 
   const competition = payload?.competition || null
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
@@ -479,9 +478,9 @@ export default function CompetitionLanding() {
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
-  const canSeeMySchedule = !!(session && participantId && (role === 'user' || role === 'admin') && myEnrollmentState === 'confirmado')
-  const enrollmentButton = enrollmentButtonState(competition, role, myEnrollmentState)
-  const secondaryCtaHref = !session ? '/login' : role === 'user' ? registerHref : getHomePath(role)
+  const canSeeMySchedule = !!(session && participantId && myEnrollmentState === 'confirmado')
+  const enrollmentButton = enrollmentButtonState(competition, isAthlete, myEnrollmentState)
+  const secondaryCtaHref = !session ? '/login' : isAthlete ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label
   const experienceItems = landingSections?.experience?.items || []
   const formatItems = landingSections?.format?.items || []
@@ -511,7 +510,7 @@ export default function CompetitionLanding() {
       navigate(secondaryCtaHref)
       return
     }
-    if (role !== 'user') {
+    if (!isAthlete) {
       navigate(getHomePath(role))
       return
     }

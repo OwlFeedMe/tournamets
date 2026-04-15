@@ -90,7 +90,7 @@ def _ind_query(session: Session, competition_id: int, phase_id=None, lower_is_be
             AND r.competition_id = :cid
             AND r.team_id IS NULL
             {phase_filter}
-        WHERE p.estado = 'activo'
+        WHERE 1 = 1
         GROUP BY p.id, cp.categoria
         ORDER BY cp.categoria, total_puntos DESC
     """), pid_param).mappings().all()

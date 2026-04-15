@@ -51,7 +51,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
 
   const items = (() => {
     if (!session) return NAV_ITEMS.public
-    if (session.role === 'user' && session.organizerEnabled) {
+    if (session.participantId && session.organizerEnabled && session.role !== 'admin') {
       return [
         ...NAV_ITEMS.user.slice(0, 4),
         { label: 'Panel', icon: UserCircle2, to: '/organizer' },

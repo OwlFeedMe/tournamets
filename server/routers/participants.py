@@ -223,6 +223,75 @@ def list_participants(session: Session = Depends(get_session), _=Depends(require
     ).all()
 
 
+@router.get("/admin-users")
+def list_admin_users(session: Session = Depends(get_session), _=Depends(require_admin)):
+    participants = session.exec(
+        select(Participant).order_by(Participant.apellido, Participant.nombre)
+    ).all()
+    app_users = {
+        item.participant_id: item
+        for item in session.exec(select(AppUser).where(AppUser.participant_id.is_not(None))).all()
+        if item.participant_id is not None
+    }
+
+    items = []
+    for participant in participants:
+        app_user = app_users.get(participant.id)
+        extra_role = None
+        if app_user:
+            if int(app_user.admin_enabled or 0):
+                extra_role = "admin"
+            elif int(app_user.organizer_enabled or 0):
+                extra_role = "organizer"
+            elif int(app_user.judge_enabled or 0):
+                extra_role = "judge"
+
+        payload = participant.model_dump()
+        payload["app_user_id"] = app_user.id if app_user else None
+        payload["username"] = app_user.username if app_user else None
+        payload["display_name"] = app_user.display_name if app_user else None
+        payload["base_role"] = app_user.role if app_user else "user"
+        payload["extra_role"] = extra_role
+        payload["organizer_enabled"] = bool(app_user and int(app_user.organizer_enabled or 0))
+        payload["judge_enabled"] = bool(app_user and int(app_user.judge_enabled or 0))
+        payload["admin_enabled"] = bool(app_user and int(app_user.admin_enabled or 0))
+        items.append(payload)
+    return items
+
+
+@router.put("/{participant_id}/role")
+def update_participant_role(
+    participant_id: int,
+    body: dict,
+    session: Session = Depends(get_session),
+    _=Depends(require_admin),
+):
+    participant = session.get(Participant, participant_id)
+    if not participant:
+        raise HTTPException(404, "Usuario no encontrado")
+
+    extra_role = str(body.get("extra_role") or "").strip().lower()
+    if extra_role not in {"", "user", "organizer", "judge", "admin"}:
+        raise HTTPException(400, "Rol invalido")
+
+    app_user = session.exec(select(AppUser).where(AppUser.participant_id == participant_id)).first()
+    if not app_user:
+        raise HTTPException(404, "Cuenta de app no encontrada")
+
+    app_user.role = "user"
+    app_user.organizer_enabled = 1 if extra_role == "organizer" else 0
+    app_user.judge_enabled = 1 if extra_role == "judge" else 0
+    app_user.admin_enabled = 1 if extra_role == "admin" else 0
+    session.add(app_user)
+    session.commit()
+
+    return {
+        "ok": True,
+        "participant_id": participant_id,
+        "extra_role": extra_role if extra_role not in {"", "user"} else None,
+    }
+
+
 @router.get("/{participant_id}", response_model=Participant)
 def get_participant(participant_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
     p = session.get(Participant, participant_id)

@@ -4,13 +4,11 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { useAuth } from '../context/AuthContext'
-import { formatMissingParticipantProfileFields } from '../utils/participantProfile'
+import { cedulaInputValue, formatCedula, formatMissingParticipantProfileFields } from '../utils/participantProfile'
 import {
   Trophy, PlusCircle, Medal,
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
-
-const PENDING_CEDULA_PREFIX = 'pending:'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -41,11 +39,6 @@ function resolveProfilePhoto(url) {
     return url
   }
   return url
-}
-
-function displayCedula(value) {
-  if (!value || value.startsWith(PENDING_CEDULA_PREFIX)) return ''
-  return value
 }
 
 function loadImageElement(src) {
@@ -682,7 +675,7 @@ export default function ParticipantProfile() {
       setEditForm({
         nombre: res.data.nombre || '',
         apellido: res.data.apellido || '',
-        cedula: displayCedula(res.data.cedula),
+        cedula: cedulaInputValue(res.data.cedula),
         email: res.data.email || '',
         celular: res.data.celular || '',
         genero: res.data.genero || res.data.sexo || '',
@@ -804,7 +797,7 @@ export default function ParticipantProfile() {
         ...current,
         nombre: res.data.nombre || '',
         apellido: res.data.apellido || '',
-        cedula: displayCedula(res.data.cedula),
+        cedula: cedulaInputValue(res.data.cedula),
         email: res.data.email || '',
         celular: res.data.celular || '',
         genero: res.data.genero || res.data.sexo || '',
@@ -1203,7 +1196,7 @@ export default function ParticipantProfile() {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{displayCedula(myProfile?.cedula) ? ` · ${displayCedula(myProfile?.cedula)}` : ''}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${formatCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {myProfile?.categoria && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
               {myProfile?.box && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}

@@ -358,7 +358,7 @@ function ScheduleSection({ section, personal = false, theme }) {
 
 export default function CompetitionSchedulePage({ scope = 'public' }) {
   const { competitionId } = useParams()
-  const { session, role, participantId } = useAuth()
+  const { session, participantId, isAthlete } = useAuth()
   const isPersonal = scope === 'personal'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -475,7 +475,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
   const stats = schedule.summary || {}
   const modeCopy = scheduleCopy[isPersonal ? 'personal' : 'public']
-  const hasPersonalAccess = isPersonal && session && !!participantId && (role === 'user' || role === 'admin')
+  const hasPersonalAccess = isPersonal && session && !!participantId && isAthlete
   const heroLink = competition ? `/competitions/${competition.id}` : '/'
   const leaderboardLink = competition ? `/leaderboard/${competition.id}` : '/leaderboard'
   const myScheduleLink = competition ? `/competitions/${competition.id}/my-schedule` : '/profile'

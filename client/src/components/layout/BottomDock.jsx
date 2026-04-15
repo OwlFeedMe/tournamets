@@ -45,7 +45,7 @@ export function BottomDock() {
 
   const items = (() => {
     if (!session) return DOCKS.public
-    if (session.role === 'user' && session.organizerEnabled) {
+    if (session.participantId && session.organizerEnabled && session.role !== 'admin') {
       return [
         { label: 'Inicio', icon: House, to: '/' },
         { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },

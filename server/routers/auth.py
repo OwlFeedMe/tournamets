@@ -155,7 +155,7 @@ def _participants_for_email(session: Session, email: str, *, active_only: bool =
 
 
 def _active_participant_for_email(session: Session, email: str) -> Participant | None:
-    matches = _participants_for_email(session, email, active_only=True)
+    matches = _participants_for_email(session, email, active_only=False)
     if len(matches) != 1:
         return None
     return matches[0]
@@ -345,10 +345,7 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
 
     if not participant:
         participant = session.exec(
-            select(Participant).where(
-                Participant.cedula == identifier,
-                Participant.estado == EstadoParticipante.ACTIVO,
-            )
+            select(Participant).where(Participant.cedula == identifier)
         ).first()
 
     if not participant:

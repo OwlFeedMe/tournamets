@@ -173,9 +173,8 @@ function parseEnrollmentPaymentMethods(raw) {
   }
 }
 
-function buttonStateForCompetition(competition, sessionRole, enrollmentState) {
-  if (!sessionRole) return { label: 'Quiero participar', tone: 'secondary', disabled: false }
-  if (sessionRole !== 'user') return { label: 'Ir a mi panel', tone: 'secondary', disabled: false }
+function buttonStateForCompetition(competition, isAthlete, enrollmentState) {
+  if (!isAthlete) return { label: 'Quiero participar', tone: 'secondary', disabled: false }
   if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', tone: 'muted', disabled: true }
   if (enrollmentState === 'pendiente') return { label: 'Inscripcion en proceso', tone: 'muted', disabled: true }
   if (enrollmentState === 'rechazado') {
@@ -186,9 +185,9 @@ function buttonStateForCompetition(competition, sessionRole, enrollmentState) {
   return { label: 'Quiero participar', tone: 'secondary', disabled: false }
 }
 
-function CompetitionCard({ competition, index, sessionRole, enrollmentState, onParticipate }) {
+function CompetitionCard({ competition, index, isAthlete, enrollmentState, onParticipate }) {
   const status = getCompetitionState(competition)
-  const cta = buttonStateForCompetition(competition, sessionRole, enrollmentState)
+  const cta = buttonStateForCompetition(competition, isAthlete, enrollmentState)
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
 
@@ -352,7 +351,7 @@ function CompetitionCard({ competition, index, sessionRole, enrollmentState, onP
 
 export default function Home() {
   const navigate = useNavigate()
-  const { session, role, participantId } = useAuth()
+  const { session, role, participantId, isAthlete } = useAuth()
   const [competitions, setCompetitions] = useState([])
   const [myComps, setMyComps] = useState([])
   const [query, setQuery] = useState('')
@@ -369,7 +368,7 @@ export default function Home() {
     let active = true
     Promise.all([
       api.get('/competitions').catch(() => ({ data: [] })),
-      role === 'user' && participantId
+      isAthlete && participantId
         ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
     ])
@@ -385,7 +384,7 @@ export default function Home() {
     return () => {
       active = false
     }
-  }, [participantId, role])
+  }, [isAthlete, participantId, role])
 
   const enrollmentByComp = useMemo(() => {
     const map = {}
@@ -415,7 +414,7 @@ export default function Home() {
       navigate('/login')
       return
     }
-    if (role !== 'user') {
+    if (!isAthlete) {
       navigate(getHomePath(role))
       return
     }
@@ -570,7 +569,7 @@ export default function Home() {
                   key={competition.id}
                   competition={competition}
                   index={index}
-                  sessionRole={role}
+                  isAthlete={isAthlete}
                   enrollmentState={enrollmentByComp[competition.id]}
                   onParticipate={handleParticipate}
                 />

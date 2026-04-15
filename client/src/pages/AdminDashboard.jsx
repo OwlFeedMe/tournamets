@@ -3,6 +3,7 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
+import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
 import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
@@ -247,7 +248,7 @@ function downloadEnrollmentWorkbook(participants, competitionName) {
     )
     return [
       `${participant.nombre || ''} ${participant.apellido || ''}`.trim(),
-      participant.cedula || '',
+      formatCedula(participant.cedula),
       participant.categoria_competencia || '',
       participant.estado || '',
       participant.email || '',
@@ -2057,7 +2058,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   }
 
   const filtered = allParticipants
-    .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(search.toLowerCase()))
+    .filter(p => `${p.nombre} ${p.apellido} ${formatCedula(p.cedula, '')}`.toLowerCase().includes(search.toLowerCase()))
   const confirmedList = useMemo(
     () => competitionParticipants.filter(p => p.estado === 'confirmado'),
     [competitionParticipants]
@@ -2075,7 +2076,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
           {viewedParticipant.nombre} {viewedParticipant.apellido}
         </div>
         <div style={{ display: 'grid', gap: 6, color: 'var(--oa-text-secondary)', fontSize: 13 }}>
-          <div><b style={{ color: 'var(--oa-text)' }}>Cedula:</b> {viewedParticipant.cedula || '-'}</div>
+          <div><b style={{ color: 'var(--oa-text)' }}>Cedula:</b> {formatCedula(viewedParticipant.cedula)}</div>
           <div><b style={{ color: 'var(--oa-text)' }}>Categoria:</b> {viewedParticipant.categoria_competencia || '-'}</div>
           <div><b style={{ color: 'var(--oa-text)' }}>Estado:</b> {viewedParticipant.estado || '-'}</div>
         </div>
@@ -2153,7 +2154,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
                       <input type="checkbox" checked={!!enrolled} onChange={() => toggle(p.id)} style={{ width: 'auto', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
-                        <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)' }}>{p.cedula}</div>
+                        <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)' }}>{formatCedula(p.cedula)}</div>
                       </div>
                       {enrolled && (
                         <select value={enrolled.categoria} onChange={e => setCategoria(p.id, e.target.value)}
@@ -4469,7 +4470,7 @@ function CompetitionTeamsPanel({ competition }) {
   })()
   const availableForCreate = participantPool
     .filter(p => !usedIds.has(p.id) || createForm.member_ids.includes(p.id))
-    .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(searchCreate.toLowerCase()))
+    .filter(p => `${p.nombre} ${p.apellido} ${formatCedula(p.cedula, '')}`.toLowerCase().includes(searchCreate.toLowerCase()))
   const memberTeamByParticipant = teams.reduce((acc, t) => {
     ;(t.members || []).forEach(m => { acc[m.id] = t })
     return acc
@@ -4481,7 +4482,7 @@ function CompetitionTeamsPanel({ competition }) {
   )
   const availableForEdit = participantPool
     .filter(p => !usedIdsExceptEditing.has(p.id) || editForm.member_ids.includes(p.id))
-    .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(searchEdit.toLowerCase()))
+    .filter(p => `${p.nombre} ${p.apellido} ${formatCedula(p.cedula, '')}`.toLowerCase().includes(searchEdit.toLowerCase()))
 
   const toggleCreateMember = (pid) => {
     const ids = createForm.member_ids
@@ -6224,7 +6225,7 @@ function CompetitionsTab() {
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <div style={setupInfoCardStyle}>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>Cedula</div>
-                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.cedula || '-'}</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{formatCedula(participantDetail.cedula)}</div>
               </div>
               <div style={setupInfoCardStyle}>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>Categoria</div>
@@ -6624,38 +6625,48 @@ function CompetitionsTab() {
 // ── Participants Tab ──────────────────────────────────────────────────────────
 function ParticipantsTab() {
   const [participants, setParticipants] = useState([])
-  const [competitions, setCompetitions] = useState([])
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
+  const [search, setSearch] = useState('')
   const [editingParticipant, setEditingParticipant] = useState(null)
-  const [editForm, setEditForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
+  const [editForm, setEditForm] = useState({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', extra_role: '' })
   const [msg, setMsg] = useState(null)
-  const [uploading, setUploading] = useState(false)
-  const [importCompId, setImportCompId] = useState('')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
-  const fileRef = useRef()
   const [countries, setCountries] = useState([])
-  const [createCities, setCreateCities] = useState([])
   const [editCities, setEditCities] = useState([])
   const countryNameByCode = useMemo(() => Object.fromEntries(countries.map(c => [c.code, c.name])), [countries])
   const countryCodeByName = useMemo(() => Object.fromEntries(countries.map(c => [c.name.toLowerCase(), c.code])), [countries])
-  const cityOptionsCreate = useMemo(() => {
-    const list = createCities
-    const query = (form.city || '').trim().toLowerCase()
-    if (!query) return list.slice(0, 150)
-    return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
-  }, [createCities, form.city])
   const cityOptionsEdit = useMemo(() => {
     const list = editCities
     const query = (editForm.city || '').trim().toLowerCase()
     if (!query) return list.slice(0, 150)
     return list.filter(city => city.toLowerCase().includes(query)).slice(0, 150)
   }, [editCities, editForm.city])
+  const filteredParticipants = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return participants
+    return participants.filter((participant) => {
+      const haystack = [
+        participant.cedula,
+        participant.nombre,
+        participant.apellido,
+        participant.email,
+        participant.celular,
+        participant.box,
+        participant.ciudad_pais,
+        participant.genero,
+        participant.sexo,
+        participant.categoria,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [participants, search])
+  const totalUsers = participants.length
 
-  const load = () => api.get('/participants').then(r => setParticipants(r.data))
+  const load = () => api.get('/participants/admin-users').then(r => setParticipants(r.data))
   useEffect(() => {
     load()
-    api.get('/competitions').then(r => setCompetitions(r.data))
   }, [])
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -6665,13 +6676,6 @@ function ParticipantsTab() {
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
   }, [])
-  useEffect(() => {
-    if (!form.countryCode) {
-      setCreateCities([])
-      return
-    }
-    loadCitiesByCountry(form.countryCode).then(setCreateCities).catch(() => setCreateCities([]))
-  }, [form.countryCode])
   useEffect(() => {
     if (!editForm.countryCode) {
       setEditCities([])
@@ -6687,76 +6691,11 @@ function ParticipantsTab() {
     if (countryCode) setEditForm(prev => ({ ...prev, countryCode }))
   }, [countries, countryCodeByName, editForm.ciudad_pais, editForm.countryCode])
 
-  const create = async (e) => {
-    e.preventDefault()
-    try {
-      const city = (form.city || '').trim()
-      const countryCode = (form.countryCode || '').trim()
-      const countryName = countryNameByCode[countryCode] || ''
-      if ((city || countryCode) && !(city && countryCode)) {
-        setMsg({ type: 'error', text: 'Selecciona pais y ciudad validos' })
-        return
-      }
-      if (city && countryCode && !createCities.some(candidate => candidate.toLowerCase() === city.toLowerCase())) {
-        setMsg({ type: 'error', text: 'La ciudad no pertenece al pais seleccionado' })
-        return
-      }
-      const payload = {
-        ...form,
-        ciudad_pais: city && countryName ? buildCityCountry(city, countryName) : '',
-      }
-      delete payload.city
-      delete payload.countryCode
-      await api.post('/participants', payload)
-      setMsg({ type: 'success', text: 'Participante creado' })
-      setShowForm(false)
-      setForm({ cedula: '', nombre: '', apellido: '', email: '', celular: '', genero: 'M', categoria: 'Rx', box: '', talla_camiseta: '', fecha_nacimiento: '', ciudad_pais: '', city: '', countryCode: '', estado: 'activo' })
-      load()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'Error' })
-    }
-  }
-
-  const downloadTemplate = async () => {
-    const res = await api.get('/participants/template', { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'template_participantes.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleImport = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    setUploading(true)
-    const fd = new FormData()
-    fd.append('file', file)
-    const url = importCompId ? `/participants/import?competition_id=${importCompId}` : '/participants/import'
-    try {
-      const { data } = await api.post(url, fd)
-      const enrolled = data.enrolled ? ` Inscritos en competencia: ${data.enrolled}.` : ''
-      setMsg({ type: 'success', text: `Importados: ${data.inserted}. Saltados: ${data.skipped.length}.${enrolled}` })
-      load()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'Error al importar' })
-    } finally {
-      setUploading(false)
-      fileRef.current.value = ''
-    }
-  }
-
-  const toggleEstado = async (p) => {
-    await api.put(`/participants/${p.id}`, { estado: p.estado === 'activo' ? 'inactivo' : 'activo' })
-    load()
-  }
-
   const startEdit = (p) => {
     const parsed = parseCityCountry(p.ciudad_pais || '')
     setEditingParticipant(p)
     setEditForm({
-      cedula: p.cedula || '',
+      cedula: cedulaInputValue(p.cedula),
       nombre: p.nombre || '',
       apellido: p.apellido || '',
       email: p.email || '',
@@ -6769,7 +6708,7 @@ function ParticipantsTab() {
       ciudad_pais: p.ciudad_pais || '',
       city: parsed.city,
       countryCode: '',
-      estado: p.estado || 'activo',
+      extra_role: p.extra_role || '',
     })
   }
 
@@ -6792,10 +6731,13 @@ function ParticipantsTab() {
         ...editForm,
         ciudad_pais: city && countryName ? buildCityCountry(city, countryName) : '',
       }
+      const extraRole = payload.extra_role || 'user'
       delete payload.city
       delete payload.countryCode
+      delete payload.extra_role
       await api.put(`/participants/${editingParticipant.id}`, payload)
-      setMsg({ type: 'success', text: 'Atleta actualizado' })
+      await api.put(`/participants/${editingParticipant.id}/role`, { extra_role: extraRole })
+      setMsg({ type: 'success', text: 'Usuario actualizado' })
       setEditingParticipant(null)
       load()
     } catch (err) {
@@ -6804,14 +6746,29 @@ function ParticipantsTab() {
   }
 
   const removeParticipant = async (p) => {
-    if (!confirm(`Eliminar atleta "${p.nombre} ${p.apellido}"?`)) return
+    if (!confirm(`Eliminar usuario "${p.nombre} ${p.apellido}"?`)) return
     try {
       await api.delete(`/participants/${p.id}`)
-      setMsg({ type: 'success', text: 'Atleta eliminado' })
+      setMsg({ type: 'success', text: 'Usuario eliminado' })
       load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar' })
     }
+  }
+
+  const roleBadge = (extraRole) => {
+    const value = String(extraRole || '').trim().toLowerCase()
+    const map = {
+      admin: { label: 'Admin', bg: 'rgba(255,107,0,0.14)', border: 'rgba(255,107,0,0.32)', color: '#FFB36F' },
+      organizer: { label: 'Organizador', bg: 'rgba(0,194,168,0.12)', border: 'rgba(0,194,168,0.28)', color: '#8DF1E4' },
+      judge: { label: 'Juez', bg: 'rgba(212,165,55,0.14)', border: 'rgba(212,165,55,0.28)', color: '#E9CB78' },
+    }
+    const item = map[value] || { label: 'Atleta', bg: 'rgba(255,255,255,0.04)', border: '#252A33', color: '#F5F7FA' }
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', padding: '6px 10px', borderRadius: 999, border: `1px solid ${item.border}`, background: item.bg, color: item.color, fontSize: 12, fontWeight: 700 }}>
+        {item.label}
+      </span>
+    )
   }
 
   const categoryBadge = (cat) => {
@@ -6823,157 +6780,96 @@ function ParticipantsTab() {
     <div>
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-      <div style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancelar' : '+ Agregar participante'}
-        </button>
-
-        <button className="btn-secondary" onClick={downloadTemplate} title="Descarga el Excel de ejemplo con las columnas correctas">
-          ? Template Excel
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: '1px solid #d5ddd3', borderRadius: 6, padding: '4px 10px' }}>
-          <span style={{ fontSize: 12, color: '#647063', whiteSpace: 'nowrap' }}>Inscribir en:</span>
-          <select value={importCompId} onChange={e => setImportCompId(e.target.value)}
-            style={{ background: 'transparent', border: 'none', color: '#4d564b', fontSize: 13, width: 160, padding: 0 }}>
-            <option value="">-- ninguna --</option>
-            {competitions.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-          </select>
+      <div style={{ display: 'grid', gap: 14, marginBottom: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Usuarios base</div>
+            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800 }}>{totalUsers}</div>
+          </div>
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Con email</div>
+            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800 }}>{participants.filter((participant) => !!participant.email).length}</div>
+          </div>
+          <div className="card" style={{ padding: 14 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Con celular</div>
+            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800 }}>{participants.filter((participant) => !!participant.celular).length}</div>
+          </div>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center' }}>
-          <button className="btn-secondary" onClick={() => fileRef.current.click()} disabled={uploading}>
-            {uploading ? 'Importando...' : '? Importar CSV/Excel'}
-          </button>
-          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }} onChange={handleImport} />
-        </label>
-      </div>
-
-      {showForm && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <form onSubmit={create}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 12 }}>
-              <div className="form-group"><label>Cedula *</label><input value={form.cedula} onChange={e => setForm({ ...form, cedula: e.target.value })} required /></div>
-              <div className="form-group"><label>Nombre *</label><input value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} required /></div>
-              <div className="form-group"><label>Apellido *</label><input value={form.apellido} onChange={e => setForm({ ...form, apellido: e.target.value })} required /></div>
-              <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
-              <div className="form-group"><label>Celular</label><input value={form.celular} onChange={e => setForm({ ...form, celular: e.target.value })} /></div>
-              <div className="form-group"><label>Genero</label>
-                <select value={form.genero} onChange={e => setForm({ ...form, genero: e.target.value })}>
-                  {GENEROS.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="form-group"><label>Box</label><input value={form.box} onChange={e => setForm({ ...form, box: e.target.value })} /></div>
-              <div className="form-group"><label>Talla camiseta</label>
-                <select value={form.talla_camiseta} onChange={e => setForm({ ...form, talla_camiseta: e.target.value })}>
-                  <option value="">-</option>
-                  <option value="XS">XS</option>
-                  <option value="S">S</option>
-                  <option value="M">M</option>
-                  <option value="L">L</option>
-                  <option value="XL">XL</option>
-                  <option value="XXL">XXL</option>
-                </select>
-              </div>
-              <div className="form-group"><label>Fecha nacimiento</label><input type="date" value={form.fecha_nacimiento} onChange={e => setForm({ ...form, fecha_nacimiento: e.target.value })} /></div>
-              <div className="form-group" style={{ gridColumn: isMobile ? 'span 2' : 'span 3' }}>
-                <label>Ciudad / Pais</label>
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                  <select value={form.countryCode} onChange={e => setForm({ ...form, countryCode: e.target.value, city: '' })}>
-                    <option value="">Selecciona pais</option>
-                    {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
-                  </select>
-                  <div>
-                    <input
-                      list="admin-create-city-options"
-                      value={form.city}
-                      onChange={e => setForm({ ...form, city: e.target.value })}
-                      placeholder={form.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
-                      disabled={!form.countryCode}
-                    />
-                    <datalist id="admin-create-city-options">
-                      {cityOptionsCreate.map(city => <option key={city} value={city} />)}
-                    </datalist>
-                  </div>
-                </div>
-              </div>
-              <div className="form-group"><label>Categoria</label>
-                <select value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>
-                  {CATEGORIAS.map(c => <option key={c}>{c}</option>)}
-                </select>
+        <div className="card" style={{ padding: isMobile ? 12 : 14 }}>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div>
+              <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Usuarios</div>
+              <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
+                Todos son atletas. Desde aqui gestionas perfil y datos base.
               </div>
             </div>
-            <button type="submit" className="btn-primary">Guardar</button>
-          </form>
+            <input
+              placeholder="Buscar por nombre, cedula, email, celular, box o ciudad"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%' }}
+            />
+          </div>
         </div>
-      )}
+      </div>
 
       {isMobile ? (
         <div style={{ display: 'grid', gap: 10 }}>
-          {participants.map((p, i) => (
-            <div key={p.id} className="card" style={{ padding: 12 }}>
+          {filteredParticipants.map((p, i) => (
+            <div key={p.id} className="card" style={{ padding: 12, display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div>
-                  <div style={{ fontWeight: 700 }}>{i + 1}. {p.nombre} {p.apellido}</div>
-                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#647063', marginTop: 2 }}>{p.cedula}</div>
+                  <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{i + 1}. {p.nombre} {p.apellido}</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>{formatCedula(p.cedula)}</div>
                 </div>
-                {categoryBadge(p.categoria)}
               </div>
-              <div style={{ marginTop: 8, fontSize: 13, color: '#555', display: 'grid', gap: 2 }}>
-                <div><b>Genero:</b> {p.genero || p.sexo || '-'}</div>
-                <div><b>Box:</b> {p.box || '-'}</div>
-                <div><b>Ciudad / Pais:</b> {p.ciudad_pais || '-'}</div>
-                <div><b>Contacto:</b> {p.email || p.celular || '-'}</div>
+              <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                <b style={{ color: '#F5F7FA' }}>Ciudad / Pais:</b> {p.ciudad_pais || '-'}
               </div>
-              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className={p.estado === 'activo' ? 'btn-success btn-sm' : 'btn-danger btn-sm'} onClick={() => toggleEstado(p)}>
-                  {p.estado}
+              <div>{roleBadge(p.extra_role)}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 }}>
+                <button className="btn-secondary btn-sm" onClick={() => startEdit(p)} title="Editar usuario" style={{ minHeight: 38 }}>
+                  Editar usuario
                 </button>
-                <button className="btn-secondary btn-sm" onClick={() => startEdit(p)} title="Editar atleta">Editar</button>
-                <button className="btn-danger btn-sm" onClick={() => removeParticipant(p)} title="Eliminar atleta">Eliminar</button>
+                <button className="btn-danger btn-sm" onClick={() => removeParticipant(p)} title="Eliminar usuario" style={{ minWidth: 42, minHeight: 38, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
           ))}
-          {!participants.length && <div className="card" style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</div>}
+          {!filteredParticipants.length && <div className="card" style={{ color: '#AAB2C0', textAlign: 'center', padding: 24 }}>No hay usuarios</div>}
         </div>
       ) : (
         <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
-            <tr><th>#</th><th>Cedula</th><th>Nombre</th><th>Categoria</th><th>Genero</th><th>Box</th><th>Ciudad / Pais</th><th>Email</th><th>Estado</th><th>Acciones</th></tr>
+            <tr><th>#</th><th>Cedula</th><th>Nombre</th><th>Ciudad / Pais</th><th>Rol</th><th>Acciones</th></tr>
           </thead>
           <tbody>
-            {participants.map((p, i) => (
+            {filteredParticipants.map((p, i) => (
               <tr key={p.id}>
                 <td style={{ color: '#647063' }}>{i + 1}</td>
-                <td style={{ fontFamily: 'monospace' }}>{p.cedula}</td>
+                <td style={{ fontFamily: 'monospace' }}>{formatCedula(p.cedula)}</td>
                 <td>{p.nombre} {p.apellido}</td>
-                <td>{categoryBadge(p.categoria)}</td>
-                <td>{p.genero || p.sexo || '-'}</td>
-                <td>{p.box || '-'}</td>
                 <td>{p.ciudad_pais || '-'}</td>
-                <td style={{ color: '#647063' }}>{p.email || p.celular || '-'}</td>
-                <td>
-                  <button className={p.estado === 'activo' ? 'btn-success btn-sm' : 'btn-danger btn-sm'} onClick={() => toggleEstado(p)}>
-                    {p.estado}
-                  </button>
-                </td>
+                <td>{roleBadge(p.extra_role)}</td>
                 <td>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn-secondary btn-sm" onClick={() => startEdit(p)} title="Editar atleta" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Pencil size={14} /></button>
-                    <button className="btn-danger btn-sm" onClick={() => removeParticipant(p)} title="Eliminar atleta" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
+                    <button className="btn-secondary btn-sm" onClick={() => startEdit(p)} title="Editar usuario" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Pencil size={14} /></button>
+                    <button className="btn-danger btn-sm" onClick={() => removeParticipant(p)} title="Eliminar usuario" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} /></button>
                   </div>
                 </td>
               </tr>
             ))}
-            {!participants.length && <tr><td colSpan={10} style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay participantes</td></tr>}
+            {!filteredParticipants.length && <tr><td colSpan={6} style={{ color: '#647063', textAlign: 'center', padding: 24 }}>No hay usuarios</td></tr>}
           </tbody>
         </table>
         </div>
       )}
 
       {editingParticipant && (
-        <Modal title={`Editar atleta - ${editingParticipant.nombre} ${editingParticipant.apellido}`} onClose={() => setEditingParticipant(null)} width={760}>
+        <Modal title={`Editar usuario - ${editingParticipant.nombre} ${editingParticipant.apellido}`} onClose={() => setEditingParticipant(null)} width={760}>
           <form onSubmit={saveEdit}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, 1fr)', gap: 12 }}>
               <div className="form-group"><label>Cedula *</label><input value={editForm.cedula} onChange={e => setEditForm({ ...editForm, cedula: e.target.value })} required /></div>
@@ -7025,10 +6921,12 @@ function ParticipantsTab() {
                   {CATEGORIAS.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label>Estado</label>
-                <select value={editForm.estado} onChange={e => setEditForm({ ...editForm, estado: e.target.value })}>
-                  <option value="activo">activo</option>
-                  <option value="inactivo">inactivo</option>
+              <div className="form-group"><label>Rol extra</label>
+                <select value={editForm.extra_role} onChange={e => setEditForm({ ...editForm, extra_role: e.target.value })}>
+                  <option value="">Atleta</option>
+                  <option value="organizer">Organizador</option>
+                  <option value="judge">Juez</option>
+                  <option value="admin">Admin</option>
                 </select>
               </div>
             </div>
@@ -7167,7 +7065,7 @@ function TeamsTab() {
   const usedIds = new Set(teams.flatMap(t => t.members.map(m => m.id)))
   const available = participantPool
     .filter(p => !usedIds.has(p.id) || form.member_ids.includes(p.id))
-    .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(searchCreate.toLowerCase()))
+    .filter(p => `${p.nombre} ${p.apellido} ${formatCedula(p.cedula, '')}`.toLowerCase().includes(searchCreate.toLowerCase()))
   const usedIdsExceptEditing = new Set(
     teams
       .filter(t => t.id !== editingTeam?.id)
@@ -7175,7 +7073,7 @@ function TeamsTab() {
   )
   const availableForEdit = participantPool
     .filter(p => !usedIdsExceptEditing.has(p.id) || editForm.member_ids.includes(p.id))
-    .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(searchEdit.toLowerCase()))
+    .filter(p => `${p.nombre} ${p.apellido} ${formatCedula(p.cedula, '')}`.toLowerCase().includes(searchEdit.toLowerCase()))
 
   return (
     <div>
@@ -7909,7 +7807,7 @@ function OrganizerApplicationsTab() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
                 <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
                   <div style={{ color: '#AAB2C0', fontSize: 11 }}>Cedula</div>
-                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{snapshot.cedula || '-'}</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, marginTop: 4 }}>{formatCedula(snapshot.cedula)}</div>
                 </div>
                 <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12 }}>
                   <div style={{ color: '#AAB2C0', fontSize: 11 }}>Celular</div>
@@ -7999,7 +7897,7 @@ export default function AdminDashboard() {
           </button>
           {!isOrganizer && (
             <button className={`tab ${mainTab === 'athletes' ? 'active' : ''}`} onClick={() => setMainTab('athletes')} style={{ flexShrink: 0 }}>
-              Atletas / Usuarios
+              Usuarios
             </button>
           )}
           {!isOrganizer && (

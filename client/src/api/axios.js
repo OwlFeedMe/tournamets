@@ -20,10 +20,14 @@ api.interceptors.response.use(
           _logoutScheduled = false
           localStorage.removeItem('token')
           localStorage.removeItem('role')
+          localStorage.removeItem('base_role')
+          localStorage.removeItem('extra_roles')
           localStorage.removeItem('nombre')
           localStorage.removeItem('participant_id')
           localStorage.removeItem('organizer_enabled')
-          window.dispatchEvent(new Event('openarena:session-changed'))
+          localStorage.removeItem('judge_enabled')
+          localStorage.removeItem('admin_enabled')
+          window.dispatchEvent(new Event('finalrep:session-changed'))
           window.location.href = '/login'
         }, 300)
       }

@@ -149,7 +149,7 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
 export function AuthenticatedShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, displayName, signOut, participantId, role } = useAuth()
+  const { session, displayName, signOut, participantId, role, isAthlete } = useAuth()
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
@@ -193,7 +193,7 @@ export function AuthenticatedShell() {
   }, [notificationsOpen])
 
   useEffect(() => {
-    if (!session || role !== 'user' || !participantId) {
+    if (!session || !isAthlete || !participantId) {
       setNotificationItems([])
       setUnreadCount(0)
       return
@@ -253,10 +253,10 @@ export function AuthenticatedShell() {
     return () => {
       active = false
     }
-  }, [participantId, role, session, location.pathname])
+  }, [isAthlete, participantId, role, session, location.pathname])
 
   useEffect(() => {
-    if (!notificationsOpen || !session || role !== 'user' || !participantId) return
+    if (!notificationsOpen || !session || !isAthlete || !participantId) return
     api.get(`/participants/${participantId}/competitions`)
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : []
@@ -268,7 +268,7 @@ export function AuthenticatedShell() {
         setUnreadCount(0)
       })
       .catch(() => {})
-  }, [notificationsOpen, participantId, role, session])
+  }, [isAthlete, notificationsOpen, participantId, role, session])
 
   const modalVisible = notificationsOpen || overlayOpen
 
