@@ -2301,7 +2301,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [cats, setCats] = useState([])
   const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0 })
   const [phases, setPhases] = useState([])
-  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' })
+  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'unidades' })
   const [questions, setQuestions] = useState([])
   const [questionDraft, setQuestionDraft] = useState({ label: '', field_type: 'text', required: 0, placeholder: '' })
   const [scheduleItems, setScheduleItems] = useState([])
@@ -2329,6 +2329,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [showAddSocialModal, setShowAddSocialModal] = useState(false)
   const [editingSocialId, setEditingSocialId] = useState(null)
   const [socialDraft, setSocialDraft] = useState({ platform: 'instagram', custom_label: '', url: '' })
+  const [newPhaseCatOverrides, setNewPhaseCatOverrides] = useState({})
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -2503,8 +2504,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       team_result_mode: newPhase.team_result_mode,
       start_at: newPhase.start_at || '',
       end_at: newPhase.end_at || '',
+      catOverrides: newPhaseCatOverrides,
     }])
-    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '' }))
+    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'unidades' }))
+    setNewPhaseCatOverrides({})
     return true
   }
 
@@ -3851,10 +3854,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       width={760}
       panelStyle={{ padding: 18 }}
     >
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
           Completa los datos del evento y agrégalo a la competencia.
         </div>
+
+        {/* ---- DATOS BASICOS ---- */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Bloque</label>
@@ -3871,12 +3876,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               <option value="teams" disabled={!form.team_enabled}>Equipos</option>
             </select>
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Medicion</label>
-            <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
-              {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-            </select>
-          </div>
           {form.team_enabled && newPhase.modality === 'teams' ? (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Resultado por equipo</label>
@@ -3887,21 +3886,247 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               </select>
             </div>
           ) : null}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {(() => {
+            const compStart = form.competition_start ? new Date(form.competition_start) : null
+            const compEnd = form.competition_end ? new Date(form.competition_end) : null
+            const competitionDays = []
+            if (compStart && compEnd) {
+              const cursor = new Date(compStart)
+              cursor.setHours(0, 0, 0, 0)
+              const end = new Date(compEnd)
+              end.setHours(0, 0, 0, 0)
+              let dayIndex = 1
+              while (cursor <= end) {
+                competitionDays.push({
+                  label: `Dia ${dayIndex} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  value: cursor.toISOString().slice(0, 10),
+                })
+                cursor.setDate(cursor.getDate() + 1)
+                dayIndex++
+              }
+            }
+            if (competitionDays.length > 0) {
+              return (
+                <div style={{ display: 'grid', gap: 8, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {competitionDays.map(day => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => setNewPhase(p => ({
+                          ...p,
+                          start_at: p.start_at === day.value ? '' : day.value,
+                          end_at: p.end_at === day.value ? '' : day.value,
+                        }))}
+                        style={{
+                          borderRadius: 999,
+                          border: newPhase.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
+                          background: newPhase.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                          color: newPhase.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
+                          padding: '8px 14px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Inicio</label>
+                  <input type="date" value={newPhase.start_at || ''} onChange={e => setNewPhase(p => ({ ...p, start_at: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fin</label>
+                  <input type="date" value={newPhase.end_at || ''} onChange={e => setNewPhase(p => ({ ...p, end_at: e.target.value }))} />
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* ---- TOGGLE DOS PUNTAJES ---- */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+          <label htmlFor="add-phase-toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: newPhase.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+              {newPhase.part_b_enabled ? 'Sí' : 'No'}
+            </span>
+            <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+              <input id="add-phase-toggle-part-b" type="checkbox" checked={newPhase.part_b_enabled}
+                onChange={e => setNewPhase(p => ({ ...p, part_b_enabled: e.target.checked, part_b_descripcion: '', part_b_time_cap: '' }))}
+                style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: newPhase.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+              <span style={{ position: 'absolute', top: 3, left: newPhase.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+            </span>
+          </label>
+        </div>
+
+        {/* ---- WOD BASE (Parte A) ---- */}
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            {newPhase.part_b_enabled ? 'Parte A' : 'WOD Base'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Inicio</label>
-              <input type="date" value={newPhase.start_at || ''} onChange={e => setNewPhase(p => ({ ...p, start_at: e.target.value }))} />
+              <label>Medicion</label>
+              <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
+                {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+              </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Fin</label>
-              <input type="date" value={newPhase.end_at || ''} onChange={e => setNewPhase(p => ({ ...p, end_at: e.target.value }))} />
+              <label>{newPhase.measurement_method === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+              <input
+                type="number" min="1" max="999"
+                value={newPhase.time_cap}
+                onChange={e => setNewPhase(p => ({ ...p, time_cap: e.target.value.replace(/\D/g, '') }))}
+                placeholder="Ej: 20"
+                style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                onWheel={e => e.target.blur()}
+              />
             </div>
           </div>
-          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-            <label>Descripcion</label>
-            <textarea rows={4} value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder="Descripcion opcional" />
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>WOD{newPhase.part_b_enabled ? ' Parte A' : ''}</label>
+            <textarea rows={4} value={newPhase.descripcion} onChange={e => setNewPhase(p => ({ ...p, descripcion: e.target.value }))} placeholder={'Escribe el WOD aqui...\nEj: 21-15-9\nThrusters 43/29 kg\nPull-ups'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
           </div>
         </div>
+
+        {/* ---- PARTE B ---- */}
+        {newPhase.part_b_enabled && (
+          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Medicion</label>
+                <select value={newPhase.part_b_measurement_method} onChange={e => setNewPhase(p => ({ ...p, part_b_measurement_method: e.target.value }))}>
+                  {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>{newPhase.part_b_measurement_method === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                <input
+                  type="number" min="1" max="999"
+                  value={newPhase.part_b_time_cap}
+                  onChange={e => setNewPhase(p => ({ ...p, part_b_time_cap: e.target.value.replace(/\D/g, '') }))}
+                  placeholder="Ej: 5"
+                  style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                  onWheel={e => e.target.blur()}
+                />
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>WOD Parte B</label>
+              <textarea rows={3} value={newPhase.part_b_descripcion} onChange={e => setNewPhase(p => ({ ...p, part_b_descripcion: e.target.value }))} placeholder={'Describe la parte B...\nEj: 1RM Clean'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
+            </div>
+          </div>
+        )}
+
+        {/* ---- CONFIGURACION POR CATEGORIA ---- */}
+        {cats.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
+            <span style={{ fontWeight: 700 }}>⚠</span>
+            <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+            {cats.map(cat => {
+              const override = newPhaseCatOverrides[cat.id] || {}
+              const isModified = !!override.modified
+              const toggleId = `new-phase-cat-toggle-${cat.id}`
+              return (
+                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
+                    <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
+                      {cat.nombre.split(' ')[0].toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
+                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                      {isModified ? 'Modificado' : 'Hereda base'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
+                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                    <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
+                      <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                        <input id={toggleId} type="checkbox" checked={isModified}
+                          onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, modified: e.target.checked } }))}
+                          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                        />
+                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                        <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                      </span>
+                    </label>
+                  </div>
+                  {isModified && (
+                    <div style={{ padding: '0 14px 14px', display: 'grid', gap: 12 }}>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {newPhase.part_b_enabled && <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte A</div>}
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label>{newPhase.measurement_method === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                          <input
+                            type="number" min="1" max="999"
+                            value={override.time_cap ?? ''}
+                            onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, time_cap: e.target.value.replace(/\D/g, '') } }))}
+                            placeholder={newPhase.time_cap ? `${newPhase.time_cap} (hereda base)` : 'Ej: 20'}
+                            style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                            onWheel={e => e.target.blur()}
+                          />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label>WOD{newPhase.part_b_enabled ? ' Parte A' : ''}</label>
+                          <textarea
+                            value={override.text || ''}
+                            onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, text: e.target.value } }))}
+                            placeholder={newPhase.descripcion ? `${newPhase.descripcion}\n\n(edita para sobreescribir)` : `WOD especifico para ${cat.nombre}...`}
+                            rows={4}
+                            style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+                      {newPhase.part_b_enabled && (
+                        <div style={{ display: 'grid', gap: 8, borderTop: '1px solid #252A33', paddingTop: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte B</div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>{newPhase.part_b_measurement_method === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                            <input
+                              type="number" min="1" max="999"
+                              value={override.part_b_time_cap ?? ''}
+                              onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, part_b_time_cap: e.target.value.replace(/\D/g, '') } }))}
+                              placeholder={newPhase.part_b_time_cap ? `${newPhase.part_b_time_cap} (hereda base)` : 'Ej: 5'}
+                              style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                              onWheel={e => e.target.blur()}
+                            />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>WOD Parte B</label>
+                            <textarea
+                              value={override.part_b_text || ''}
+                              onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, part_b_text: e.target.value } }))}
+                              placeholder={`Parte B especifica para ${cat.nombre}...`}
+                              rows={3}
+                              style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
           <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddPhaseModal(false)}>Cancelar</button>
           <button
@@ -4388,7 +4613,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       width={760}
       panelStyle={{ padding: 18 }}
     >
-      <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'grid', gap: 14 }}>
+        {/* ---- DATOS BASICOS ---- */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Bloque</label>
@@ -4405,12 +4631,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               <option value="teams" disabled={!form.team_enabled}>Equipos</option>
             </select>
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Medicion</label>
-            <select value={normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo)} onChange={e => updatePhase(editingPhase.id, 'measurement_method', e.target.value)}>
-              {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
-            </select>
-          </div>
           {form.team_enabled && editingPhase.modality === 'teams' ? (
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Resultado por equipo</label>
@@ -4421,21 +4641,248 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               </select>
             </div>
           ) : null}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          {(() => {
+            const compStart = form.competition_start ? new Date(form.competition_start) : null
+            const compEnd = form.competition_end ? new Date(form.competition_end) : null
+            const competitionDays = []
+            if (compStart && compEnd) {
+              const cursor = new Date(compStart)
+              cursor.setHours(0, 0, 0, 0)
+              const end = new Date(compEnd)
+              end.setHours(0, 0, 0, 0)
+              let dayIndex = 1
+              while (cursor <= end) {
+                competitionDays.push({
+                  label: `Dia ${dayIndex} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  value: cursor.toISOString().slice(0, 10),
+                })
+                cursor.setDate(cursor.getDate() + 1)
+                dayIndex++
+              }
+            }
+            if (competitionDays.length > 0) {
+              return (
+                <div style={{ display: 'grid', gap: 8, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {competitionDays.map(day => (
+                      <button
+                        key={day.value}
+                        type="button"
+                        onClick={() => {
+                          const next = editingPhase.start_at === day.value ? '' : day.value
+                          updatePhase(editingPhase.id, 'start_at', next)
+                          updatePhase(editingPhase.id, 'end_at', next)
+                        }}
+                        style={{
+                          borderRadius: 999,
+                          border: editingPhase.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
+                          background: editingPhase.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                          color: editingPhase.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
+                          padding: '8px 14px',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            }
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Inicio</label>
+                  <input type="date" value={editingPhase.start_at || ''} onChange={e => updatePhase(editingPhase.id, 'start_at', e.target.value)} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Fin</label>
+                  <input type="date" value={editingPhase.end_at || ''} onChange={e => updatePhase(editingPhase.id, 'end_at', e.target.value)} />
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* ---- TOGGLE DOS PUNTAJES ---- */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+          <label htmlFor={`edit-phase-toggle-part-b-${editingPhase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+              {editingPhase.part_b_enabled ? 'Sí' : 'No'}
+            </span>
+            <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+              <input id={`edit-phase-toggle-part-b-${editingPhase.id}`} type="checkbox" checked={!!editingPhase.part_b_enabled}
+                onChange={e => updatePhase(editingPhase.id, 'part_b_enabled', e.target.checked)}
+                style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: editingPhase.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+              <span style={{ position: 'absolute', top: 3, left: editingPhase.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+            </span>
+          </label>
+        </div>
+
+        {/* ---- WOD BASE (Parte A) ---- */}
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            {editingPhase.part_b_enabled ? 'Parte A' : 'WOD Base'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Inicio</label>
-              <input type="date" value={editingPhase.start_at || ''} onChange={e => updatePhase(editingPhase.id, 'start_at', e.target.value)} />
+              <label>Medicion</label>
+              <select value={normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo)} onChange={e => updatePhase(editingPhase.id, 'measurement_method', e.target.value)}>
+                {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+              </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Fin</label>
-              <input type="date" value={editingPhase.end_at || ''} onChange={e => updatePhase(editingPhase.id, 'end_at', e.target.value)} />
+              <label>{normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo) === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+              <input
+                type="number" min="1" max="999"
+                value={editingPhase.time_cap || ''}
+                onChange={e => updatePhase(editingPhase.id, 'time_cap', e.target.value.replace(/\D/g, ''))}
+                placeholder="Ej: 20"
+                style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                onWheel={e => e.target.blur()}
+              />
             </div>
           </div>
-          <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-            <label>Descripcion</label>
-            <textarea rows={4} value={editingPhase.descripcion || ''} onChange={e => updatePhase(editingPhase.id, 'descripcion', e.target.value)} placeholder="Descripcion opcional" />
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>WOD{editingPhase.part_b_enabled ? ' Parte A' : ''}</label>
+            <textarea rows={4} value={editingPhase.descripcion || ''} onChange={e => updatePhase(editingPhase.id, 'descripcion', e.target.value)} placeholder={'Escribe el WOD aqui...'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
           </div>
         </div>
+
+        {/* ---- PARTE B ---- */}
+        {editingPhase.part_b_enabled && (
+          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Medicion</label>
+                <select value={editingPhase.part_b_measurement_method || 'unidades'} onChange={e => updatePhase(editingPhase.id, 'part_b_measurement_method', e.target.value)}>
+                  {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>{(editingPhase.part_b_measurement_method || 'unidades') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                <input
+                  type="number" min="1" max="999"
+                  value={editingPhase.part_b_time_cap || ''}
+                  onChange={e => updatePhase(editingPhase.id, 'part_b_time_cap', e.target.value.replace(/\D/g, ''))}
+                  placeholder="Ej: 5"
+                  style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                  onWheel={e => e.target.blur()}
+                />
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>WOD Parte B</label>
+              <textarea rows={3} value={editingPhase.part_b_descripcion || ''} onChange={e => updatePhase(editingPhase.id, 'part_b_descripcion', e.target.value)} placeholder={'Describe la parte B...'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
+            </div>
+          </div>
+        )}
+
+        {/* ---- CONFIGURACION POR CATEGORIA ---- */}
+        {cats.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
+            <span style={{ fontWeight: 700 }}>⚠</span>
+            <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+            {cats.map(cat => {
+              const phaseCatOverrides = editingPhase.catOverrides || {}
+              const override = phaseCatOverrides[cat.id] || {}
+              const isModified = !!override.modified
+              const toggleId = `edit-phase-cat-toggle-${editingPhase.id}-${cat.id}`
+              return (
+                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
+                    <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
+                      {cat.nombre.split(' ')[0].toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
+                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                      {isModified ? 'Modificado' : 'Hereda base'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
+                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                    <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
+                      <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                        <input id={toggleId} type="checkbox" checked={isModified}
+                          onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, modified: e.target.checked } })}
+                          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                        />
+                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                        <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                      </span>
+                    </label>
+                  </div>
+                  {isModified && (
+                    <div style={{ padding: '0 14px 14px', display: 'grid', gap: 12 }}>
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {editingPhase.part_b_enabled && <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte A</div>}
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label>{normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo) === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                          <input
+                            type="number" min="1" max="999"
+                            value={override.time_cap ?? ''}
+                            onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, time_cap: e.target.value.replace(/\D/g, '') } })}
+                            placeholder={editingPhase.time_cap ? `${editingPhase.time_cap} (hereda base)` : 'Ej: 20'}
+                            style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                            onWheel={e => e.target.blur()}
+                          />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label>WOD{editingPhase.part_b_enabled ? ' Parte A' : ''}</label>
+                          <textarea
+                            value={override.text || ''}
+                            onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, text: e.target.value } })}
+                            placeholder={editingPhase.descripcion ? `${editingPhase.descripcion}\n\n(edita para sobreescribir)` : `WOD especifico para ${cat.nombre}...`}
+                            rows={4}
+                            style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                          />
+                        </div>
+                      </div>
+                      {editingPhase.part_b_enabled && (
+                        <div style={{ display: 'grid', gap: 8, borderTop: '1px solid #252A33', paddingTop: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte B</div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>{(editingPhase.part_b_measurement_method || 'unidades') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                            <input
+                              type="number" min="1" max="999"
+                              value={override.part_b_time_cap ?? ''}
+                              onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, part_b_time_cap: e.target.value.replace(/\D/g, '') } })}
+                              placeholder={editingPhase.part_b_time_cap ? `${editingPhase.part_b_time_cap} (hereda base)` : 'Ej: 5'}
+                              style={{ MozAppearance: 'textfield', appearance: 'textfield' }}
+                              onWheel={e => e.target.blur()}
+                            />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>WOD Parte B</label>
+                            <textarea
+                              value={override.part_b_text || ''}
+                              onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, part_b_text: e.target.value } })}
+                              placeholder={`Parte B especifica para ${cat.nombre}...`}
+                              rows={3}
+                              style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13, width: '100%', boxSizing: 'border-box' }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
