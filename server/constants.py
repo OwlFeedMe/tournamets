@@ -1,12 +1,14 @@
 class Role:
     ADMIN = "admin"
     ORGANIZER = "organizer"
+    JUDGE = "judge"
     USER = "user"
     PARTICIPANT = "participant"
 
     STAFF = {ADMIN, ORGANIZER}
-    APP_ROLES = {ADMIN, ORGANIZER, USER}
+    APP_ROLES = {ADMIN, ORGANIZER, JUDGE, USER}
     END_USER_ROLES = {PARTICIPANT, USER}
+    EXTRA_ROLES = {ADMIN, ORGANIZER, JUDGE}
 
 
 class EstadoParticipante:

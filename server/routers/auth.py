@@ -28,6 +28,29 @@ BASIC_EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 STRONG_PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$")
 
 
+def _app_user_extra_roles(app_user: AppUser | None) -> list[str]:
+    if not app_user:
+        return []
+    extra_roles: list[str] = []
+    if int(app_user.organizer_enabled or 0):
+        extra_roles.append(Role.ORGANIZER)
+    if int(app_user.judge_enabled or 0):
+        extra_roles.append(Role.JUDGE)
+    if int(app_user.admin_enabled or 0):
+        extra_roles.append(Role.ADMIN)
+    return extra_roles
+
+
+def _effective_role(base_role: str, extra_roles: list[str]) -> str:
+    if Role.ADMIN in extra_roles:
+        return Role.ADMIN
+    if Role.ORGANIZER in extra_roles:
+        return Role.ORGANIZER
+    if Role.JUDGE in extra_roles:
+        return Role.JUDGE
+    return base_role
+
+
 def _session_token_payload(
     *,
     role: str,
@@ -36,12 +59,21 @@ def _session_token_payload(
     app_user_id: int | None = None,
     participant_id: int | None = None,
     organizer_enabled: bool = False,
+    judge_enabled: bool = False,
+    admin_enabled: bool = False,
+    base_role: str | None = None,
+    extra_roles: list[str] | None = None,
     legacy_role: str | None = None,
 ) -> dict:
-    sub = f"app:{app_user_id}" if app_user_id is not None else (str(participant_id) if participant_id is not None else role)
+    resolved_base_role = base_role or role
+    resolved_extra_roles = list(extra_roles or [])
+    effective_role = _effective_role(resolved_base_role, resolved_extra_roles)
+    sub = f"app:{app_user_id}" if app_user_id is not None else (str(participant_id) if participant_id is not None else effective_role)
     payload = {
         "sub": sub,
-        "role": role,
+        "role": effective_role,
+        "base_role": resolved_base_role,
+        "extra_roles": resolved_extra_roles,
         "display_name": display_name,
     }
     if username is not None:
@@ -51,6 +83,8 @@ def _session_token_payload(
     if participant_id is not None:
         payload["participant_id"] = participant_id
     payload["organizer_enabled"] = bool(organizer_enabled)
+    payload["judge_enabled"] = bool(judge_enabled)
+    payload["admin_enabled"] = bool(admin_enabled)
     if legacy_role is not None:
         payload["legacy_role"] = legacy_role
     return payload
@@ -60,24 +94,32 @@ def _token_response(payload: dict) -> TokenResponse:
     return TokenResponse(
         access_token=create_access_token(payload),
         role=payload["role"],
+        base_role=payload.get("base_role") or payload["role"],
+        extra_roles=list(payload.get("extra_roles") or []),
         display_name=payload.get("display_name"),
         nombre=payload.get("display_name"),
         username=payload.get("username"),
         app_user_id=payload.get("app_user_id"),
         participant_id=payload.get("participant_id"),
         organizer_enabled=bool(payload.get("organizer_enabled")),
+        judge_enabled=bool(payload.get("judge_enabled")),
+        admin_enabled=bool(payload.get("admin_enabled")),
     )
 
 
 def _me_response(payload: dict) -> MeResponse:
     return MeResponse(
         role=payload["role"],
+        base_role=payload.get("base_role") or payload["role"],
+        extra_roles=list(payload.get("extra_roles") or []),
         display_name=payload.get("display_name"),
         nombre=payload.get("display_name"),
         username=payload.get("username"),
         app_user_id=payload.get("app_user_id"),
         participant_id=payload.get("participant_id"),
         organizer_enabled=bool(payload.get("organizer_enabled")),
+        judge_enabled=bool(payload.get("judge_enabled")),
+        admin_enabled=bool(payload.get("admin_enabled")),
     )
 
 
@@ -240,12 +282,16 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
         raise HTTPException(status_code=409, detail="No se pudo crear la cuenta")
 
     payload = _session_token_payload(
-        role=app_user.role,
+        role=_effective_role(app_user.role, _app_user_extra_roles(app_user)),
+        base_role=app_user.role,
+        extra_roles=_app_user_extra_roles(app_user),
         display_name=app_user.display_name,
         username=app_user.username,
         app_user_id=app_user.id,
         participant_id=participant.id,
         organizer_enabled=bool(app_user.organizer_enabled),
+        judge_enabled=bool(app_user.judge_enabled),
+        admin_enabled=bool(app_user.admin_enabled),
     )
 
     if email:
@@ -270,20 +316,28 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
     if identifier == ADMIN_ID and password == ADMIN_PASSWORD:
         payload = _session_token_payload(
             role=Role.ADMIN,
+            base_role=Role.USER,
+            extra_roles=[Role.ADMIN],
             display_name="Administrador",
             username=ADMIN_ID,
+            admin_enabled=True,
         )
         return _token_response(payload)
 
     app_user = _active_app_user_for_identifier(session, identifier)
     if app_user and verify_password(password, app_user.password_hash):
+        extra_roles = _app_user_extra_roles(app_user)
         payload = _session_token_payload(
-            role=app_user.role,
+            role=_effective_role(app_user.role, extra_roles),
+            base_role=app_user.role,
+            extra_roles=extra_roles,
             display_name=app_user.display_name,
             username=app_user.username,
             app_user_id=app_user.id,
             participant_id=app_user.participant_id,
             organizer_enabled=bool(app_user.organizer_enabled),
+            judge_enabled=bool(app_user.judge_enabled),
+            admin_enabled=bool(app_user.admin_enabled),
         )
         return _token_response(payload)
 
@@ -302,13 +356,18 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
 
     linked_user = _active_app_user_for_participant(session, participant.id)
     if linked_user and verify_password(password, linked_user.password_hash):
+        extra_roles = _app_user_extra_roles(linked_user)
         payload = _session_token_payload(
-            role=linked_user.role,
+            role=_effective_role(linked_user.role, extra_roles),
+            base_role=linked_user.role,
+            extra_roles=extra_roles,
             display_name=linked_user.display_name,
             username=linked_user.username,
             app_user_id=linked_user.id,
             participant_id=participant.id,
             organizer_enabled=bool(linked_user.organizer_enabled),
+            judge_enabled=bool(linked_user.judge_enabled),
+            admin_enabled=bool(linked_user.admin_enabled),
             legacy_role="participant",
         )
         return _token_response(payload)
@@ -329,19 +388,25 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
     session.commit()
     created_user = _active_app_user_for_participant(session, participant.id)
     if created_user:
+        extra_roles = _app_user_extra_roles(created_user)
         payload = _session_token_payload(
-            role=created_user.role,
+            role=_effective_role(created_user.role, extra_roles),
+            base_role=created_user.role,
+            extra_roles=extra_roles,
             display_name=created_user.display_name,
             username=created_user.username,
             app_user_id=created_user.id,
             participant_id=participant.id,
             organizer_enabled=bool(created_user.organizer_enabled),
+            judge_enabled=bool(created_user.judge_enabled),
+            admin_enabled=bool(created_user.admin_enabled),
             legacy_role="participant",
         )
         return _token_response(payload)
 
     payload = _session_token_payload(
         role=Role.PARTICIPANT,
+        base_role=Role.USER,
         display_name=_participant_display_name(participant),
         username=participant.email or participant.cedula,
         participant_id=participant.id,
@@ -358,8 +423,11 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
     if role == Role.ADMIN and user.get("app_user_id") is None:
         payload = _session_token_payload(
             role=Role.ADMIN,
+            base_role=Role.USER,
+            extra_roles=[Role.ADMIN],
             display_name=user.get("display_name") or "Administrador",
             username=user.get("username") or ADMIN_ID,
+            admin_enabled=True,
         )
         return _me_response(payload)
 
@@ -376,12 +444,16 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
             raise HTTPException(status_code=401, detail="Sesion invalida")
 
         payload = _session_token_payload(
-            role=app_user.role,
+            role=_effective_role(app_user.role, _app_user_extra_roles(app_user)),
+            base_role=app_user.role,
+            extra_roles=_app_user_extra_roles(app_user),
             display_name=app_user.display_name,
             username=app_user.username,
             app_user_id=app_user.id,
             participant_id=app_user.participant_id,
             organizer_enabled=bool(app_user.organizer_enabled),
+            judge_enabled=bool(app_user.judge_enabled),
+            admin_enabled=bool(app_user.admin_enabled),
         )
         return _me_response(payload)
 
@@ -398,6 +470,7 @@ def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
 
         payload = _session_token_payload(
             role=Role.PARTICIPANT,
+            base_role=Role.USER,
             display_name=_participant_display_name(participant),
             username=participant.email or participant.cedula,
             participant_id=participant.id,

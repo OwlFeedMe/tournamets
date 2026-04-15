@@ -39,6 +39,8 @@ def _ensure_app_user(
     role: str,
     password: str,
     organizer_enabled: int = 0,
+    judge_enabled: int = 0,
+    admin_enabled: int = 0,
     participant_id: int | None = None,
 ):
     existing = session.exec(select(AppUser).where(AppUser.username == username)).first()
@@ -52,6 +54,12 @@ def _ensure_app_user(
             changed = True
         if int(existing.organizer_enabled or 0) != int(organizer_enabled or 0):
             existing.organizer_enabled = int(organizer_enabled or 0)
+            changed = True
+        if int(existing.judge_enabled or 0) != int(judge_enabled or 0):
+            existing.judge_enabled = int(judge_enabled or 0)
+            changed = True
+        if int(existing.admin_enabled or 0) != int(admin_enabled or 0):
+            existing.admin_enabled = int(admin_enabled or 0)
             changed = True
         if participant_id is not None and existing.participant_id != participant_id:
             existing.participant_id = participant_id
@@ -71,6 +79,8 @@ def _ensure_app_user(
             role=role,
             password_hash=hash_password(password),
             organizer_enabled=int(organizer_enabled or 0),
+            judge_enabled=int(judge_enabled or 0),
+            admin_enabled=int(admin_enabled or 0),
             participant_id=participant_id,
             is_active=1,
         )
@@ -249,13 +259,21 @@ def init_db():
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS password_hash TEXT",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS organizer_enabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS judge_enabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS admin_enabled INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS participant_id INTEGER REFERENCES participants(id) ON DELETE SET NULL",
         "ALTER TABLE app_users ADD COLUMN IF NOT EXISTS is_active INTEGER NOT NULL DEFAULT 1",
         "UPDATE participants SET genero = sexo WHERE genero IS NULL AND sexo IS NOT NULL",
         "UPDATE app_users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''",
         "UPDATE app_users SET organizer_enabled = 0 WHERE organizer_enabled IS NULL",
+        "UPDATE app_users SET judge_enabled = 0 WHERE judge_enabled IS NULL",
+        "UPDATE app_users SET admin_enabled = 0 WHERE admin_enabled IS NULL",
         "UPDATE app_users SET organizer_enabled = 1 WHERE role = 'organizer'",
+        "UPDATE app_users SET judge_enabled = 1 WHERE role = 'judge'",
+        "UPDATE app_users SET admin_enabled = 1 WHERE role = 'admin'",
         "UPDATE app_users SET role = 'user' WHERE role = 'organizer' AND participant_id IS NOT NULL",
+        "UPDATE app_users SET role = 'user' WHERE role = 'judge' AND participant_id IS NOT NULL",
+        "UPDATE app_users SET role = 'user' WHERE role = 'admin' AND participant_id IS NOT NULL",
         "UPDATE app_users SET is_active = 1 WHERE is_active IS NULL",
         "UPDATE competition_participants SET payment_base_amount = 0 WHERE payment_base_amount IS NULL OR payment_base_amount < 0",
         "UPDATE competition_participants SET payment_platform_fee = 0 WHERE payment_platform_fee IS NULL OR payment_platform_fee < 0",
@@ -333,6 +351,7 @@ def init_db():
             display_name="Administrador",
             role=Role.ADMIN,
             password=ADMIN_PASSWORD,
+            admin_enabled=1,
         )
 
         organizer_username = os.getenv("APP_ORGANIZER_USERNAME", "organizer").strip()
@@ -374,6 +393,9 @@ def init_db():
                     existing.display_name = display_name
                     changed = True
                 if existing.role not in Role.STAFF and existing.role != Role.USER:
+                    existing.role = Role.USER
+                    changed = True
+                if existing.participant_id is not None and existing.role != Role.USER:
                     existing.role = Role.USER
                     changed = True
                 if existing.is_active != 1:

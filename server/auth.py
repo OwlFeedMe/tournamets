@@ -97,8 +97,16 @@ def get_current_user_optional(credentials: HTTPAuthorizationCredentials = Depend
     return get_current_user(credentials)
 
 
+def has_admin_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if user.get("role") == Role.ADMIN:
+        return True
+    return bool(user.get("admin_enabled"))
+
+
 def require_admin(user: dict = Depends(get_current_user)):
-    if user.get("role") != Role.ADMIN:
+    if not has_admin_access(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol admin")
     return user
 
@@ -111,8 +119,16 @@ def has_organizer_access(user: dict | None) -> bool:
     return bool(user.get("organizer_enabled"))
 
 
+def has_judge_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if user.get("role") == Role.JUDGE:
+        return True
+    return bool(user.get("judge_enabled"))
+
+
 def require_staff(user: dict = Depends(get_current_user)):
-    if user.get("role") == Role.ADMIN:
+    if has_admin_access(user):
         return user
     if has_organizer_access(user):
         enriched = dict(user)
@@ -128,7 +144,10 @@ def require_organizer_or_admin(user: dict = Depends(get_current_user)):
 def is_end_user(user: dict) -> bool:
     if user.get("role") in Role.END_USER_ROLES:
         return True
-    return has_organizer_access(user) and get_effective_participant_id(user) is not None
+    return (
+        get_effective_participant_id(user) is not None
+        and (has_organizer_access(user) or has_admin_access(user) or has_judge_access(user))
+    )
 
 
 def get_effective_participant_id(user: dict) -> Optional[int]:

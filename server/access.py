@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from auth import has_organizer_access
+from auth import has_admin_access, has_organizer_access
 from constants import Role
 from models import Competition
 
@@ -17,7 +17,7 @@ def get_app_user_id(user: dict | None) -> int | None:
 
 
 def is_admin_user(user: dict | None) -> bool:
-    return bool(user and user.get("role") == Role.ADMIN)
+    return has_admin_access(user)
 
 
 def is_organizer_user(user: dict | None) -> bool:

@@ -65,6 +65,18 @@ def _profile_snapshot(participant: Participant) -> dict:
     }
 
 
+def _can_request_organizer_access(app_user: AppUser | None) -> bool:
+    if not app_user:
+        return False
+    if app_user.role != Role.USER:
+        return False
+    if int(app_user.organizer_enabled or 0):
+        return False
+    if int(app_user.admin_enabled or 0):
+        return False
+    return True
+
+
 def _serialize_application(item: OrganizerApplication, *, app_user: AppUser | None = None, participant: Participant | None = None) -> dict:
     payload = item.model_dump()
     try:
@@ -97,8 +109,12 @@ def get_my_organizer_application(
 ):
     app_user_id = user.get("app_user_id")
     participant_id = get_effective_participant_id(user)
-    if user.get("role") != Role.USER or app_user_id is None or participant_id is None:
+    if app_user_id is None or participant_id is None:
         raise HTTPException(403, "Solo usuarios finales")
+
+    app_user = session.get(AppUser, int(app_user_id))
+    if not _can_request_organizer_access(app_user):
+        raise HTTPException(403, "La cuenta no puede solicitar este acceso")
 
     participant = session.get(Participant, participant_id)
     missing = _profile_missing_fields(participant)
@@ -122,14 +138,12 @@ def create_organizer_application(
 ):
     app_user_id = user.get("app_user_id")
     participant_id = get_effective_participant_id(user)
-    if user.get("role") != Role.USER or app_user_id is None or participant_id is None:
+    if app_user_id is None or participant_id is None:
         raise HTTPException(403, "Solo usuarios finales")
 
     app_user = session.get(AppUser, int(app_user_id))
-    if not app_user or app_user.role != Role.USER:
+    if not _can_request_organizer_access(app_user):
         raise HTTPException(403, "La cuenta no puede enviar esta solicitud")
-    if int(app_user.organizer_enabled or 0):
-        raise HTTPException(409, "Tu cuenta ya tiene acceso de organizador")
 
     participant = session.get(Participant, participant_id)
     missing = _profile_missing_fields(participant)

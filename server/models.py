@@ -49,9 +49,11 @@ class AppUser(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     username: str = Field(index=True)
     display_name: str
-    role: str = Field(default=Role.USER, index=True)  # admin | organizer | user
+    role: str = Field(default=Role.USER, index=True)  # base role: user, legacy admin fallback
     password_hash: str
     organizer_enabled: int = Field(default=0)
+    judge_enabled: int = Field(default=0)
+    admin_enabled: int = Field(default=0)
     participant_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
@@ -539,22 +541,30 @@ class TokenResponse(SQLModel):
     access_token: str
     token_type: str = "bearer"
     role: str
+    base_role: str = Role.USER
+    extra_roles: List[str] = []
     display_name: Optional[str] = None
     nombre: Optional[str] = None
     username: Optional[str] = None
     app_user_id: Optional[int] = None
     participant_id: Optional[int] = None
     organizer_enabled: bool = False
+    judge_enabled: bool = False
+    admin_enabled: bool = False
 
 
 class MeResponse(SQLModel):
     role: str
+    base_role: str = Role.USER
+    extra_roles: List[str] = []
     display_name: Optional[str] = None
     nombre: Optional[str] = None
     username: Optional[str] = None
     app_user_id: Optional[int] = None
     participant_id: Optional[int] = None
     organizer_enabled: bool = False
+    judge_enabled: bool = False
+    admin_enabled: bool = False
 
 
 # ── Participant schemas ────────────────────────────────────────────────────────
