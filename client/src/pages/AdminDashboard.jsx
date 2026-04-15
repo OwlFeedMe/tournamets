@@ -213,6 +213,82 @@ function parseEnrollmentAnswers(raw) {
   }
 }
 
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function downloadEnrollmentWorkbook(participants, competitionName) {
+  const answerLabels = Array.from(new Set(
+    participants.flatMap(participant => parseEnrollmentAnswers(participant.enrollment_answers).map(item => item.question_label || 'Respuesta'))
+  ))
+  const headers = [
+    'Participante',
+    'Cedula',
+    'Categoria',
+    'Estado',
+    'Email',
+    'Celular',
+    'Genero',
+    'Box',
+    'Ciudad / Pais',
+    ...answerLabels,
+  ]
+  const rows = participants.map(participant => {
+    const answers = Object.fromEntries(
+      parseEnrollmentAnswers(participant.enrollment_answers).map(item => [
+        item.question_label || 'Respuesta',
+        item.question_type === 'image' && item.answer ? item.answer : (item.answer || ''),
+      ])
+    )
+    return [
+      `${participant.nombre || ''} ${participant.apellido || ''}`.trim(),
+      participant.cedula || '',
+      participant.categoria_competencia || '',
+      participant.estado || '',
+      participant.email || '',
+      participant.celular || '',
+      participant.genero || participant.sexo || '',
+      participant.box || '',
+      participant.ciudad_pais || '',
+      ...answerLabels.map(label => answers[label] || ''),
+    ]
+  })
+  const workbookXml = `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Styles>
+    <Style ss:ID="Header">
+      <Font ss:Bold="1"/>
+    </Style>
+  </Styles>
+  <Worksheet ss:Name="Inscripciones">
+    <Table>
+      <Row>
+        ${headers.map(header => `<Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(header)}</Data></Cell>`).join('')}
+      </Row>
+      ${rows.map(row => `
+      <Row>
+        ${row.map(cell => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`).join('')}
+      </Row>`).join('')}
+    </Table>
+  </Worksheet>
+</Workbook>`
+  const blob = new Blob([workbookXml], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${String(competitionName || 'inscripciones').trim().replace(/[\\/:*?"<>|]+/g, '_') || 'inscripciones'}.xls`
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
 const SHARED_MODE_CHIP_BASE_STYLE = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -222,15 +298,6 @@ const SHARED_MODE_CHIP_BASE_STYLE = {
   fontSize: 12,
   fontWeight: 700,
   lineHeight: 1,
-}
-
-function getCompetitionVisibilitySummary(comp) {
-  const items = []
-  if (comp?.show_individual_leaderboard) items.push({ label: 'Individual visible', tone: 'teal' })
-  if (comp?.show_team_all_by_category_option) items.push({ label: 'Equipos por categoria', tone: 'orange' })
-  if (comp?.show_team_all_global_option) items.push({ label: 'Equipos globales', tone: 'slate' })
-  if (!items.length) items.push({ label: 'Sin vistas publicas', tone: 'muted' })
-  return items
 }
 
 function getPhaseModeSummary(phase) {
@@ -405,14 +472,44 @@ function EnrollmentAnswersBlock({ raw, compact = false, onPreviewImage = null })
 
 // ── Generic small modal ───────────────────────────────────────────────────────
 function Modal({ title, onClose, width = 480, children, panelStyle = null, titleStyle = null, closeButtonStyle = null }) {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    const body = document.body
+    const currentCount = Number(body.dataset.modalOpenCount || 0) + 1
+    body.dataset.modalOpenCount = String(currentCount)
+    const previousOverflow = body.style.overflow
+    const previousTouchAction = body.style.touchAction
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+
+    return () => {
+      const nextCount = Math.max(0, Number(body.dataset.modalOpenCount || 1) - 1)
+      body.dataset.modalOpenCount = String(nextCount)
+      if (nextCount === 0) {
+        body.style.overflow = previousOverflow
+        body.style.touchAction = previousTouchAction
+      }
+    }
+  }, [])
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
-      <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 24, width: '100%', maxWidth: width, maxHeight: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', color: 'var(--oa-text)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', ...panelStyle }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
+      <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: isMobile ? 16 : 18, width: '100%', maxWidth: width, maxHeight: 'calc(100dvh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', color: 'var(--oa-text)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', ...panelStyle, padding: 0 }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: isMobile ? '14px 14px 12px' : '18px 20px 14px', marginBottom: 0, background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
           <h3 style={{ margin: 0, fontSize: 15, paddingRight: 8, color: 'var(--oa-text)', ...titleStyle }}>{title}</h3>
-          <button style={{ background: 'transparent', border: '1px solid #252A33', borderRadius: 10, color: 'var(--oa-text-secondary)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, ...closeButtonStyle }} onClick={onClose}><X size={18} /></button>
+          <button style={{ background: '#0D0F12', border: '1px solid #252A33', borderRadius: 10, color: '#F5F7FA', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, ...closeButtonStyle }} onClick={onClose}><X size={18} strokeWidth={2.2} /></button>
         </div>
-        {children}
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 14 : 20 }}>
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -1830,7 +1927,7 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', marginBottom: 14, border: '1px solid #252A33', borderRadius: 14, background: form.enrollment_open ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--oa-text)' }}>Inscripciones habilitadas</div>
-            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>Controla si esta competencia acepta nuevas solicitudes.</div>
+            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>Controla si esta competencia acepta nuevas inscripciones.</div>
           </div>
           <button
             type="button"
@@ -1870,14 +1967,13 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
 function EnrollmentModal({ competition, onClose, onSaved }) {
   const { role, organizerEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
-  const [modalTab, setModalTab] = useState('pendientes')
+  const [modalTab, setModalTab] = useState(isOrganizer ? 'confirmados' : 'gestion')
   const [previewImage, setPreviewImage] = useState(null)
   const [viewedParticipant, setViewedParticipant] = useState(null)
   const [allParticipants, setAllParticipants] = useState([])
   const [competitionParticipants, setCompetitionParticipants] = useState([])
   const [categories, setCategories] = useState([])
   const [enrollMap, setEnrollMap] = useState({})   // confirmed: pid -> { selected, categoria }
-  const [pendingList, setPendingList] = useState([])
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -1895,13 +1991,11 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
       setCompetitionParticipants(eRes.data || [])
       setCategories(cRes.data || [])
       const enrolled = eRes.data || []
-      const pending = enrolled.filter(e => e.estado === 'pendiente')
       const confirmed = enrolled.filter(e => e.estado === 'confirmado')
-      setPendingList(pending)
       const map = {}
       confirmed.forEach(e => { map[e.id] = { selected: true, categoria: e.categoria_competencia || '' } })
       setEnrollMap(map)
-      setModalTab(pending.length > 0 ? 'pendientes' : (confirmed.length > 0 ? 'confirmados' : 'rechazados'))
+      setModalTab(isOrganizer ? 'confirmados' : 'gestion')
       setViewedParticipant(null)
     })
   }
@@ -1928,12 +2022,6 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
       documentElement.style.overscrollBehavior = prevHtmlOverscroll
     }
   }, [])
-
-  const approveOrReject = async (pid, estado) => {
-    await api.put(`/competitions/${competition.id}/participants/${pid}/status`, { estado })
-    onSaved()
-    load()
-  }
 
   const toggle = (id) => {
     setEnrollMap(prev => {
@@ -1968,24 +2056,14 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     }
   }
 
-  const pendingIds = new Set(pendingList.map(p => p.id))
   const filtered = allParticipants
-    .filter(p => !pendingIds.has(p.id))
     .filter(p => `${p.nombre} ${p.apellido} ${p.cedula}`.toLowerCase().includes(search.toLowerCase()))
   const confirmedList = useMemo(
     () => competitionParticipants.filter(p => p.estado === 'confirmado'),
     [competitionParticipants]
   )
-  const rejectedList = useMemo(
-    () => competitionParticipants.filter(p => p.estado === 'rechazado'),
-    [competitionParticipants]
-  )
   const selectedCount = Object.values(enrollMap).filter(v => v.selected).length
-  const currentOrganizerList = modalTab === 'pendientes'
-    ? pendingList
-    : modalTab === 'rechazados'
-      ? rejectedList
-      : confirmedList
+  const currentOrganizerList = confirmedList
 
   const organizerDetailView = viewedParticipant && (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -2003,26 +2081,6 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
         </div>
         <EnrollmentAnswersBlock raw={viewedParticipant.enrollment_answers} onPreviewImage={setPreviewImage} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-        {viewedParticipant.estado !== 'confirmado' && (
-          <button className="btn-success" onClick={async () => {
-            await approveOrReject(viewedParticipant.id, 'confirmado')
-            setModalTab('confirmados')
-            setViewedParticipant(null)
-          }}>
-            Confirmar
-          </button>
-        )}
-        {viewedParticipant.estado !== 'rechazado' && (
-          <button className="btn-danger" onClick={async () => {
-            await approveOrReject(viewedParticipant.id, 'rechazado')
-            setModalTab('rechazados')
-            setViewedParticipant(null)
-          }}>
-            Rechazar
-          </button>
-        )}
-      </div>
     </div>
   )
 
@@ -2030,11 +2088,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     <div style={{ overflowY: 'auto', flex: 1, display: 'grid', gap: 10 }}>
       {!currentOrganizerList.length && (
         <div style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>
-          {modalTab === 'pendientes'
-            ? 'No hay solicitudes pendientes'
-            : modalTab === 'rechazados'
-              ? 'No hay rechazados'
-              : 'No hay inscritos'}
+          No hay inscritos
         </div>
       )}
       {currentOrganizerList.map((p) => (
@@ -2045,16 +2099,8 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
           gap: 12,
           padding: '12px 14px',
           borderRadius: 12,
-          border: modalTab === 'pendientes'
-            ? '1px solid rgba(255,107,0,0.26)'
-            : modalTab === 'rechazados'
-              ? '1px solid rgba(239,68,68,0.26)'
-              : '1px solid #252A33',
-          background: modalTab === 'pendientes'
-            ? 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))'
-            : modalTab === 'rechazados'
-              ? 'linear-gradient(135deg, rgba(239,68,68,0.10), rgba(127,29,29,0.04))'
-              : 'rgba(13,15,18,0.72)',
+          border: '1px solid #252A33',
+          background: 'rgba(13,15,18,0.72)',
         }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
@@ -2072,23 +2118,10 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     <Modal title={`Inscripciones - ${competition.nombre}`} onClose={onClose} width={640}>
       {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
       <div className="tabs" style={{ margin: '0 0 14px', border: 'none', gap: 4 }}>
-        <button className={`tab ${modalTab === 'pendientes' ? 'active' : ''}`} onClick={() => { setModalTab('pendientes'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13, position: 'relative' }}>
-          Solicitudes
-          {pendingList.length > 0 && (
-            <span style={{ background: '#284017', color: '#fff', borderRadius: 10, padding: '0 6px', fontSize: 10, fontWeight: 700, marginLeft: 6 }}>
-              {pendingList.length}
-            </span>
-          )}
-        </button>
         {isOrganizer ? (
-          <>
-            <button className={`tab ${modalTab === 'confirmados' ? 'active' : ''}`} onClick={() => { setModalTab('confirmados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
-              Inscritos
-            </button>
-            <button className={`tab ${modalTab === 'rechazados' ? 'active' : ''}`} onClick={() => { setModalTab('rechazados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
-              Rechazados
-            </button>
-          </>
+          <button className={`tab ${modalTab === 'confirmados' ? 'active' : ''}`} onClick={() => { setModalTab('confirmados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
+            Inscritos
+          </button>
         ) : (
           <button className={`tab ${modalTab === 'gestion' ? 'active' : ''}`} onClick={() => { setModalTab('gestion'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
             Gestionar inscritos
@@ -2096,35 +2129,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
         )}
       </div>
 
-      {modalTab === 'pendientes' && (
-        isOrganizer ? organizerDetailView || organizerListView : (
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {pendingList.length === 0 ? (
-              <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>No hay solicitudes pendientes</p>
-            ) : (
-              pendingList.map(p => (
-                <div key={p.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12,
-                  border: '1px solid rgba(255,107,0,0.26)', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))', marginBottom: 10
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
-                    <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>
-                      {p.cedula}
-                      {p.categoria_competencia && <span style={{ marginLeft: 8 }}>| Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia}</b></span>}
-                    </div>
-                    <EnrollmentAnswersBlock raw={p.enrollment_answers} compact onPreviewImage={setPreviewImage} />
-                  </div>
-                  <button className="btn-success btn-sm" onClick={() => approveOrReject(p.id, 'confirmado')}>Confirmar</button>
-                  <button className="btn-danger btn-sm" onClick={() => approveOrReject(p.id, 'rechazado')}>Rechazar</button>
-                </div>
-              ))
-            )}
-          </div>
-        )
-      )}
-
-      {((isOrganizer && (modalTab === 'confirmados' || modalTab === 'rechazados')) || (!isOrganizer && modalTab === 'gestion')) && (
+      {((isOrganizer && modalTab === 'confirmados') || (!isOrganizer && modalTab === 'gestion')) && (
         <>
           {isOrganizer ? (
             <>{organizerDetailView || organizerListView}
@@ -2178,6 +2183,79 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
 }
 
 // ── Competitions Tab ──────────────────────────────────────────────────────────
+function QuickCompetitionCreateModal({ onClose, onCreated }) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    const trimmedName = String(name || '').trim()
+    if (!trimmedName) {
+      setMsg({ type: 'error', text: 'El nombre es obligatorio' })
+      return
+    }
+
+    setSaving(true)
+    setMsg(null)
+    try {
+      const { data } = await api.post('/competitions', {
+        nombre: trimmedName,
+        scoring_mode: 'highest_wins',
+      })
+      onCreated(data)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo crear la competencia' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="Nueva competencia"
+      onClose={onClose}
+      width={480}
+      panelStyle={{
+        background: '#171b21',
+        border: '1px solid #252a33',
+        borderRadius: 22,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+      }}
+      titleStyle={{ color: 'var(--oa-text)', fontSize: 18, fontWeight: 800 }}
+      closeButtonStyle={{
+        width: 34,
+        height: 34,
+        borderRadius: 12,
+        border: '1px solid #252a33',
+        background: 'transparent',
+        color: 'var(--oa-text)',
+        justifyContent: 'center',
+        padding: 0,
+      }}
+    >
+      <form onSubmit={submit} style={{ display: 'grid', gap: 14 }}>
+        {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Nombre</label>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Ej. FinalRep Summer Throwdown"
+          />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? 'Creando...' : 'Crear'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = false }) {
   const isEdit = mode === 'edit'
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
@@ -2228,6 +2306,11 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [uploadingAssets, setUploadingAssets] = useState(false)
   const [deletingAssetKey, setDeletingAssetKey] = useState('')
   const [showThemePreview, setShowThemePreview] = useState(false)
+  const [editorStep, setEditorStep] = useState(0)
+  const [expandedExtras, setExpandedExtras] = useState({
+    basics: false,
+    registration: false,
+  })
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -2309,6 +2392,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  useEffect(() => {
+    setEditorStep(0)
+    setExpandedExtras({
+      basics: false,
+      registration: false,
+    })
+  }, [competition?.id, isEdit])
   const previewTheme = useMemo(() => resolveCompetitionTheme(form), [form])
 
   const addCategory = () => {
@@ -2679,6 +2769,40 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     letterSpacing: 0.8,
   }
   const modeChipBaseStyle = SHARED_MODE_CHIP_BASE_STYLE
+  const setupSteps = [
+    { id: 'basics', label: 'Base', hint: 'Nombre, sede y portada' },
+    { id: 'registration', label: 'Registro', hint: 'Apertura, reglas y preguntas' },
+    { id: 'divisions', label: 'Divisiones', hint: 'Categorias y precios' },
+    { id: 'events', label: 'Eventos', hint: 'Bloques y pruebas' },
+  ]
+  useEffect(() => {
+    setEditorStep(prev => Math.min(prev, setupSteps.length - 1))
+  }, [setupSteps.length])
+  const activeStep = setupSteps[Math.min(editorStep, setupSteps.length - 1)]
+  const canGoNextStep = [
+    !!form.nombre.trim(),
+    true,
+    true,
+    true,
+  ][Math.min(editorStep, 3)]
+  const setExtraExpanded = (key) => {
+    setExpandedExtras(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+  const extraToggleStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: 14,
+    border: '1px solid #252A33',
+    background: 'rgba(13,15,18,0.72)',
+    color: '#F5F7FA',
+    fontSize: 13,
+    fontWeight: 700,
+    textAlign: 'left',
+  }
   const toggleThumbStyle = {
     width: 22,
     height: 22,
@@ -2838,10 +2962,42 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       <form onSubmit={save} style={inline ? { display: 'grid', gap: 0 } : { overflowY: 'auto', paddingRight: 4 }}>
         {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
+        <div style={{ ...sectionStyle, background: 'linear-gradient(135deg, rgba(255,107,0,0.16), rgba(23,27,33,0.98) 42%, rgba(9,11,14,0.98) 100%)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div>
+              <h4 style={sectionTitleStyle}>Configuracion guiada</h4>
+            </div>
+            <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 800 }}>{`Paso ${editorStep + 1} de ${setupSteps.length}`}</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${setupSteps.length}, minmax(0, 1fr))`, gap: 8, marginTop: 14 }}>
+            {setupSteps.map((step, index) => (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => {
+                  if (index <= editorStep || !!form.nombre.trim()) setEditorStep(index)
+                }}
+                style={{
+                  borderRadius: 14,
+                  border: index === editorStep ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
+                  background: index === editorStep ? 'rgba(255,107,0,0.16)' : 'rgba(13,15,18,0.72)',
+                  padding: '12px 14px',
+                  textAlign: 'left',
+                  color: '#F5F7FA',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 800, color: index === editorStep ? '#FFB36F' : '#AAB2C0' }}>{`0${index + 1}`.slice(-2)}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>{step.label}</div>
+                <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4, lineHeight: 1.45 }}>{step.hint}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {activeStep.id === 'basics' && (
         <div style={{ ...sectionStyle, paddingBottom: isMobile ? 12 : 16 }}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Informacion general</h4>
-            <div style={sectionHintStyle}>Define el nombre, descripcion, contacto e imagenes que se mostraran en la portada publica.</div>
+            <h4 style={sectionTitleStyle}>Base de la competencia</h4>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group">
@@ -2881,10 +3037,16 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <button type="button" onClick={() => setExtraExpanded('basics')} style={extraToggleStyle}>
+              <span>Configuracion extra</span>
+              <span style={{ color: '#AAB2C0', fontSize: 12 }}>{expandedExtras.basics ? 'Ocultar' : 'Mostrar'}</span>
+            </button>
+            {expandedExtras.basics ? (
+            <div style={{ display: 'grid', gap: 12 }}>
             <div>
-              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Bloques narrativos de portada</div>
+              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Textos de portada</div>
               <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 4 }}>
-                Estos textos construyen el feeling de la landing publica. Cada competencia puede tener su propio tono, enfoque y narrativa.
+                Solo usalos si necesitas reforzar contexto en la landing publica.
               </div>
             </div>
 
@@ -2897,7 +3059,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <label>Intro de experiencia</label>
                 <textarea value={landingSections.experience_intro} onChange={e => updateLandingSectionField('experience_intro', e.target.value)} rows={4} placeholder="Explica en pocas lineas como se vive esta competencia y que tipo de exigencia propone." />
               </div>
-              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Momentos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Momentos recomendados: 3.</div>
               {landingSections.experience_items.map((item, idx) => (
                 <div key={`exp-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
                   <input value={item.title} onChange={e => updateLandingSectionItem('experience_items', idx, 'title', e.target.value)} placeholder={`Momento ${idx + 1}`} />
@@ -2915,7 +3077,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <label>Titulo de pasos del formato</label>
                 <input value={landingSections.format_title} onChange={e => updateLandingSectionField('format_title', e.target.value)} placeholder="Ej: Asi se compite" />
               </div>
-              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Pasos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Pasos recomendados: 3.</div>
               {landingSections.format_items.map((item, idx) => (
                 <div key={`format-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
                   <input value={item.title} onChange={e => updateLandingSectionItem('format_items', idx, 'title', e.target.value)} placeholder={`Paso ${idx + 1}`} />
@@ -2933,7 +3095,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <label>Titulo de puntos clave</label>
                 <input value={landingSections.highlights_title} onChange={e => updateLandingSectionField('highlights_title', e.target.value)} placeholder="Ej: Lo clave" />
               </div>
-              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Puntos recomendados: 3. Puedes dejar menos o agregar mas.</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Puntos recomendados: 3.</div>
               {landingSections.highlights_items.map((item, idx) => (
                 <div key={`highlight-item-${idx}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.7fr 1.3fr auto', gap: 8 }}>
                   <input value={item.title} onChange={e => updateLandingSectionItem('highlights_items', idx, 'title', e.target.value)} placeholder={`Punto ${idx + 1}`} />
@@ -2945,7 +3107,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <button type="button" className="btn-secondary btn-sm" onClick={() => addLandingSectionItem('highlights_items')}>+ Agregar punto</button>
               </div>
             </div>
-          </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Tema de la competencia</div>
@@ -3081,56 +3242,27 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               )
             })}
           </div>
+          </div>
+            ) : (
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Configuracion adicional.</div>
+            )}
         </div>
+        </div>
+        )}
 
+        {activeStep.id === 'registration' && (
+        <div style={{ display: 'grid', gap: 0 }}>
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Configuracion</h4>
-            <div style={sectionHintStyle}>Define primero el alcance operativo y despues la salida publica. Las vistas individuales y de equipos se controlan desde aqui.</div>
+            <h4 style={sectionTitleStyle}>Registro y reglas base</h4>
           </div>
           <div style={{ display: 'grid', gap: 14 }}>
-            <div style={{ ...listItemStyle, gridTemplateColumns: '1fr' }}>
-              <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Modelo activo</div>
-              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>Individual y equipos comparten el mismo evento, pero cada vista publica se puede encender o apagar por separado.</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 }}>
-                {getCompetitionVisibilitySummary(form).map(item => (
-                  <span
-                    key={item.label}
-                    style={{
-                      ...modeChipBaseStyle,
-                      background: item.tone === 'teal'
-                        ? 'rgba(0,194,168,0.14)'
-                        : item.tone === 'orange'
-                          ? 'rgba(255,107,0,0.14)'
-                          : item.tone === 'slate'
-                            ? 'rgba(170,178,192,0.12)'
-                            : 'rgba(107,114,128,0.12)',
-                      color: item.tone === 'teal'
-                        ? '#8FF3E7'
-                        : item.tone === 'orange'
-                          ? '#FFB36F'
-                          : item.tone === 'slate'
-                            ? 'var(--oa-text-secondary)'
-                            : '#AAB2C0',
-                      border: `1px solid ${item.tone === 'teal'
-                        ? 'rgba(0,194,168,0.22)'
-                        : item.tone === 'orange'
-                          ? 'rgba(255,107,0,0.22)'
-                          : 'rgba(170,178,192,0.2)'}`,
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                ))}
-              </div>
-            </div>
-
             <div>
-              <div style={sectionRowLabelStyle}>Modelo activo</div>
+              <div style={sectionRowLabelStyle}>Modalidades</div>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
                 {renderToggleCard({
                   label: 'Modalidad individual',
-                  hint: 'Activa rankings y eventos para atletas individuales.',
+                  hint: 'Usa categorias, inscripciones y eventos para atletas individuales.',
                   enabled: !!form.individual_enabled,
                   enabledText: 'Activa',
                   disabledText: 'Oculta',
@@ -3138,7 +3270,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 })}
                 {renderToggleCard({
                   label: 'Modalidad equipos',
-                  hint: 'Activa armado de equipos, categorias por equipos y rankings grupales.',
+                  hint: 'Activa armado de equipos y divisiones grupales.',
                   enabled: !!form.team_enabled,
                   enabledText: 'Activa',
                   disabledText: 'Oculta',
@@ -3170,73 +3302,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               ) : null}
             </div>
 
-            <div>
-              <div style={sectionRowLabelStyle}>Base operativa</div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                {renderToggleCard({
-                  label: 'Competencia publicada',
-                  hint: 'Define si esta competencia ya debe operar como activa dentro de la plataforma.',
-                  enabled: !!form.activa,
-                  enabledText: 'Activa',
-                  disabledText: 'Inactiva',
-                  onClick: () => setForm(f => ({ ...f, activa: f.activa ? 0 : 1 })),
-                })}
-                {renderToggleCard({
-                  label: 'Inscripciones habilitadas',
-                  hint: 'Permite que el boton "Quiero participar" abra el formulario y reciba solicitudes.',
-                  enabled: !!form.enrollment_open,
-                  enabledText: 'Abiertas',
-                  disabledText: 'Cerradas',
-                  onClick: () => setForm(f => ({ ...f, enrollment_open: f.enrollment_open ? 0 : 1 })),
-                })}
-                {renderToggleCard({
-                  label: 'Carga de resultados por usuario',
-                  hint: 'Permite que los participantes carguen sus propios resultados cuando aplique.',
-                  enabled: !!form.allow_user_results,
-                  enabledText: 'Permitida',
-                  disabledText: 'Bloqueada',
-                  onClick: () => setForm(f => ({ ...f, allow_user_results: f.allow_user_results ? 0 : 1 })),
-                })}
-                <button type="button" className={form.scoring_mode === 'lowest_wins' ? 'btn-success btn-sm' : 'btn-secondary btn-sm'} onClick={() => setForm(f => ({ ...f, scoring_mode: f.scoring_mode === 'lowest_wins' ? 'highest_wins' : 'lowest_wins' }))} style={{ width: '100%', minHeight: 64 }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--oa-text)' }}>
-                      {form.scoring_mode === 'lowest_wins' ? 'Menor puntaje gana' : 'Mayor puntaje gana'}
-                    </div>
-                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4 }}>Define el criterio global de puntaje para tablas y calculos.</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <div style={sectionRowLabelStyle}>Salida publica</div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                {renderToggleCard({
-                  label: 'Leaderboard individual visible',
-                  hint: 'Muestra la tabla individual de participantes en la experiencia publica.',
-                  enabled: !!form.show_individual_leaderboard,
-                  enabledText: 'Visible',
-                  disabledText: 'Oculto',
-                  onClick: () => setForm(f => ({ ...f, show_individual_leaderboard: f.show_individual_leaderboard ? 0 : 1 })),
-                })}
-                {renderToggleCard({
-                  label: 'Equipos por categoria',
-                  hint: 'Expone la opcion para ver todos los equipos agrupados por categoria.',
-                  enabled: !!form.show_team_all_by_category_option,
-                  enabledText: 'Visible',
-                  disabledText: 'Oculto',
-                  onClick: () => setForm(f => ({ ...f, show_team_all_by_category_option: f.show_team_all_by_category_option ? 0 : 1 })),
-                })}
-                {renderToggleCard({
-                  label: 'Equipos globales',
-                  hint: 'Expone la opcion para ver todos los equipos sin filtrar por categoria.',
-                  enabled: !!form.show_team_all_global_option,
-                  enabledText: 'Visible',
-                  disabledText: 'Oculto',
-                  onClick: () => setForm(f => ({ ...f, show_team_all_global_option: f.show_team_all_global_option ? 0 : 1 })),
-                })}
-              </div>
-            </div>
           </div>
         </div>
 
@@ -3274,7 +3339,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Ventana de inscripcion</h4>
-            <div style={sectionHintStyle}>Controla la logica de inscripcion y las fechas base de la competencia.</div>
+            <div style={sectionHintStyle}>Estas fechas ordenan la apertura del registro y el rango principal de la competencia.</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -3300,9 +3365,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Fechas visibles</h4>
-            <div style={sectionHintStyle}>Agrega hitos configurables para mostrar en portada: apertura, cierre, dia 1, final, briefing o cualquier otra fecha.</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <h4 style={sectionTitleStyle}>Fechas visibles</h4>
+              <button type="button" onClick={() => setExtraExpanded('registration')} style={{ ...extraToggleStyle, width: 'auto', padding: '8px 12px', borderRadius: 12 }}>
+                {expandedExtras.registration ? 'Ocultar extra' : 'Configuracion extra'}
+              </button>
+            </div>
           </div>
+          {expandedExtras.registration ? (
           <div style={{ display: 'grid', gap: 8 }}>
             {scheduleItems.map((item, idx) => (
               <div key={item.id} style={{ ...listItemStyle, gridTemplateColumns: '32px 1fr', gap: 10 }}>
@@ -3360,12 +3430,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               + Agregar fecha
             </button>
           </div>
+          ) : (
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin fechas visibles.</div>
+          )}
         </div>
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Mensaje de confirmacion</h4>
-            <div style={sectionHintStyle}>Aparece arriba del formulario de participacion. Puedes usarlo para explicar pagos, requisitos o instrucciones.</div>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Texto informativo</label>
@@ -3373,7 +3445,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               value={form.enrollment_intro_text}
               onChange={e => setForm(f => ({ ...f, enrollment_intro_text: e.target.value }))}
               rows={4}
-              placeholder="Ej: Revisa cada categoria, completa tus datos y sigue las instrucciones antes de enviar la solicitud."
+              placeholder="Ej: Revisa cada categoria, completa tus datos y sigue las instrucciones antes de confirmar tu inscripcion."
             />
           </div>
         </div>
@@ -3381,7 +3453,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Terminos y condiciones</h4>
-            <div style={sectionHintStyle}>Se mostraran como paso obligatorio dentro del registro. El participante debera abrirlos, leerlos y aceptarlos antes de enviar la solicitud.</div>
+            <div style={sectionHintStyle}>Opcional, pero recomendado si manejas reglas, imagen o reembolsos propios.</div>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Texto de terminos del evento</label>
@@ -3397,7 +3469,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Pago Bold</h4>
-            <div style={sectionHintStyle}>FinalRep cobrara un unico pago por inscripcion. El valor se define por categoria y el checkout se mostrara directo en el registro.</div>
           </div>
           <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
             <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Comision de plataforma</div>
@@ -3409,11 +3480,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           </div>
         </div>
+        </div>
+        )}
 
+        {activeStep.id === 'divisions' && (
+        <div style={{ display: 'grid', gap: 0 }}>
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Divisiones</h4>
-            <div style={sectionHintStyle}>Define categorias individuales y por equipos sin mezclar ambas logicas.</div>
+            <div style={sectionHintStyle}>Crea solo las divisiones que realmente vas a usar. Si una no aplica, dejala fuera.</div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.2fr 0.8fr 0.8fr auto', gap: 8, marginBottom: 8 }}>
             <input value={newCat.nombre} onChange={e => setNewCat(prev => ({ ...prev, nombre: e.target.value }))} placeholder="Ej: Elite, Open, Masters..." />
@@ -3492,12 +3567,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <button type="button" className="btn-secondary btn-sm" onClick={addQuestion}>+ Agregar pregunta</button>
           </div>
         </div>
+        </div>
+        )}
 
-        {(!inline || !isEdit) && (
+        {activeStep.id === 'events' && (
           <div style={sectionStyle}>
             <div style={{ marginBottom: 14 }}>
               <h4 style={sectionTitleStyle}>Bloques y eventos</h4>
-              <div style={sectionHintStyle}>Cada fila representa un evento dentro de un bloque. Asigna modalidad para separar individual y equipos con claridad.</div>
+              <div style={sectionHintStyle}>Agrega cada prueba una por una. Si algo es opcional, dejalo vacio y ajustalo despues.</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1.1fr 0.9fr 1fr 1fr 1fr 1fr 2fr auto', gap: 8, marginBottom: 8 }}>
               <input value={newPhase.block_name || ''} onChange={e => setNewPhase(p => ({ ...p, block_name: e.target.value }))} placeholder="Bloque. Ej: Workout 1" />
@@ -3530,7 +3607,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                         <input value={phase.nombre} onChange={e => updatePhase(phase.id, 'nombre', e.target.value)} />
                         <input value={phase.block_name || ''} onChange={e => updatePhase(phase.id, 'block_name', e.target.value)} placeholder="Bloque. Ej: Workout 1" style={{ marginTop: 8 }} />
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                          {getPhaseModeSummary(phaseDrafts[phase.id] || phase).map((item, chipIndex) => (
+                          {getPhaseModeSummary(phase).map((item, chipIndex) => (
                             <span
                               key={`${phase.id}-chip-${chipIndex}`}
                               style={{
@@ -3585,11 +3662,28 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+          <div style={{ color: '#AAB2C0', fontSize: 12, alignSelf: 'center' }}>
+            {activeStep.id === 'events' || (activeStep.id === 'divisions' && inline && isEdit)
+              ? 'Revisa y guarda cuando termines.'
+              : 'Avanza paso a paso. Puedes volver cuando quieras.'}
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {editorStep > 0 ? (
+            <button type="button" className="btn-secondary" onClick={() => setEditorStep(prev => Math.max(0, prev - 1))}>
+              Anterior
+            </button>
+          ) : null}
           {!inline && <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>}
+          {editorStep < setupSteps.length - 1 ? (
+            <button type="button" className="btn-primary" disabled={!canGoNextStep} onClick={() => setEditorStep(prev => Math.min(setupSteps.length - 1, prev + 1))}>
+              Siguiente
+            </button>
+          ) : null}
           <button type="submit" className="btn-primary" disabled={saving || uploadingAssets}>
             {(saving || uploadingAssets) ? 'Guardando...' : isEdit ? 'Guardar cambios' : 'Crear competencia'}
           </button>
+          </div>
         </div>
       </form>
   )
@@ -3599,7 +3693,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       <>
         <div>
           <div style={{ marginBottom: 16 }}>
-            <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
+            <h4 style={{ margin: 0, fontSize: 16 }}>Configuracion</h4>
             <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
               Edita identidad, modelo de salida, registro, pagos, divisiones y eventos directamente desde el workspace.
             </div>
@@ -5826,26 +5920,66 @@ function CompetitionsTab() {
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
-  const [pendingCounts, setPendingCounts] = useState({})
+  const [competitionMeta, setCompetitionMeta] = useState({})
   const [selectedCompetition, setSelectedCompetition] = useState(null)
-  const [selectedTab, setSelectedTab] = useState('summary')
+  const [selectedTab, setSelectedTab] = useState('setup')
   const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
+  const [participantDetail, setParticipantDetail] = useState(null)
   const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [selectedCategoryCount, setSelectedCategoryCount] = useState(0)
+  const [selectedPhaseCount, setSelectedPhaseCount] = useState(0)
 
   const syncCompetitionParticipants = async (competitionId) => {
     const res = await api.get(`/competitions/${competitionId}/participants`)
     const items = res.data || []
     setEnrollCounts(prev => ({ ...prev, [competitionId]: items.filter(p => p.estado === 'confirmado').length }))
-    setPendingCounts(prev => ({ ...prev, [competitionId]: items.filter(p => p.estado === 'pendiente').length }))
     return items
   }
+  const syncCompetitionMeta = async (competitionId) => {
+    try {
+      const [categoriesRes, phasesRes] = await Promise.all([
+        api.get(`/competitions/${competitionId}/categories`),
+        api.get(`/competitions/${competitionId}/phases`),
+      ])
+      setCompetitionMeta(prev => ({
+        ...prev,
+        [competitionId]: {
+          categories: Array.isArray(categoriesRes.data) ? categoriesRes.data.length : 0,
+          phases: Array.isArray(phasesRes.data) ? phasesRes.data.length : 0,
+        },
+      }))
+    } catch {
+      setCompetitionMeta(prev => ({
+        ...prev,
+        [competitionId]: { categories: 0, phases: 0 },
+      }))
+    }
+  }
+  const refreshSelectedCompetitionMeta = async (competitionId) => {
+    try {
+      const [categoriesRes, phasesRes] = await Promise.all([
+        api.get(`/competitions/${competitionId}/categories`),
+        api.get(`/competitions/${competitionId}/phases`),
+      ])
+      setSelectedCategoryCount((categoriesRes.data || []).length)
+      setSelectedPhaseCount((phasesRes.data || []).length)
+    } catch {
+      setSelectedCategoryCount(0)
+      setSelectedPhaseCount(0)
+    }
+  }
+
+  const participantDetailName = participantDetail
+    ? `${participantDetail.nombre || ''} ${participantDetail.apellido || ''}`.trim()
+    : ''
 
   const load = () => api.get(isOrganizer ? '/competitions?scope=owned' : '/competitions').then(r => {
     setCompetitions(r.data)
     r.data.forEach(c => {
       syncCompetitionParticipants(c.id).catch(() => {})
+      syncCompetitionMeta(c.id).catch(() => {})
     })
   })
   useEffect(() => { load() }, [isOrganizer])
@@ -5890,13 +6024,18 @@ function CompetitionsTab() {
 
   const openCompetition = async (comp) => {
     setSelectedCompetition(comp)
-    setSelectedTab('summary')
-    setCompetitionTab('phases')
+    setSelectedTab('setup')
+    setCompetitionTab('schedule')
     try {
-      const items = await syncCompetitionParticipants(comp.id)
+      const [items] = await Promise.all([
+        syncCompetitionParticipants(comp.id),
+        refreshSelectedCompetitionMeta(comp.id),
+      ])
       setSelectedParticipants(items)
     } catch {
       setSelectedParticipants([])
+      setSelectedCategoryCount(0)
+      setSelectedPhaseCount(0)
     }
   }
 
@@ -5913,10 +6052,15 @@ function CompetitionsTab() {
   useEffect(() => {
     if (selectedCompetition?.id) {
       refreshSelectedParticipants()
+      refreshSelectedCompetitionMeta(selectedCompetition.id)
     }
   }, [selectedCompetition?.id])
   useEffect(() => {
-    if (!selectedCompetition?.id) return undefined
+    if (!selectedCompetition?.id) {
+      setSelectedCategoryCount(0)
+      setSelectedPhaseCount(0)
+      return undefined
+    }
     const id = setInterval(() => {
       refreshSelectedParticipants()
     }, 15000)
@@ -5935,6 +6079,11 @@ function CompetitionsTab() {
       setSelectedCompetition(prev => ({ ...prev, ...fresh }))
     }
   }, [competitions, selectedCompetition?.id])
+  useEffect(() => {
+    if (selectedCompetition && !selectedCompetition.team_enabled && competitionTab === 'teams') {
+      setCompetitionTab('schedule')
+    }
+  }, [selectedCompetition, competitionTab])
 
   const competitionCardStyle = {
     padding: 16,
@@ -5964,6 +6113,37 @@ function CompetitionsTab() {
     gap: 14,
     marginBottom: 14,
   }
+  const mobileScrollTabsStyle = isMobile
+    ? {
+        display: 'flex',
+        gap: 8,
+        overflowX: 'auto',
+        flexWrap: 'nowrap',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        paddingBottom: 4,
+      }
+    : {
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, minmax(0, max-content))',
+        gap: 8,
+      }
+  const mobileSubSectionTabsStyle = isMobile
+    ? {
+        display: 'flex',
+        gap: 8,
+        overflowX: 'auto',
+        flexWrap: 'nowrap',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
+        width: '100%',
+        paddingBottom: 4,
+      }
+    : {
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+      }
   const sectionTabStyle = (active) => ({
     border: `1px solid ${active ? 'rgba(255,107,0,0.45)' : '#252A33'}`,
     background: active ? 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(255,154,61,0.05))' : 'rgba(13,15,18,0.7)',
@@ -5972,7 +6152,7 @@ function CompetitionsTab() {
     padding: isMobile ? '10px 12px' : '12px 14px',
     display: 'grid',
     gap: 4,
-    minWidth: isMobile ? '100%' : 0,
+    minWidth: isMobile ? 'max-content' : 0,
     textAlign: 'left',
   })
   const subSectionBtnStyle = (active) => ({
@@ -6000,30 +6180,91 @@ function CompetitionsTab() {
     display: 'grid',
     gap: 10,
   }
-  const competitionSubSections = [
-    { id: 'phases', label: 'Eventos' },
+  const prepSubSections = [
     { id: 'schedule', label: 'Cronograma' },
-    { id: 'teams', label: 'Equipos' },
+    ...(selectedCompetition?.team_enabled ? [{ id: 'teams', label: 'Equipos' }] : []),
+  ]
+  const liveSubSections = [
     { id: 'results', label: 'Resultados' },
     { id: 'timer', label: 'Cronometro' },
   ]
-  const currentPendingCount = selectedCompetition ? (pendingCounts[selectedCompetition.id] || 0) : 0
   const currentEnrollCount = selectedCompetition ? (enrollCounts[selectedCompetition.id] || 0) : 0
-  const currentPhaseStateLabel = competitionTab === 'results'
-    ? 'Carga y ajustes de puntaje'
-    : competitionTab === 'teams'
-      ? 'Armado y control de equipos'
-      : competitionTab === 'timer'
-        ? 'Control de tiempo en vivo'
-        : 'Definicion de bloques y eventos'
+  const workspaceSections = COMPETITION_WORKSPACE_SECTIONS
+  const launchChecklist = [
+    { label: 'Base', done: !!selectedCompetition?.nombre?.trim() },
+    { label: 'Registro', done: !!selectedCompetition?.enrollment_start && !!selectedCompetition?.enrollment_end },
+    { label: 'Divisiones', done: selectedCategoryCount > 0 },
+    { label: 'Eventos', done: selectedPhaseCount > 0 },
+  ]
+  const launchCompletedCount = launchChecklist.filter(item => item.done).length
+  const launchProgress = Math.round((launchCompletedCount / launchChecklist.length) * 100)
+  const launchMissing = launchChecklist.filter(item => !item.done).map(item => item.label)
+  const getCompetitionReadiness = (competition) => {
+    const meta = competitionMeta[competition.id] || {}
+    const checklist = [
+      { label: 'Base', done: !!competition?.nombre?.trim() },
+      { label: 'Registro', done: !!competition?.enrollment_start && !!competition?.enrollment_end },
+      { label: 'Divisiones', done: (meta.categories || 0) > 0 },
+      { label: 'Eventos', done: (meta.phases || 0) > 0 },
+    ]
+    const completedCount = checklist.filter(item => item.done).length
+
+    return {
+      progress: Math.round((completedCount / checklist.length) * 100),
+      missing: checklist.filter(item => !item.done).map(item => item.label),
+    }
+  }
 
   return (
     <div>
       {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
+      {participantDetail && (
+        <Modal title={participantDetailName || 'Participante'} onClose={() => setParticipantDetail(null)} width={760}>
+          <div style={{ display: 'grid', gap: 14, overflowY: 'auto' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Cedula</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.cedula || '-'}</div>
+              </div>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Categoria</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.categoria_competencia || '-'}</div>
+              </div>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Email</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.email || '-'}</div>
+              </div>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Celular</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.celular || '-'}</div>
+              </div>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Genero</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.genero || participantDetail.sexo || '-'}</div>
+              </div>
+              <div style={setupInfoCardStyle}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Box</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.box || '-'}</div>
+              </div>
+              <div style={{ ...setupInfoCardStyle, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Ciudad / Pais</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.ciudad_pais || '-'}</div>
+              </div>
+              <div style={{ ...setupInfoCardStyle, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Estado</div>
+                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.estado || '-'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Preguntas del registro</div>
+              <EnrollmentAnswersBlock raw={participantDetail.enrollment_answers} onPreviewImage={setPreviewImage} />
+            </div>
+          </div>
+        </Modal>
+      )}
       {!selectedCompetition && (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>Competencias</h3>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 16 }}>
             <button className="btn-primary" onClick={() => setEditor({ mode: 'create', competition: null })}>
               + Nueva competencia
             </button>
@@ -6032,20 +6273,18 @@ function CompetitionsTab() {
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
             {competitions.map(c => {
-              const pendingCount = pendingCounts[c.id] || 0
+              const readiness = getCompetitionReadiness(c)
+              const readinessLabel = c.activa
+                ? 'Publicada'
+                : readiness.progress === 100
+                  ? 'Lista para publicar'
+                  : readiness.missing.join(', ')
               return (
               <div key={c.id} className="card" style={competitionCardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
                   <div>
                     <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--oa-text)' }}>{c.nombre}</div>
                     <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>{c.descripcion || 'Sin descripcion'}</div>
-                    {pendingCount > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <span className="badge" style={{ background: 'rgba(245,158,11,0.14)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)' }}>
-                          {pendingCount} pendiente{pendingCount === 1 ? '' : 's'}
-                        </span>
-                      </div>
-                    )}
                   </div>
                   <span
                     className="badge"
@@ -6059,44 +6298,22 @@ function CompetitionsTab() {
 
                 <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div style={statCardStyle}>
-                    <div style={{ color: '#00C2A8', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Resultados</div>
-                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{c.allow_user_results ? 'Habilitado' : 'Deshabilitado'}</div>
+                    <div style={{ color: '#00C2A8', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscritos</div>
+                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{enrollCounts[c.id] || 0}</div>
                   </div>
                   <div style={statCardStyle}>
-                    <div style={{ color: '#FF6B00', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscripciones</div>
-                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{enrollCounts[c.id] ?? 0} confirmados</div>
-                    <div style={{ fontSize: 11, color: pendingCount > 0 ? '#fbbf24' : 'var(--oa-text-secondary)', marginTop: 4 }}>
-                      {pendingCount} pendientes
+                    <div style={{ color: readiness.progress === 100 ? '#00C2A8' : '#FF6B00', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      {readiness.progress === 100 ? 'Estado' : 'Falta'}
                     </div>
+                    <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{readinessLabel}</div>
+                    {readiness.progress < 100 && (
+                      <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 4 }}>{readiness.progress}% completo</div>
+                    )}
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn-primary btn-sm" onClick={() => openCompetition(c)}>Abrir panel</button>
-                  {pendingCount > 0 ? (
-                    <button className="btn-secondary btn-sm" onClick={() => setEnrollingComp(c)}>
-                      Inscripciones ({pendingCount})
-                    </button>
-                  ) : null}
-                  <a
-                    className="btn-secondary btn-sm"
-                    href={`/competitions/${c.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    Ver competencia
-                  </a>
-                  <a
-                    className="btn-secondary btn-sm"
-                    href={`/leaderboard/${c.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    Leaderboard
-                  </a>
-                  <button className="btn-danger btn-sm" onClick={() => deleteCompetition(c)}>Eliminar</button>
+                  <button className="btn-primary btn-sm" onClick={() => openCompetition(c)}>Abrir competencia</button>
                 </div>
               </div>
             )})}
@@ -6112,8 +6329,8 @@ function CompetitionsTab() {
       {selectedCompetition && (
         <div>
           <div style={workspaceTopSectionStyle}>
-            <div style={workspaceHeroCardStyle}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+            <div style={{ ...workspaceHeroCardStyle, padding: isMobile ? 14 : 16, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: isMobile ? 'flex-start' : 'center', flexWrap: 'wrap' }}>
                 <div style={{ display: 'grid', gap: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn-secondary btn-sm" onClick={() => setSelectedCompetition(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -6128,156 +6345,35 @@ function CompetitionsTab() {
                     >
                       {selectedCompetition.activa ? 'Activa' : 'Inactiva'}
                     </span>
-                    {currentPendingCount > 0 ? (
-                      <span className="badge" style={{ background: 'rgba(245,158,11,0.14)', color: '#fbbf24', border: '1px solid rgba(245,158,11,0.3)' }}>
-                        {currentPendingCount} pendiente{currentPendingCount === 1 ? '' : 's'}
-                      </span>
-                    ) : null}
+                    <span style={{ color: '#AAB2C0', fontSize: 12 }}>
+                      {currentEnrollCount} inscritos
+                    </span>
                   </div>
-                  <div style={{ fontWeight: 800, fontSize: isMobile ? 22 : 28, color: 'var(--oa-text)' }}>{selectedCompetition.nombre}</div>
-                  <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, maxWidth: 760 }}>
-                    {selectedCompetition.descripcion || 'Configura el evento, revisa inscripciones, opera eventos y controla la salida publica desde un solo panel.'}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                    {getCompetitionVisibilitySummary(selectedCompetition).map(item => (
-                      <span
-                        key={`hero-${item.label}`}
-                        style={{
-                          ...SHARED_MODE_CHIP_BASE_STYLE,
-                          background: item.tone === 'teal'
-                            ? 'rgba(0,194,168,0.14)'
-                            : item.tone === 'orange'
-                              ? 'rgba(255,107,0,0.14)'
-                              : item.tone === 'slate'
-                                ? 'rgba(170,178,192,0.12)'
-                                : 'rgba(107,114,128,0.12)',
-                          color: item.tone === 'teal'
-                            ? '#8FF3E7'
-                            : item.tone === 'orange'
-                              ? '#FFB36F'
-                              : item.tone === 'slate'
-                                ? '#AAB2C0'
-                                : '#AAB2C0',
-                          border: `1px solid ${item.tone === 'teal'
-                            ? 'rgba(0,194,168,0.22)'
-                            : item.tone === 'orange'
-                              ? 'rgba(255,107,0,0.22)'
-                              : 'rgba(170,178,192,0.2)'}`,
-                        }}
-                      >
-                        {item.label}
-                      </span>
-                    ))}
-                  </div>
+                  <div style={{ fontWeight: 800, fontSize: isMobile ? 22 : 24, color: 'var(--oa-text)' }}>{selectedCompetition.nombre}</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('setup')}>Setup</button>
-                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('enrollments')}>
-                    {currentPendingCount > 0 ? `Revisar pendientes (${currentPendingCount})` : 'Abrir inscripciones'}
+              </div>
+
+              <div style={mobileScrollTabsStyle}>
+                {workspaceSections.map(section => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTab(section.id)
+                      if (section.id === 'prep' && !['schedule', 'teams'].includes(competitionTab)) setCompetitionTab('schedule')
+                      if (section.id === 'live' && !['results', 'timer'].includes(competitionTab)) setCompetitionTab('results')
+                    }}
+                    style={{ ...sectionTabStyle(selectedTab === section.id), padding: '10px 12px', flex: isMobile ? '0 0 auto' : undefined }}
+                  >
+                    <span style={{ color: selectedTab === section.id ? '#F5F7FA' : '#D7DEE8', fontSize: 13, fontWeight: 800 }}>{section.label}</span>
                   </button>
-                  <a
-                    href={`/competitions/${selectedCompetition.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-secondary btn-sm"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    Ver competencia
-                  </a>
-                  <a
-                    href={`/leaderboard/${selectedCompetition.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-primary btn-sm"
-                    style={{ textDecoration: 'none' }}
-                  >
-                    Abrir leaderboard
-                  </a>
-                </div>
+                ))}
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
-                <div style={workspaceStatTileStyle}>
-                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscritos</div>
-                  <div style={{ color: '#F5F7FA', fontSize: 22, fontWeight: 800 }}>{currentEnrollCount}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Confirmados en competencia</div>
-                </div>
-                <div style={workspaceStatTileStyle}>
-                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Pendientes</div>
-                  <div style={{ color: currentPendingCount > 0 ? '#fbbf24' : '#F5F7FA', fontSize: 22, fontWeight: 800 }}>{currentPendingCount}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{currentPendingCount > 0 ? 'Solicitudes por revisar' : 'Sin cola pendiente'}</div>
-                </div>
-                <div style={workspaceStatTileStyle}>
-                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Resultados usuario</div>
-                  <div style={{ color: selectedCompetition.allow_user_results ? '#00C2A8' : '#F5F7FA', fontSize: 18, fontWeight: 800 }}>
-                    {selectedCompetition.allow_user_results ? 'Habilitados' : 'Bloqueados'}
-                  </div>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Carga directa desde atleta</div>
-                </div>
-                <div style={workspaceStatTileStyle}>
-                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Operacion</div>
-                  <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>
-                    {selectedTab === 'competition' ? currentPhaseStateLabel : selectedTab === 'broadcast' ? 'Salida publica' : 'Panel central'}
-                  </div>
-                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Seccion actual del workspace</div>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
-              {COMPETITION_WORKSPACE_SECTIONS.map(section => (
-                <button key={section.id} type="button" onClick={() => setSelectedTab(section.id)} style={sectionTabStyle(selectedTab === section.id)}>
-                  <span style={{ color: selectedTab === section.id ? '#F5F7FA' : '#D7DEE8', fontSize: 14, fontWeight: 800 }}>{section.label}</span>
-                  <span style={{ fontSize: 12, lineHeight: 1.45 }}>{section.description}</span>
-                </button>
-              ))}
             </div>
           </div>
 
-          {selectedTab === 'summary' && (
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: 16 }}>Resumen operativo</h4>
-                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Lo urgente primero: solicitudes, setup pendiente y acceso rapido a la competencia.</div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('setup')}>Ir a setup</button>
-                  <button className="btn-secondary btn-sm" onClick={() => setSelectedTab('competition')}>Ir a competencia</button>
-                  <button className="btn-primary btn-sm" onClick={() => setSelectedTab('enrollments')}>
-                    {currentPendingCount > 0 ? `Atender ${currentPendingCount} pendiente${currentPendingCount === 1 ? '' : 's'}` : 'Ver inscripciones'}
-                  </button>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 16 }}>
-                <div style={setupInfoCardStyle}>
-                  <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Alertas</div>
-                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{currentPendingCount > 0 ? `${currentPendingCount} solicitudes por revisar` : 'Sin solicitudes urgentes'}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Controla aprobaciones y respuestas del registro desde una sola seccion.</div>
-                </div>
-                <div style={setupInfoCardStyle}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Setup</div>
-                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{selectedCompetition.enrollment_open ? 'Inscripciones abiertas' : 'Inscripciones cerradas'}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Ajusta identidad, copy, reglas, pagos y preguntas antes de operar el evento.</div>
-                </div>
-                <div style={setupInfoCardStyle}>
-                  <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Broadcast</div>
-                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{selectedCompetition.tv_mode === 'static' ? 'TV estatica' : 'TV ciclica'}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Gestiona QR, refresco y la vista publica sin salir del workspace.</div>
-                </div>
-              </div>
-              <CompetitionSummaryPanel competitionId={selectedCompetition.id} />
-            </div>
-          )}
-
           {selectedTab === 'setup' && (
             <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: 16 }}>Setup del evento</h4>
-                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>La configuracion ya no abre otro flujo. Edita identidad, inscripciones, divisiones, modelo de salida y contenido directamente aqui.</div>
-                </div>
-              </div>
               <CompetitionEditorModal
                 mode="edit"
                 competition={selectedCompetition}
@@ -6286,9 +6382,83 @@ function CompetitionsTab() {
                 onSaved={(text) => {
                   setMsg({ type: 'success', text })
                   load()
+                  refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
                   api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
                 }}
               />
+            </div>
+          )}
+
+          {selectedTab === 'launch' && (
+            <div className="card" style={{ display: 'grid', gap: 14 }}>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Lanzamiento</h4>
+                  <div style={{ color: launchProgress === 100 ? '#00C2A8' : '#FFB36F', fontWeight: 800, fontSize: 18 }}>{launchProgress}%</div>
+                </div>
+                <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                  <div style={{ width: `${launchProgress}%`, height: '100%', background: launchProgress === 100 ? '#00C2A8' : 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {launchChecklist.map(item => (
+                    <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(0,194,168,0.12)' : 'rgba(255,107,0,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(0,194,168,0.24)' : 'rgba(255,107,0,0.24)'}` }}>
+                      {item.done ? 'Listo' : 'Falta'}: {item.label}
+                    </span>
+                  ))}
+                </div>
+                {launchMissing.length ? (
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                    Falta: {launchMissing.join(', ')}
+                  </div>
+                ) : (
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                    La competencia ya esta lista para publicar.
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="btn-primary btn-sm"
+                  style={isMobile ? { width: '100%' } : undefined}
+                  disabled={launchProgress < 100}
+                  onClick={async () => {
+                    try {
+                      const nextActive = selectedCompetition.activa ? 0 : 1
+                      const payload = nextActive
+                        ? { activa: 1 }
+                        : { activa: 0, enrollment_open: 0 }
+                      const { data } = await api.put(`/competitions/${selectedCompetition.id}`, payload)
+                      setSelectedCompetition(prev => ({ ...prev, ...data }))
+                      load()
+                    } catch (err) {
+                      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
+                    }
+                  }}
+                >
+                  {selectedCompetition.activa ? 'Quitar publicacion' : 'Publicar competencia'}
+                </button>
+                <button
+                  className="btn-secondary btn-sm"
+                  style={isMobile ? { width: '100%' } : undefined}
+                  disabled={!selectedCompetition.activa}
+                  onClick={async () => {
+                    try {
+                      const { data } = await api.put(`/competitions/${selectedCompetition.id}`, { enrollment_open: selectedCompetition.enrollment_open ? 0 : 1 })
+                      setSelectedCompetition(prev => ({ ...prev, ...data }))
+                      load()
+                    } catch (err) {
+                      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar inscripciones' })
+                    }
+                  }}
+                >
+                  {selectedCompetition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}
+                </button>
+              </div>
+              {!selectedCompetition.activa && (
+                <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                  Publica la competencia para habilitar inscripciones.
+                </div>
+              )}
             </div>
           )}
 
@@ -6297,46 +6467,47 @@ function CompetitionsTab() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div>
                   <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
-                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Solicitudes, confirmados y respuestas del formulario en una sola vista.</div>
                 </div>
-                <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
-                  {currentPendingCount > 0 ? `Gestionar solicitudes (${currentPendingCount})` : 'Gestionar inscripciones'}
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(selectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
+                    Descargar Excel
+                  </button>
+                  <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
+                    Gestionar inscripciones
+                  </button>
+                </div>
               </div>
               {isMobile ? (
                 <div style={{ display: 'grid', gap: 8 }}>
                   {!selectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</p>}
                   {selectedParticipants.map(p => (
-                    <div key={p.id} style={{ border: '1px solid #d5ddd3', borderRadius: 8, padding: '10px 12px', background: '#fafafa' }}>
-                      <div style={{ fontWeight: 600, marginBottom: 4 }}>{p.nombre} {p.apellido}</div>
-                      <div style={{ fontSize: 12, color: '#666', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        <span>Cedula: {p.cedula}</span>
+                    <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 12, padding: '12px 14px', background: 'rgba(13,15,18,0.72)', display: 'grid', gap: 8 }}>
+                      <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{p.nombre} {p.apellido}</div>
+                      <div style={{ fontSize: 12, color: '#AAB2C0', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                         <span>Categoria: {p.categoria_competencia || '-'}</span>
-                        <span style={{ color: p.estado === 'activo' ? '#284017' : '#8a9489' }}>Estado: {p.estado}</span>
+                        <span>{p.estado || '-'}</span>
                       </div>
-                      <EnrollmentAnswersBlock raw={p.enrollment_answers} compact onPreviewImage={setPreviewImage} />
+                      <div>
+                        <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                      </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <table>
-                  <thead><tr><th>Participante</th><th>Cedula</th><th>Categoria</th><th>Estado</th><th>Respuestas</th></tr></thead>
+                  <thead><tr><th>Participante</th><th>Categoria</th><th>Accion</th></tr></thead>
                   <tbody>
                     {selectedParticipants.map(p => (
                       <tr key={p.id}>
                         <td>{p.nombre} {p.apellido}</td>
-                        <td>{p.cedula}</td>
                         <td>{p.categoria_competencia || '-'}</td>
-                        <td>{p.estado}</td>
                         <td>
-                          {parseEnrollmentAnswers(p.enrollment_answers).length
-                            ? parseEnrollmentAnswers(p.enrollment_answers).map(item => `${item.question_label || 'Respuesta'}: ${item.question_type === 'image' && item.answer ? 'Imagen adjunta' : (item.answer || '-')}`).join(' | ')
-                            : '-'}
+                          <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
                         </td>
                       </tr>
                     ))}
-                    {!selectedParticipants.length && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
+                    {!selectedParticipants.length && <tr><td colSpan={3} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
                   </tbody>
                 </table>
                 </div>
@@ -6344,35 +6515,55 @@ function CompetitionsTab() {
             </div>
           )}
 
-          {selectedTab === 'competition' && (
+          {selectedTab === 'prep' && (
             <div style={{ display: 'grid', gap: 14 }}>
               <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: 16 }}>Operacion de competencia</h4>
-                    <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Separa la operacion por tipo de tarea para evitar botones que hacen lo mismo.</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {competitionSubSections.map(item => (
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Preparacion</h4>
+                </div>
+                  <div style={mobileSubSectionTabsStyle}>
+                    {prepSubSections.map(item => (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => setCompetitionTab(item.id)}
-                        style={subSectionBtnStyle(competitionTab === item.id)}
+                        style={{ ...subSectionBtnStyle(competitionTab === item.id), flex: isMobile ? '0 0 auto' : undefined }}
                       >
                         {item.label}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div style={{ color: '#AAB2C0', fontSize: 13 }}>
-                  {currentPhaseStateLabel}
+              </div>
+
+              {competitionTab === 'schedule' && <CompetitionSchedulePanel competition={selectedCompetition} />}
+              {competitionTab === 'teams' && <CompetitionTeamsPanel competition={selectedCompetition} />}
+            </div>
+          )}
+
+          {selectedTab === 'live' && (
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>En vivo</h4>
+                </div>
+                  <div style={mobileSubSectionTabsStyle}>
+                    {liveSubSections.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setCompetitionTab(item.id)}
+                        style={{ ...subSectionBtnStyle(competitionTab === item.id), flex: isMobile ? '0 0 auto' : undefined }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              {competitionTab === 'phases' && <PhasesModal competition={selectedCompetition} inline />}
-              {competitionTab === 'schedule' && <CompetitionSchedulePanel competition={selectedCompetition} />}
-              {competitionTab === 'teams' && <CompetitionTeamsPanel competition={selectedCompetition} />}
               {competitionTab === 'results' && <CompetitionResultsPanel competition={selectedCompetition} />}
               {competitionTab === 'timer' && <CompetitionTimerPanel competition={selectedCompetition} />}
             </div>
@@ -6388,18 +6579,29 @@ function CompetitionsTab() {
       )}
 
       {editor && (
-        <CompetitionEditorModal
-          mode={editor.mode}
-          competition={editor.competition}
-          onClose={() => setEditor(null)}
-          onSaved={(text) => {
-            setMsg({ type: 'success', text })
-            load()
-            if (selectedCompetition?.id === editor.competition?.id) {
-              api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
-            }
-          }}
-        />
+        editor.mode === 'create' ? (
+          <QuickCompetitionCreateModal
+            onClose={() => setEditor(null)}
+            onCreated={(createdCompetition) => {
+              setEditor(null)
+              setMsg({ type: 'success', text: 'Competencia creada' })
+              load()
+            }}
+          />
+        ) : (
+          <CompetitionEditorModal
+            mode={editor.mode}
+            competition={editor.competition}
+            onClose={() => setEditor(null)}
+            onSaved={(text) => {
+              setMsg({ type: 'success', text })
+              load()
+              if (selectedCompetition?.id === editor.competition?.id) {
+                api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+              }
+            }}
+          />
+        )
       )}
 
       {enrollingComp && (
@@ -7788,7 +7990,7 @@ export default function AdminDashboard() {
   return (
     <div className="app-shell">
       <div className="app-container" style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
-        <div className="tabs" style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+        <div className="tabs" style={{ marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap', flexWrap: 'nowrap', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none', paddingBottom: isMobile ? 4 : 0 }}>
           <button className={`tab ${mainTab === 'competitions' ? 'active' : ''}`} onClick={() => setMainTab('competitions')} style={{ flexShrink: 0 }}>
             Competencias
           </button>

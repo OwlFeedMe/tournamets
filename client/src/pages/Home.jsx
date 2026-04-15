@@ -177,10 +177,10 @@ function buttonStateForCompetition(competition, sessionRole, enrollmentState) {
   if (!sessionRole) return { label: 'Quiero participar', tone: 'secondary', disabled: false }
   if (sessionRole !== 'user') return { label: 'Ir a mi panel', tone: 'secondary', disabled: false }
   if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', tone: 'muted', disabled: true }
-  if (enrollmentState === 'pendiente') return { label: 'Solicitud enviada', tone: 'muted', disabled: true }
+  if (enrollmentState === 'pendiente') return { label: 'Inscripcion en proceso', tone: 'muted', disabled: true }
   if (enrollmentState === 'rechazado') {
     if (!competition.enrollment_open) return { label: 'Inscripciones cerradas', tone: 'muted', disabled: true }
-    return { label: 'Reintentar solicitud', tone: 'secondary', disabled: false }
+    return { label: 'Reintentar inscripcion', tone: 'secondary', disabled: false }
   }
   if (!competition.enrollment_open) return { label: 'Inscripciones cerradas', tone: 'muted', disabled: true }
   return { label: 'Quiero participar', tone: 'secondary', disabled: false }

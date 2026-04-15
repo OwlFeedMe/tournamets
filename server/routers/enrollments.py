@@ -30,7 +30,6 @@ from services.email_templates import (
     render_payment_approved,
     render_payment_rejected,
     render_enrollment_confirmed,
-    render_enrollment_rejected,
 )
 
 logger = logging.getLogger(__name__)
@@ -254,8 +253,8 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
             enrollment.payment_platform_net = _platform_net_amount(enrollment.payment_platform_fee, total_amount, proc_rate, proc_fixed)
         if payment_status == "approved":
             enrollment.payment_processed_at = now
-            if enrollment.estado == PAYMENT_PENDING_STATE:
-                enrollment.estado = "pendiente"
+            if enrollment.estado in {PAYMENT_PENDING_STATE, "pendiente"}:
+                enrollment.estado = "confirmado"
         session.add(enrollment)
         _try_send_payment_email(
             session,
@@ -292,7 +291,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         existing = session.get(CompetitionParticipant, (intent.competition_id, intent.participant_id))
         if existing:
             existing.categoria = intent.categoria
-            existing.estado = "pendiente"
+            existing.estado = "confirmado"
             existing.enrollment_answers = intent.enrollment_answers
             existing.payment_provider = intent.payment_provider
             existing.payment_reference = intent.payment_reference
@@ -313,7 +312,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 competition_id=intent.competition_id,
                 participant_id=intent.participant_id,
                 categoria=intent.categoria,
-                estado="pendiente",
+                estado="confirmado",
                 enrollment_answers=intent.enrollment_answers,
                 payment_provider=intent.payment_provider,
                 payment_reference=intent.payment_reference,
@@ -341,7 +340,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
     return {
         "matched": True,
         "reference": reference,
-        "estado": "pendiente" if payment_status == "approved" else None,
+        "estado": "confirmado" if payment_status == "approved" else None,
         "payment_status": payment_status,
         "transaction_id": transaction_id,
     }
@@ -493,8 +492,8 @@ def update_enrollment_status(
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
-    if body.estado not in ("confirmado", "rechazado", "pendiente", PAYMENT_PENDING_STATE):
-        raise HTTPException(400, "Estado inválido")
+    if body.estado != "confirmado":
+        raise HTTPException(400, "Solo se permite confirmar la inscripcion")
     cp = session.get(CompetitionParticipant, (competition_id, participant_id))
     if not cp:
         raise HTTPException(404, "Inscripción no encontrada")
@@ -502,28 +501,21 @@ def update_enrollment_status(
     session.add(cp)
     session.commit()
 
-    if body.estado in ("confirmado", "rechazado"):
-        try:
-            participant = session.get(Participant, participant_id)
-            competition = session.get(Competition, competition_id)
-            email = str(getattr(participant, "email", "") or "").strip()
-            if email:
-                nombre = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
-                comp_name = str(getattr(competition, "nombre", "") or competition_id)
-                if body.estado == "confirmado":
-                    subject, mail_body, html = render_enrollment_confirmed(
-                        nombre=nombre,
-                        competition_name=comp_name,
-                        category_name=str(cp.categoria or ""),
-                    )
-                else:
-                    subject, mail_body, html = render_enrollment_rejected(
-                        nombre=nombre,
-                        competition_name=comp_name,
-                    )
-                send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
-        except Exception:
-            logger.exception("Failed to send enrollment status email (participant_id=%s, estado=%s)", participant_id, body.estado)
+    try:
+        participant = session.get(Participant, participant_id)
+        competition = session.get(Competition, competition_id)
+        email = str(getattr(participant, "email", "") or "").strip()
+        if email:
+            nombre = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+            comp_name = str(getattr(competition, "nombre", "") or competition_id)
+            subject, mail_body, html = render_enrollment_confirmed(
+                nombre=nombre,
+                competition_name=comp_name,
+                category_name=str(cp.categoria or ""),
+            )
+            send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
+    except Exception:
+        logger.exception("Failed to send enrollment status email (participant_id=%s, estado=%s)", participant_id, body.estado)
 
     return {"ok": True, "estado": cp.estado}
 
@@ -580,13 +572,13 @@ def self_enroll(
     serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
 
     existing.categoria = body.categoria
-    existing.estado = "pendiente"
+    existing.estado = "confirmado"
     existing.enrollment_answers = serialized_answers
     existing.payment_processed_at = existing.payment_processed_at or datetime.now(timezone.utc)
     existing.payment_updated_at = datetime.now(timezone.utc)
     session.add(existing)
     session.commit()
-    return {"ok": True, "estado": "pendiente"}
+    return {"ok": True, "estado": "confirmado"}
 
 @router.post("/api/competitions/{competition_id}/bold-checkout")
 def create_bold_checkout(

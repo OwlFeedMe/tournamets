@@ -220,13 +220,13 @@ export function AuthenticatedShell() {
           if (currentStatus === 'confirmado') {
             dynamicItems.push({
               title: `Inscripcion confirmada: ${item.nombre}`,
-              text: `Tu solicitud fue aprobada${item.enrollment_categoria ? ` en la categoria ${item.enrollment_categoria}` : ''}.`,
+              text: `Tu pago fue aprobado${item.enrollment_categoria ? ` en la categoria ${item.enrollment_categoria}` : ''} y tu cupo ya esta activo.`,
               tone: 'success',
             })
           } else if (currentStatus === 'rechazado') {
             dynamicItems.push({
-              title: `Inscripcion rechazada: ${item.nombre}`,
-              text: 'Tu solicitud fue rechazada. Puedes revisar el registro e intentarlo de nuevo si sigue abierto.',
+              title: `Registro rechazado: ${item.nombre}`,
+              text: 'Tu registro fue rechazado. Puedes revisar la inscripcion e intentarlo de nuevo si sigue abierto.',
               tone: 'danger',
             })
           }

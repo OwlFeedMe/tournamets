@@ -262,6 +262,7 @@ def init_db():
         "UPDATE competition_participants SET payment_processor_fee = CASE WHEN COALESCE(payment_amount_total, 0) > 0 THEN CAST(ROUND(COALESCE(payment_amount_total, 0) * 0.0269) AS INTEGER) + 300 ELSE 0 END WHERE payment_processor_fee IS NULL OR payment_processor_fee < 0 OR payment_processor_fee = 0",
         "UPDATE competition_participants SET payment_platform_net = COALESCE(payment_platform_fee, 0) - COALESCE(payment_processor_fee, 0) WHERE payment_platform_net IS NULL OR payment_platform_net = 0",
         "UPDATE competition_participants SET payment_amount_total = 0 WHERE payment_amount_total IS NULL OR payment_amount_total < 0",
+        "UPDATE competition_participants SET estado = 'confirmado' WHERE estado = 'pendiente' AND LOWER(COALESCE(payment_status, '')) = 'approved'",
         "ALTER TABLE competition_payment_intents ADD COLUMN IF NOT EXISTS payment_processor_fee INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE competition_payment_intents ADD COLUMN IF NOT EXISTS payment_platform_net INTEGER NOT NULL DEFAULT 0",
         "UPDATE competition_payment_intents SET payment_processor_fee = CASE WHEN COALESCE(payment_amount_total, 0) > 0 THEN CAST(ROUND(COALESCE(payment_amount_total, 0) * 0.0269) AS INTEGER) + 300 ELSE 0 END WHERE payment_processor_fee IS NULL OR payment_processor_fee < 0 OR payment_processor_fee = 0",

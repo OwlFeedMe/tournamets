@@ -279,6 +279,11 @@ def _validate_competition_dates(payload: dict):
         raise HTTPException(400, "La fecha de inicio de competencia no puede ser mayor a la fecha final")
 
 
+def _normalize_competition_visibility(payload: dict):
+    if not payload.get("activa"):
+        payload["enrollment_open"] = 0
+
+
 def _delete_local_competition_asset(asset_url: Optional[str]) -> None:
     if not asset_url or not asset_url.startswith("/uploads/competition_assets/"):
         return
@@ -471,6 +476,8 @@ def list_competitions(
     owned_ids = get_owned_competition_ids(session, scoped_user)
     if scope == "owned" and is_organizer_user(scoped_user):
         query = query.where(Competition.id.in_(owned_ids))
+    elif not (user and user.get("role") == "admin"):
+        query = query.where(Competition.activa == 1)
     return session.exec(query).all()
 
 
@@ -487,10 +494,25 @@ def get_competition(
 def get_public_competition_detail(
     competition_id: int,
     session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
 ):
     competition = session.get(Competition, competition_id)
     if not competition:
         raise HTTPException(404, "Competencia no encontrada")
+    if not competition.activa:
+        scoped_user = user
+        if user and user.get("role") != "admin" and has_organizer_access(user):
+            scoped_user = {**user, "staff_mode": "organizer"}
+        owned_ids = get_owned_competition_ids(session, scoped_user)
+        can_preview = bool(
+            user
+            and (
+                user.get("role") == "admin"
+                or (is_organizer_user(scoped_user) and competition_id in owned_ids)
+            )
+        )
+        if not can_preview:
+            raise HTTPException(404, "Competencia no encontrada")
 
     categories = session.execute(
         text("""
@@ -650,6 +672,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     payload["require_payment_receipt"] = 0
     payload["enrollment_payment_methods"] = None
     _normalize_competition_theme(payload)
+    _normalize_competition_visibility(payload)
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
@@ -700,6 +723,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     data["require_payment_receipt"] = 0
     data["enrollment_payment_methods"] = None
     _normalize_competition_theme(data)
+    _normalize_competition_visibility(data)
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)

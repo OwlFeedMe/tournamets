@@ -16,7 +16,7 @@ const PENDING_CEDULA_PREFIX = 'pending:'
 
 function statusBadge(estado) {
   if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
-  if (estado === 'pendiente') return { label: 'Pendiente', cls: 'badge-pendiente' }
+  if (estado === 'pendiente') return { label: 'En proceso', cls: 'badge-pendiente' }
   if (estado === 'rechazado') return { label: 'Rechazado', cls: 'badge-rechazado' }
   return { label: estado || 'No inscrito', cls: 'badge-default' }
 }

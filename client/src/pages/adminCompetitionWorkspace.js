@@ -1,42 +1,50 @@
 export const COMPETITION_WORKSPACE_SECTIONS = [
   {
-    id: 'summary',
-    label: 'Resumen',
-    shortLabel: 'Resumen',
-    group: 'control',
-    description: 'Estado general, alertas y accesos rapidos de la competencia.',
-    primaryAction: 'Revisar estado',
+    id: 'setup',
+    label: 'Configuracion',
+    shortLabel: 'Config',
+    group: 'config',
+    description: 'Base, registro, divisiones y pagos.',
+    primaryAction: 'Configurar competencia',
   },
   {
-    id: 'setup',
-    label: 'Ajustes',
-    shortLabel: 'Ajustes',
+    id: 'launch',
+    label: 'Lanzamiento',
+    shortLabel: 'Lanzamiento',
     group: 'config',
-    description: 'Identidad, reglas, fechas, categorias, preguntas y pagos.',
-    primaryAction: 'Ajustar configuracion',
+    description: 'Revisar si ya esta lista y publicarla.',
+    primaryAction: 'Lanzar competencia',
   },
   {
     id: 'enrollments',
     label: 'Inscripciones',
     shortLabel: 'Inscripciones',
     group: 'operacion',
-    description: 'Solicitudes, confirmados, rechazos y respuestas del registro.',
+    description: 'Inscritos y respuestas del registro.',
     primaryAction: 'Gestionar inscripciones',
   },
   {
-    id: 'competition',
-    label: 'Competencia',
-    shortLabel: 'Competencia',
+    id: 'prep',
+    label: 'Preparacion',
+    shortLabel: 'Preparacion',
     group: 'operacion',
-    description: 'Eventos, equipos, resultados y cronometro operativo.',
-    primaryAction: 'Operar competencia',
+    description: 'Heats, cronograma y salida.',
+    primaryAction: 'Preparar competencia',
+  },
+  {
+    id: 'live',
+    label: 'En vivo',
+    shortLabel: 'En vivo',
+    group: 'operacion',
+    description: 'Resultados y control en competencia.',
+    primaryAction: 'Operar en vivo',
   },
   {
     id: 'broadcast',
-    label: 'TV',
-    shortLabel: 'TV',
+    label: 'Pantalla',
+    shortLabel: 'Pantalla',
     group: 'publico',
-    description: 'Leaderboard publico, QR y salida para pantalla.',
+    description: 'Salida publica y vista externa.',
     primaryAction: 'Abrir pantalla',
   },
 ]
@@ -97,7 +105,7 @@ export const COMPETITION_CARD_ACTIONS = [
   },
 ]
 
-export const COMPETITION_WORKSPACE_DEFAULT_SECTION = 'summary'
+export const COMPETITION_WORKSPACE_DEFAULT_SECTION = 'setup'
 
 export function getCompetitionWorkspaceSection(sectionId) {
   return COMPETITION_WORKSPACE_SECTIONS.find(section => section.id === sectionId) || null

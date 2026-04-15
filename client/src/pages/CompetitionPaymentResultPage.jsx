@@ -20,7 +20,7 @@ function statusCopy(status) {
   if (status === 'approved') {
     return {
       title: 'Pago aprobado',
-      text: 'Tu pago fue confirmado y la solicitud ya quedo registrada para revision del organizador.',
+      text: 'Tu pago fue confirmado y tu inscripcion quedo activa en esta competencia.',
       tone: '#00C2A8',
       icon: CheckCircle2,
     }

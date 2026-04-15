@@ -172,19 +172,19 @@ Datos personales
 
 Responsabilidad y disponibilidad
 
-8. La app facilita el proceso de registro y seguimiento, pero las condiciones de cada evento, aprobacion de solicitudes y validacion final dependen del organizador.
+8. La app facilita el proceso de registro y seguimiento, pero las condiciones operativas de cada evento y la validacion del pago dependen del evento y de Bold.
 9. Podemos actualizar funciones, textos o medidas de seguridad para mejorar la operacion del servicio.
 10. Si no estas de acuerdo con estos terminos, no debes continuar con el registro en la plataforma.
 `.trim()
 
 function enrollmentStateLabel(value, paymentStatus) {
   if (value === 'confirmado') return 'Ya estas inscrito en esta competencia.'
-  if (value === 'pendiente') return 'Tu pago fue aprobado y tu solicitud ya quedo registrada para revision del organizador.'
+  if (value === 'pendiente') return 'Tu inscripcion ya esta registrada. Estamos actualizando el estado final.'
   if (value === 'pago_pendiente') {
     if (['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)) return 'El pago no fue aprobado por Bold. Puedes intentarlo de nuevo mientras las inscripciones sigan abiertas.'
-    return 'Tu pago esta en proceso. Cuando Bold lo apruebe registraremos tu solicitud automaticamente.'
+    return 'Tu pago esta en proceso. Cuando Bold lo apruebe activaremos tu inscripcion automaticamente.'
   }
-  if (value === 'rechazado') return 'Tu solicitud anterior fue rechazada. Puedes volver a intentarlo si las inscripciones siguen abiertas.'
+  if (value === 'rechazado') return 'Tu registro anterior fue rechazado. Puedes volver a intentarlo si las inscripciones siguen abiertas.'
   return ''
 }
 
@@ -417,7 +417,7 @@ export default function CompetitionEnrollmentPage() {
       setPaymentReference(data?.payment_reference || '')
       setPaymentTransactionId(data?.payment_transaction_id || '')
       if (nextState === 'pendiente' || nextState === 'confirmado') {
-        setMsg({ type: 'success', text: 'Pago aprobado. Tu solicitud ya quedo registrada.' })
+        setMsg({ type: 'success', text: 'Pago aprobado. Tu inscripcion ya quedo confirmada.' })
       } else if (!silent) {
         const waitingMessage = ['rejected', 'failed', 'voided', 'void_rejected'].includes(nextPaymentStatus)
           ? 'Bold reporto que el pago no fue aprobado. Puedes intentarlo de nuevo.'
@@ -512,7 +512,7 @@ export default function CompetitionEnrollmentPage() {
             </span>
             <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 'clamp(34px, 6vw, 60px)', lineHeight: 0.95 }}>Registro a {competition.nombre}</h1>
             <p style={{ margin: '14px 0 0', maxWidth: 720, color: '#D7DEE8', fontSize: isMobile ? 14 : 16, lineHeight: 1.7 }}>
-              {(competition.enrollment_intro_text || competition.descripcion || '').trim() || 'Selecciona tu categoria, completa tu informacion y finaliza el pago para registrar tu solicitud.'}
+              {(competition.enrollment_intro_text || competition.descripcion || '').trim() || 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#00C2A8" />{competition.lugar || 'Lugar por confirmar'}</span>
@@ -531,10 +531,10 @@ export default function CompetitionEnrollmentPage() {
                 Pago aprobado
               </div>
               <div style={{ color: '#F5F7FA', fontSize: isMobile ? 24 : 30, fontWeight: 800, lineHeight: 1.05 }}>
-                Tu solicitud quedo registrada.
+                Tu inscripcion quedo confirmada.
               </div>
               <div style={{ color: '#D7DEE8', fontSize: 14, lineHeight: 1.7 }}>
-                Bold aprobo el pago y ahora el organizador puede revisar tu solicitud desde FinalRep.
+                Bold aprobo el pago y FinalRep activo tu cupo en esta competencia.
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
                 <button type="button" className="btn-secondary" onClick={() => navigate('/profile')}>
@@ -603,7 +603,7 @@ export default function CompetitionEnrollmentPage() {
                     )
                   })}
                 </div>
-              ) : <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 16, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene categorias configuradas. Tu solicitud se registrara sin categoria.</div>}
+              ) : <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 16, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene categorias configuradas. Tu inscripcion se registrara sin categoria.</div>}
             </StepCard>
           ) : null}
 
@@ -628,13 +628,13 @@ export default function CompetitionEnrollmentPage() {
                     )}
                   </div>
                 ))}
-                {!questions.length ? <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene preguntas adicionales. Usaremos la informacion de tu perfil para completar la solicitud.</div> : null}
+                {!questions.length ? <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene preguntas adicionales. Usaremos la informacion de tu perfil para completar la inscripcion.</div> : null}
               </div>
             </StepCard>
           ) : null}
 
           {currentStep === 3 ? (
-            <StepCard number="3" title="Terminos y condiciones" hint="Debes abrirlos, leerlos y aceptarlos para continuar con la solicitud.">
+            <StepCard number="3" title="Terminos y condiciones" hint="Debes abrirlos, leerlos y aceptarlos para continuar con la inscripcion.">
               <div style={{ display: 'grid', gap: 12 }}>
                 {termsText ? (
                   <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14, color: '#D7DEE8', fontSize: 14, lineHeight: 1.6 }}>
@@ -666,7 +666,7 @@ export default function CompetitionEnrollmentPage() {
           ) : null}
 
           {currentStep === 4 ? (
-            <StepCard number="4" title="Pago de inscripcion" hint="FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, la solicitud se registra automaticamente.">
+            <StepCard number="4" title="Pago de inscripcion" hint="FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.">
               <div style={{ display: 'grid', gap: 14 }}>
                 {!selectedCategoryData ? (
                   <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
@@ -707,7 +707,7 @@ export default function CompetitionEnrollmentPage() {
                             onError={(err) => setMsg({ type: 'error', text: err.message || 'No se pudo cargar el boton de Bold.' })}
                           />
                           <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
-                            Completa el pago con Bold. Solo cuando Bold confirme la transaccion registraremos la solicitud.
+                            Completa el pago con Bold. Solo cuando Bold confirme la transaccion activaremos la inscripcion.
                           </div>
                         </div>
                       ) : paymentInProgress ? (
@@ -732,7 +732,7 @@ export default function CompetitionEnrollmentPage() {
               {!session ? (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
-                    Debes iniciar sesion como participante para enviar la solicitud.
+                    Debes iniciar sesion como participante para completar la inscripcion.
                   </div>
                   <button type="button" className="btn-primary" onClick={() => navigate('/login')}>Iniciar sesion</button>
                 </div>
