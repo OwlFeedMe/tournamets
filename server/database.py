@@ -21,7 +21,14 @@ if not DATABASE_URL:
 if not DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://")):
     raise RuntimeError("Solo se admite PostgreSQL en DATABASE_URL.")
 
-engine_options = {"echo": False}
+engine_options = {
+    "echo": False,
+    "pool_size": int(os.getenv("DB_POOL_SIZE", "20")),
+    "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "40")),
+    "pool_pre_ping": True,
+    "pool_recycle": int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
+    "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30")),
+}
 
 engine = create_engine(DATABASE_URL, **engine_options)
 
@@ -335,6 +342,15 @@ def init_db():
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_password_reset_codes_email ON password_reset_codes(email)",
+        # ── Performance indexes (hot path: leaderboard, phase_status) ──
+        "CREATE INDEX IF NOT EXISTS ix_results_comp_phase ON results(competition_id, phase_id)",
+        "CREATE INDEX IF NOT EXISTS ix_results_comp_participant ON results(competition_id, participant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_results_comp_team ON results(competition_id, team_id)",
+        "CREATE INDEX IF NOT EXISTS ix_teams_competition_id ON teams(competition_id)",
+        "CREATE INDEX IF NOT EXISTS ix_competition_phases_competition_id ON competition_phases(competition_id)",
+        "CREATE INDEX IF NOT EXISTS ix_competition_categories_competition_id ON competition_categories(competition_id)",
+        "CREATE INDEX IF NOT EXISTS ix_competition_heats_competition_id ON competition_heats(competition_id)",
+        "CREATE INDEX IF NOT EXISTS ix_competition_heats_phase_id ON competition_heats(phase_id)",
     ]
     with engine.connect() as conn:
         for sql in _migrations:
