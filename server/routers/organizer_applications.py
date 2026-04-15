@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from auth import get_effective_participant_id, require_admin, require_auth
+from auth import get_effective_participant_id, invalidate_app_user, require_admin, require_auth
 from constants import Role
 from database import get_session
 from models import (
@@ -276,6 +276,8 @@ def review_organizer_application(
     session.commit()
     session.refresh(item)
     session.refresh(app_user)
+    if next_status == "approved":
+        invalidate_app_user(app_user.id)
     participant = session.get(Participant, int(item.participant_id))
 
     if participant:

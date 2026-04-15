@@ -9,3 +9,4 @@ sqlmodel
 psycopg2-binary
 qrcode[pil]
 Pillow
+redis>=5.0

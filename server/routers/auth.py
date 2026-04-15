@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, require_auth, verify_password
+from auth import ADMIN_ID, ADMIN_PASSWORD, create_access_token, get_current_user, hash_password, invalidate_app_user, require_auth, verify_password
 from constants import EstadoParticipante, Role
 from database import get_session
 from models import AppUser, MeResponse, Participant, PasswordResetCode, TokenResponse
@@ -505,6 +505,7 @@ def change_password(body: dict = Body(...), session: Session = Depends(get_sessi
     app_user.password_hash = hash_password(new_password)
     session.add(app_user)
     session.commit()
+    invalidate_app_user(app_user.id)
     return {"ok": True}
 
 
@@ -601,5 +602,6 @@ def reset_password(body: dict = Body(...), session: Session = Depends(get_sessio
     session.add(app_user)
     session.add(reset_code)
     session.commit()
+    invalidate_app_user(app_user.id)
 
     return {"ok": True}

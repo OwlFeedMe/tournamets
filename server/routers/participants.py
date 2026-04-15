@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_effective_participant_id, is_end_user, require_admin, require_auth
+from auth import get_effective_participant_id, invalidate_app_user, is_end_user, require_admin, require_auth
 from database import get_session
 from models import AppUser, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
 
@@ -93,15 +93,21 @@ def _validate_participant_payload(data: dict) -> None:
         raise HTTPException(400, "Selecciona un genero valido")
 
 
-def _sync_app_user_username(session: Session, participant: Participant) -> None:
+def _sync_app_user_username(session: Session, participant: Participant) -> int | None:
+    """Actualiza username del AppUser al email del participante.
+
+    Retorna el id del AppUser modificado (para invalidar cache post-commit),
+    o None si no hubo cambio.
+    """
     normalized_email = (participant.email or "").strip().lower()
     if not normalized_email:
-        return
+        return None
     app_user = session.exec(select(AppUser).where(AppUser.participant_id == participant.id)).first()
     if not app_user or app_user.username == normalized_email:
-        return
+        return None
     app_user.username = normalized_email
     session.add(app_user)
+    return int(app_user.id) if app_user.id is not None else None
 
 
 def _parse_optional_date(value) -> Optional[date]:
@@ -181,16 +187,17 @@ def update_my_profile(
     for field, value in payload.items():
         setattr(p, field, value)
 
-    _sync_app_user_username(session, p)
+    changed_app_user_id = _sync_app_user_username(session, p)
 
     session.add(p)
     try:
         session.commit()
         session.refresh(p)
-        return p
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
+    invalidate_app_user(changed_app_user_id)
+    return p
 
 
 @router.post("/me/photo", response_model=ParticipantProfile)
@@ -284,6 +291,7 @@ def update_participant_role(
     app_user.admin_enabled = 1 if extra_role == "admin" else 0
     session.add(app_user)
     session.commit()
+    invalidate_app_user(app_user.id)
 
     return {
         "ok": True,
@@ -328,16 +336,17 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
     for field, value in payload.items():
         setattr(p, field, value)
 
-    _sync_app_user_username(session, p)
+    changed_app_user_id = _sync_app_user_username(session, p)
 
     session.add(p)
     try:
         session.commit()
         session.refresh(p)
-        return p
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
+    invalidate_app_user(changed_app_user_id)
+    return p
 
 
 @router.delete("/{participant_id}", status_code=204)

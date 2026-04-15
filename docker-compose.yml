@@ -1,4 +1,25 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: loyalty_tournament_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-devredis}
+    volumes:
+      - loyalty_tournament_redis_data:/data
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-devredis}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   server:
     build:
       context: ./server
@@ -11,10 +32,14 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@${POSTGRES_HOST:-host.docker.internal}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-finalrep}}
       CORS_ALLOWED_ORIGINS: http://localhost:5174,http://localhost:3000
       LEADERBOARD_BASE_URL: http://localhost:5174/
+      REDIS_URL: redis://:${REDIS_PASSWORD:-devredis}@redis:6379/0
     volumes:
       - ./server:/app
     ports:
       - "8001:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
 
   client:
     build:
@@ -35,3 +60,4 @@ services:
 
 volumes:
   loyalty_tournament_client_node_modules:
+  loyalty_tournament_redis_data:
