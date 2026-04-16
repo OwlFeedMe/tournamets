@@ -708,6 +708,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _serialize_enrollment_questions(payload)
     if is_organizer_user(user):
         payload["organizer_user_id"] = user.get("app_user_id")
+    payload["slug"] = _generate_slug(payload["nombre"], session)
     competition = Competition.model_validate(payload)
     session.add(competition)
     session.commit()
@@ -757,6 +758,8 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _serialize_landing_sections(data)
     _serialize_social_links(data)
     _serialize_enrollment_questions(data)
+    if "nombre" in data and data["nombre"] and data["nombre"].strip() != c.nombre:
+        data["slug"] = _generate_slug(data["nombre"], session, exclude_id=competition_id)
     for field, value in data.items():
         setattr(c, field, value)
 
