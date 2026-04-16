@@ -4267,7 +4267,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Precio base</label>
-            <input type="number" min="0" step="1" value={newCat.enrollment_price || 0} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value }))} placeholder="Precio base" />
+            <input type="number" min="0" step="1" value={newCat.enrollment_price === '' ? '' : (newCat.enrollment_price || 0)} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value === '' ? '' : (Number(e.target.value) === 0 && prev.enrollment_price !== '' ? '' : e.target.value) }))} onFocus={e => { if (Number(e.target.value) === 0) setNewCat(prev => ({ ...prev, enrollment_price: '' })) }} placeholder="Precio base" />
           </div>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
             <label>Descripcion</label>
@@ -4663,7 +4663,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Precio base</label>
-            <input type="number" min="0" step="1" value={editingCategory.enrollment_price || 0} onChange={e => updateCategoryPrice(editingCategory.id, e.target.value)} placeholder="Precio base de inscripcion" />
+            <input type="number" min="0" step="1" value={editingCategory.enrollment_price === '' ? '' : (editingCategory.enrollment_price || 0)} onChange={e => updateCategoryPrice(editingCategory.id, e.target.value)} onFocus={e => { if (Number(e.target.value) === 0) updateCategoryPrice(editingCategory.id, '') }} placeholder="Precio base de inscripcion" />
           </div>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
             <label>Descripcion</label>
@@ -7716,9 +7716,11 @@ function CompetitionsTab() {
                 onClose={() => {}}
                 onSaved={() => {
                   setSuccessToast('Datos guardados correctamente')
-                  load()
-                  refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
-                  api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                  setTimeout(() => {
+                    load()
+                    refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
+                    api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                  }, 300)
                 }}
               />
             </div>
@@ -7944,10 +7946,12 @@ function CompetitionsTab() {
             onClose={() => setEditor(null)}
             onSaved={() => {
               setSuccessToast('Datos guardados correctamente')
-              load()
-              if (selectedCompetition?.id === editor.competition?.id) {
-                api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
-              }
+              setTimeout(() => {
+                load()
+                if (selectedCompetition?.id === editor.competition?.id) {
+                  api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                }
+              }, 300)
             }}
           />
         )
