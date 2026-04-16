@@ -2272,6 +2272,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     general_info_text: '',
     lugar: '',
     contact_phone: '',
+    contact_phone_prefix: '+57',
     website_url: '',
     theme_background_color: '',
     theme_surface_color: '',
@@ -2317,6 +2318,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     basics: false,
     registration: false,
   })
+  const [showPhonePrefixDropdown, setShowPhonePrefixDropdown] = useState(false)
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState(null)
   const [showAddQuestionModal, setShowAddQuestionModal] = useState(false)
@@ -2340,6 +2342,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         general_info_text: source.general_info_text || '',
         lugar: source.lugar || '',
         contact_phone: source.contact_phone || '',
+        contact_phone_prefix: (source.contact_phone || '').match(/^(\+\d+)/)?.[1] || '+57',
         website_url: source.website_url || '',
         theme_background_color: source.theme_background_color || '',
         theme_surface_color: source.theme_surface_color || '',
@@ -2411,6 +2414,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  useEffect(() => {
+    if (!showPhonePrefixDropdown) return
+    const close = () => setShowPhonePrefixDropdown(false)
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [showPhonePrefixDropdown])
   useEffect(() => {
     setEditorStep(0)
     setExpandedExtras({
@@ -3134,7 +3143,69 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group">
               <label>Numero de contacto</label>
-              <input value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} placeholder="Ej: +57 300 123 4567" />
+              {(() => {
+                const PHONE_PREFIXES = [
+                  { code: 'co', prefix: '+57' },
+                  { code: 'us', prefix: '+1' },
+                  { code: 'mx', prefix: '+52' },
+                  { code: 'ar', prefix: '+54' },
+                  { code: 'cl', prefix: '+56' },
+                  { code: 'pe', prefix: '+51' },
+                  { code: 've', prefix: '+58' },
+                  { code: 'ec', prefix: '+593' },
+                  { code: 'es', prefix: '+34' },
+                ]
+                const flagUrl = code => `https://flagcdn.com/20x15/${code}.png`
+                const currentPrefix = form.contact_phone_prefix || '+57'
+                const currentEntry = PHONE_PREFIXES.find(p => p.prefix === currentPrefix) || PHONE_PREFIXES[0]
+                return (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowPhonePrefixDropdown(v => !v)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', height: '100%', minHeight: 38, borderRadius: 8, border: '1px solid var(--oa-border, #252A33)', background: 'var(--oa-surface, #1e2329)', cursor: 'pointer' }}
+                      >
+                        <img src={flagUrl(currentEntry.code)} alt={currentEntry.code} style={{ width: 16, height: 12, borderRadius: 2, objectFit: 'cover' }} />
+                        <span style={{ fontSize: 11, color: '#AAB2C0' }}>{currentPrefix}</span>
+                        <span style={{ fontSize: 10, color: '#6B7280' }}>▾</span>
+                      </button>
+                      {showPhonePrefixDropdown && (
+                        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999, background: '#1e2329', border: '1px solid #252A33', borderRadius: 10, padding: 4, display: 'grid', gap: 2, minWidth: 110, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
+                          {PHONE_PREFIXES.map(p => (
+                            <button
+                              key={p.prefix}
+                              type="button"
+                              onClick={() => {
+                                setForm(f => {
+                                  const digits = f.contact_phone.replace(/^\+\d+\s*/, '')
+                                  return { ...f, contact_phone_prefix: p.prefix, contact_phone: digits ? `${p.prefix} ${digits}` : '' }
+                                })
+                                setShowPhonePrefixDropdown(false)
+                              }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7, border: 'none', background: p.prefix === currentPrefix ? 'rgba(255,107,0,0.12)' : 'transparent', cursor: 'pointer', color: '#F5F7FA', textAlign: 'left' }}
+                            >
+                              <img src={flagUrl(p.code)} alt={p.code} style={{ width: 16, height: 12, borderRadius: 2, objectFit: 'cover' }} />
+                              <span style={{ fontSize: 12, color: '#AAB2C0' }}>{p.prefix}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      value={form.contact_phone.replace(/^\+\d+\s*/, '')}
+                      onChange={e => {
+                        const digits = e.target.value.replace(/\D/g, '')
+                        const prefix = form.contact_phone_prefix || '+57'
+                        setForm(f => ({ ...f, contact_phone: digits ? `${prefix} ${digits}` : '', contact_phone_prefix: prefix }))
+                      }}
+                      placeholder="300 123 4567"
+                      inputMode="numeric"
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                )
+              })()}
             </div>
             <div className="form-group">
               <label>Pagina web</label>
@@ -3395,22 +3466,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   enabled: !!form.team_enabled,
                   enabledText: 'Activa',
                   disabledText: 'Oculta',
-                  onClick: () => setForm(f => ({ ...f, team_enabled: f.team_enabled ? 0 : 1 })),
+                  onClick: () => setForm(f => ({ ...f, team_enabled: f.team_enabled ? 0 : 1, team_categories_enabled: f.team_enabled ? f.team_categories_enabled : 1 })),
                 })}
               </div>
               {form.team_enabled ? (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                  {renderToggleCard({
-                    label: 'Categorias de equipos',
-                    hint: 'Permite definir divisiones propias para equipos, separadas de las individuales.',
-                    enabled: !!form.team_categories_enabled,
-                    enabledText: 'Separadas',
-                    disabledText: 'Inferidas',
-                    onClick: () => setForm(f => ({ ...f, team_categories_enabled: f.team_categories_enabled ? 0 : 1 })),
-                  })}
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tamano de equipo</label>
-                    <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: Math.max(1, Number(e.target.value || 1)) }))} />
+                    <label>Tamaño de equipo</label>
+                    <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: e.target.value === '' ? '' : Math.max(1, Number(e.target.value)) }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Regla de armado</label>
@@ -3480,17 +3543,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Cierre de inscripciones</label>
-              <input type="date" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
+              <input type="date" value={form.enrollment_end} min={form.enrollment_start || undefined} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Inicio de competencia</label>
-              <input type="date" value={form.competition_start} onChange={e => setForm(f => ({ ...f, competition_start: e.target.value }))} />
+              <input type="date" value={form.competition_start} onChange={e => setForm(f => ({ ...f, competition_start: e.target.value, competition_end: f.competition_end && e.target.value > f.competition_end ? '' : f.competition_end }))} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Fin de competencia</label>
-              <input type="date" value={form.competition_end} onChange={e => setForm(f => ({ ...f, competition_end: e.target.value }))} />
+              <input type="date" value={form.competition_end} min={form.competition_start || undefined} onChange={e => setForm(f => ({ ...f, competition_end: e.target.value }))} />
             </div>
           </div>
         </div>
