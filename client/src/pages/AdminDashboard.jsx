@@ -2794,14 +2794,26 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
               <button className="btn-secondary btn-sm" type="button" onClick={loadCameraDevices}>Actualizar camaras</button>
             </div>
             {!supportsDetector ? <div style={{ color: '#F59E0B', fontSize: 12 }}>Deteccion automatica no soportada. Usa ingreso manual.</div> : null}
-            <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden', minHeight: 220 }}>
-              {scannerOpen ? (
-                <video ref={videoRef} muted playsInline autoPlay style={{ width: '100%', maxHeight: 420, objectFit: 'cover', display: 'block' }} />
-              ) : (
-                <div style={{ minHeight: 220, display: 'grid', placeItems: 'center', color: '#AAB2C0', fontSize: 13 }}>
+            <div style={{ position: 'relative', borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden', minHeight: 220 }}>
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                autoPlay
+                style={{
+                  width: '100%',
+                  height: scannerOpen ? 'min(420px, 56vw)' : 0,
+                  minHeight: scannerOpen ? 220 : 0,
+                  objectFit: 'cover',
+                  display: 'block',
+                  background: '#090B0E',
+                }}
+              />
+              {!scannerOpen ? (
+                <div style={{ position: 'absolute', inset: 0, minHeight: 220, display: 'grid', placeItems: 'center', color: '#AAB2C0', fontSize: 13 }}>
                   Camara detenida
                 </div>
-              )}
+              ) : null}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
               <input
