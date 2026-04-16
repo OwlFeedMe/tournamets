@@ -274,7 +274,7 @@ export function CompetitionSearch({ value, onChange }) {
           border: 'none',
           background: 'transparent',
           color: premium.text,
-          padding: '16px 18px',
+          padding: '15px 16px',
           fontSize: 14,
           outline: 'none',
         }}
@@ -288,12 +288,12 @@ export function CompetitionGrid({ competitions, isMobile, renderCard }) {
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
+        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
         gap: 18,
       }}
     >
       {competitions.map((competition, index) => (
-        <div key={competition.id} style={{ gridColumn: isMobile ? 'auto' : index === 0 ? 'span 7' : 'span 5' }}>
+        <div key={competition.id} style={{ minWidth: 0 }}>
           {renderCard(competition, index)}
         </div>
       ))}
@@ -303,8 +303,7 @@ export function CompetitionGrid({ competitions, isMobile, renderCard }) {
 
 export function HomeCompetitionCard({
   competition,
-  index,
-  isFeatured,
+  isMobile,
   isAthlete,
   enrollmentState,
   onParticipate,
@@ -320,101 +319,117 @@ export function HomeCompetitionCard({
         ...surfaceStyle({ cut: true, padding: 0, background: premium.surface }),
         height: '100%',
         display: 'grid',
-        gridTemplateRows: isFeatured ? 'minmax(240px, 280px) auto' : '220px auto',
+        gridTemplateRows: 'auto minmax(0, 1fr)',
       }}
     >
       <div
         style={{
           position: 'relative',
-          padding: isFeatured ? 24 : 20,
-          display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
-          gap: 12,
-          background: competition.bannerStyle,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
+          display: 'block',
+          width: '100%',
+          aspectRatio: '16 / 9',
+          minWidth: 0,
+          background: '#0D0F12',
+          overflow: 'hidden',
         }}
       >
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '8px 12px',
-            borderRadius: 999,
-            background: 'rgba(9,11,14,0.72)',
-            border: `1px solid ${status.tone}66`,
-            color: premium.text,
-            fontSize: 12,
-            fontWeight: 800,
-          }}
-        >
-          <Flame size={14} color={status.tone} />
-          {status.label}
-        </span>
-
+        {competition.bannerUrl ? (
+          <img
+            src={competition.bannerUrl}
+            alt={competition.nombre}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              display: 'block',
+              objectFit: 'cover',
+              objectPosition: 'center center',
+            }}
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: competition.bannerStyle,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center center',
+              backgroundRepeat: 'no-repeat',
+            }}
+          />
+        )}
         <div
-          aria-hidden="true"
           style={{
-            width: isFeatured ? 72 : 64,
-            height: isFeatured ? 72 : 64,
-            borderRadius: 6,
-            background: competition.profileImageUrl
-              ? `#0D0F12 url("${competition.profileImageUrl}") center/cover no-repeat`
-              : 'rgba(9,11,14,0.68)',
-            border: `1px solid ${premium.border}`,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
-            display: 'grid',
-            placeItems: 'center',
-            color: premium.text,
-            fontFamily: 'Bebas Neue, sans-serif',
-            fontSize: isFeatured ? 30 : 28,
-            letterSpacing: 1,
+            position: 'absolute',
+            top: 16,
+            left: 16,
+            right: 16,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 12,
           }}
         >
-          {!competition.profileImageUrl ? competition.initials : null}
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '8px 12px',
+              borderRadius: 999,
+              background: 'rgba(9,11,14,0.72)',
+              border: `1px solid ${status.tone}66`,
+              color: premium.text,
+              fontSize: 12,
+              fontWeight: 800,
+            }}
+          >
+            <Flame size={14} color={status.tone} />
+            {status.label}
+          </span>
+
+          <div />
         </div>
       </div>
 
-      <div style={{ padding: isFeatured ? 24 : 22, display: 'grid', gap: 16 }}>
+      <div style={{ padding: isMobile ? 16 : 22, display: 'grid', gridTemplateRows: 'auto auto 1fr auto', gap: isMobile ? 14 : 16 }}>
         <div style={{ display: 'grid', gap: 10 }}>
-          <h3 style={{ margin: 0, color: premium.text, fontSize: isFeatured ? 30 : 24, lineHeight: 1.02 }}>{competition.nombre}</h3>
-          <p style={{ margin: 0, color: premium.textSoft, fontSize: 14, lineHeight: 1.65 }}>
+          <h3 style={{ margin: 0, color: premium.text, fontSize: isMobile ? 21 : 24, lineHeight: 1.1, overflowWrap: 'anywhere' }}>{competition.nombre}</h3>
+          <p style={{ margin: 0, color: premium.textSoft, fontSize: isMobile ? 13 : 14, lineHeight: 1.6 }}>
             {competition.description}
           </p>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-          {competition.raw.activa ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: premium.text, fontSize: 12 }}>
-              <Trophy size={14} color={premium.gold} />
-              En competencia
-            </span>
-          ) : null}
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: premium.text, fontSize: 12 }}>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: premium.text, fontSize: 12, minWidth: 0 }}>
             <CalendarDays size={14} color={premium.teal} />
-            {competition.scheduleLabel}
+            Inscripciones: {competition.enrollmentStartLabel}
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: premium.text, fontSize: 12 }}>
-            <Medal size={14} color={premium.silver} />
-            Ranking en vivo
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: premium.text, fontSize: 12, minWidth: 0 }}>
+            <Trophy size={14} color={premium.gold} />
+            Competencia: {competition.competitionDateLabel}
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
           <Link
             to={`/competitions/${competition.id}`}
             style={{
               textDecoration: 'none',
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 8,
               padding: '11px 16px',
               borderRadius: 6,
               background: premium.silverGradient,
               color: premium.bg,
               fontWeight: 800,
+              minWidth: 0,
+              minHeight: 44,
+              textAlign: 'center',
             }}
           >
             Ver competencia
@@ -426,13 +441,16 @@ export function HomeCompetitionCard({
               textDecoration: 'none',
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 8,
+              justifyContent: 'center',
               padding: '11px 16px',
               borderRadius: 6,
               border: `1px solid ${premium.border}`,
               background: 'transparent',
               color: premium.text,
               fontWeight: 700,
+              minWidth: 0,
+              minHeight: 44,
+              textAlign: 'center',
             }}
           >
             Ver leaderboard
@@ -453,6 +471,9 @@ export function HomeCompetitionCard({
               fontWeight: 700,
               cursor: cta.disabled ? 'not-allowed' : 'pointer',
               opacity: cta.disabled ? 0.9 : 1,
+              minWidth: 0,
+              minHeight: 44,
+              textAlign: 'center',
             }}
           >
             {cta.label}

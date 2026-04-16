@@ -59,7 +59,7 @@ function signalStyle() {
 
 function SharedTopMeta({ totalCompetitions, openCount, activeCount }) {
   return (
-    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: premium.textSoft, fontSize: 13 }}>
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: premium.textSoft, fontSize: 13 }}>
       <span>{totalCompetitions} eventos visibles</span>
       <span>{openCount} abiertos</span>
       <span>{activeCount} con ranking activo</span>
@@ -70,21 +70,21 @@ function SharedTopMeta({ totalCompetitions, openCount, activeCount }) {
 function HomeVariantTop({ variant, isMobile, totalCompetitions, openCount, activeCount, panelHref }) {
   if (variant === 1) {
     return (
-      <section style={{ padding: isMobile ? '12px 0 24px' : '18px 0 30px', marginBottom: 6 }}>
+      <section style={{ padding: isMobile ? '8px 0 20px' : '18px 0 30px', marginBottom: 6 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.3fr) minmax(280px, 0.7fr)', gap: 24 }}>
           <div>
-            <h1 style={{ margin: 0, color: premium.text, fontSize: 'clamp(40px, 7vw, 82px)', lineHeight: 0.92 }}>
+            <h1 style={{ margin: 0, color: premium.text, fontSize: isMobile ? 'clamp(30px, 9vw, 40px)' : 'clamp(40px, 7vw, 82px)', lineHeight: isMobile ? 1.02 : 0.92, overflowWrap: 'anywhere' }}>
               Donde la competencia se corre con precision, ritmo y autoridad.
             </h1>
-            <p style={{ margin: '16px 0 0', color: premium.textSoft, fontSize: 17, lineHeight: 1.8, maxWidth: 760 }}>
+            <p style={{ margin: '14px 0 0', color: premium.textSoft, fontSize: isMobile ? 15 : 17, lineHeight: isMobile ? 1.65 : 1.8, maxWidth: 760 }}>
               FinalRep reúne configuración completa, resultados en tiempo real y una clasificación que responde al instante cuando el evento entra en movimiento.
             </p>
           </div>
           <div style={{ display: 'grid', alignContent: 'end', gap: 18 }}>
             <SharedTopMeta totalCompetitions={totalCompetitions} openCount={openCount} activeCount={activeCount} />
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Link to="/leaderboard" style={{ ...navLinkStyle(false), background: premium.silverGradient, color: premium.bg, border: 'none' }}>Ver leaderboard</Link>
-              <Link to={panelHref} style={navLinkStyle(false)}>Entrar a FinalRep</Link>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, max-content)', gap: 10, justifyContent: 'start' }}>
+              <Link to="/leaderboard" style={{ ...navLinkStyle(false), background: premium.silverGradient, color: premium.bg, border: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Ver leaderboard</Link>
+              <Link to={panelHref} style={{ ...navLinkStyle(false), minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Entrar a FinalRep</Link>
             </div>
           </div>
         </div>
@@ -204,7 +204,7 @@ function HomeVariantTop({ variant, isMobile, totalCompetitions, openCount, activ
             El feed oficial de tu competencia empieza aquí.
           </h1>
         </div>
-        <div style={{ display: 'flex', gap: 0, overflow: 'hidden', borderTop: `1px solid ${premium.border}`, borderBottom: `1px solid ${premium.border}` }}>
+        <div style={{ display: isMobile ? 'grid' : 'flex', gap: 0, overflow: 'hidden', borderTop: `1px solid ${premium.border}`, borderBottom: `1px solid ${premium.border}` }}>
           <TickerItem label="Config" value="todo el formato bajo control" />
           <TickerItem label="Live" value="resultados entrando al instante" />
           <TickerItem label="Board" value="leaderboard con lectura inmediata" />
@@ -219,14 +219,14 @@ function HomeVariantTop({ variant, isMobile, totalCompetitions, openCount, activ
       <div style={{ position: 'absolute', inset: '-10% 40% 30% -10%', background: 'radial-gradient(circle, rgba(94,234,212,0.18), transparent 52%)' }} />
       <div style={{ position: 'absolute', inset: '0 0 20% 48%', background: 'radial-gradient(circle, rgba(214,217,224,0.14), transparent 48%)' }} />
       <div style={{ position: 'absolute', inset: '38% 10% -8% 58%', background: 'radial-gradient(circle, rgba(205,170,107,0.16), transparent 44%)' }} />
-      <div style={{ position: 'relative', zIndex: 1, padding: isMobile ? '18px 8px' : '32px 0', maxWidth: 860 }}>
+      <div style={{ position: 'relative', zIndex: 1, padding: isMobile ? '18px 0' : '32px 0', maxWidth: 860 }}>
         <div style={{ color: premium.gold, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 }}>
           FinalRep Identity
         </div>
-        <h1 style={{ margin: 0, color: premium.text, fontSize: 'clamp(38px, 6vw, 72px)', lineHeight: 0.92 }}>
+        <h1 style={{ margin: 0, color: premium.text, fontSize: isMobile ? 'clamp(30px, 9vw, 40px)' : 'clamp(38px, 6vw, 72px)', lineHeight: isMobile ? 1.02 : 0.92, overflowWrap: 'anywhere' }}>
           Una presencia propia para eventos que quieren verse a la altura.
         </h1>
-        <p style={{ margin: '16px 0 0', color: premium.textSoft, fontSize: 16, lineHeight: 1.78 }}>
+        <p style={{ margin: '14px 0 0', color: premium.textSoft, fontSize: isMobile ? 15 : 16, lineHeight: isMobile ? 1.65 : 1.78 }}>
           FinalRep no necesita apoyarse en la imagen de una sola competencia para transmitir control, nivel y tiempo real. La marca se siente antes del primer evento.
         </p>
       </div>
@@ -378,7 +378,7 @@ export default function HomeVariants({ variant = 1 }) {
 
   return (
     <div style={{ minHeight: '100vh', background: homePageBg, color: premium.text }}>
-      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 72px' }}>
+      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '18px 14px 112px' : '24px 18px 72px' }}>
         <HomeVariantTop
           variant={variant}
           isMobile={isMobile}
@@ -400,11 +400,10 @@ export default function HomeVariants({ variant = 1 }) {
             <CompetitionGrid
               competitions={competitionCards}
               isMobile={isMobile}
-              renderCard={(competition, index) => (
+              renderCard={(competition) => (
                 <HomeCompetitionCard
                   competition={competition}
-                  index={index}
-                  isFeatured={index === 0}
+                  isMobile={isMobile}
                   isAthlete={isAthlete}
                   enrollmentState={enrollmentByComp[competition.id]}
                   onParticipate={handleParticipate}

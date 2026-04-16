@@ -1169,22 +1169,24 @@ export default function ParticipantProfile() {
 
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
         {profileRequirementNotice ? (
-          <div style={{ marginBottom: 16, borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+          <div className="fr-cut-card" style={{ marginBottom: 16, border: '1px solid rgba(214,217,224,0.2)', background: 'rgba(214,217,224,0.06)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
             {profileRequirementNotice}
           </div>
         ) : null}
 
         {/* Profile hero */}
-        <div style={{
-          background: 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)', borderRadius: 14,
+        <div className="fr-cut-card" style={{
+          background: 'linear-gradient(135deg, rgba(214,217,224,0.12) 0%, rgba(94,234,212,0.08) 42%, rgba(23,26,32,0.96) 100%)',
+          border: '1px solid rgba(214,217,224,0.18)',
+          boxShadow: '0 18px 50px rgba(0,0,0,0.22)',
           padding: isMobile ? '18px 16px' : '24px',
           marginBottom: 16, display: 'flex', alignItems: 'center', gap: isMobile ? 14 : 20,
         }}>
           <div style={{
             width: isMobile ? 50 : 62, height: isMobile ? 50 : 62, flexShrink: 0,
-            borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
+            borderRadius: '50%', background: 'rgba(13,15,18,0.62)', border: '1px solid rgba(214,217,224,0.24)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: isMobile ? 20 : 26, fontWeight: 800, color: '#fff', overflow: 'hidden',
+            fontSize: isMobile ? 20 : 26, fontWeight: 800, color: 'var(--oa-text)', overflow: 'hidden',
           }}>
             {profilePhotoUrl ? (
               <img
@@ -1195,22 +1197,22 @@ export default function ParticipantProfile() {
             ) : initial}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` Â· ${formatCedula(myProfile?.cedula)}` : ''}</div>
+            <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: 'var(--oa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
+            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` Â· ${formatCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {myProfile?.categoria && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
-              {myProfile?.box && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
-              {myProfile?.ciudad_pais && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.ciudad_pais}</span>}
+              {myProfile?.categoria && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
+              {myProfile?.box && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
+              {myProfile?.ciudad_pais && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.ciudad_pais}</span>}
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: '#0D0F12' }}>{totalPuntos}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: 'var(--oa-primary)' }}>{totalPuntos}</div>
+              <div style={{ fontSize: 10, color: 'var(--oa-text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
             </div>
             <button
               onClick={() => { setShowEditProfile(v => !v); setEditMsg(null) }}
-              style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, padding: '5px 10px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              style={{ background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.18)', borderRadius: 6, padding: '5px 10px', color: 'var(--oa-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
             >
               <UserCog size={13} /> {showEditProfile ? 'Cerrar' : 'Editar datos'}
             </button>

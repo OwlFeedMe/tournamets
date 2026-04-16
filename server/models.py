@@ -206,6 +206,31 @@ class PasswordResetCode(SQLModel, table=True):
     )
 
 
+class CompetitionInterestNotification(SQLModel, table=True):
+    __tablename__ = "competition_interest_notifications"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "notification_type", "participant_id", name="uq_comp_interest_participant"),
+        UniqueConstraint("competition_id", "notification_type", "email", name="uq_comp_interest_email"),
+        Index("ix_comp_interest_competition_type", "competition_id", "notification_type"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    participant_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True, index=True),
+    )
+    email: Optional[str] = Field(default=None, index=True)
+    notification_type: str = Field(default="open_enrollment", index=True)
+    source: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("nombre", "competition_id"),)

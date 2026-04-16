@@ -44,7 +44,7 @@ COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "compe
 COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 COMPETITION_ASSET_SPECS = {
     "profile": {"field": "profile_image_url", "width": 512, "height": 512, "mode": "cover"},
-    "banner": {"field": "banner_image_url", "width": 1920, "height": 1080, "mode": "contain"},
+    "banner": {"field": "banner_image_url", "mode": "original"},
 }
 HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
 COMPETITION_THEME_FIELDS = (
@@ -295,6 +295,18 @@ def _resize_cover(image: Image.Image, target_width: int, target_height: int) -> 
     return cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
 
+def _competition_asset_extension(file: UploadFile) -> str:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix in {".jpg", ".jpeg", ".png", ".webp"}:
+        return suffix
+    content_type = (file.content_type or "").lower()
+    if content_type == "image/png":
+        return ".png"
+    if content_type == "image/webp":
+        return ".webp"
+    return ".jpg"
+
+
 def _process_competition_asset(file: UploadFile, competition_id: int, asset_type: str) -> str:
     if asset_type not in COMPETITION_ASSET_SPECS:
         raise HTTPException(400, "asset_type invalido")
@@ -307,6 +319,11 @@ def _process_competition_asset(file: UploadFile, competition_id: int, asset_type
         raise HTTPException(400, "No se pudo procesar la imagen")
 
     spec = COMPETITION_ASSET_SPECS[asset_type]
+    if spec["mode"] == "original":
+        filename = f"competition_{competition_id}_{asset_type}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}{_competition_asset_extension(file)}"
+        output_path = COMPETITION_ASSET_DIR / filename
+        output_path.write_bytes(raw)
+        return f"/uploads/competition_assets/{filename}"
     if spec["mode"] == "cover":
         output = _resize_cover(image, spec["width"], spec["height"])
     else:

@@ -36,6 +36,14 @@ body {
   overflow-x: hidden;
 }
 
+body.fr-modal-open {
+  overflow: hidden;
+}
+
+body.fr-modal-open .fr-bottom-dock {
+  display: none !important;
+}
+
 html, #root {
   max-width: 100%;
   overflow-x: hidden;

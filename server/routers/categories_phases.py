@@ -190,7 +190,7 @@ def _serialize_phase_activities(
                 scoring_rules = json.dumps(scoring_rules, ensure_ascii=False)
             except Exception:
                 scoring_rules = None
-        cleaned.append({
+        serialized_item = {
             "nombre": name,
             "descripcion": str(item.get("descripcion") or "").strip() or None,
             "tipo": activity_type,
@@ -199,7 +199,25 @@ def _serialize_phase_activities(
             "points_mode": points_mode,
             "scoring_rules": scoring_rules,
             "orden": int(item.get("orden") or idx),
-        })
+        }
+        # Preserve optional category-specific override metadata used by the app UI.
+        if item.get("_cat") is not None:
+            serialized_item["_cat"] = str(item.get("_cat")).strip() or None
+        if item.get("_cat_name") is not None:
+            serialized_item["_cat_name"] = str(item.get("_cat_name")).strip() or None
+        if item.get("time_cap") is not None:
+            try:
+                serialized_item["time_cap"] = int(item.get("time_cap"))
+            except Exception:
+                serialized_item["time_cap"] = None
+        if item.get("part_b_descripcion") is not None:
+            serialized_item["part_b_descripcion"] = str(item.get("part_b_descripcion") or "").strip() or None
+        if item.get("part_b_time_cap") is not None:
+            try:
+                serialized_item["part_b_time_cap"] = int(item.get("part_b_time_cap"))
+            except Exception:
+                serialized_item["part_b_time_cap"] = None
+        cleaned.append(serialized_item)
     return json.dumps(cleaned, ensure_ascii=False) if cleaned else None
 
 

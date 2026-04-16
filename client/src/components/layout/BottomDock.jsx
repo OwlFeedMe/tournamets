@@ -58,6 +58,7 @@ export function BottomDock() {
 
   return (
     <nav
+      className="fr-bottom-dock"
       aria-label="Navegacion principal"
       style={{
         position: 'fixed',

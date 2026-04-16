@@ -8,6 +8,7 @@ const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollme
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
 const CompetitionPaymentResultPage = lazy(() => import('./pages/CompetitionPaymentResultPage'))
 const CompetitionSchedule = lazy(() => import('./pages/CompetitionSchedule'))
+const CompetitionVariants = lazy(() => import('./pages/CompetitionVariants'))
 const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.EventsPage })))
 const HomeVariants = lazy(() => import('./pages/HomeVariants'))
 const Leaderboard = lazy(() => import('./pages/Leaderboard'))
@@ -71,6 +72,11 @@ export default function App() {
             <Route element={<AuthenticatedShell />}>
               <Route path="/" element={<HomeVariants variant={1} />} />
               <Route path="/home1" element={<HomeVariants variant={1} />} />
+              <Route path="/competition1" element={<CompetitionVariants variant={1} />} />
+              <Route path="/competition2" element={<CompetitionVariants variant={2} />} />
+              <Route path="/competition3" element={<CompetitionVariants variant={3} />} />
+              <Route path="/competition4" element={<CompetitionVariants variant={4} />} />
+              <Route path="/competition5" element={<CompetitionVariants variant={5} />} />
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />

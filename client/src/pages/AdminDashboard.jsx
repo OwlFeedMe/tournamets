@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
@@ -255,7 +256,7 @@ function parseLandingSections(raw) {
 
 const COMPETITION_ASSET_RECOMMENDATIONS = {
   profile: 'Recomendado 512 x 512 px. Formato cuadrado.',
-  banner: 'Recomendado 1920 x 1080 px. Banner horizontal.',
+  banner: 'Recomendado 1600 x 900 px. Formato horizontal 16:9.',
 }
 
 function parseEnrollmentAnswers(raw) {
@@ -567,7 +568,7 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
     }
   }, [])
 
-  return (
+  const modalNode = (
     <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
       <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: isMobile ? 16 : 18, width: '100%', maxWidth: width, maxHeight: 'calc(100dvh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', color: 'var(--oa-text)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', ...panelStyle, padding: 0 }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: isMobile ? '14px 14px 12px' : '18px 20px 14px', marginBottom: 0, background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
@@ -580,6 +581,9 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modalNode
+  return createPortal(modalNode, document.body)
 }
 
 function CompetitionThemeMiniPreview({ theme }) {
@@ -874,15 +878,34 @@ function createPhaseDraftState(phase) {
 }
 
 function buildPhasePayload(values, orden = 0) {
-  const activities = normalizePhaseActivities(values.activities).map((activity, index) => {
-    const method = normalizeMeasurementMethod(activity.measurement_method, phaseTypeFromMethod(activity.measurement_method))
+  let sourceActivities = normalizePhaseActivities(values.activities)
+  if (!values.part_b_enabled) {
+    sourceActivities = sourceActivities.slice(0, 1)
+  } else if (sourceActivities.length < 2) {
+    sourceActivities = [...sourceActivities, createDefaultPhaseActivity(1)]
+  }
+
+  const baseTimeCapMin = parseInt(values.time_cap, 10)
+  const baseTimeCap = Number.isFinite(baseTimeCapMin) && baseTimeCapMin > 0 ? baseTimeCapMin * 60 : null
+  const partBTimeCapMin = parseInt(values.part_b_time_cap, 10)
+  const partBTimeCap = Number.isFinite(partBTimeCapMin) && partBTimeCapMin > 0 ? partBTimeCapMin * 60 : null
+
+  const activities = sourceActivities.map((activity, index) => {
+    const isPartB = index === 1 && !!values.part_b_enabled
+    const nextMeasurementMethod = isPartB
+      ? normalizeMeasurementMethod(values.part_b_measurement_method || activity.measurement_method, phaseTypeFromMethod(values.part_b_measurement_method || activity.measurement_method))
+      : normalizeMeasurementMethod(values.measurement_method || activity.measurement_method, phaseTypeFromMethod(values.measurement_method || activity.measurement_method))
+    const nextDescription = isPartB
+      ? String(values.part_b_descripcion ?? activity.descripcion ?? '').trim()
+      : String(values.descripcion ?? activity.descripcion ?? '').trim()
     return {
       nombre: String(activity.nombre || `Actividad ${index + 1}`) || `Actividad ${index + 1}`,
-      descripcion: String(activity.descripcion || '') || null,
-      measurement_method: method,
-      tipo: phaseTypeFromMethod(method),
-      winner_rule: normalizeWinnerRule(activity.winner_rule, phaseTypeFromMethod(method)),
+      descripcion: nextDescription || null,
+      measurement_method: nextMeasurementMethod,
+      tipo: phaseTypeFromMethod(nextMeasurementMethod),
+      winner_rule: normalizeWinnerRule(activity.winner_rule, phaseTypeFromMethod(nextMeasurementMethod)),
       points_mode: activity.points_mode || 'manual',
+      time_cap: isPartB ? partBTimeCap : baseTimeCap,
       orden: index,
     }
   })
@@ -913,6 +936,43 @@ function buildPhasePayload(values, orden = 0) {
     winner_rule: primary.winner_rule,
     points_mode: primary.points_mode || 'manual',
     activities,
+  }
+}
+
+function buildPhasePayloadWithCategoryOverrides(values, categories = [], orden = 0) {
+  let baseActivities = normalizePhaseActivities(values.activities, values)
+  if (!values.part_b_enabled) {
+    baseActivities = baseActivities.slice(0, 1)
+  } else if (baseActivities.length < 2) {
+    baseActivities = [...baseActivities, createDefaultPhaseActivity(1)]
+  }
+
+  const basePayload = buildPhasePayload({ ...values, activities: baseActivities }, orden)
+  const catEntries = Object.entries(values.catOverrides || {})
+    .filter(([, override]) => !!override?.modified)
+    .map(([catId, override], index) => {
+      const cat = categories.find((item) => String(item.id) === String(catId))
+      const catTimeCapMin = parseInt(override.time_cap, 10)
+      const catPartBTimeCapMin = parseInt(override.part_b_time_cap, 10)
+      return {
+        _cat: String(catId),
+        _cat_name: cat?.nombre || String(catId),
+        nombre: cat?.nombre || `Categoria ${index + 1}`,
+        descripcion: String(override.text || '').trim() || null,
+        tipo: basePayload.tipo,
+        measurement_method: basePayload.measurement_method,
+        winner_rule: basePayload.winner_rule,
+        points_mode: basePayload.points_mode || 'manual',
+        time_cap: Number.isFinite(catTimeCapMin) && catTimeCapMin > 0 ? catTimeCapMin * 60 : null,
+        part_b_descripcion: String(override.part_b_text || '').trim() || null,
+        part_b_time_cap: Number.isFinite(catPartBTimeCapMin) && catPartBTimeCapMin > 0 ? catPartBTimeCapMin * 60 : null,
+        orden: basePayload.activities.length + index,
+      }
+    })
+
+  return {
+    ...basePayload,
+    activities: [...basePayload.activities, ...catEntries],
   }
 }
 
@@ -2454,19 +2514,42 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         modality: c.modality || 'individual',
         enrollment_price: normalizeEnrollmentPrice(c.enrollment_price),
       })))
-      setPhases(phRes.data.map(p => ({
-        id: p.id,
-        modality: p.modality || 'individual',
-        block_name: p.block_name || '',
-        block_order: Number(p.block_order || 0),
-        nombre: p.nombre,
-        measurement_method: normalizeMeasurementMethod(p.measurement_method, p.tipo),
-        tipo: phaseTypeFromMethod(normalizeMeasurementMethod(p.measurement_method, p.tipo)),
-        descripcion: p.descripcion || '',
-        team_result_mode: p.team_result_mode || 'sum_two',
-        start_at: toDateInput(p.start_at),
-        end_at: toDateInput(p.end_at),
-      })))
+      setPhases(phRes.data.map(p => {
+        const activities = Array.isArray(p.activities) ? p.activities : []
+        const baseActivities = normalizePhaseActivities(activities, p)
+        const categoryEntries = activities.filter(activity => activity && activity._cat)
+        const secondBaseActivity = baseActivities[1] || null
+        const categoryOverrides = categoryEntries.reduce((acc, activity) => {
+          acc[String(activity._cat)] = {
+            modified: true,
+            text: activity.descripcion || '',
+            time_cap: activity.time_cap ? String(Math.round(Number(activity.time_cap) / 60)) : '',
+            part_b_text: activity.part_b_descripcion || '',
+            part_b_time_cap: activity.part_b_time_cap ? String(Math.round(Number(activity.part_b_time_cap) / 60)) : '',
+          }
+          return acc
+        }, {})
+        return {
+          id: p.id,
+          modality: p.modality || 'individual',
+          block_name: p.block_name || '',
+          block_order: Number(p.block_order || 0),
+          nombre: p.nombre,
+          measurement_method: normalizeMeasurementMethod(p.measurement_method, p.tipo),
+          tipo: phaseTypeFromMethod(normalizeMeasurementMethod(p.measurement_method, p.tipo)),
+          descripcion: baseActivities[0]?.descripcion || p.descripcion || '',
+          team_result_mode: p.team_result_mode || 'sum_two',
+          start_at: toDateInput(p.start_at),
+          end_at: toDateInput(p.end_at),
+          activities: baseActivities,
+          part_b_enabled: baseActivities.length > 1,
+          part_b_descripcion: secondBaseActivity?.descripcion || '',
+          part_b_measurement_method: secondBaseActivity?.measurement_method || 'unidades',
+          time_cap: baseActivities[0]?.time_cap ? String(Math.round(Number(baseActivities[0].time_cap) / 60)) : '',
+          part_b_time_cap: secondBaseActivity?.time_cap ? String(Math.round(Number(secondBaseActivity.time_cap) / 60)) : '',
+          catOverrides: categoryOverrides,
+        }
+      }))
     }).catch(() => {
       setMsg({ type: 'error', text: 'No se pudo cargar la configuracion actual' })
     })
@@ -2608,6 +2691,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
     const cleanCats = cats
       .map(c => ({
+        id: c.id,
         nombre: String(c.nombre || '').trim(),
         descripcion: String(c.descripcion || '').trim(),
         modality: c.modality === 'teams' ? 'teams' : 'individual',
@@ -2750,15 +2834,31 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
       try {
         const existingCats = isEdit ? (await api.get(`/competitions/${competitionId}/categories`)).data : []
-        await Promise.all(existingCats.map(c => api.delete(`/competitions/${competitionId}/categories/${c.id}`)))
+        const persistedCatsById = new Map(existingCats.map(cat => [String(cat.id), cat]))
+        const nextCategoryIdByLocalId = {}
+
+        const catsToDelete = existingCats.filter(cat => !cleanCats.some(localCat => String(localCat.id) === String(cat.id)))
+        for (const cat of catsToDelete) {
+          await api.delete(`/competitions/${competitionId}/categories/${cat.id}`)
+        }
+
         for (let i = 0; i < cleanCats.length; i += 1) {
-          await api.post(`/competitions/${competitionId}/categories`, {
-            nombre: cleanCats[i].nombre,
-            descripcion: cleanCats[i].descripcion || null,
-            modality: cleanCats[i].modality,
-            enrollment_price: cleanCats[i].enrollment_price,
+          const localCat = cleanCats[i]
+          const payload = {
+            nombre: localCat.nombre,
+            descripcion: localCat.descripcion || null,
+            modality: localCat.modality,
+            enrollment_price: localCat.enrollment_price,
             orden: i,
-          })
+          }
+          if (persistedCatsById.has(String(localCat.id))) {
+            const persisted = persistedCatsById.get(String(localCat.id))
+            await api.put(`/competitions/${competitionId}/categories/${persisted.id}`, payload)
+            nextCategoryIdByLocalId[String(localCat.id)] = persisted.id
+          } else {
+            const { data: createdCat } = await api.post(`/competitions/${competitionId}/categories`, payload)
+            nextCategoryIdByLocalId[String(localCat.id)] = createdCat.id
+          }
         }
 
         const existingPhases = isEdit ? (await api.get(`/competitions/${competitionId}/phases`)).data : []
@@ -2770,13 +2870,22 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         }
         for (let i = 0; i < cleanPhases.length; i += 1) {
           const phase = cleanPhases[i]
+          const remappedCatOverrides = Object.fromEntries(
+            Object.entries(phase.catOverrides || {}).map(([catId, override]) => [
+              String(nextCategoryIdByLocalId[String(catId)] || catId),
+              override,
+            ])
+          )
           const phasePayload = {
+            ...buildPhasePayloadWithCategoryOverrides(
+              { ...phase, catOverrides: remappedCatOverrides },
+              cleanCats.map(cat => ({ ...cat, id: nextCategoryIdByLocalId[String(cat.id)] || cat.id })),
+              i
+            ),
             nombre: phase.nombre,
             modality: phase.modality,
             block_name: phase.block_name,
             block_order: Number(phase.block_order || i),
-            measurement_method: normalizeMeasurementMethod(phase.measurement_method, phaseTypeFromMethod(phase.measurement_method)),
-            descripcion: phase.descripcion || null,
             team_result_mode: phase.team_result_mode || 'sum_two',
             start_at: dateInputToStartOfDay(phase.start_at),
             end_at: dateInputToEndOfDay(phase.end_at),
@@ -3318,7 +3427,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     fontSize: 12,
                     fontWeight: 700,
                     overflow: 'hidden',
-                    aspectRatio: asset.key === 'profile' ? '1 / 1' : '16 / 9',
+                    aspectRatio: asset.key === 'profile' ? '1 / 1' : '4 / 5',
                   }}>
                     {!currentPreview ? 'Sin imagen' : null}
                   </div>

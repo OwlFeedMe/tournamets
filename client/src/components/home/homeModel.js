@@ -167,6 +167,15 @@ export function buildCommandItems(competitions) {
 export function mapCompetitionViewModel(competition, index) {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+  const enrollmentStartLabel = formatDate(competition.enrollment_start) || 'Por confirmar'
+  const competitionDateLabel = competition.competition_start || competition.competition_end
+    ? scheduleSummary({
+      competition_start: competition.competition_start,
+      competition_end: competition.competition_end,
+      enrollment_start: null,
+      enrollment_end: null,
+    })
+    : 'Por confirmar'
   return {
     id: competition.id,
     raw: competition,
@@ -177,6 +186,8 @@ export function mapCompetitionViewModel(competition, index) {
     bannerUrl,
     bannerStyle: cardVisualStyle(competition, index, bannerUrl),
     profileImageUrl,
+    enrollmentStartLabel,
+    competitionDateLabel,
     initials: (competition.nombre || 'FR').slice(0, 2).toUpperCase(),
   }
 }
