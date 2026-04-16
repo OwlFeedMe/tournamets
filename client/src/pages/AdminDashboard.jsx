@@ -2441,18 +2441,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     registration: false,
   })
   const [showPhonePrefixDropdown, setShowPhonePrefixDropdown] = useState(false)
-  const [linkCopied, setLinkCopied] = useState(false)
-  const handleCopyLink = () => {
-    const slug = competition?.slug
-    if (!slug) return
-    const url = `${window.location.origin}/competitions/${slug}`
-    navigator.clipboard.writeText(url).then(() => {
-      setLinkCopied(true)
-      setTimeout(() => setLinkCopied(false), 2000)
-    }).catch(() => {
-      setMsg({ type: 'error', text: 'No se pudo copiar el link' })
-    })
-  }
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState(null)
   const [showAddQuestionModal, setShowAddQuestionModal] = useState(false)
@@ -3322,41 +3310,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           </div>
 
-          {isEdit && competition?.slug && (
-            <div style={{ marginTop: 4 }}>
-              <label style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginBottom: 6, display: 'block' }}>Link para compartir</label>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input
-                  readOnly
-                  value={`${window.location.origin}/competitions/${competition.slug}`}
-                  style={{ flex: 1, background: 'rgba(13,15,18,0.6)', color: '#AAB2C0', cursor: 'default', fontSize: 13 }}
-                  onFocus={e => e.target.select()}
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyLink}
-                  style={{
-                    padding: '0 16px',
-                    height: 38,
-                    borderRadius: 8,
-                    border: '1px solid #252A33',
-                    background: linkCopied ? 'rgba(94,234,212,0.12)' : 'rgba(255,255,255,0.06)',
-                    color: linkCopied ? '#5EEAD4' : '#F5F7FA',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  {linkCopied ? '¡Copiado!' : 'Copiar link'}
-                </button>
-              </div>
-              <div style={{ fontSize: 11, color: '#6B7280', marginTop: 5 }}>
-                Comparte este link en tus redes sociales para que los participantes se inscriban
-              </div>
-            </div>
-          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group">
@@ -7416,6 +7369,7 @@ function CompetitionsTab() {
   const [competitionMeta, setCompetitionMeta] = useState({})
   const [selectedCompetition, setSelectedCompetition] = useState(null)
   const [selectedTab, setSelectedTab] = useState('setup')
+  const [linkCopied, setLinkCopied] = useState(false)
   const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
   const [participantDetail, setParticipantDetail] = useState(null)
@@ -7967,6 +7921,40 @@ function CompetitionsTab() {
                     {selectedCompetition.activa ? 'Despublicar' : 'Publicar competencia'}
                   </button>
                 </div>
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+
+                {/* Link para compartir */}
+                {selectedCompetition?.slug && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>Link para compartir</div>
+                      <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Comparte este link en tus redes sociales para que los participantes se inscriban.</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(isMobile ? { width: '100%' } : {}) }}>
+                      <input
+                        readOnly
+                        value={`${window.location.origin}/competitions/${selectedCompetition.slug}`}
+                        style={{ flex: 1, background: 'rgba(13,15,18,0.6)', color: '#AAB2C0', cursor: 'default', fontSize: 12, minWidth: 0 }}
+                        onFocus={e => e.target.select()}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = `${window.location.origin}/competitions/${selectedCompetition.slug}`
+                          navigator.clipboard.writeText(url).then(() => {
+                            setLinkCopied(true)
+                            setTimeout(() => setLinkCopied(false), 2000)
+                          }).catch(() => {})
+                        }}
+                        className="btn-secondary btn-sm"
+                        style={{ flexShrink: 0, background: linkCopied ? 'rgba(94,234,212,0.12)' : undefined, color: linkCopied ? '#5EEAD4' : undefined, border: linkCopied ? '1px solid rgba(94,234,212,0.3)' : undefined }}
+                      >
+                        {linkCopied ? '¡Copiado!' : 'Copiar link'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
 
