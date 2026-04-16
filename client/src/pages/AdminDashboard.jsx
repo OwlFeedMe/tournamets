@@ -2656,7 +2656,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             .filter(item => item.title || item.body),
         },
       },
-      enrollment_intro_text: form.enrollment_intro_text.trim() || null,
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
       platform_fee_rate: Number(form.platform_fee_rate || 0.05),
       enrollment_questions: questions
@@ -3229,6 +3228,85 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           </div>
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
+            <div>
+              <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Imagenes</div>
+              <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5, marginTop: 4 }}>
+                Puedes subir foto del evento y un solo banner para toda la competencia.
+                {!isEdit ? ' En competencias nuevas, las imagenes se cargan al guardar.' : ''}
+              </div>
+            </div>
+            {[
+              { key: 'profile', label: 'Foto del evento' },
+              { key: 'banner', label: 'Banner' },
+            ].map((asset) => {
+              const savedPreview = resolveCompetitionAsset(competition, asset.key)
+              const currentPreview = assetPreviews[asset.key] || savedPreview
+              const pendingFile = assetFiles[asset.key]
+              return (
+                <div key={asset.key} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '160px 1fr', gap: 12, marginBottom: 0 }}>
+                  <div style={{
+                    width: '100%',
+                    minHeight: asset.key === 'profile' ? 140 : 100,
+                    borderRadius: asset.key === 'profile' ? 18 : 14,
+                    border: '1px solid #252A33',
+                    background: currentPreview ? `#0D0F12 url("${currentPreview}") center/cover no-repeat` : 'rgba(13,15,18,0.72)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#7E8796',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    overflow: 'hidden',
+                    aspectRatio: asset.key === 'profile' ? '1 / 1' : '16 / 9',
+                  }}>
+                    {!currentPreview ? 'Sin imagen' : null}
+                  </div>
+                  <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+                    <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>{asset.label}</div>
+                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{COMPETITION_ASSET_RECOMMENDATIONS[asset.key]}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: '10px 14px',
+                          borderRadius: 12,
+                          border: '1px solid #252A33',
+                          background: 'rgba(13,15,18,0.72)',
+                          color: '#F5F7FA',
+                          fontSize: 13,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Seleccionar archivo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={e => setCompetitionAssetFile(asset.key, e.target.files?.[0] || null)}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      {(currentPreview || pendingFile) ? (
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          disabled={deletingAssetKey === asset.key}
+                          onClick={() => deleteCompetitionAsset(asset.key)}
+                        >
+                          {deletingAssetKey === asset.key ? 'Eliminando...' : 'Eliminar imagen'}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div style={{ color: pendingFile ? '#F5F7FA' : 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
+                      {pendingFile?.name || (currentPreview ? 'Imagen cargada.' : 'Ningun archivo seleccionado.')}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
             <button type="button" onClick={() => setExtraExpanded('basics')} style={extraToggleStyle}>
               <span>Configuracion extra</span>
               <span style={{ color: '#AAB2C0', fontSize: 12 }}>{expandedExtras.basics ? 'Ocultar' : 'Mostrar'}</span>
@@ -3358,81 +3436,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 })}
               </div>
             </div>
-            <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 800 }}>Imagenes</div>
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.5 }}>
-              Puedes subir foto de perfil y un solo banner para toda la competencia.
-              {!isEdit ? ' En competencias nuevas, las imagenes se cargan al guardar.' : ''}
-            </div>
-            {[
-              { key: 'profile', label: 'Foto de perfil' },
-              { key: 'banner', label: 'Banner' },
-            ].map((asset) => {
-              const savedPreview = resolveCompetitionAsset(competition, asset.key)
-              const currentPreview = assetPreviews[asset.key] || savedPreview
-              const pendingFile = assetFiles[asset.key]
-              return (
-                <div key={asset.key} style={{ ...listItemStyle, gridTemplateColumns: isMobile ? '1fr' : '160px 1fr', gap: 12, marginBottom: 0 }}>
-                  <div style={{
-                    width: '100%',
-                    minHeight: asset.key === 'profile' ? 140 : 100,
-                    borderRadius: asset.key === 'profile' ? 18 : 14,
-                    border: '1px solid #252A33',
-                    background: currentPreview ? `#0D0F12 url("${currentPreview}") center/cover no-repeat` : 'rgba(13,15,18,0.72)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: '#7E8796',
-                    fontSize: 12,
-                    fontWeight: 700,
-                    overflow: 'hidden',
-                    aspectRatio: asset.key === 'profile' ? '1 / 1' : '16 / 9',
-                  }}>
-                    {!currentPreview ? 'Sin imagen' : null}
-                  </div>
-                  <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
-                    <div style={{ color: 'var(--oa-text)', fontSize: 14, fontWeight: 700 }}>{asset.label}</div>
-                    <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>{COMPETITION_ASSET_RECOMMENDATIONS[asset.key]}</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <label
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: '10px 14px',
-                          borderRadius: 12,
-                          border: '1px solid #252A33',
-                          background: 'rgba(13,15,18,0.72)',
-                          color: '#F5F7FA',
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        Seleccionar archivo
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={e => setCompetitionAssetFile(asset.key, e.target.files?.[0] || null)}
-                          style={{ display: 'none' }}
-                        />
-                      </label>
-                      {(currentPreview || pendingFile) ? (
-                        <button
-                          type="button"
-                          className="btn-danger btn-sm"
-                          disabled={deletingAssetKey === asset.key}
-                          onClick={() => deleteCompetitionAsset(asset.key)}
-                        >
-                          {deletingAssetKey === asset.key ? 'Eliminando...' : 'Eliminar imagen'}
-                        </button>
-                      ) : null}
-                    </div>
-                    <div style={{ color: pendingFile ? '#F5F7FA' : 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45 }}>
-                      {pendingFile?.name || (currentPreview ? 'Imagen cargada.' : 'Ningun archivo seleccionado.')}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
           </div>
           </div>
             ) : (
@@ -3616,21 +3619,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         <div style={sectionStyle}>
           <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Mensaje de confirmacion</h4>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Texto informativo</label>
-            <textarea
-              value={form.enrollment_intro_text}
-              onChange={e => setForm(f => ({ ...f, enrollment_intro_text: e.target.value }))}
-              rows={4}
-              placeholder="Ej: Revisa cada categoria, completa tus datos y sigue las instrucciones antes de confirmar tu inscripcion."
-            />
-          </div>
-        </div>
-
-        <div style={sectionStyle}>
-          <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Terminos y condiciones</h4>
             <div style={sectionHintStyle}>Opcional, pero recomendado si manejas reglas, imagen o reembolsos propios.</div>
           </div>
@@ -3645,20 +3633,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         </div>
 
-        <div style={sectionStyle}>
-          <div style={{ marginBottom: 14 }}>
-            <h4 style={sectionTitleStyle}>Pago Bold</h4>
-          </div>
-          <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
-            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Comision de plataforma</div>
-            <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
-              Se suma automaticamente un {Math.round((Number(form.platform_fee_rate || 0.05)) * 100)}% sobre el precio base de cada categoria.
-            </div>
-            <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.6 }}>
-              Organizador define <b style={{ color: '#F5F7FA' }}>X</b>, FinalRep cobra <b style={{ color: '#FFB36F' }}>Y</b> y el atleta paga <b style={{ color: '#8DF1E4' }}>Z</b>.
-            </div>
-          </div>
-        </div>
         </div>
         )}
 

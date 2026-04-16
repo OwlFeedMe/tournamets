@@ -68,6 +68,7 @@ function formatCop(value) {
 
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
 const BOLD_BUTTON_LIBRARY_ID = 'bold-payment-button-library'
+const ENROLLMENT_INTRO_COPY = 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'
 
 function ensureBoldButtonLibrary({ reload = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -512,7 +513,7 @@ export default function CompetitionEnrollmentPage() {
             </span>
             <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 'clamp(34px, 6vw, 60px)', lineHeight: 0.95 }}>Registro a {competition.nombre}</h1>
             <p style={{ margin: '14px 0 0', maxWidth: 720, color: '#D7DEE8', fontSize: isMobile ? 14 : 16, lineHeight: 1.7 }}>
-              {(competition.enrollment_intro_text || competition.descripcion || '').trim() || 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'}
+              {ENROLLMENT_INTRO_COPY}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#00C2A8" />{competition.lugar || 'Lugar por confirmar'}</span>
