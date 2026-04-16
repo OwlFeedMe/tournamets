@@ -17,7 +17,7 @@ def upgrade() -> None:
     op.execute(
         """
         ALTER TABLE competitions
-        ADD COLUMN slug VARCHAR
+        ADD COLUMN IF NOT EXISTS slug VARCHAR
         """
     )
     op.execute(
@@ -29,12 +29,10 @@ def upgrade() -> None:
     op.execute(
         """
         UPDATE competitions
-        SET slug = (
-            SELECT lower(
-                trim(
-                    both '-' from
-                    regexp_replace(nombre, '[^a-zA-Z0-9]+', '-', 'g')
-                )
+        SET slug = lower(
+            trim(
+                both '-' from
+                regexp_replace(nombre, '[^a-zA-Z0-9]+', '-', 'g')
             )
         )
         WHERE slug IS NULL
