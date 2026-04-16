@@ -7361,6 +7361,7 @@ function CompetitionsTab() {
   const [competitions, setCompetitions] = useState([])
   const [msg, setMsg] = useState(null)
   const [successToast, setSuccessToast] = useState(null)
+  const [showConfirmPublish, setShowConfirmPublish] = useState(false)
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
@@ -7787,7 +7788,7 @@ function CompetitionsTab() {
                         ? { background: 'rgba(214,217,224,0.14)', color: '#ff9a3d', border: '1px solid rgba(214,217,224,0.35)' }
                         : { background: 'rgba(170,178,192,0.12)', color: 'var(--oa-text-secondary)', border: '1px solid rgba(170,178,192,0.25)' }}
                     >
-                      {selectedCompetition.activa ? 'Activa' : 'Inactiva'}
+                      {selectedCompetition.activa ? 'Publicada' : 'Borrador'}
                     </span>
                     <span style={{ color: '#AAB2C0', fontSize: 12 }}>
                       {currentEnrollCount} inscritos
@@ -7836,87 +7837,170 @@ function CompetitionsTab() {
           )}
 
           {selectedTab === 'launch' && (
-            <div className="card" style={{ display: 'grid', gap: 14 }}>
-              <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <h4 style={{ margin: 0, fontSize: 16 }}>Lanzamiento</h4>
-                  <div style={{ color: launchProgress === 100 ? '#5EEAD4' : '#FFB36F', fontWeight: 800, fontSize: 18 }}>{launchProgress}%</div>
-                </div>
-                <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                  <div style={{ width: `${launchProgress}%`, height: '100%', background: launchProgress === 100 ? '#5EEAD4' : 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)' }} />
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {launchChecklist.map(item => (
-                    <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(94,234,212,0.12)' : 'rgba(214,217,224,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(94,234,212,0.24)' : 'rgba(214,217,224,0.24)'}` }}>
-                      {item.done ? 'Listo' : 'Falta'}: {item.label}
-                    </span>
-                  ))}
-                </div>
-                {launchMissing.length ? (
-                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>
-                    Falta: {launchMissing.join(', ')}
+            <div className="card" style={{ display: 'grid', gap: 20 }}>
+
+              {/* Estado general */}
+              {launchProgress === 100 ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(0,194,168,0.08)', border: '1px solid rgba(0,194,168,0.22)', borderRadius: 14, padding: '14px 18px' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,194,168,0.15)', border: '2px solid #00C2A8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                   </div>
-                ) : (
-                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>
-                    La competencia ya esta lista para publicar.
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#8FF3E7' }}>¡Todo listo! Has completado todos los pasos previos.</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>La competencia está lista para publicar cuando quieras.</div>
                   </div>
-                )}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h4 style={{ margin: 0, fontSize: 15 }}>Progreso de configuración</h4>
+                    <span style={{ color: '#FFB36F', fontWeight: 800, fontSize: 16 }}>{launchProgress}%</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                    <div style={{ width: `${launchProgress}%`, height: '100%', background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)', transition: 'width 0.4s ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {launchChecklist.map(item => (
+                      <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(0,194,168,0.12)' : 'rgba(255,107,0,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(0,194,168,0.24)' : 'rgba(255,107,0,0.24)'}` }}>
+                        {item.done ? '✓' : '○'} {item.label}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ color: '#FFB36F', fontSize: 13 }}>
+                    Falta completar: {launchMissing.join(', ')}
+                  </div>
+                </div>
+              )}
+
+              {/* Acciones */}
+              <div style={{ display: 'grid', gap: 12 }}>
+
+                {/* Vista previa */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>Vista previa</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Revisa textos, imágenes y estados antes de publicar.</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    style={{ flexShrink: 0, ...(isMobile ? { width: '100%' } : {}) }}
+                    onClick={() => {
+                      if (!selectedCompetition?.id || typeof window === 'undefined') return
+                      window.open(`/competitions/${selectedCompetition.id}`, '_blank', 'noopener,noreferrer')
+                    }}
+                  >
+                    Abrir vista previa
+                  </button>
+                </div>
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+
+                {/* Publicar / Despublicar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>
+                      {selectedCompetition.activa ? 'Despublicar competencia' : 'Publicar competencia'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
+                      {selectedCompetition.activa
+                        ? 'La competencia será retirada del listado público y las inscripciones se cerrarán.'
+                        : 'La competencia será visible para todos los usuarios de la plataforma.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={selectedCompetition.activa ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
+                    style={{ flexShrink: 0, ...(isMobile ? { width: '100%' } : {}), ...(launchProgress < 100 && !selectedCompetition.activa ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                    disabled={launchProgress < 100 && !selectedCompetition.activa}
+                    title={launchProgress < 100 && !selectedCompetition.activa ? `Completa antes: ${launchMissing.join(', ')}` : undefined}
+                    onClick={() => setShowConfirmPublish(true)}
+                  >
+                    {selectedCompetition.activa ? 'Despublicar' : 'Publicar competencia'}
+                  </button>
+                </div>
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+
+                {/* Inscripciones */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: selectedCompetition.activa ? '#D7DEE8' : '#666C78' }}>
+                      {selectedCompetition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
+                      {selectedCompetition.activa
+                        ? (selectedCompetition.enrollment_open ? 'Los participantes ya no podrán registrarse.' : 'Permite que los participantes se registren.')
+                        : 'Debes publicar la competencia primero para habilitar las inscripciones.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-secondary btn-sm"
+                    style={{ flexShrink: 0, ...(isMobile ? { width: '100%' } : {}), ...(!selectedCompetition.activa ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+                    disabled={!selectedCompetition.activa}
+                    title={!selectedCompetition.activa ? 'Debes publicar la competencia primero para habilitar las inscripciones' : undefined}
+                    onClick={async () => {
+                      try {
+                        const { data } = await api.put(`/competitions/${selectedCompetition.id}`, { enrollment_open: selectedCompetition.enrollment_open ? 0 : 1 })
+                        setSelectedCompetition(prev => ({ ...prev, ...data }))
+                        load()
+                      } catch (err) {
+                        setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar inscripciones' })
+                      }
+                    }}
+                  >
+                    {selectedCompetition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}
+                  </button>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn-secondary btn-sm"
-                  style={isMobile ? { width: '100%' } : undefined}
-                  onClick={() => {
-                    if (!selectedCompetition?.id || typeof window === 'undefined') return
-                    window.open(`/competitions/${selectedCompetition.id}`, '_blank', 'noopener,noreferrer')
-                  }}
-                >
-                  Vista previa
-                </button>
-                <button
-                  className="btn-primary btn-sm"
-                  style={isMobile ? { width: '100%' } : undefined}
-                  disabled={launchProgress < 100}
-                  onClick={async () => {
-                    try {
-                      const nextActive = selectedCompetition.activa ? 0 : 1
-                      const payload = nextActive
-                        ? { activa: 1 }
-                        : { activa: 0, enrollment_open: 0 }
-                      const { data } = await api.put(`/competitions/${selectedCompetition.id}`, payload)
-                      setSelectedCompetition(prev => ({ ...prev, ...data }))
-                      load()
-                    } catch (err) {
-                      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
-                    }
-                  }}
-                >
-                  {selectedCompetition.activa ? 'Quitar publicacion' : 'Publicar competencia'}
-                </button>
-                <button
-                  className="btn-secondary btn-sm"
-                  style={isMobile ? { width: '100%' } : undefined}
-                  disabled={!selectedCompetition.activa}
-                  onClick={async () => {
-                    try {
-                      const { data } = await api.put(`/competitions/${selectedCompetition.id}`, { enrollment_open: selectedCompetition.enrollment_open ? 0 : 1 })
-                      setSelectedCompetition(prev => ({ ...prev, ...data }))
-                      load()
-                    } catch (err) {
-                      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar inscripciones' })
-                    }
-                  }}
-                >
-                  {selectedCompetition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}
-                </button>
-              </div>
-              <div style={{ color: '#AAB2C0', fontSize: 13 }}>
-                Vista previa abre la pagina del evento para revisar textos, imagenes y estados antes de publicar.
-              </div>
-              {!selectedCompetition.activa && (
-                <div style={{ color: '#AAB2C0', fontSize: 13 }}>
-                  Publica la competencia para habilitar inscripciones.
+
+              {/* Modal confirmación publicar */}
+              {showConfirmPublish && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowConfirmPublish(false)}>
+                  <div style={{ background: '#0D1117', border: '1px solid #252A33', borderRadius: 18, padding: 28, maxWidth: 420, width: '100%', display: 'grid', gap: 18 }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+                      <div style={{ width: 52, height: 52, borderRadius: '50%', background: selectedCompetition.activa ? 'rgba(255,107,0,0.12)' : 'rgba(255,107,0,0.12)', border: `2px solid #FF6B00`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {selectedCompetition.activa
+                            ? <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>
+                            : <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>
+                          }
+                        </svg>
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: 16, color: '#F5F7FA' }}>
+                        {selectedCompetition.activa ? '¿Despublicar competencia?' : '¿Publicar competencia?'}
+                      </div>
+                      <div style={{ fontSize: 13, color: '#AAB2C0', lineHeight: 1.6 }}>
+                        {selectedCompetition.activa
+                          ? 'La competencia dejará de ser visible para el público y las inscripciones se cerrarán automáticamente.'
+                          : '¿Estás seguro de que deseas hacer pública esta competencia? Será visible para todos los usuarios de la plataforma.'}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => setShowConfirmPublish(false)}>Cancelar</button>
+                      <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        onClick={async () => {
+                          try {
+                            const nextActive = selectedCompetition.activa ? 0 : 1
+                            const payload = nextActive ? { activa: 1 } : { activa: 0, enrollment_open: 0 }
+                            const { data } = await api.put(`/competitions/${selectedCompetition.id}`, payload)
+                            setSelectedCompetition(prev => ({ ...prev, ...data }))
+                            setShowConfirmPublish(false)
+                            load()
+                            if (nextActive) setSuccessToast('¡Competencia publicada exitosamente!')
+                          } catch (err) {
+                            setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
+                            setShowConfirmPublish(false)
+                          }
+                        }}
+                      >
+                        {selectedCompetition.activa ? 'Sí, despublicar' : 'Sí, publicar'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

@@ -1,7 +1,7 @@
 export const COMPETITION_WORKSPACE_SECTIONS = [
   {
     id: 'setup',
-    label: 'Configuracion',
+    label: 'Configuración',
     shortLabel: 'Config',
     group: 'config',
     description: 'Base, registro, divisiones y pagos.',
@@ -25,8 +25,8 @@ export const COMPETITION_WORKSPACE_SECTIONS = [
   },
   {
     id: 'prep',
-    label: 'Preparacion',
-    shortLabel: 'Preparacion',
+    label: 'Preparación',
+    shortLabel: 'Preparación',
     group: 'operacion',
     description: 'Heats, cronograma y salida.',
     primaryAction: 'Preparar competencia',
