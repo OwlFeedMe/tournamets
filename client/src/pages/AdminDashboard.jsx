@@ -3466,22 +3466,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   enabled: !!form.team_enabled,
                   enabledText: 'Activa',
                   disabledText: 'Oculta',
-                  onClick: () => setForm(f => ({ ...f, team_enabled: f.team_enabled ? 0 : 1 })),
+                  onClick: () => setForm(f => ({ ...f, team_enabled: f.team_enabled ? 0 : 1, team_categories_enabled: f.team_enabled ? f.team_categories_enabled : 1 })),
                 })}
               </div>
               {form.team_enabled ? (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                  {renderToggleCard({
-                    label: 'Categorias de equipos',
-                    hint: 'Permite definir divisiones propias para equipos, separadas de las individuales.',
-                    enabled: !!form.team_categories_enabled,
-                    enabledText: 'Separadas',
-                    disabledText: 'Inferidas',
-                    onClick: () => setForm(f => ({ ...f, team_categories_enabled: f.team_categories_enabled ? 0 : 1 })),
-                  })}
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tamano de equipo</label>
-                    <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: Math.max(1, Number(e.target.value || 1)) }))} />
+                    <label>Tamaño de equipo</label>
+                    <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: e.target.value === '' ? '' : Math.max(1, Number(e.target.value)) }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Regla de armado</label>
@@ -3551,17 +3543,17 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Cierre de inscripciones</label>
-              <input type="date" value={form.enrollment_end} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
+              <input type="date" value={form.enrollment_end} min={form.enrollment_start || undefined} onChange={e => setForm(f => ({ ...f, enrollment_end: e.target.value }))} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Inicio de competencia</label>
-              <input type="date" value={form.competition_start} onChange={e => setForm(f => ({ ...f, competition_start: e.target.value }))} />
+              <input type="date" value={form.competition_start} onChange={e => setForm(f => ({ ...f, competition_start: e.target.value, competition_end: f.competition_end && e.target.value > f.competition_end ? '' : f.competition_end }))} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label>Fin de competencia</label>
-              <input type="date" value={form.competition_end} onChange={e => setForm(f => ({ ...f, competition_end: e.target.value }))} />
+              <input type="date" value={form.competition_end} min={form.competition_start || undefined} onChange={e => setForm(f => ({ ...f, competition_end: e.target.value }))} />
             </div>
           </div>
         </div>
