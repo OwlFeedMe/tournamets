@@ -7706,9 +7706,11 @@ function CompetitionsTab() {
                 onClose={() => {}}
                 onSaved={() => {
                   setSuccessToast('Datos guardados correctamente')
-                  load()
-                  refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
-                  api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                  setTimeout(() => {
+                    load()
+                    refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
+                    api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                  }, 300)
                 }}
               />
             </div>
@@ -7934,10 +7936,12 @@ function CompetitionsTab() {
             onClose={() => setEditor(null)}
             onSaved={() => {
               setSuccessToast('Datos guardados correctamente')
-              load()
-              if (selectedCompetition?.id === editor.competition?.id) {
-                api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
-              }
+              setTimeout(() => {
+                load()
+                if (selectedCompetition?.id === editor.competition?.id) {
+                  api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
+                }
+              }, 300)
             }}
           />
         )
