@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -18,6 +19,31 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _build_team_category_from_members(
+    team: Team,
+    members: list[dict],
+    explicit_category: CompetitionCategory | None,
+) -> dict | None:
+    if explicit_category and explicit_category.competition_id == team.competition_id:
+        return {
+            "id": explicit_category.id,
+            "nombre": explicit_category.nombre,
+            "descripcion": explicit_category.descripcion,
+            "modality": explicit_category.modality,
+            "orden": explicit_category.orden,
+        }
+    member_cats = sorted({
+        str(m.get("categoria") or "").strip()
+        for m in members
+        if (m.get("categoria") or "").strip()
+    })
+    if len(member_cats) == 1:
+        return {"id": None, "nombre": member_cats[0], "descripcion": None, "modality": "teams", "orden": 0}
+    if len(member_cats) > 1:
+        return {"id": None, "nombre": "Mixta", "descripcion": None, "modality": "teams", "orden": 0}
+    return None
+
+
 def _with_members(session: Session, team: Team) -> dict:
     member_rows = session.exec(
         select(Participant, CompetitionParticipant.categoria)
@@ -29,11 +55,54 @@ def _with_members(session: Session, team: Team) -> dict:
         )
         .where(TeamMember.team_id == team.id)
     ).all()
-    members = []
-    member_ids: list[int] = []
-    for participant, category in member_rows:
-        member_ids.append(int(participant.id))
-        members.append({
+    members = [
+        {
+            "id": participant.id,
+            "nombre": participant.nombre,
+            "apellido": participant.apellido,
+            "box": participant.box,
+            "categoria": category or participant.categoria,
+            "is_captain": participant.id == team.captain_id,
+        }
+        for participant, category in member_rows
+    ]
+    explicit = (
+        session.get(CompetitionCategory, team.team_category_id)
+        if team.team_category_id else None
+    )
+    return {
+        **team.model_dump(),
+        "team_category": _build_team_category_from_members(team, members, explicit),
+        "team_category_id": team.team_category_id,
+        "members": members,
+    }
+
+
+def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
+    """Serializa multiples equipos con 2 queries fijas (members + categories)."""
+    if not teams:
+        return []
+    team_ids = [int(t.id) for t in teams]
+    team_by_id = {int(t.id): t for t in teams}
+
+    member_rows = session.exec(
+        select(TeamMember.team_id, Participant, CompetitionParticipant.categoria)
+        .join(Team, Team.id == TeamMember.team_id)
+        .join(Participant, Participant.id == TeamMember.participant_id)
+        .outerjoin(
+            CompetitionParticipant,
+            (CompetitionParticipant.participant_id == Participant.id)
+            & (CompetitionParticipant.competition_id == Team.competition_id),
+        )
+        .where(TeamMember.team_id.in_(team_ids))
+    ).all()
+
+    members_by_team: dict[int, list[dict]] = defaultdict(list)
+    for team_id, participant, category in member_rows:
+        team = team_by_id.get(int(team_id))
+        if team is None:
+            continue
+        members_by_team[int(team_id)].append({
             "id": participant.id,
             "nombre": participant.nombre,
             "apellido": participant.apellido,
@@ -41,16 +110,26 @@ def _with_members(session: Session, team: Team) -> dict:
             "categoria": category or participant.categoria,
             "is_captain": participant.id == team.captain_id,
         })
-    team_category = _team_category_payload(session, team, member_ids)
-    return {
-        **team.model_dump(),
-        "team_category": team_category,
-        "team_category_id": team.team_category_id,
-        "members": [
-            member
-            for member in members
-        ],
-    }
+
+    category_ids = {int(t.team_category_id) for t in teams if t.team_category_id}
+    categories_map: dict[int, CompetitionCategory] = {}
+    if category_ids:
+        category_rows = session.exec(
+            select(CompetitionCategory).where(CompetitionCategory.id.in_(category_ids))
+        ).all()
+        categories_map = {int(c.id): c for c in category_rows}
+
+    result: list[dict] = []
+    for t in teams:
+        members = members_by_team.get(int(t.id), [])
+        explicit = categories_map.get(int(t.team_category_id)) if t.team_category_id else None
+        result.append({
+            **t.model_dump(),
+            "team_category": _build_team_category_from_members(t, members, explicit),
+            "team_category_id": t.team_category_id,
+            "members": members,
+        })
+    return result
 
 
 def _clean_name(value: str | None) -> str:
@@ -77,11 +156,6 @@ def _competition_team_membership_rule(session: Session, competition_id: int) -> 
     return value if value in {"free", "same_category"} else "free"
 
 
-def _competition_team_categories_enabled(session: Session, competition_id: int) -> bool:
-    competition = session.get(Competition, competition_id)
-    return bool(competition and getattr(competition, "team_categories_enabled", 1))
-
-
 def _team_category(session: Session, team_category_id: int | None) -> CompetitionCategory | None:
     if team_category_id is None:
         return None
@@ -100,36 +174,6 @@ def _member_category_label(session: Session, competition_id: int, participant_id
 
 def _team_member_categories(session: Session, competition_id: int, member_ids: list[int]) -> list[str]:
     return [_member_category_label(session, competition_id, pid) for pid in member_ids]
-
-
-def _team_category_payload(session: Session, team: Team, member_ids: list[int]) -> dict | None:
-    category = _team_category(session, getattr(team, "team_category_id", None))
-    if category:
-        return {
-            "id": category.id,
-            "nombre": category.nombre,
-            "descripcion": category.descripcion,
-            "modality": category.modality,
-            "orden": category.orden,
-        }
-    member_categories = sorted({cat for cat in _team_member_categories(session, team.competition_id, member_ids) if cat})
-    if len(member_categories) == 1:
-        return {
-            "id": None,
-            "nombre": member_categories[0],
-            "descripcion": None,
-            "modality": "teams",
-            "orden": 0,
-        }
-    if len(member_categories) > 1:
-        return {
-            "id": None,
-            "nombre": "Mixta",
-            "descripcion": None,
-            "modality": "teams",
-            "orden": 0,
-        }
-    return None
 
 
 def _validate_team_membership(
@@ -213,13 +257,26 @@ def my_invitations(session: Session = Depends(get_session), user=Depends(require
             TeamInvitation.status == "pending",
         )
     ).all()
+    if not invs:
+        return []
+    team_ids = [int(inv.team_id) for inv in invs if inv.team_id is not None]
+    teams = session.exec(select(Team).where(Team.id.in_(team_ids))).all() if team_ids else []
+    teams_by_id = {int(t.id): t for t in teams}
+    team_payloads = {int(p["id"]): p for p in _serialize_teams_bulk(session, teams)}
+    captain_ids = {int(t.captain_id) for t in teams if t.captain_id}
+    captains_by_id: dict[int, Participant] = {}
+    if captain_ids:
+        captain_rows = session.exec(
+            select(Participant).where(Participant.id.in_(captain_ids))
+        ).all()
+        captains_by_id = {int(c.id): c for c in captain_rows}
     result = []
     for inv in invs:
-        team = session.get(Team, inv.team_id)
-        captain = session.get(Participant, team.captain_id) if team and team.captain_id else None
+        team = teams_by_id.get(int(inv.team_id)) if inv.team_id is not None else None
+        captain = captains_by_id.get(int(team.captain_id)) if team and team.captain_id else None
         result.append({
             **inv.model_dump(),
-            "team": _with_members(session, team) if team else None,
+            "team": team_payloads.get(int(team.id)) if team else None,
             "captain_nombre": f"{captain.nombre} {captain.apellido}" if captain else None,
         })
     return result
@@ -314,7 +371,7 @@ def list_teams(
         if is_organizer_user(user):
             query = query.where(Team.competition_id.in_(owned_ids))
     teams = session.exec(query).all()
-    return [_with_members(session, t) for t in teams]
+    return _serialize_teams_bulk(session, teams)
 
 
 @router.get("/{team_id}")
@@ -526,7 +583,7 @@ def get_team_invitations(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    team = _require_captain(team_id, user, session)
+    _require_captain(team_id, user, session)
     invs = session.exec(
         select(TeamInvitation).where(
             TeamInvitation.team_id == team_id,

@@ -7,43 +7,46 @@ from constants import EstadoFase
 from models import CompetitionPhase
 
 
-def _count_expected_participants(session: Session, competition_id: int) -> int:
-    return int(session.execute(text("""
-        SELECT COUNT(*)::int
-        FROM competition_participants cp
-        JOIN participants p ON p.id = cp.participant_id
-        WHERE cp.competition_id = :cid
-          AND cp.estado = 'confirmado'
-    """), {"cid": competition_id}).scalar() or 0)
+def _fetch_expected_counts(session: Session, competition_id: int) -> tuple[int, int]:
+    """Una query: participantes confirmados + teams registrados."""
+    row = session.execute(text("""
+        SELECT
+            (
+                SELECT COUNT(*)::int
+                FROM competition_participants cp
+                WHERE cp.competition_id = :cid
+                  AND cp.estado = 'confirmado'
+            ) AS expected_participants,
+            (
+                SELECT COUNT(*)::int
+                FROM teams t
+                WHERE t.competition_id = :cid
+            ) AS expected_teams
+    """), {"cid": competition_id}).mappings().one()
+    return int(row["expected_participants"] or 0), int(row["expected_teams"] or 0)
 
 
-def _count_expected_teams(session: Session, competition_id: int) -> int:
-    return int(session.execute(text("""
-        SELECT COUNT(*)::int
-        FROM teams t
-        WHERE t.competition_id = :cid
-    """), {"cid": competition_id}).scalar() or 0)
-
-
-def _count_loaded_participants_for_phase(session: Session, competition_id: int, phase_id: int) -> int:
-    return int(session.execute(text("""
-        SELECT COUNT(DISTINCT r.participant_id)::int
-        FROM results r
-        WHERE r.competition_id = :cid
-          AND r.phase_id = :pid
-          AND r.participant_id IS NOT NULL
-    """), {"cid": competition_id, "pid": phase_id}).scalar() or 0)
-
-
-def _count_loaded_teams_for_phase(session: Session, competition_id: int, phase_id: int) -> int:
-    return int(session.execute(text("""
-        SELECT COUNT(DISTINCT r.team_id)::int
-        FROM results r
-        WHERE r.competition_id = :cid
-          AND r.phase_id = :pid
-          AND r.team_id IS NOT NULL
-          AND r.participant_id IS NULL
-    """), {"cid": competition_id, "pid": phase_id}).scalar() or 0)
+def _fetch_loaded_counts_by_phase(session: Session, competition_id: int) -> dict[int, dict[str, int]]:
+    """Una query GROUP BY phase_id. Retorna dict {phase_id: {'participants': N, 'teams': M}}."""
+    rows = session.execute(text("""
+        SELECT
+            phase_id,
+            COUNT(DISTINCT participant_id)
+                FILTER (WHERE participant_id IS NOT NULL)::int AS loaded_participants,
+            COUNT(DISTINCT team_id)
+                FILTER (WHERE team_id IS NOT NULL AND participant_id IS NULL)::int AS loaded_teams
+        FROM results
+        WHERE competition_id = :cid
+          AND phase_id IS NOT NULL
+        GROUP BY phase_id
+    """), {"cid": competition_id}).mappings().all()
+    return {
+        int(r["phase_id"]): {
+            "participants": int(r["loaded_participants"] or 0),
+            "teams": int(r["loaded_teams"] or 0),
+        }
+        for r in rows
+    }
 
 
 def _status_from_counts(expected: int, loaded: int) -> str:
@@ -63,18 +66,17 @@ def compute_phase_status_map(session: Session, competition_id: int) -> dict[int,
     if not phases:
         return {}
 
-    expected_participants = _count_expected_participants(session, competition_id)
-    expected_teams = _count_expected_teams(session, competition_id)
+    expected_participants, expected_teams = _fetch_expected_counts(session, competition_id)
+    loaded_by_phase = _fetch_loaded_counts_by_phase(session, competition_id)
 
     out: dict[int, str] = {}
     for phase in phases:
         mode = (getattr(phase, "team_result_mode", None) or "sum_two").strip().lower()
+        counts = loaded_by_phase.get(int(phase.id), {"participants": 0, "teams": 0})
         if mode == "total":
-            loaded = _count_loaded_teams_for_phase(session, competition_id, int(phase.id))
-            out[int(phase.id)] = _status_from_counts(expected_teams, loaded)
+            out[int(phase.id)] = _status_from_counts(expected_teams, counts["teams"])
         else:
-            loaded = _count_loaded_participants_for_phase(session, competition_id, int(phase.id))
-            out[int(phase.id)] = _status_from_counts(expected_participants, loaded)
+            out[int(phase.id)] = _status_from_counts(expected_participants, counts["participants"])
     return out
 
 

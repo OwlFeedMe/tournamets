@@ -2,7 +2,7 @@ from datetime import datetime, date
 from typing import Optional, List
 
 from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field
 
 from constants import (
     EstadoParticipante, EstadoInscripcion, EstadoFase,

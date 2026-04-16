@@ -1,11 +1,10 @@
 import os
-import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from database import init_db
+from database import init_db, run_db_migrations
 from routers import auth, participants, competitions, results, leaderboard, teams, enrollments, categories_phases, schedule, finance, organizer_applications, config
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
@@ -43,7 +42,8 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 @app.on_event("startup")
 def startup():
-    threading.Thread(target=init_db, daemon=True).start()
+    run_db_migrations()
+    init_db()
 
 
 @app.get("/")

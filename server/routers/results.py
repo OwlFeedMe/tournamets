@@ -1,5 +1,4 @@
 ﻿from typing import Optional
-import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
@@ -55,43 +54,6 @@ def _phase_lower_is_better(phase: CompetitionPhase | None, comp: Competition | N
             winner_rule = _default_winner_rule_for_type(phase_type)
         return winner_rule == "lower_wins"
     return bool(comp and getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
-
-
-def _parse_scoring_rules(raw: str | None) -> list[dict]:
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    rows = []
-    for r in parsed:
-        try:
-            min_pos = int(r.get("min_pos"))
-            max_raw = r.get("max_pos")
-            max_pos = None if max_raw in (None, "") else int(max_raw)
-            points = int(r.get("points"))
-            if min_pos <= 0:
-                continue
-            rows.append({"min_pos": min_pos, "max_pos": max_pos, "points": points})
-        except Exception:
-            continue
-    rows.sort(key=lambda x: x["min_pos"])
-    return rows
-
-
-def _points_from_position_rules(position: int, rules: list[dict]) -> int | None:
-    for r in rules:
-        min_pos = r["min_pos"]
-        max_pos = r["max_pos"]
-        if max_pos is None:
-            if position >= min_pos:
-                return int(r["points"])
-        elif min_pos <= position <= max_pos:
-            return int(r["points"])
-    return None
 
 
 def _normalize_team_result_mode(raw: str | None) -> str:
@@ -336,41 +298,48 @@ def list_results(
     if is_end_user(user):
         participant_id = get_effective_participant_id(user)
 
-    query = select(Result)
+    conditions: list[str] = []
+    params: dict = {}
+
     if competition_id:
         require_competition_access(session, competition_id, user)
-        query = query.where(Result.competition_id == competition_id)
+        conditions.append("r.competition_id = :cid")
+        params["cid"] = competition_id
     else:
-        owned_ids = get_owned_competition_ids(session, user)
         if is_organizer_user(user):
-            query = query.where(Result.competition_id.in_(owned_ids))
+            owned_ids = get_owned_competition_ids(session, user)
+            if not owned_ids:
+                return []
+            conditions.append("r.competition_id = ANY(:owned_ids)")
+            params["owned_ids"] = owned_ids
+
     if participant_id:
-        query = query.where(Result.participant_id == participant_id)
+        conditions.append("r.participant_id = :pid")
+        params["pid"] = participant_id
     if team_id:
-        query = query.where(Result.team_id == team_id)
+        conditions.append("r.team_id = :tid")
+        params["tid"] = team_id
 
-    query = query.order_by(Result.created_at.desc())
-    results = session.exec(query).all()
+    where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
-    enriched = []
-    for r in results:
-        row = session.execute(text("""
-            SELECT r.id, r.participant_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.puntos, r.posicion, r.created_at,
-                   p.nombre   AS nombre,
-                   p.apellido AS apellido,
-                   p.categoria AS categoria,
-                   c.nombre   AS competencia,
-                   t.nombre   AS equipo,
-                   ph.nombre  AS fase
-            FROM results r
-            LEFT JOIN participants       p  ON p.id  = r.participant_id
-            LEFT JOIN teams              t  ON t.id  = r.team_id
-            JOIN  competitions           c  ON c.id  = r.competition_id
-            LEFT JOIN competition_phases ph ON ph.id = r.phase_id
-            WHERE r.id = :rid
-        """), {"rid": r.id}).mappings().one()
-        enriched.append(dict(row))
-    return enriched
+    rows = session.execute(text(f"""
+        SELECT r.id, r.participant_id, r.team_id, r.competition_id, r.phase_id,
+               r.marca, r.puntos, r.posicion, r.created_at,
+               p.nombre   AS nombre,
+               p.apellido AS apellido,
+               p.categoria AS categoria,
+               c.nombre   AS competencia,
+               t.nombre   AS equipo,
+               ph.nombre  AS fase
+        FROM results r
+        LEFT JOIN participants       p  ON p.id  = r.participant_id
+        LEFT JOIN teams              t  ON t.id  = r.team_id
+        JOIN      competitions       c  ON c.id  = r.competition_id
+        LEFT JOIN competition_phases ph ON ph.id = r.phase_id
+        {where_clause}
+        ORDER BY r.created_at DESC
+    """), params).mappings().all()
+    return [dict(r) for r in rows]
 
 
 @router.post("", status_code=201)

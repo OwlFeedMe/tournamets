@@ -40,16 +40,6 @@ def get_owned_competition_ids(session: Session, user: dict | None) -> list[int]:
     return [int(row) for row in rows]
 
 
-def organizer_can_access_competition(session: Session, competition_id: int, user: dict | None) -> bool:
-    if not is_organizer_user(user):
-        return True
-    app_user_id = get_app_user_id(user)
-    if app_user_id is None:
-        return False
-    competition = session.get(Competition, competition_id)
-    return bool(competition and int(competition.organizer_user_id or 0) == app_user_id)
-
-
 def require_competition_access(session: Session, competition_id: int, user: dict | None) -> Competition:
     competition = session.get(Competition, competition_id)
     if not competition:

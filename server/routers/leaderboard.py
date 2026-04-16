@@ -54,117 +54,263 @@ def _rank_by_category(rows, *, lower_is_better: bool = False) -> dict:
 
 
 def _competition_has_categories(session: Session, competition_id: int) -> bool:
-    rows = session.execute(text("""
-        SELECT categoria
+    row = session.execute(text("""
+        SELECT 1
         FROM competition_participants
         WHERE competition_id = :cid
-    """), {"cid": competition_id}).mappings().all()
-    return any((r.get("categoria") or "").strip() for r in rows)
+          AND COALESCE(TRIM(categoria), '') <> ''
+        LIMIT 1
+    """), {"cid": competition_id}).first()
+    return row is not None
 
 
-def _ind_query(session: Session, competition_id: int, phase_id=None, lower_is_better: bool = False) -> list:
-    phase_filter = "AND r.phase_id = :pid" if phase_id else ""
-    pid_param = {"cid": competition_id, "pid": phase_id} if phase_id else {"cid": competition_id}
-    mark_select = "NULL::int AS mejor_marca"
-    if phase_id:
-        mark_agg = "MIN" if lower_is_better else "MAX"
-        mark_select = f"CASE WHEN COUNT(r.id) = 0 THEN NULL ELSE {mark_agg}(r.marca)::int END AS mejor_marca"
-
-    rows = session.execute(text(f"""
-        SELECT
-            p.id,
-            p.nombre,
-            p.apellido,
-            cp.categoria,
-            COALESCE(p.genero, p.sexo) AS sexo,
-            COALESCE(SUM(r.puntos), 0)::int AS total_puntos,
-            COUNT(r.id)::int                AS total_eventos,
-            {mark_select}
+def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict]:
+    rows = session.execute(text("""
+        SELECT p.id, p.nombre, p.apellido, cp.categoria, COALESCE(p.genero, p.sexo) AS sexo
         FROM participants p
         JOIN competition_participants cp
-            ON  cp.participant_id = p.id
-            AND cp.competition_id = :cid
-            AND cp.estado = 'confirmado'
-        LEFT JOIN results r
-            ON  r.participant_id = p.id
-            AND r.competition_id = :cid
-            AND r.team_id IS NULL
-            {phase_filter}
-        WHERE 1 = 1
-        GROUP BY p.id, cp.categoria
-        ORDER BY cp.categoria, total_puntos DESC
-    """), pid_param).mappings().all()
-    return rows
+          ON cp.participant_id = p.id
+         AND cp.competition_id = :cid
+         AND cp.estado = 'confirmado'
+    """), {"cid": competition_id}).mappings().all()
+    return [
+        {
+            "id": int(r["id"]),
+            "nombre": r["nombre"],
+            "apellido": r["apellido"],
+            "categoria": r["categoria"],
+            "sexo": r["sexo"],
+        }
+        for r in rows
+    ]
 
 
-def _team_members_points(
-    session: Session,
-    competition_id: int,
-    team_id: int,
-    phase_id: int | None,
-    lower_is_better: bool = False,
-):
-    phase_filter = "AND r.phase_id = :pid" if phase_id is not None else ""
-    params = {"cid": competition_id, "tid": team_id}
-    if phase_id is not None:
-        params["pid"] = phase_id
-    mark_select = "NULL::int AS mejor_marca"
-    if phase_id is not None:
-        mark_agg = "MIN" if lower_is_better else "MAX"
-        mark_select = f"CASE WHEN COUNT(r.id) = 0 THEN NULL ELSE {mark_agg}(r.marca)::int END AS mejor_marca"
-
-    return [dict(r) for r in session.execute(text(f"""
+def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
+    """dict[(phase_id, participant_id)] = {sum, count, min, max}. phase_id may be None."""
+    rows = session.execute(text("""
         SELECT
-            p.id,
+            phase_id,
+            participant_id,
+            COALESCE(SUM(puntos), 0)::int AS sum_pts,
+            COUNT(id)::int                AS cnt,
+            MIN(marca)                    AS min_mark,
+            MAX(marca)                    AS max_mark
+        FROM results
+        WHERE competition_id = :cid
+          AND team_id IS NULL
+          AND participant_id IS NOT NULL
+        GROUP BY phase_id, participant_id
+    """), {"cid": competition_id}).mappings().all()
+    return {
+        (r["phase_id"], int(r["participant_id"])): {
+            "sum": int(r["sum_pts"] or 0),
+            "count": int(r["cnt"] or 0),
+            "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
+            "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+        }
+        for r in rows
+    }
+
+
+def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -> dict:
+    """dict[(phase_id, team_id, participant_id)] = {sum, count, min, max}. Results tagged to both team and participant."""
+    rows = session.execute(text("""
+        SELECT
+            r.phase_id,
+            r.team_id,
+            r.participant_id,
+            COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
+            COUNT(r.id)::int                AS cnt,
+            MIN(r.marca)                    AS min_mark,
+            MAX(r.marca)                    AS max_mark
+        FROM results r
+        JOIN teams t ON t.id = r.team_id
+        WHERE r.competition_id = :cid
+          AND t.competition_id = :cid
+          AND r.team_id IS NOT NULL
+          AND r.participant_id IS NOT NULL
+        GROUP BY r.phase_id, r.team_id, r.participant_id
+    """), {"cid": competition_id}).mappings().all()
+    return {
+        (r["phase_id"], int(r["team_id"]), int(r["participant_id"])): {
+            "sum": int(r["sum_pts"] or 0),
+            "count": int(r["cnt"] or 0),
+            "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
+            "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+        }
+        for r in rows
+    }
+
+
+def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -> dict:
+    """dict[(phase_id, team_id)] = {sum, count, min, max}. Team-only results (no participant)."""
+    rows = session.execute(text("""
+        SELECT
+            phase_id,
+            team_id,
+            COALESCE(SUM(puntos), 0)::int AS sum_pts,
+            COUNT(id)::int                AS cnt,
+            MIN(marca)                    AS min_mark,
+            MAX(marca)                    AS max_mark
+        FROM results
+        WHERE competition_id = :cid
+          AND team_id IS NOT NULL
+          AND participant_id IS NULL
+        GROUP BY phase_id, team_id
+    """), {"cid": competition_id}).mappings().all()
+    return {
+        (r["phase_id"], int(r["team_id"])): {
+            "sum": int(r["sum_pts"] or 0),
+            "count": int(r["cnt"] or 0),
+            "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
+            "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+        }
+        for r in rows
+    }
+
+
+def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list[dict]]:
+    rows = session.execute(text("""
+        SELECT
+            tm.team_id,
+            p.id AS participant_id,
             p.nombre,
             p.apellido,
             cp.categoria,
-            COALESCE(p.genero, p.sexo) AS sexo,
-            COALESCE(SUM(r.puntos), 0)::int AS puntos_propios,
-            COUNT(r.id)::int                AS intentos,
-            {mark_select}
+            COALESCE(p.genero, p.sexo) AS sexo
         FROM team_members tm
+        JOIN teams t ON t.id = tm.team_id
         JOIN participants p ON p.id = tm.participant_id
         LEFT JOIN competition_participants cp
             ON cp.participant_id = p.id AND cp.competition_id = :cid
-        LEFT JOIN results r
-            ON  r.participant_id = p.id
-            AND r.competition_id = :cid
-            AND (r.team_id IS NULL OR r.team_id = :tid)
-            {phase_filter}
-        WHERE tm.team_id = :tid
-        GROUP BY p.id, cp.categoria
+        WHERE t.competition_id = :cid
         ORDER BY p.apellido, p.nombre
-    """), params).mappings().all()]
+    """), {"cid": competition_id}).mappings().all()
+    out: dict[int, list[dict]] = defaultdict(list)
+    for r in rows:
+        out[int(r["team_id"])].append({
+            "id": int(r["participant_id"]),
+            "nombre": r["nombre"],
+            "apellido": r["apellido"],
+            "categoria": r["categoria"],
+            "sexo": r["sexo"],
+        })
+    return out
 
 
-def _team_direct_points(
-    session: Session,
-    competition_id: int,
-    team_id: int,
+def _fetch_categories_map(session: Session, competition_id: int) -> dict[int, CompetitionCategory]:
+    rows = session.exec(
+        select(CompetitionCategory).where(CompetitionCategory.competition_id == competition_id)
+    ).all()
+    return {int(c.id): c for c in rows}
+
+
+def _combine_mark(a: int | None, b: int | None, lower_is_better: bool) -> int | None:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return min(a, b) if lower_is_better else max(a, b)
+
+
+def _build_ind_rows(
+    participants_meta: list[dict],
+    ind_points_per_phase: dict,
+    ind_totals_by_pid: dict,
     phase_id: int | None,
-    lower_is_better: bool = False,
-) -> tuple[int, int, int | None]:
-    phase_filter = "AND r.phase_id = :pid" if phase_id is not None else ""
-    params = {"cid": competition_id, "tid": team_id}
-    if phase_id is not None:
-        params["pid"] = phase_id
-    mark_select = "NULL::int AS mejor_marca"
-    if phase_id is not None:
-        mark_agg = "MIN" if lower_is_better else "MAX"
-        mark_select = f"CASE WHEN COUNT(r.id) = 0 THEN NULL ELSE {mark_agg}(r.marca)::int END AS mejor_marca"
-    row = session.execute(text(f"""
-        SELECT
-            COALESCE(SUM(r.puntos), 0)::int AS total_puntos,
-            COUNT(r.id)::int                AS total_eventos,
-            {mark_select}
-        FROM results r
-        WHERE r.competition_id = :cid
-          AND r.team_id = :tid
-          AND r.participant_id IS NULL
-          {phase_filter}
-    """), params).mappings().one()
-    return int(row["total_puntos"] or 0), int(row["total_eventos"] or 0), (int(row["mejor_marca"]) if row["mejor_marca"] is not None else None)
+    lower_is_better: bool,
+) -> list[dict]:
+    rows: list[dict] = []
+    if phase_id is None:
+        for p in participants_meta:
+            agg = ind_totals_by_pid.get(p["id"]) or {"sum": 0, "count": 0}
+            rows.append({
+                "id": p["id"],
+                "nombre": p["nombre"],
+                "apellido": p["apellido"],
+                "categoria": p["categoria"],
+                "sexo": p["sexo"],
+                "total_puntos": int(agg["sum"]),
+                "total_eventos": int(agg["count"]),
+                "mejor_marca": None,
+            })
+    else:
+        for p in participants_meta:
+            data = ind_points_per_phase.get((phase_id, p["id"]))
+            if data:
+                mark = data["min"] if lower_is_better else data["max"]
+                total = int(data["sum"])
+                events = int(data["count"])
+            else:
+                mark = None
+                total = 0
+                events = 0
+            rows.append({
+                "id": p["id"],
+                "nombre": p["nombre"],
+                "apellido": p["apellido"],
+                "categoria": p["categoria"],
+                "sexo": p["sexo"],
+                "total_puntos": total,
+                "total_eventos": events,
+                "mejor_marca": mark,
+            })
+    return rows
+
+
+def _team_members_for_phase(
+    team_id: int,
+    phase_id: int,
+    team_members_by_team: dict[int, list[dict]],
+    ind_points_per_phase: dict,
+    team_member_points_per_phase: dict,
+    lower_is_better: bool,
+) -> list[dict]:
+    out: list[dict] = []
+    for member in team_members_by_team.get(team_id, []):
+        pid = member["id"]
+        ind_data = ind_points_per_phase.get((phase_id, pid))
+        tm_data = team_member_points_per_phase.get((phase_id, team_id, pid))
+        sum_pts = (ind_data["sum"] if ind_data else 0) + (tm_data["sum"] if tm_data else 0)
+        cnt = (ind_data["count"] if ind_data else 0) + (tm_data["count"] if tm_data else 0)
+        ind_mark = (ind_data["min"] if lower_is_better else ind_data["max"]) if ind_data else None
+        tm_mark = (tm_data["min"] if lower_is_better else tm_data["max"]) if tm_data else None
+        mark = _combine_mark(ind_mark, tm_mark, lower_is_better)
+        out.append({
+            "id": pid,
+            "nombre": member["nombre"],
+            "apellido": member["apellido"],
+            "categoria": member["categoria"],
+            "sexo": member["sexo"],
+            "puntos_propios": int(sum_pts),
+            "intentos": int(cnt),
+            "mejor_marca": mark,
+        })
+    return out
+
+
+def _team_global_members(
+    team_id: int,
+    team_members_by_team: dict[int, list[dict]],
+    ind_totals_by_pid: dict,
+    team_member_totals_by_team_pid: dict,
+) -> list[dict]:
+    out: list[dict] = []
+    for member in team_members_by_team.get(team_id, []):
+        pid = member["id"]
+        ind_agg = ind_totals_by_pid.get(pid) or {"sum": 0, "count": 0}
+        tm_agg = team_member_totals_by_team_pid.get((team_id, pid)) or {"sum": 0, "count": 0}
+        out.append({
+            "id": pid,
+            "nombre": member["nombre"],
+            "apellido": member["apellido"],
+            "categoria": member["categoria"],
+            "sexo": member["sexo"],
+            "puntos_propios": int(ind_agg["sum"] + tm_agg["sum"]),
+            "intentos": int(ind_agg["count"] + tm_agg["count"]),
+            "mejor_marca": None,
+        })
+    return out
 
 
 def _team_points_for_phase(members: list[dict], mode: str) -> int:
@@ -191,35 +337,59 @@ def _team_mark_for_phase(members: list[dict], mode: str, lower_is_better: bool) 
     return sum(vals)
 
 
-def _build_team_rows_for_phase(
-    session: Session,
+def _resolve_team_category(
+    team: Team,
+    members: list[dict],
     competition_id: int,
+    categories_map: dict[int, CompetitionCategory],
+) -> str:
+    category_id = getattr(team, "team_category_id", None)
+    explicit = categories_map.get(int(category_id)) if category_id else None
+    member_cats = sorted({(m.get("categoria") or "").strip() for m in members if (m.get("categoria") or "").strip()})
+    if explicit and explicit.competition_id == competition_id:
+        return (explicit.nombre or "").strip() or "Sin categoria"
+    if len(member_cats) == 1:
+        return member_cats[0]
+    if len(member_cats) == 0:
+        return "Sin categoria"
+    return "Mixta"
+
+
+def _build_team_rows_for_phase(
     teams: list[Team],
-    phase_id: int | None,
+    competition_id: int,
+    phase_id: int,
     mode: str,
     mark_lower_is_better: bool,
     points_lower_is_better: bool,
+    team_members_by_team: dict[int, list[dict]],
+    ind_points_per_phase: dict,
+    team_member_points_per_phase: dict,
+    team_direct_per_phase: dict,
+    categories_map: dict[int, CompetitionCategory],
     rank_by_category: bool = False,
 ) -> list[dict]:
-    rows = []
+    rows: list[dict] = []
     for t in teams:
-        members = _team_members_points(session, competition_id, t.id, phase_id, lower_is_better=mark_lower_is_better)
-        explicit_category = session.get(CompetitionCategory, getattr(t, "team_category_id", None)) if getattr(t, "team_category_id", None) else None
-        member_cats = sorted({(m.get("categoria") or "").strip() for m in members if (m.get("categoria") or "").strip()})
-        if explicit_category and explicit_category.competition_id == competition_id:
-            team_category = (explicit_category.nombre or "").strip() or "Sin categoria"
-        elif len(member_cats) == 1:
-            team_category = member_cats[0]
-        elif len(member_cats) == 0:
-            team_category = "Sin categoria"
-        else:
-            team_category = "Mixta"
+        members = _team_members_for_phase(
+            int(t.id),
+            phase_id,
+            team_members_by_team,
+            ind_points_per_phase,
+            team_member_points_per_phase,
+            mark_lower_is_better,
+        )
+        team_category = _resolve_team_category(t, members, competition_id, categories_map)
         total_eventos = sum(int(m.get("intentos") or 0) for m in members)
         total_puntos = _team_points_for_phase(members, mode)
         total_marca = _team_mark_for_phase(members, mode, mark_lower_is_better)
-        direct_points, direct_events, direct_mark = _team_direct_points(
-            session, competition_id, t.id, phase_id, lower_is_better=mark_lower_is_better
-        )
+        direct = team_direct_per_phase.get((phase_id, int(t.id)))
+        direct_points = int(direct["sum"]) if direct else 0
+        direct_events = int(direct["count"]) if direct else 0
+        if direct:
+            direct_mark = direct["min"] if mark_lower_is_better else direct["max"]
+        else:
+            direct_mark = None
         if mode == "total":
             total_puntos = direct_points
             total_eventos = direct_events
@@ -296,8 +466,16 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
     tv_static_team_category_mode = (getattr(comp, "tv_static_team_category_mode", "__by_category__") or "__by_category__") if comp else "__by_category__"
     rank_by_category = _competition_has_categories(session, competition_id)
 
+    participants_meta = _fetch_participants_meta(session, competition_id)
+    ind_points_per_phase = _fetch_ind_points_per_phase(session, competition_id)
+
+    ind_totals_by_pid: dict[int, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+    for (_ph, pid), data in ind_points_per_phase.items():
+        ind_totals_by_pid[pid]["sum"] += data["sum"]
+        ind_totals_by_pid[pid]["count"] += data["count"]
+
     individual = _rank_by_category(
-        _ind_query(session, competition_id),
+        _build_ind_rows(participants_meta, ind_points_per_phase, ind_totals_by_pid, phase_id=None, lower_is_better=False),
         lower_is_better=comp_lower_is_better,
     ) if show_individual else {}
 
@@ -307,27 +485,53 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         .order_by(CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
     phase_status_map = compute_phase_status_map(session, competition_id)
-    teams = session.exec(select(Team).where(Team.competition_id == competition_id).order_by(Team.id)).all() if team_enabled else []
+
+    if team_enabled:
+        teams = session.exec(select(Team).where(Team.competition_id == competition_id).order_by(Team.id)).all()
+        team_members_by_team = _fetch_team_members(session, competition_id)
+        team_member_points_per_phase = _fetch_team_member_points_per_phase(session, competition_id)
+        team_direct_per_phase = _fetch_team_direct_points_per_phase(session, competition_id)
+        categories_map = _fetch_categories_map(session, competition_id)
+        team_member_totals_by_team_pid: dict[tuple[int, int], dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+        for (_ph, tid, pid), data in team_member_points_per_phase.items():
+            key = (tid, pid)
+            team_member_totals_by_team_pid[key]["sum"] += data["sum"]
+            team_member_totals_by_team_pid[key]["count"] += data["count"]
+    else:
+        teams = []
+        team_members_by_team = {}
+        team_member_points_per_phase = {}
+        team_direct_per_phase = {}
+        categories_map = {}
+        team_member_totals_by_team_pid = {}
 
     phases_data = []
     for phase in phases:
         phase_lower_is_better = _phase_lower_is_better(phase)
-        phase_rows = _ind_query(
-            session, competition_id, phase_id=phase.id, lower_is_better=phase_lower_is_better
+        phase_rows = _build_ind_rows(
+            participants_meta,
+            ind_points_per_phase,
+            ind_totals_by_pid,
+            phase_id=int(phase.id),
+            lower_is_better=phase_lower_is_better,
         ) if show_individual else []
         phase_mode = (phase.team_result_mode or "sum_two").strip().lower()
         if phase_mode not in {"sum_two", "single_member", "total"}:
             phase_mode = "sum_two"
         team_phase_rows = _build_team_rows_for_phase(
-            session,
-            competition_id,
             teams,
-            phase.id,
+            competition_id,
+            int(phase.id),
             phase_mode,
             phase_lower_is_better,
             comp_lower_is_better,
+            team_members_by_team,
+            ind_points_per_phase,
+            team_member_points_per_phase,
+            team_direct_per_phase,
+            categories_map,
             rank_by_category=rank_by_category,
-        )
+        ) if team_enabled else []
         phases_data.append({
             "id": phase.id,
             "nombre": phase.nombre,
@@ -348,14 +552,23 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         })
 
     # Team total = suma de puntos por fase respetando el modo de cada fase.
-    team_totals_map = {t.id: {
-        "id": t.id,
-        "nombre": (t.nombre or "").strip() or f"Equipo {t.id}",
-        "team_category": "Sin categoria",
-        "total_puntos": 0,
-        "total_eventos": 0,
-        "members": _team_members_points(session, competition_id, t.id, None),
-    } for t in teams}
+    team_totals_map: dict[int, dict] = {}
+    for t in teams:
+        global_members = _team_global_members(
+            int(t.id),
+            team_members_by_team,
+            ind_totals_by_pid,
+            team_member_totals_by_team_pid,
+        )
+        team_totals_map[t.id] = {
+            "id": t.id,
+            "nombre": (t.nombre or "").strip() or f"Equipo {t.id}",
+            "team_category": _resolve_team_category(t, global_members, competition_id, categories_map),
+            "total_puntos": 0,
+            "total_eventos": 0,
+            "members": global_members,
+        }
+
     for ph in phases_data:
         for tr in ph["teams"]:
             base = team_totals_map.get(tr["id"])
@@ -365,18 +578,6 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
             base["total_eventos"] += int(tr.get("total_eventos") or 0)
 
     teams_values = list(team_totals_map.values())
-    for row in teams_values:
-        team = next((item for item in teams if int(item.id) == int(row["id"])), None)
-        explicit_category = session.get(CompetitionCategory, getattr(team, "team_category_id", None)) if team and getattr(team, "team_category_id", None) else None
-        member_cats = sorted({(m.get("categoria") or "").strip() for m in row.get("members", []) if (m.get("categoria") or "").strip()})
-        if explicit_category and explicit_category.competition_id == competition_id:
-            row["team_category"] = (explicit_category.nombre or "").strip() or "Sin categoria"
-        elif len(member_cats) == 1:
-            row["team_category"] = member_cats[0]
-        elif len(member_cats) == 0:
-            row["team_category"] = "Sin categoria"
-        else:
-            row["team_category"] = "Mixta"
 
     if rank_by_category:
         by_cat: dict[str, list[dict]] = defaultdict(list)

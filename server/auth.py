@@ -281,10 +281,6 @@ def require_staff(user: dict = Depends(get_current_user)):
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Requiere rol staff")
 
 
-def require_organizer_or_admin(user: dict = Depends(get_current_user)):
-    return require_staff(user)
-
-
 def is_end_user(user: dict) -> bool:
     if user.get("role") in Role.END_USER_ROLES:
         return True

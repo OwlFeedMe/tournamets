@@ -222,32 +222,7 @@ def render_enrollment_confirmed(
 
 
 # ---------------------------------------------------------------------------
-# 5. Inscripcion rechazada por el organizador
-# ---------------------------------------------------------------------------
-
-def render_enrollment_rejected(
-    *,
-    nombre: str,
-    competition_name: str,
-) -> tuple[str, str, str]:
-    subject = f"Inscripcion no aprobada - {competition_name}"
-    text = (
-        f"Hola {nombre},\n\n"
-        f"Tu inscripcion en la competencia \"{competition_name}\" no fue aprobada por el organizador.\n\n"
-        "Si tienes preguntas sobre esta decision, contáctanos en support@finalrep.co\n\n"
-        "Equipo FinalRep"
-    )
-    html = _html("Inscripcion no aprobada", f"""\
-      <p>Hola <strong>{nombre}</strong>,</p>
-      <p>Tu inscripcion en <strong>{competition_name}</strong> no fue aprobada. <span class="badge badge-red">Rechazada</span></p>
-      <hr class="divider">
-      <p>Si tienes preguntas sobre esta decision, escribe a <a href="mailto:support@finalrep.co" style="color:#e63946;">support@finalrep.co</a></p>
-    """)
-    return subject, text, html
-
-
-# ---------------------------------------------------------------------------
-# 6. Solicitud de organizador recibida (al usuario)
+# 5. Solicitud de organizador recibida (al usuario)
 # ---------------------------------------------------------------------------
 
 def render_organizer_application_received(*, nombre: str) -> tuple[str, str, str]:

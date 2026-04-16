@@ -17,7 +17,7 @@ import logging
 import os
 import time
 from threading import Lock
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 try:
     import redis

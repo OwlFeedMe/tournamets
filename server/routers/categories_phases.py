@@ -11,7 +11,7 @@ from database import get_session
 from phase_status import compute_phase_status_map
 from constants import MedicionFase
 from models import (
-    Competition, CompetitionCategory, CompetitionPhase,
+    CompetitionCategory, CompetitionPhase,
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
     CompetitionHeat,
 )

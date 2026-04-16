@@ -1,9 +1,7 @@
 import io
 import json
-import json
 import os
 import re
-from collections import defaultdict
 from datetime import datetime, time, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -82,31 +80,6 @@ def _serialize_enrollment_questions(payload: dict):
             "placeholder": placeholder,
         })
     payload["enrollment_questions"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
-
-
-def _serialize_enrollment_payment_methods(payload: dict):
-    if "enrollment_payment_methods" not in payload:
-        return
-    methods = payload.get("enrollment_payment_methods")
-    if not methods:
-        payload["enrollment_payment_methods"] = None
-        return
-    normalized = []
-    for idx, raw in enumerate(methods):
-        label = str((raw or {}).get("label") or "").strip()
-        account_name = str((raw or {}).get("account_name") or "").strip() or None
-        account_number = str((raw or {}).get("account_number") or "").strip() or None
-        notes = str((raw or {}).get("notes") or "").strip() or None
-        if not label and not account_name and not account_number and not notes:
-            continue
-        normalized.append({
-            "id": str((raw or {}).get("id") or f"pm_{idx + 1}").strip() or f"pm_{idx + 1}",
-            "label": label or f"Metodo {idx + 1}",
-            "account_name": account_name,
-            "account_number": account_number,
-            "notes": notes,
-        })
-    payload["enrollment_payment_methods"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
 def _serialize_schedule_items(payload: dict):
