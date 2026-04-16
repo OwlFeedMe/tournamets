@@ -11,7 +11,7 @@ from logging.config import fileConfig
 from pathlib import Path
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 # Ensure the server package is importable when alembic runs from a cwd that
 # is not the server directory (e.g. from repo root or a Docker entrypoint).
@@ -32,7 +32,6 @@ if config.config_file_name is not None:
 database_url = (os.getenv("DATABASE_URL") or "").strip()
 if not database_url:
     raise RuntimeError("DATABASE_URL es obligatorio para ejecutar migraciones Alembic.")
-config.set_main_option("sqlalchemy.url", database_url)
 
 target_metadata = SQLModel.metadata
 
@@ -50,11 +49,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Build the engine directly from DATABASE_URL so encoded query params like
+    # `%3D` never flow through ConfigParser interpolation.
+    connectable = create_engine(database_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
         context.configure(
             connection=connection,
