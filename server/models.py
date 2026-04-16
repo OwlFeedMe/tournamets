@@ -181,6 +181,7 @@ class Competition(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
     )
+    slug: Optional[str] = Field(default=None, index=True)
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
