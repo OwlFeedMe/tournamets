@@ -21,6 +21,8 @@ ALEMBIC_SCRIPT_LOCATION = SERVER_DIR / "migrations"
 
 load_dotenv(ROOT_ENV_PATH)
 
+MAX_TEAM_SIZE = 10
+
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL es obligatorio y debe apuntar a PostgreSQL.")
