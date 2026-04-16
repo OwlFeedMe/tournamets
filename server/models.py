@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 
-from sqlalchemy import UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
+from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
 from sqlmodel import SQLModel, Field, Relationship
 
 from constants import (
@@ -213,7 +213,7 @@ class Team(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     nombre: str
     competition_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     team_category_id: Optional[int] = Field(
         default=None,
@@ -263,7 +263,7 @@ class CompetitionCategory(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     competition_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     nombre: str
     descripcion: Optional[str] = None
@@ -277,7 +277,7 @@ class CompetitionPhase(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     competition_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     nombre: str
     descripcion: Optional[str] = None
@@ -304,10 +304,10 @@ class CompetitionHeat(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     competition_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     phase_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     categoria: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
     nombre: str
@@ -494,6 +494,11 @@ class CompetitionWithdrawalRequest(SQLModel, table=True):
 
 class Result(SQLModel, table=True):
     __tablename__ = "results"
+    __table_args__ = (
+        Index("ix_results_comp_phase", "competition_id", "phase_id"),
+        Index("ix_results_comp_participant", "competition_id", "participant_id"),
+        Index("ix_results_comp_team", "competition_id", "team_id"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     participant_id: Optional[int] = Field(
