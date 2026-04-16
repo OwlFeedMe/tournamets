@@ -7889,7 +7889,11 @@ function CompetitionsTab() {
                     style={{ flexShrink: 0, ...(isMobile ? { width: '100%' } : {}) }}
                     onClick={() => {
                       if (!selectedCompetition?.id || typeof window === 'undefined') return
-                      window.open(`/competitions/${selectedCompetition.id}`, '_blank', 'noopener,noreferrer')
+                      if (isMobile) {
+                        window.location.href = `/competitions/${selectedCompetition.id}`
+                      } else {
+                        window.open(`/competitions/${selectedCompetition.id}`, '_blank', 'noopener,noreferrer')
+                      }
                     }}
                   >
                     Abrir vista previa
