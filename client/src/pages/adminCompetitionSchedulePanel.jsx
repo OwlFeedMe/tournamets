@@ -424,7 +424,7 @@ export function CompetitionSchedulePanel({ competition }) {
                             <div key={participant.id} style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', padding: '10px 12px' }}>
                               <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 13 }}>{participant.participant_name}</div>
                               <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-                                Lane {participant.lane_number}{participant.categoria ? ` Â· ${participant.categoria}` : ''}
+                    Lane {participant.lane_number}{participant.categoria ? ` · ${participant.categoria}` : ''}
                               </div>
                             </div>
                           ))}

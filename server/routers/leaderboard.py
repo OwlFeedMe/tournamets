@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from competition_rules import normalize_phase_measurement_method, type_from_measurement_method
 from database import get_session
 from models import Competition, CompetitionCategory, CompetitionPhase, Team
 from phase_status import compute_phase_status_map
@@ -19,7 +20,19 @@ def _parse_phase_activities(raw: str | None) -> list[dict]:
         parsed = json.loads(raw)
     except Exception:
         return []
-    return [dict(item) for item in parsed] if isinstance(parsed, list) else []
+    if not isinstance(parsed, list):
+        return []
+    normalized = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        measurement_method = normalize_phase_measurement_method(item.get("measurement_method"), item.get("tipo"))
+        normalized.append({
+            **item,
+            "measurement_method": measurement_method,
+            "tipo": type_from_measurement_method(measurement_method),
+        })
+    return normalized
 
 
 def _phase_lower_is_better(phase: CompetitionPhase | None) -> bool:
@@ -482,6 +495,7 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
     phases = session.exec(
         select(CompetitionPhase)
         .where(CompetitionPhase.competition_id == competition_id)
+        .where(CompetitionPhase.is_visible == 1)
         .order_by(CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
     phase_status_map = compute_phase_status_map(session, competition_id)
@@ -539,8 +553,8 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
             "block_name": getattr(phase, "block_name", None),
             "block_order": int(getattr(phase, "block_order", 0) or 0),
             "phase_format": getattr(phase, "phase_format", "activity") or "activity",
-            "tipo": phase.tipo,
-            "measurement_method": getattr(phase, "measurement_method", None),
+            "tipo": type_from_measurement_method(getattr(phase, "measurement_method", None)),
+            "measurement_method": normalize_phase_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None)),
             "winner_rule": getattr(phase, "winner_rule", None),
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_status_map.get(int(phase.id), phase.estado),

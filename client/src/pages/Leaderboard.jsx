@@ -39,12 +39,10 @@ function orderCategories(data) {
 function phaseMetricLabel(phaseInfo) {
   if (!phaseInfo) return 'Marca'
   const method = (phaseInfo.measurement_method || '').toString().toLowerCase()
-  if (method === 'tiempo_hms') return 'Tiempo (HH:MM:SS)'
+  if (method === 'for_time' || method === 'tiempo_hms') return 'Tiempo'
   if (method === 'metros') return 'Metros (m)'
-  if (method === 'repeticiones') return 'Repeticiones'
-  if (method === 'kilogramos') return 'Peso (kg)'
-  if (method === 'gramos') return 'Peso (g)'
-  if (method === 'libras') return 'Peso (lb)'
+  if (method === 'amrap' || method === 'emom' || method === 'repeticiones') return 'Repeticiones'
+  if (method === 'rm' || method === 'kilogramos' || method === 'gramos' || method === 'libras') return 'Peso'
   if (method === 'posicion') return 'Posicion'
   const t = (phaseInfo.tipo || '').toString().toLowerCase()
   if (t === 'tiempo') return 'Tiempo'
@@ -65,12 +63,10 @@ function formatSecondsToHMS(totalSeconds) {
 function metricValue(v, phaseInfo) {
   if (v == null) return '-'
   const method = (phaseInfo?.measurement_method || '').toString().toLowerCase()
-  if (method === 'tiempo_hms') return formatSecondsToHMS(v)
+  if (method === 'for_time' || method === 'tiempo_hms') return formatSecondsToHMS(v)
   if (method === 'metros') return `${v} m`
-  if (method === 'repeticiones') return `${v} reps`
-  if (method === 'kilogramos') return `${v} kg`
-  if (method === 'gramos') return `${v} g`
-  if (method === 'libras') return `${v} lb`
+  if (method === 'amrap' || method === 'emom' || method === 'repeticiones') return `${v} reps`
+  if (method === 'rm' || method === 'kilogramos' || method === 'gramos' || method === 'libras') return `${v}`
   if (method === 'posicion') return `#${v}`
   return v
 }

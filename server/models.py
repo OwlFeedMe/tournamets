@@ -6,7 +6,7 @@ from sqlmodel import SQLModel, Field
 
 from constants import (
     EstadoParticipante, EstadoInscripcion, EstadoFase,
-    Modalidad, FormatoFase, ReglaGanador, ModoPoints, ModoTV, ReglaMiembro, Role,
+    Modalidad, FormatoFase, ReglaGanador, ModoPoints, ModoTV, ReglaMiembro, Role, UnidadRM,
 )
 
 
@@ -177,6 +177,7 @@ class Competition(SQLModel, table=True):
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
     scoring_mode: str = Field(default=ReglaGanador.HIGHER_WINS)  # highest_wins | lowest_wins
+    rm_unit: str = Field(default=UnidadRM.KG)
     organizer_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
@@ -320,6 +321,7 @@ class CompetitionPhase(SQLModel, table=True):
     allow_multiple_results: int = Field(default=0)  # 0 = unico por participante/fase, 1 = multiple
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
     estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
+    is_visible: int = Field(default=1)
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     orden: int = Field(default=0)
@@ -891,6 +893,7 @@ class CompetitionCreate(SQLModel):
     require_payment_receipt: int = 0
     platform_fee_rate: float = 0.05
     scoring_mode: str = ReglaGanador.HIGHER_WINS
+    rm_unit: str = UnidadRM.KG
 
 
 class CompetitionUpdate(SQLModel):
@@ -945,6 +948,7 @@ class CompetitionUpdate(SQLModel):
     require_payment_receipt: Optional[int] = None
     platform_fee_rate: Optional[float] = None
     scoring_mode: Optional[str] = None
+    rm_unit: Optional[str] = None
 
 
 # ── Team schemas ───────────────────────────────────────────────────────────────
@@ -1048,6 +1052,7 @@ class PhaseCreate(SQLModel):
     allow_multiple_results: int = 0
     team_result_mode: str = "sum_two"
     estado: str = EstadoFase.PENDIENTE
+    is_visible: int = 1
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     orden: int = 0
@@ -1069,6 +1074,7 @@ class PhaseUpdate(SQLModel):
     allow_multiple_results: Optional[int] = None
     team_result_mode: Optional[str] = None
     estado: Optional[str] = None
+    is_visible: Optional[int] = None
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     orden: Optional[int] = None

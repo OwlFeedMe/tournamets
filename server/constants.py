@@ -111,3 +111,10 @@ class MedicionFase:
         "fortime": FOR_TIME,
         "for time": FOR_TIME,
     }
+
+
+class UnidadRM:
+    KG = "kg"
+    LB = "lb"
+
+    ALL = {KG, LB}
