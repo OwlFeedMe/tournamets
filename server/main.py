@@ -1,4 +1,5 @@
 import os
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,8 +43,11 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 @app.on_event("startup")
 def startup():
-    run_db_migrations()
-    init_db()
+    def _bootstrap_db() -> None:
+        run_db_migrations()
+        init_db()
+
+    threading.Thread(target=_bootstrap_db, daemon=True).start()
 
 
 @app.get("/")
