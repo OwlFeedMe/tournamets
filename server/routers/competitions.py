@@ -2,9 +2,10 @@ import io
 import json
 import os
 import re
+import unicodedata
 from datetime import datetime, time, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile
 from fastapi.responses import Response
@@ -47,6 +48,40 @@ COMPETITION_ASSET_SPECS = {
     "banner": {"field": "banner_image_url", "mode": "original"},
 }
 HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
+
+def _generate_slug(nombre: str, session, exclude_id: int | None = None) -> str:
+    """Generate a unique URL-safe slug from a competition name."""
+    import unicodedata as _ud
+    normalized = _ud.normalize("NFKD", nombre)
+    ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
+    slug_base = re.sub(r"[^a-z0-9]+", "-", ascii_str.lower()).strip("-")
+    if not slug_base:
+        slug_base = "competencia"
+    candidate = slug_base
+    counter = 2
+    while True:
+        query = select(Competition).where(Competition.slug == candidate)
+        if exclude_id is not None:
+            query = query.where(Competition.id != exclude_id)
+        existing = session.exec(query).first()
+        if not existing:
+            return candidate
+        candidate = f"{slug_base}-{counter}"
+        counter += 1
+
+
+def _resolve_competition(session, id_or_slug: str) -> "Competition":
+    """Lookup competition by numeric ID or text slug."""
+    if id_or_slug.isdigit():
+        competition = session.get(Competition, int(id_or_slug))
+    else:
+        competition = session.exec(
+            select(Competition).where(Competition.slug == id_or_slug)
+        ).first()
+    if not competition:
+        raise HTTPException(404, "Competencia no encontrada")
+    return competition
+
 COMPETITION_THEME_FIELDS = (
     "theme_background_color",
     "theme_surface_color",
