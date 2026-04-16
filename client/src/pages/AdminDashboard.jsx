@@ -9,6 +9,58 @@ import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
 
+function SuccessToast({ text, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 2800)
+    return () => clearTimeout(t)
+  }, [onDone])
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 99999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        position: 'relative',
+        background: '#0D1117',
+        border: '2px solid #FF6B00',
+        borderRadius: 12,
+        padding: '18px 24px',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9,
+        boxShadow: '0 0 30px rgba(255,107,0,0.18), 0 4px 20px rgba(0,0,0,0.7)',
+        animation: 'successToastIn 0.25s cubic-bezier(.34,1.56,.64,1)',
+        pointerEvents: 'auto',
+      }}>
+        <button onClick={onDone} style={{
+          position: 'absolute', top: 6, right: 6,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#AAB2C0', lineHeight: 1, padding: 2,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+        <div style={{
+          width: 36, height: 36,
+          borderRadius: '50%',
+          border: '2px solid #FF6B00',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(255,107,0,0.08)',
+        }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+        <span style={{ fontSize: 10, fontWeight: 700, color: '#F5F7FA', letterSpacing: 0.2, textAlign: 'center' }}>
+          {text || 'Datos guardados correctamente'}
+        </span>
+      </div>
+      <style>{`@keyframes successToastIn { from { opacity:0; transform:scale(0.8); } to { opacity:1; transform:scale(1); } }`}</style>
+    </div>
+  )
+}
+
 const CATEGORIAS = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro']
 const GENEROS = ['M', 'F', 'Otro']
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
@@ -7189,6 +7241,7 @@ function CompetitionsTab() {
   const isOrganizer = role === 'organizer' || organizerEnabled
   const [competitions, setCompetitions] = useState([])
   const [msg, setMsg] = useState(null)
+  const [successToast, setSuccessToast] = useState(null)
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
@@ -7651,8 +7704,8 @@ function CompetitionsTab() {
                 competition={selectedCompetition}
                 inline
                 onClose={() => {}}
-                onSaved={(text) => {
-                  setMsg({ type: 'success', text })
+                onSaved={() => {
+                  setSuccessToast('Datos guardados correctamente')
                   load()
                   refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
                   api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
@@ -7879,8 +7932,8 @@ function CompetitionsTab() {
             mode={editor.mode}
             competition={editor.competition}
             onClose={() => setEditor(null)}
-            onSaved={(text) => {
-              setMsg({ type: 'success', text })
+            onSaved={() => {
+              setSuccessToast('Datos guardados correctamente')
               load()
               if (selectedCompetition?.id === editor.competition?.id) {
                 api.get(`/competitions/${selectedCompetition.id}`).then(res => setSelectedCompetition(res.data)).catch(() => {})
@@ -7903,6 +7956,7 @@ function CompetitionsTab() {
           }}
         />
       )}
+      {successToast && <SuccessToast text={successToast} onDone={() => setSuccessToast(null)} />}
     </div>
   )
 }
