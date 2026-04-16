@@ -27,11 +27,31 @@ if errorlevel 1 (
     exit /b 1
 )
 
+where pip >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] pip no esta disponible en PATH
+    pause
+    exit /b 1
+)
+
 where npm.cmd >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] npm no esta disponible en PATH
     pause
     exit /b 1
+)
+
+:: Verificar dependencias de backend y autoinstalar si faltan
+echo [0/2] Verificando dependencias Python del backend...
+python -c "import fastapi, uvicorn, sqlmodel, alembic" >nul 2>&1
+if errorlevel 1 (
+    echo [INFO] Faltan dependencias de Python. Instalando server\requirements.txt...
+    python -m pip install -r "%~dp0server\requirements.txt"
+    if errorlevel 1 (
+        echo [ERROR] No se pudieron instalar las dependencias del backend
+        pause
+        exit /b 1
+    )
 )
 
 :: Iniciar backend en nueva ventana
