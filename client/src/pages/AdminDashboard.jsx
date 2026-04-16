@@ -2441,6 +2441,16 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     registration: false,
   })
   const [showPhonePrefixDropdown, setShowPhonePrefixDropdown] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+  const handleCopyLink = () => {
+    const slug = competition?.slug
+    if (!slug) return
+    const url = `${window.location.origin}/competitions/${slug}`
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true)
+      setTimeout(() => setLinkCopied(false), 2000)
+    })
+  }
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState(null)
   const [showAddQuestionModal, setShowAddQuestionModal] = useState(false)
@@ -3309,6 +3319,42 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               <input value={form.lugar} onChange={e => setForm(f => ({ ...f, lugar: e.target.value }))} placeholder="Ej: Bogota, Coliseo Central" />
             </div>
           </div>
+
+          {isEdit && competition?.slug && (
+            <div style={{ marginTop: 4 }}>
+              <label style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginBottom: 6, display: 'block' }}>Link para compartir</label>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  readOnly
+                  value={`${window.location.origin}/competitions/${competition.slug}`}
+                  style={{ flex: 1, background: 'rgba(13,15,18,0.6)', color: '#AAB2C0', cursor: 'default', fontSize: 13 }}
+                  onFocus={e => e.target.select()}
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  style={{
+                    padding: '0 16px',
+                    height: 38,
+                    borderRadius: 8,
+                    border: '1px solid #252A33',
+                    background: linkCopied ? 'rgba(94,234,212,0.12)' : 'rgba(255,255,255,0.06)',
+                    color: linkCopied ? '#5EEAD4' : '#F5F7FA',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {linkCopied ? '¡Copiado!' : 'Copiar link'}
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: '#6B7280', marginTop: 5 }}>
+                Comparte este link en tus redes sociales para que los participantes se inscriban
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
             <div className="form-group">
