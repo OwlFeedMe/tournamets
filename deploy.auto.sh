@@ -28,5 +28,5 @@ fi
 
 echo "$LOG_PREFIX new commit $LOCAL_SHA -> $REMOTE_SHA"
 git reset --hard "$REMOTE_SHA"
-"$ROOT_DIR/deploy.sh"
+bash "$ROOT_DIR/deploy.sh"
 echo "$LOG_PREFIX deploy done"
