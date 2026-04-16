@@ -82,7 +82,7 @@ function parseTimeToSeconds(value) {
 function normalizeMeasurementMethod(raw, tipo) {
   const value = (raw || '').toString().trim().toLowerCase()
   if (value === 'tiempo_hms' || value === 'hh:mm:ss' || value === 'hms') return 'tiempo_hms'
-  if (value === 'posicion' || value === 'posiciÃ³n') return 'posicion'
+  if (value === 'posicion' || value === 'posición') return 'posicion'
   if (value) return value
   const t = (tipo || '').toString().trim().toLowerCase()
   if (t === 'tiempo') return 'tiempo_hms'
@@ -273,12 +273,12 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   }
 
   const handleTransferCaptain = async (newCaptainId) => {
-    if (!window.confirm('Â¿Seguro que quieres transferir la capitanÃ­a?')) return
+    if (!window.confirm('¿Seguro que quieres transferir la capitanía?')) return
     setTransferBusy(newCaptainId)
     setTransferMsg(null)
     try {
       await api.put(`/teams/${team.id}/transfer-captain`, { captain_id: newCaptainId })
-      setTransferMsg({ type: 'success', text: 'CapitanÃ­a transferida' })
+      setTransferMsg({ type: 'success', text: 'Capitanía transferida' })
       await loadTeam()
     } catch (err) {
       setTransferMsg({ type: 'error', text: err.response?.data?.detail || 'Error al transferir' })
@@ -398,21 +398,21 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
-                      {m.id === participantId && <span style={{ fontSize: 11, color: '#D6D9E0', marginLeft: 6 }}>(tÃº)</span>}
+                      {m.id === participantId && <span style={{ fontSize: 11, color: '#D6D9E0', marginLeft: 6 }}>(tú)</span>}
                     </div>
                     {m.is_captain ? (
                       <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                        <Crown size={9} /> CapitÃ¡n
+                        <Crown size={9} /> Capitán
                       </span>
                     ) : isCaptain && (
                       <button
                         className="btn-secondary btn-sm"
-                        title="Transferir capitanÃ­a a este miembro"
+                        title="Transferir capitanía a este miembro"
                         onClick={() => handleTransferCaptain(m.id)}
                         disabled={transferBusy === m.id}
                         style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
                       >
-                        <Crown size={11} /> {transferBusy === m.id ? '...' : 'Dar capitanÃ­a'}
+                        <Crown size={11} /> {transferBusy === m.id ? '...' : 'Dar capitanía'}
                       </button>
                     )}
                   </div>
@@ -1198,7 +1198,7 @@ export default function ParticipantProfile() {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: 'var(--oa-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
-            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` Â· ${formatCedula(myProfile?.cedula)}` : ''}</div>
+            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${formatCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {myProfile?.categoria && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
               {myProfile?.box && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
@@ -1273,8 +1273,8 @@ export default function ParticipantProfile() {
                   <input value={editForm.apellido || ''} onChange={e => setEditForm(f => ({ ...f, apellido: e.target.value }))} placeholder="Apellido" required />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>CÃ©dula</label>
-                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value.replace(/\D/g, '') }))} placeholder="CÃ©dula" inputMode="numeric" />
+                  <label>Cédula</label>
+                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value.replace(/\D/g, '') }))} placeholder="Cédula" inputMode="numeric" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
@@ -1365,7 +1365,7 @@ export default function ParticipantProfile() {
                   </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
-                  <label>CategorÃ­a</label>
+                  <label>Categoría</label>
                   <input value={editForm.categoria || ''} onChange={e => setEditForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Ej: Rx, Scaled, Masters..." />
                 </div>
                   </div>
@@ -1401,7 +1401,7 @@ export default function ParticipantProfile() {
                     </div>
                     {inv.captain_nombre && (
                       <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Crown size={11} color="#e8a800" /> CapitÃ¡n: {inv.captain_nombre}
+                        <Crown size={11} color="#e8a800" /> Capitán: {inv.captain_nombre}
                       </div>
                     )}
                     {inv.team?.members?.length > 0 && (
