@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, Trophy } from 'lucide-react'
+import { Bell, CalendarDays, ChevronRight, Flame, Lock, QrCode, Trophy, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -127,6 +127,66 @@ function enrollmentBadge(status) {
   if (status === 'pendiente') return { label: 'En proceso', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
   if (status === 'rechazado') return { label: 'Rechazado', color: '#FF453A', border: 'rgba(255,69,58,0.28)', background: 'rgba(255,69,58,0.12)' }
   return { label: status || 'Sin registro', color: '#AAB2C0', border: 'rgba(170,178,192,0.22)', background: 'rgba(170,178,192,0.08)' }
+}
+
+function CheckinQrModal({ open, onClose, loading, payload, error, competitionName }) {
+  if (!open) return null
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Cerrar QR"
+        onClick={onClose}
+        style={{ position: 'fixed', inset: 0, border: 'none', background: 'rgba(0,0,0,0.62)', zIndex: 89 }}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="QR de check-in"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 90,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 'calc(14px + env(safe-area-inset-top, 0px)) 12px calc(14px + env(safe-area-inset-bottom, 0px))',
+        }}
+      >
+        <div style={{ width: 'min(100%, 520px)', maxHeight: '95dvh', borderRadius: 22, border: '1px solid #252A33', background: '#171B21', boxShadow: '0 24px 80px rgba(0,0,0,0.42)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', borderBottom: '1px solid #252A33', background: 'rgba(23,27,33,0.97)' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: '#F5F7FA' }}>Mi QR de check-in</div>
+              <div style={{ marginTop: 4, fontSize: 12, color: '#AAB2C0' }}>{competitionName || 'Competencia'}</div>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{ width: 36, height: 36, borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', color: '#F5F7FA', display: 'grid', placeItems: 'center', padding: 0 }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 14 }}>
+            {loading ? <div style={{ color: '#AAB2C0' }}>Cargando QR...</div> : null}
+            {!loading && error ? <div style={{ color: '#EF4444' }}>{error}</div> : null}
+            {!loading && !error && payload ? (
+              <>
+                <div style={{ borderRadius: 16, background: '#0D0F12', border: '1px solid #252A33', padding: 16, display: 'grid', placeItems: 'center' }}>
+                  {payload.qr_image_data_url ? <img src={payload.qr_image_data_url} alt="QR de check-in" style={{ width: '100%', maxWidth: 320, borderRadius: 12, background: '#F5F7FA', padding: 8 }} /> : null}
+                </div>
+                <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.55)', padding: 14, display: 'grid', gap: 8 }}>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Codigo de respaldo: <span style={{ color: '#00C2A8' }}>{payload.short_code || '--'}</span></div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13 }}>Estado: {payload.check_in_used ? 'Check-in ya usado' : 'Disponible para check-in'}</div>
+                  {payload.check_in_used_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Uso registrado: {formatDate(payload.check_in_used_at)}</div> : null}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </>
+  )
 }
 
 export function EventsPage() {
@@ -300,6 +360,33 @@ export function MyEventsPage() {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
+  const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [qrLoading, setQrLoading] = useState(false)
+  const [qrError, setQrError] = useState('')
+  const [qrPayload, setQrPayload] = useState(null)
+  const [qrCompetitionName, setQrCompetitionName] = useState('')
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    document.body.classList.toggle('fr-modal-open', qrModalOpen)
+    return () => document.body.classList.remove('fr-modal-open')
+  }, [qrModalOpen])
+
+  const openQrModal = async (competition) => {
+    setQrModalOpen(true)
+    setQrCompetitionName(competition?.nombre || '')
+    setQrLoading(true)
+    setQrError('')
+    setQrPayload(null)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/my-checkin-qr`)
+      setQrPayload(data || null)
+    } catch (err) {
+      setQrError(err.response?.data?.detail || 'No se pudo cargar tu QR ahora.')
+    } finally {
+      setQrLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!participantId) {
@@ -419,6 +506,27 @@ export function MyEventsPage() {
                         Ver leaderboard
                         <ChevronRight size={16} />
                       </Link>
+                      {competition.enrollment_estado === 'confirmado' ? (
+                        <button
+                          type="button"
+                          onClick={() => openQrModal(competition)}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            borderRadius: 999,
+                            border: '1px solid rgba(255,107,0,0.42)',
+                            background: 'rgba(255,107,0,0.14)',
+                            color: '#FFD8BC',
+                            fontWeight: 800,
+                            fontSize: 13,
+                            padding: '8px 12px',
+                          }}
+                        >
+                          <QrCode size={15} />
+                          Ver mi QR
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -427,6 +535,14 @@ export function MyEventsPage() {
           })}
         </div>
       </div>
+      <CheckinQrModal
+        open={qrModalOpen}
+        onClose={() => setQrModalOpen(false)}
+        loading={qrLoading}
+        payload={qrPayload}
+        error={qrError}
+        competitionName={qrCompetitionName}
+      />
     </div>
   )
 }

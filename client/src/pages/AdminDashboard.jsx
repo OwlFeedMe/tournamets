@@ -5,7 +5,7 @@ import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry 
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
 import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
-import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
@@ -2310,6 +2310,440 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
 }
 
 // ── Competitions Tab ──────────────────────────────────────────────────────────
+function CheckinQrConfigPanel({ competition, isMobile = false }) {
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [phases, setPhases] = useState([])
+  const [drafts, setDrafts] = useState({})
+  const [createDraft, setCreateDraft] = useState({
+    code: '',
+    label: '',
+    description: '',
+    max_uses: 1,
+    enabled: 1,
+  })
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerBusy, setScannerBusy] = useState(false)
+  const [scannerResult, setScannerResult] = useState(null)
+  const [scannerError, setScannerError] = useState('')
+  const [scannerPhaseCode, setScannerPhaseCode] = useState('check_in')
+  const [scannerStation, setScannerStation] = useState('')
+  const [manualToken, setManualToken] = useState('')
+  const [supportsDetector, setSupportsDetector] = useState(false)
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const detectorRef = useRef(null)
+  const rafRef = useRef(null)
+  const lastValueRef = useRef('')
+  const lastTimeRef = useRef(0)
+
+  const resetCreateDraft = () => setCreateDraft({ code: '', label: '', description: '', max_uses: 1, enabled: 1 })
+
+  const stopScanner = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+    setScannerOpen(false)
+  }
+
+  const loadPhases = async () => {
+    if (!competition?.id) return
+    setLoading(true)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/checkin/phases`)
+      const items = Array.isArray(data) ? data : []
+      setPhases(items)
+      if (items.length && !items.some((item) => item.code === scannerPhaseCode)) {
+        setScannerPhaseCode(items[0].code)
+      }
+      setDrafts(
+        items.reduce((acc, item) => {
+          acc[item.id] = {
+            label: item.label || '',
+            description: item.description || '',
+            order_index: Number(item.order_index || 0),
+            enabled: Number(item.enabled || 0) ? 1 : 0,
+            max_uses: Number(item.max_uses || 1),
+          }
+          return acc
+        }, {})
+      )
+      setMsg(null)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la configuracion QR' })
+      setPhases([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadPhases()
+  }, [competition?.id])
+
+  useEffect(() => {
+    setSupportsDetector(typeof window !== 'undefined' && 'BarcodeDetector' in window)
+  }, [])
+
+  useEffect(() => () => stopScanner(), [])
+
+  const updateDraft = (phaseId, patch) => {
+    setDrafts(prev => ({ ...prev, [phaseId]: { ...(prev[phaseId] || {}), ...patch } }))
+  }
+
+  const createPhase = async () => {
+    const code = String(createDraft.code || '').trim().toLowerCase()
+    const label = String(createDraft.label || '').trim()
+    if (!code || !label) {
+      setMsg({ type: 'error', text: 'Code y nombre son obligatorios para crear la fase.' })
+      return
+    }
+    setSaving(true)
+    try {
+      await api.post(`/competitions/${competition.id}/checkin/phases`, {
+        code,
+        label,
+        description: String(createDraft.description || '').trim() || null,
+        max_uses: Number(createDraft.max_uses || 1),
+        enabled: Number(createDraft.enabled || 0) ? 1 : 0,
+      })
+      resetCreateDraft()
+      setMsg({ type: 'success', text: 'Fase QR creada.' })
+      await loadPhases()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo crear la fase QR' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const savePhase = async (phase) => {
+    const draft = drafts[phase.id] || {}
+    setSaving(true)
+    try {
+      await api.put(`/competitions/${competition.id}/checkin/phases/${phase.id}`, {
+        label: String(draft.label || '').trim() || phase.label,
+        description: String(draft.description || '').trim() || null,
+        order_index: Number(draft.order_index || 0),
+        enabled: Number(draft.enabled || 0) ? 1 : 0,
+        max_uses: Number(draft.max_uses || 1),
+      })
+      setMsg({ type: 'success', text: `Fase ${phase.code} actualizada.` })
+      await loadPhases()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || `No se pudo guardar ${phase.code}` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deletePhase = async (phase) => {
+    if (phase.is_system) return
+    if (!confirm(`Eliminar fase "${phase.label}"?`)) return
+    setSaving(true)
+    try {
+      await api.delete(`/competitions/${competition.id}/checkin/phases/${phase.id}`)
+      setMsg({ type: 'success', text: `Fase ${phase.code} eliminada.` })
+      await loadPhases()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || `No se pudo eliminar ${phase.code}` })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const parseScannerResponse = (data) => {
+    const participant = data?.participant || null
+    const fullName = participant ? `${participant.nombre || ''} ${participant.apellido || ''}`.trim() : ''
+    return {
+      status: data?.status || 'unknown',
+      text: data?.ok
+        ? `Valido${fullName ? `: ${fullName}` : ''}`
+        : data?.status === 'already_used'
+          ? `Ya usado${fullName ? `: ${fullName}` : ''}`
+          : data?.status === 'invalid_token'
+            ? 'QR invalido'
+            : data?.status === 'phase_disabled'
+              ? 'Fase deshabilitada'
+              : data?.status === 'not_confirmed'
+                ? 'Inscripcion no confirmada'
+                : 'No valido',
+      at: data?.used_at || null,
+    }
+  }
+
+  const submitScan = async (tokenRaw) => {
+    const token = String(tokenRaw || '').trim()
+    if (!token || !competition?.id) return
+    if (scannerBusy) return
+    setScannerBusy(true)
+    try {
+      const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `scan-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+      const { data } = await api.post(`/competitions/${competition.id}/checkin/scan`, {
+        token,
+        phase_code: scannerPhaseCode || 'check_in',
+        station: String(scannerStation || '').trim() || null,
+        device_id: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 180) : null,
+        idempotency_key: idempotencyKey,
+      })
+      setScannerResult(parseScannerResponse(data))
+      setScannerError('')
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(data?.ok ? 100 : [80, 40, 80])
+    } catch (err) {
+      setScannerError(err.response?.data?.detail || 'No se pudo procesar el escaneo')
+      setScannerResult(null)
+    } finally {
+      setScannerBusy(false)
+    }
+  }
+
+  const startScanner = async () => {
+    setScannerError('')
+    setScannerResult(null)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScannerError('Este navegador no permite camara en vivo. Usa ingreso manual.')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' } },
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+      setScannerOpen(true)
+
+      if (!supportsDetector) {
+        setScannerError('BarcodeDetector no disponible. Usa ingreso manual o Chrome/PWA actualizado.')
+        return
+      }
+
+      detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] })
+      const loop = async () => {
+        if (!videoRef.current || !detectorRef.current) return
+        try {
+          const barcodes = await detectorRef.current.detect(videoRef.current)
+          const raw = String(barcodes?.[0]?.rawValue || '').trim()
+          const now = Date.now()
+          if (raw && (!lastValueRef.current || raw !== lastValueRef.current || (now - lastTimeRef.current) > 1400)) {
+            lastValueRef.current = raw
+            lastTimeRef.current = now
+            submitScan(raw)
+          }
+        } catch {
+          // ignore frame errors and continue loop
+        } finally {
+          rafRef.current = requestAnimationFrame(loop)
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop)
+    } catch (err) {
+      setScannerError(err?.message || 'No se pudo iniciar camara.')
+      stopScanner()
+    }
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#F5F7FA', fontWeight: 800, fontSize: 15 }}>
+            <QrCode size={16} />
+            Check-in QR
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+            Define usos del QR por fase. `check_in` es fase base y no se elimina.
+          </div>
+        </div>
+        <button className="btn-secondary btn-sm" type="button" onClick={loadPhases} disabled={loading || saving}>
+          {loading ? 'Cargando...' : 'Recargar'}
+        </button>
+      </div>
+
+      <div style={{ border: '1px solid #252A33', borderRadius: 14, padding: isMobile ? 10 : 12, background: 'rgba(13,15,18,0.62)', display: 'grid', gap: 10 }}>
+        <div style={{ color: '#D7DEE8', fontSize: 13, fontWeight: 700 }}>Crear nueva fase</div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
+          <input
+            placeholder="code (ej: kit)"
+            value={createDraft.code}
+            onChange={(e) => setCreateDraft(prev => ({ ...prev, code: e.target.value }))}
+          />
+          <input
+            placeholder="nombre visible"
+            value={createDraft.label}
+            onChange={(e) => setCreateDraft(prev => ({ ...prev, label: e.target.value }))}
+          />
+          <input
+            type="number"
+            min="1"
+            max="20"
+            placeholder="max usos"
+            value={createDraft.max_uses}
+            onChange={(e) => setCreateDraft(prev => ({ ...prev, max_uses: Number(e.target.value || 1) }))}
+          />
+        </div>
+        <input
+          placeholder="descripcion (opcional)"
+          value={createDraft.description}
+          onChange={(e) => setCreateDraft(prev => ({ ...prev, description: e.target.value }))}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={!!createDraft.enabled}
+              onChange={(e) => setCreateDraft(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
+              style={{ width: 'auto' }}
+            />
+            Habilitada
+          </label>
+          <button className="btn-primary btn-sm" type="button" onClick={createPhase} disabled={saving}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={14} />
+              Crear fase
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        {!phases.length && !loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay fases QR configuradas.</div> : null}
+        {phases.map((phase) => {
+          const draft = drafts[phase.id] || {}
+          const lockedCheckin = phase.code === 'check_in'
+          return (
+            <div key={phase.id} style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.62)', padding: isMobile ? 10 : 12, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                  code: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{phase.code}</span>
+                  {phase.is_system ? <span style={{ marginLeft: 8, color: '#00C2A8' }}>sistema</span> : null}
+                </div>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>orden #{Number(phase.order_index || 0)}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 2fr 1fr 1fr', gap: 8 }}>
+                <input value={draft.label ?? ''} onChange={(e) => updateDraft(phase.id, { label: e.target.value })} />
+                <input value={draft.description ?? ''} onChange={(e) => updateDraft(phase.id, { description: e.target.value })} placeholder="descripcion" />
+                <input type="number" min="0" value={draft.order_index ?? 0} onChange={(e) => updateDraft(phase.id, { order_index: Number(e.target.value || 0) })} />
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  disabled={lockedCheckin}
+                  value={draft.max_uses ?? 1}
+                  onChange={(e) => updateDraft(phase.id, { max_uses: Number(e.target.value || 1) })}
+                />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!draft.enabled}
+                    onChange={(e) => updateDraft(phase.id, { enabled: e.target.checked ? 1 : 0 })}
+                    style={{ width: 'auto' }}
+                  />
+                  Habilitada
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-secondary btn-sm" type="button" onClick={() => savePhase(phase)} disabled={saving}>
+                    Guardar
+                  </button>
+                  {!phase.is_system ? (
+                    <button className="btn-danger btn-sm" type="button" onClick={() => deletePhase(phase)} disabled={saving}>
+                      Eliminar
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ border: '1px solid #252A33', borderRadius: 14, padding: isMobile ? 10 : 12, background: 'rgba(13,15,18,0.62)', display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Escaner QR en vivo</div>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>Listo para PWA (HTTPS + permiso camara)</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+          <select value={scannerPhaseCode} onChange={(e) => setScannerPhaseCode(e.target.value)}>
+            {phases.map((phase) => (
+              <option key={phase.id} value={phase.code}>
+                {phase.label} ({phase.code})
+              </option>
+            ))}
+          </select>
+          <input
+            value={scannerStation}
+            onChange={(e) => setScannerStation(e.target.value)}
+            placeholder="Punto de control (ej: entrada principal)"
+          />
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {!scannerOpen ? (
+            <button className="btn-primary btn-sm" type="button" onClick={startScanner}>
+              Iniciar camara
+            </button>
+          ) : (
+            <button className="btn-secondary btn-sm" type="button" onClick={stopScanner}>
+              Detener camara
+            </button>
+          )}
+          {!supportsDetector ? <span style={{ color: '#F59E0B', fontSize: 12, alignSelf: 'center' }}>Deteccion automatica no soportada en este navegador.</span> : null}
+        </div>
+        {scannerOpen ? (
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden' }}>
+            <video ref={videoRef} muted playsInline autoPlay style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />
+          </div>
+        ) : null}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
+          <input
+            value={manualToken}
+            onChange={(e) => setManualToken(e.target.value)}
+            placeholder="Pegar token QR manual (fallback)"
+          />
+          <button
+            className="btn-secondary btn-sm"
+            type="button"
+            onClick={() => submitScan(manualToken)}
+            disabled={!String(manualToken || '').trim() || scannerBusy}
+          >
+            {scannerBusy ? 'Procesando...' : 'Procesar token'}
+          </button>
+        </div>
+        {scannerResult ? (
+          <div
+            style={{
+              borderRadius: 12,
+              border: `1px solid ${scannerResult.status === 'accepted' ? 'rgba(34,197,94,0.35)' : scannerResult.status === 'already_used' ? 'rgba(245,158,11,0.35)' : 'rgba(239,68,68,0.35)'}`,
+              background: scannerResult.status === 'accepted' ? 'rgba(34,197,94,0.12)' : scannerResult.status === 'already_used' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
+              padding: '10px 12px',
+              color: '#F5F7FA',
+              fontSize: 13,
+            }}
+          >
+            {scannerResult.text}{scannerResult.at ? ` · ${formatDate(scannerResult.at)}` : ''}
+          </div>
+        ) : null}
+        {scannerError ? <div style={{ color: '#EF4444', fontSize: 13 }}>{scannerError}</div> : null}
+      </div>
+      {msg ? <div className={`alert alert-${msg.type}`} style={{ margin: 0 }}>{msg.text}</div> : null}
+    </div>
+  )
+}
+
 function QuickCompetitionCreateModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -8048,6 +8482,8 @@ function CompetitionsTab() {
 
           {selectedTab === 'enrollments' && (
             <div className="card">
+              <CheckinQrConfigPanel competition={selectedCompetition} isMobile={isMobile} />
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div>
                   <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>

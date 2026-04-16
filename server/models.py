@@ -479,6 +479,158 @@ class PlatformConfig(SQLModel, table=True):
     )
 
 
+class CompetitionQrIdentity(SQLModel, table=True):
+    __tablename__ = "competition_qr_identities"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "participant_id", name="uq_comp_qr_identity_enrollment"),
+        UniqueConstraint("qr_uid", name="uq_comp_qr_uid"),
+        Index("ix_comp_qr_identity_competition", "competition_id"),
+        Index("ix_comp_qr_identity_participant", "participant_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    qr_uid: str = Field(index=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    participant_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    )
+    version: int = Field(default=1)
+    status: str = Field(default="active", index=True)  # active | revoked
+    issued_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    last_reissued_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_reason: Optional[str] = None
+    created_by_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    revoked_by_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionCheckinPhase(SQLModel, table=True):
+    __tablename__ = "competition_checkin_phases"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "code", name="uq_comp_checkin_phase_code"),
+        Index("ix_comp_checkin_phase_competition", "competition_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    code: str = Field(index=True)
+    label: str
+    description: Optional[str] = None
+    order_index: int = Field(default=0)
+    enabled: int = Field(default=1)
+    max_uses: int = Field(default=1)
+    is_system: int = Field(default=0)
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionCheckinUsage(SQLModel, table=True):
+    __tablename__ = "competition_checkin_usages"
+    __table_args__ = (
+        UniqueConstraint("qr_identity_id", "phase_id", "use_number", name="uq_comp_checkin_usage_slot"),
+        Index("ix_comp_checkin_usage_competition", "competition_id"),
+        Index("ix_comp_checkin_usage_phase", "phase_id"),
+        Index("ix_comp_checkin_usage_participant", "participant_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    participant_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    )
+    qr_identity_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competition_qr_identities.id", ondelete="CASCADE"), nullable=False)
+    )
+    phase_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competition_checkin_phases.id", ondelete="CASCADE"), nullable=False)
+    )
+    use_number: int = Field(default=1)
+    idempotency_key: Optional[str] = Field(default=None, index=True)
+    station: Optional[str] = None
+    device_id: Optional[str] = None
+    used_by_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    used_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionCheckinAudit(SQLModel, table=True):
+    __tablename__ = "competition_checkin_audit"
+    __table_args__ = (
+        Index("ix_comp_checkin_audit_competition", "competition_id"),
+        Index("ix_comp_checkin_audit_phase", "phase_id"),
+        Index("ix_comp_checkin_audit_result", "result"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    participant_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    qr_identity_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_qr_identities.id", ondelete="SET NULL"), nullable=True),
+    )
+    phase_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_checkin_phases.id", ondelete="SET NULL"), nullable=True),
+    )
+    action: str = Field(default="scan")
+    result: str = Field(default="accepted")
+    reason: Optional[str] = None
+    token_fingerprint: Optional[str] = None
+    station: Optional[str] = None
+    device_id: Optional[str] = None
+    idempotency_key: Optional[str] = None
+    actor_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    meta_json: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class CompetitionWithdrawalRequest(SQLModel, table=True):
     __tablename__ = "competition_withdrawal_requests"
 
