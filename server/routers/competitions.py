@@ -520,13 +520,12 @@ def get_competition(
 
 @router.get("/{competition_id}/public")
 def get_public_competition_detail(
-    competition_id: int,
+    competition_id: str,
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
-    competition = session.get(Competition, competition_id)
-    if not competition:
-        raise HTTPException(404, "Competencia no encontrada")
+    competition = _resolve_competition(session, competition_id)
+    competition_id_int = competition.id
     if not competition.activa:
         scoped_user = user
         if user and user.get("role") != "admin" and has_organizer_access(user):
@@ -536,7 +535,7 @@ def get_public_competition_detail(
             user
             and (
                 user.get("role") == "admin"
-                or (is_organizer_user(scoped_user) and competition_id in owned_ids)
+                or (is_organizer_user(scoped_user) and competition_id_int in owned_ids)
             )
         )
         if not can_preview:
@@ -549,7 +548,7 @@ def get_public_competition_detail(
             WHERE competition_id = :cid
             ORDER BY modality, orden, nombre
         """),
-        {"cid": competition_id},
+        {"cid": competition_id_int},
     ).mappings().all()
 
     phases = session.execute(
@@ -559,9 +558,9 @@ def get_public_competition_detail(
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
         """),
-        {"cid": competition_id},
+        {"cid": competition_id_int},
     ).mappings().all()
-    auto_status = compute_phase_status_map(session, competition_id)
+    auto_status = compute_phase_status_map(session, competition_id_int)
     normalized_phases = []
     for phase in phases:
         item = dict(phase)
@@ -636,7 +635,7 @@ def get_public_competition_detail(
             FROM competition_participants
             WHERE competition_id = :cid
         """),
-        {"cid": competition_id},
+        {"cid": competition_id_int},
     ).mappings().first() or {}
 
     return {
@@ -654,7 +653,7 @@ def get_public_competition_detail(
             "fases_total": len(normalized_phases),
             "categorias_total": len(categories),
         },
-        "leaderboard_url": _leaderboard_public_url(competition_id),
+        "leaderboard_url": _leaderboard_public_url(competition_id_int),
     }
 
 
