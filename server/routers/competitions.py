@@ -51,8 +51,7 @@ HEX_COLOR_RE = re.compile(r"^#([0-9a-fA-F]{6})$")
 
 def _generate_slug(nombre: str, session, exclude_id: int | None = None) -> str:
     """Generate a unique URL-safe slug from a competition name."""
-    import unicodedata as _ud
-    normalized = _ud.normalize("NFKD", nombre)
+    normalized = unicodedata.normalize("NFKD", nombre)
     ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
     slug_base = re.sub(r"[^a-z0-9]+", "-", ascii_str.lower()).strip("-")
     if not slug_base:
@@ -72,9 +71,9 @@ def _generate_slug(nombre: str, session, exclude_id: int | None = None) -> str:
 
 def _resolve_competition(session, id_or_slug: str) -> "Competition":
     """Lookup competition by numeric ID or text slug."""
-    if id_or_slug.isdigit():
+    try:
         competition = session.get(Competition, int(id_or_slug))
-    else:
+    except ValueError:
         competition = session.exec(
             select(Competition).where(Competition.slug == id_or_slug)
         ).first()
@@ -758,8 +757,8 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _serialize_landing_sections(data)
     _serialize_social_links(data)
     _serialize_enrollment_questions(data)
-    if "nombre" in data and data["nombre"] and data["nombre"].strip() != c.nombre:
-        data["slug"] = _generate_slug(data["nombre"], session, exclude_id=competition_id)
+    if c.slug is None or ("nombre" in data and data["nombre"] and data["nombre"].strip() != c.nombre.strip()):
+        data["slug"] = _generate_slug(data.get("nombre", c.nombre), session, exclude_id=competition_id)
     for field, value in data.items():
         setattr(c, field, value)
 

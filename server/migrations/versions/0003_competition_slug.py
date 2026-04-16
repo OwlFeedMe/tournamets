@@ -25,6 +25,21 @@ def upgrade() -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS ix_competitions_slug ON competitions (slug)
         """
     )
+    # Backfill slugs for existing competitions using pure SQL
+    op.execute(
+        """
+        UPDATE competitions
+        SET slug = (
+            SELECT lower(
+                trim(
+                    both '-' from
+                    regexp_replace(nombre, '[^a-zA-Z0-9]+', '-', 'g')
+                )
+            )
+        )
+        WHERE slug IS NULL
+        """
+    )
 
 
 def downgrade() -> None:
