@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
@@ -538,7 +538,7 @@ function EnrollmentAnswersBlock({ raw, compact = false, onPreviewImage = null })
   )
 }
 
-// ── Generic small modal ───────────────────────────────────────────────────────
+// â”€â”€ Generic small modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Modal({ title, onClose, width = 480, children, panelStyle = null, titleStyle = null, closeButtonStyle = null }) {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
@@ -649,7 +649,7 @@ function CompetitionThemeMiniPreview({ theme }) {
   )
 }
 
-// ── Categories Modal ──────────────────────────────────────────────────────────
+// â”€â”€ Categories Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CategoriesModal({ competition, onClose }) {
   const [cats, setCats] = useState([])
   const [nombre, setNombre] = useState('')
@@ -721,7 +721,7 @@ function CategoriesModal({ competition, onClose }) {
   )
 }
 
-// ── Phases Modal ──────────────────────────────────────────────────────────────
+// â”€â”€ Phases Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PHASE_TIPOS = ['posicion', 'cantidad', 'tiempo']
 const PHASE_MEASUREMENT_METHODS = ['amrap', 'emom', 'for_time', 'rm', 'unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion']
 const PHASE_MEASUREMENT_LABELS = {
@@ -1317,7 +1317,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -1332,10 +1332,10 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 </div>
                 {/* ---- TOGGLE PARTE B ---- */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
                   <label htmlFor="toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: form.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-                      {form.part_b_enabled ? 'Sí' : 'No'}
+                      {form.part_b_enabled ? 'SÃ­' : 'No'}
                     </span>
                     <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                       <input id="toggle-part-b" type="checkbox" checked={form.part_b_enabled}
@@ -1530,7 +1530,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
                           <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                             <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -1688,7 +1688,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
           const end = new Date(compEnd); end.setHours(0,0,0,0)
           let di = 1
           while (cursor <= end) {
-            competitionDays.push({ label: `Dia ${di} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`, value: cursor.toISOString().slice(0,10) })
+            competitionDays.push({ label: `Dia ${di} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`, value: cursor.toISOString().slice(0,10) })
             cursor.setDate(cursor.getDate() + 1); di++
           }
         }
@@ -1766,9 +1766,9 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
               {/* Toggle dos puntajes */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-                <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+                <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
                 <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#D6D9E0' : '#6B7280' }}>{hasPartB ? 'Sí' : 'No'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#D6D9E0' : '#6B7280' }}>{hasPartB ? 'SÃ­' : 'No'}</span>
                   <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                     <input id={toggleId} type="checkbox" checked={hasPartB} onChange={e => e.target.checked ? appendDraftActivity(ph.id) : removeDraftActivity(ph.id, 1)} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
                     <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: hasPartB ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
@@ -1854,7 +1854,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
                           <label htmlFor={toggleCatId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                             <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -2023,7 +2023,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
   )
 }
 
-// ── Enrollment Dates Modal ────────────────────────────────────────────────────
+// â”€â”€ Enrollment Dates Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function EnrollDatesModal({ competition, onClose, onSaved }) {
   const [form, setForm] = useState({
     enrollment_open: competition.enrollment_open || 0,
@@ -2090,7 +2090,7 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
   )
 }
 
-// ── Enrollment Modal ──────────────────────────────────────────────────────────
+// â”€â”€ Enrollment Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function EnrollmentModal({ competition, onClose, onSaved }) {
   const { role, organizerEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
@@ -2309,21 +2309,25 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   )
 }
 
-// ── Competitions Tab ──────────────────────────────────────────────────────────
+// â”€â”€ Competitions Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CheckinQrConfigPanel({ competition, isMobile = false }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState(null)
   const [phases, setPhases] = useState([])
-  const [drafts, setDrafts] = useState({})
-  const [createDraft, setCreateDraft] = useState({
+  const [phaseModalOpen, setPhaseModalOpen] = useState(false)
+  const [phaseModalMode, setPhaseModalMode] = useState('create')
+  const [editingPhase, setEditingPhase] = useState(null)
+  const [phaseForm, setPhaseForm] = useState({
     code: '',
     label: '',
     description: '',
+    order_index: 10,
     max_uses: 1,
     enabled: 1,
   })
   const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerModalOpen, setScannerModalOpen] = useState(false)
   const [scannerBusy, setScannerBusy] = useState(false)
   const [scannerResult, setScannerResult] = useState(null)
   const [scannerError, setScannerError] = useState('')
@@ -2331,14 +2335,14 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
   const [scannerStation, setScannerStation] = useState('')
   const [manualToken, setManualToken] = useState('')
   const [supportsDetector, setSupportsDetector] = useState(false)
+  const [cameraDevices, setCameraDevices] = useState([])
+  const [selectedCameraId, setSelectedCameraId] = useState('')
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const detectorRef = useRef(null)
   const rafRef = useRef(null)
   const lastValueRef = useRef('')
   const lastTimeRef = useRef(0)
-
-  const resetCreateDraft = () => setCreateDraft({ code: '', label: '', description: '', max_uses: 1, enabled: 1 })
 
   const stopScanner = () => {
     if (rafRef.current) {
@@ -2355,6 +2359,68 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
     setScannerOpen(false)
   }
 
+  const closeScannerModal = () => {
+    stopScanner()
+    setScannerModalOpen(false)
+  }
+
+  const resetPhaseForm = () => {
+    setPhaseForm({
+      code: '',
+      label: '',
+      description: '',
+      order_index: 10,
+      max_uses: 1,
+      enabled: 1,
+    })
+  }
+
+  const openCreatePhaseModal = () => {
+    setPhaseModalMode('create')
+    setEditingPhase(null)
+    resetPhaseForm()
+    setPhaseModalOpen(true)
+  }
+
+  const openEditPhaseModal = (phase) => {
+    setPhaseModalMode('edit')
+    setEditingPhase(phase)
+    setPhaseForm({
+      code: phase.code || '',
+      label: phase.label || '',
+      description: phase.description || '',
+      order_index: Number(phase.order_index || 0),
+      max_uses: Number(phase.max_uses || 1),
+      enabled: Number(phase.enabled || 0) ? 1 : 0,
+    })
+    setPhaseModalOpen(true)
+  }
+
+  const closePhaseModal = () => {
+    setPhaseModalOpen(false)
+    setEditingPhase(null)
+    resetPhaseForm()
+  }
+
+  const loadCameraDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const cams = devices
+        .filter((device) => device.kind === 'videoinput')
+        .map((device, index) => ({
+          id: device.deviceId,
+          label: device.label || `Camara ${index + 1}`,
+        }))
+      setCameraDevices(cams)
+      if (!selectedCameraId && cams.length) {
+        setSelectedCameraId(cams[0].id)
+      }
+    } catch {
+      setCameraDevices([])
+    }
+  }
+
   const loadPhases = async () => {
     if (!competition?.id) return
     setLoading(true)
@@ -2365,18 +2431,6 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
       if (items.length && !items.some((item) => item.code === scannerPhaseCode)) {
         setScannerPhaseCode(items[0].code)
       }
-      setDrafts(
-        items.reduce((acc, item) => {
-          acc[item.id] = {
-            label: item.label || '',
-            description: item.description || '',
-            order_index: Number(item.order_index || 0),
-            enabled: Number(item.enabled || 0) ? 1 : 0,
-            max_uses: Number(item.max_uses || 1),
-          }
-          return acc
-        }, {})
-      )
       setMsg(null)
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la configuracion QR' })
@@ -2392,55 +2446,54 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
 
   useEffect(() => {
     setSupportsDetector(typeof window !== 'undefined' && 'BarcodeDetector' in window)
+    loadCameraDevices()
   }, [])
 
   useEffect(() => () => stopScanner(), [])
 
-  const updateDraft = (phaseId, patch) => {
-    setDrafts(prev => ({ ...prev, [phaseId]: { ...(prev[phaseId] || {}), ...patch } }))
-  }
+  useEffect(() => {
+    if (!scannerModalOpen) return
+    loadCameraDevices()
+  }, [scannerModalOpen])
 
-  const createPhase = async () => {
-    const code = String(createDraft.code || '').trim().toLowerCase()
-    const label = String(createDraft.label || '').trim()
-    if (!code || !label) {
-      setMsg({ type: 'error', text: 'Code y nombre son obligatorios para crear la fase.' })
+  const submitPhaseModal = async () => {
+    const code = String(phaseForm.code || '').trim().toLowerCase()
+    const label = String(phaseForm.label || '').trim()
+    if (!label) {
+      setMsg({ type: 'error', text: 'El nombre de la fase es obligatorio.' })
       return
     }
-    setSaving(true)
-    try {
-      await api.post(`/competitions/${competition.id}/checkin/phases`, {
-        code,
-        label,
-        description: String(createDraft.description || '').trim() || null,
-        max_uses: Number(createDraft.max_uses || 1),
-        enabled: Number(createDraft.enabled || 0) ? 1 : 0,
-      })
-      resetCreateDraft()
-      setMsg({ type: 'success', text: 'Fase QR creada.' })
-      await loadPhases()
-    } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo crear la fase QR' })
-    } finally {
-      setSaving(false)
+    if (phaseModalMode === 'create' && !code) {
+      setMsg({ type: 'error', text: 'El code de la fase es obligatorio.' })
+      return
     }
-  }
 
-  const savePhase = async (phase) => {
-    const draft = drafts[phase.id] || {}
     setSaving(true)
     try {
-      await api.put(`/competitions/${competition.id}/checkin/phases/${phase.id}`, {
-        label: String(draft.label || '').trim() || phase.label,
-        description: String(draft.description || '').trim() || null,
-        order_index: Number(draft.order_index || 0),
-        enabled: Number(draft.enabled || 0) ? 1 : 0,
-        max_uses: Number(draft.max_uses || 1),
-      })
-      setMsg({ type: 'success', text: `Fase ${phase.code} actualizada.` })
+      if (phaseModalMode === 'create') {
+        await api.post(`/competitions/${competition.id}/checkin/phases`, {
+          code,
+          label,
+          description: String(phaseForm.description || '').trim() || null,
+          order_index: Number(phaseForm.order_index || 0),
+          max_uses: Number(phaseForm.max_uses || 1),
+          enabled: Number(phaseForm.enabled || 0) ? 1 : 0,
+        })
+        setMsg({ type: 'success', text: 'Fase QR creada.' })
+      } else if (editingPhase) {
+        await api.put(`/competitions/${competition.id}/checkin/phases/${editingPhase.id}`, {
+          label,
+          description: String(phaseForm.description || '').trim() || null,
+          order_index: Number(phaseForm.order_index || 0),
+          max_uses: Number(phaseForm.max_uses || 1),
+          enabled: Number(phaseForm.enabled || 0) ? 1 : 0,
+        })
+        setMsg({ type: 'success', text: `Fase ${editingPhase.code} actualizada.` })
+      }
+      closePhaseModal()
       await loadPhases()
     } catch (err) {
-      setMsg({ type: 'error', text: err.response?.data?.detail || `No se pudo guardar ${phase.code}` })
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo guardar la fase QR' })
     } finally {
       setSaving(false)
     }
@@ -2511,14 +2564,18 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
   const startScanner = async () => {
     setScannerError('')
     setScannerResult(null)
+    stopScanner()
     if (!navigator.mediaDevices?.getUserMedia) {
       setScannerError('Este navegador no permite camara en vivo. Usa ingreso manual.')
       return
     }
     try {
+      const videoConstraint = selectedCameraId
+        ? { deviceId: { exact: selectedCameraId } }
+        : { facingMode: { ideal: 'environment' } }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: { ideal: 'environment' } },
+        video: videoConstraint,
       })
       streamRef.current = stream
       if (videoRef.current) {
@@ -2526,6 +2583,7 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
         await videoRef.current.play()
       }
       setScannerOpen(true)
+      loadCameraDevices()
 
       if (!supportsDetector) {
         setScannerError('BarcodeDetector no disponible. Usa ingreso manual o Chrome/PWA actualizado.')
@@ -2545,7 +2603,7 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
             submitScan(raw)
           }
         } catch {
-          // ignore frame errors and continue loop
+          // keep scanner loop alive
         } finally {
           rafRef.current = requestAnimationFrame(loop)
         }
@@ -2569,52 +2627,14 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
             Define usos del QR por fase. `check_in` es fase base y no se elimina.
           </div>
         </div>
-        <button className="btn-secondary btn-sm" type="button" onClick={loadPhases} disabled={loading || saving}>
-          {loading ? 'Cargando...' : 'Recargar'}
-        </button>
-      </div>
-
-      <div style={{ border: '1px solid #252A33', borderRadius: 14, padding: isMobile ? 10 : 12, background: 'rgba(13,15,18,0.62)', display: 'grid', gap: 10 }}>
-        <div style={{ color: '#D7DEE8', fontSize: 13, fontWeight: 700 }}>Crear nueva fase</div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
-          <input
-            placeholder="code (ej: kit)"
-            value={createDraft.code}
-            onChange={(e) => setCreateDraft(prev => ({ ...prev, code: e.target.value }))}
-          />
-          <input
-            placeholder="nombre visible"
-            value={createDraft.label}
-            onChange={(e) => setCreateDraft(prev => ({ ...prev, label: e.target.value }))}
-          />
-          <input
-            type="number"
-            min="1"
-            max="20"
-            placeholder="max usos"
-            value={createDraft.max_uses}
-            onChange={(e) => setCreateDraft(prev => ({ ...prev, max_uses: Number(e.target.value || 1) }))}
-          />
-        </div>
-        <input
-          placeholder="descripcion (opcional)"
-          value={createDraft.description}
-          onChange={(e) => setCreateDraft(prev => ({ ...prev, description: e.target.value }))}
-        />
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0 }}>
-            <input
-              type="checkbox"
-              checked={!!createDraft.enabled}
-              onChange={(e) => setCreateDraft(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
-              style={{ width: 'auto' }}
-            />
-            Habilitada
-          </label>
-          <button className="btn-primary btn-sm" type="button" onClick={createPhase} disabled={saving}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn-secondary btn-sm" type="button" onClick={loadPhases} disabled={loading || saving}>
+            {loading ? 'Cargando...' : 'Recargar'}
+          </button>
+          <button className="btn-primary btn-sm" type="button" onClick={openCreatePhaseModal}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14} />
-              Crear fase
+              Nueva fase
             </span>
           </button>
         </div>
@@ -2622,105 +2642,52 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
 
       <div style={{ display: 'grid', gap: 8 }}>
         {!phases.length && !loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay fases QR configuradas.</div> : null}
-        {phases.map((phase) => {
-          const draft = drafts[phase.id] || {}
-          const lockedCheckin = phase.code === 'check_in'
-          return (
-            <div key={phase.id} style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.62)', padding: isMobile ? 10 : 12, display: 'grid', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        {phases.map((phase) => (
+          <div key={phase.id} style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.62)', padding: isMobile ? 10 : 12, display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>{phase.label || 'Fase'}</div>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                  code: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{phase.code}</span>
+                  code: <span style={{ color: '#D7DEE8' }}>{phase.code}</span>
                   {phase.is_system ? <span style={{ marginLeft: 8, color: '#00C2A8' }}>sistema</span> : null}
                 </div>
-                <div style={{ color: '#AAB2C0', fontSize: 12 }}>orden #{Number(phase.order_index || 0)}</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 2fr 1fr 1fr', gap: 8 }}>
-                <input value={draft.label ?? ''} onChange={(e) => updateDraft(phase.id, { label: e.target.value })} />
-                <input value={draft.description ?? ''} onChange={(e) => updateDraft(phase.id, { description: e.target.value })} placeholder="descripcion" />
-                <input type="number" min="0" value={draft.order_index ?? 0} onChange={(e) => updateDraft(phase.id, { order_index: Number(e.target.value || 0) })} />
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  disabled={lockedCheckin}
-                  value={draft.max_uses ?? 1}
-                  onChange={(e) => updateDraft(phase.id, { max_uses: Number(e.target.value || 1) })}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0 }}>
-                  <input
-                    type="checkbox"
-                    checked={!!draft.enabled}
-                    onChange={(e) => updateDraft(phase.id, { enabled: e.target.checked ? 1 : 0 })}
-                    style={{ width: 'auto' }}
-                  />
-                  Habilitada
-                </label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn-secondary btn-sm" type="button" onClick={() => savePhase(phase)} disabled={saving}>
-                    Guardar
-                  </button>
-                  {!phase.is_system ? (
-                    <button className="btn-danger btn-sm" type="button" onClick={() => deletePhase(phase)} disabled={saving}>
-                      Eliminar
-                    </button>
-                  ) : null}
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                  orden #{Number(phase.order_index || 0)} · max usos {Number(phase.max_uses || 1)} · {Number(phase.enabled || 0) ? 'habilitada' : 'deshabilitada'}
                 </div>
+                {phase.description ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{phase.description}</div> : null}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPhaseModal(phase)} disabled={saving}>
+                  Editar
+                </button>
+                {!phase.is_system ? (
+                  <button className="btn-danger btn-sm" type="button" onClick={() => deletePhase(phase)} disabled={saving}>
+                    Eliminar
+                  </button>
+                ) : null}
               </div>
             </div>
-          )
-        })}
+          </div>
+        ))}
       </div>
+
       <div style={{ border: '1px solid #252A33', borderRadius: 14, padding: isMobile ? 10 : 12, background: 'rgba(13,15,18,0.62)', display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Escaner QR en vivo</div>
-          <div style={{ color: '#AAB2C0', fontSize: 12 }}>Listo para PWA (HTTPS + permiso camara)</div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-          <select value={scannerPhaseCode} onChange={(e) => setScannerPhaseCode(e.target.value)}>
-            {phases.map((phase) => (
-              <option key={phase.id} value={phase.code}>
-                {phase.label} ({phase.code})
-              </option>
-            ))}
-          </select>
-          <input
-            value={scannerStation}
-            onChange={(e) => setScannerStation(e.target.value)}
-            placeholder="Punto de control (ej: entrada principal)"
-          />
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {!scannerOpen ? (
-            <button className="btn-primary btn-sm" type="button" onClick={startScanner}>
-              Iniciar camara
-            </button>
-          ) : (
-            <button className="btn-secondary btn-sm" type="button" onClick={stopScanner}>
-              Detener camara
-            </button>
-          )}
-          {!supportsDetector ? <span style={{ color: '#F59E0B', fontSize: 12, alignSelf: 'center' }}>Deteccion automatica no soportada en este navegador.</span> : null}
-        </div>
-        {scannerOpen ? (
-          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden' }}>
-            <video ref={videoRef} muted playsInline autoPlay style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />
+          <div>
+            <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Escaner QR</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Scanner en modal para no incrustar camara en la pagina.</div>
           </div>
-        ) : null}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
-          <input
-            value={manualToken}
-            onChange={(e) => setManualToken(e.target.value)}
-            placeholder="Pegar token QR manual (fallback)"
-          />
           <button
-            className="btn-secondary btn-sm"
+            className="btn-primary btn-sm"
             type="button"
-            onClick={() => submitScan(manualToken)}
-            disabled={!String(manualToken || '').trim() || scannerBusy}
+            onClick={() => {
+              setScannerError('')
+              setScannerResult(null)
+              setScannerModalOpen(true)
+              loadCameraDevices()
+            }}
           >
-            {scannerBusy ? 'Procesando...' : 'Procesar token'}
+            Abrir scanner
           </button>
         </div>
         {scannerResult ? (
@@ -2734,16 +2701,145 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
               fontSize: 13,
             }}
           >
-            {scannerResult.text}{scannerResult.at ? ` · ${formatDate(scannerResult.at)}` : ''}
+            Ultimo resultado: {scannerResult.text}{scannerResult.at ? ` · ${formatDate(scannerResult.at)}` : ''}
           </div>
         ) : null}
-        {scannerError ? <div style={{ color: '#EF4444', fontSize: 13 }}>{scannerError}</div> : null}
       </div>
+
+      {phaseModalOpen ? (
+        <Modal title={phaseModalMode === 'create' ? 'Nueva fase QR' : `Editar fase ${editingPhase?.code || ''}`} onClose={closePhaseModal} width={560}>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+              <input
+                placeholder="code (ej: kit)"
+                value={phaseForm.code}
+                onChange={(e) => setPhaseForm(prev => ({ ...prev, code: e.target.value }))}
+                disabled={phaseModalMode === 'edit'}
+              />
+              <input
+                placeholder="nombre visible"
+                value={phaseForm.label}
+                onChange={(e) => setPhaseForm(prev => ({ ...prev, label: e.target.value }))}
+              />
+            </div>
+            <input
+              placeholder="descripcion (opcional)"
+              value={phaseForm.description}
+              onChange={(e) => setPhaseForm(prev => ({ ...prev, description: e.target.value }))}
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
+              <input
+                type="number"
+                min="0"
+                value={phaseForm.order_index}
+                onChange={(e) => setPhaseForm(prev => ({ ...prev, order_index: Number(e.target.value || 0) }))}
+              />
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={phaseForm.max_uses}
+                disabled={phaseModalMode === 'edit' && editingPhase?.code === 'check_in'}
+                onChange={(e) => setPhaseForm(prev => ({ ...prev, max_uses: Number(e.target.value || 1) }))}
+              />
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0, border: '1px solid #252A33', borderRadius: 6, padding: '8px 10px', background: '#171B21' }}>
+                <input
+                  type="checkbox"
+                  checked={!!phaseForm.enabled}
+                  onChange={(e) => setPhaseForm(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
+                  style={{ width: 'auto' }}
+                />
+                Habilitada
+              </label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn-secondary btn-sm" type="button" onClick={closePhaseModal}>Cancelar</button>
+              <button className="btn-primary btn-sm" type="button" onClick={submitPhaseModal} disabled={saving}>
+                {saving ? 'Guardando...' : phaseModalMode === 'create' ? 'Crear fase' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {scannerModalOpen ? (
+        <Modal title="Escaner QR" onClose={closeScannerModal} width={760}>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+              <select value={scannerPhaseCode} onChange={(e) => setScannerPhaseCode(e.target.value)}>
+                {phases.map((phase) => (
+                  <option key={phase.id} value={phase.code}>
+                    {phase.label} ({phase.code})
+                  </option>
+                ))}
+              </select>
+              <input
+                value={scannerStation}
+                onChange={(e) => setScannerStation(e.target.value)}
+                placeholder="Punto de control (ej: entrada principal)"
+              />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto auto', gap: 8, alignItems: 'center' }}>
+              <select value={selectedCameraId} onChange={(e) => setSelectedCameraId(e.target.value)}>
+                <option value="">Camara por defecto</option>
+                {cameraDevices.map((cam) => (
+                  <option key={cam.id} value={cam.id}>{cam.label}</option>
+                ))}
+              </select>
+              {!scannerOpen ? (
+                <button className="btn-primary btn-sm" type="button" onClick={startScanner}>Iniciar camara</button>
+              ) : (
+                <button className="btn-secondary btn-sm" type="button" onClick={stopScanner}>Detener camara</button>
+              )}
+              <button className="btn-secondary btn-sm" type="button" onClick={loadCameraDevices}>Actualizar camaras</button>
+            </div>
+            {!supportsDetector ? <div style={{ color: '#F59E0B', fontSize: 12 }}>Deteccion automatica no soportada. Usa ingreso manual.</div> : null}
+            <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden', minHeight: 220 }}>
+              {scannerOpen ? (
+                <video ref={videoRef} muted playsInline autoPlay style={{ width: '100%', maxHeight: 420, objectFit: 'cover', display: 'block' }} />
+              ) : (
+                <div style={{ minHeight: 220, display: 'grid', placeItems: 'center', color: '#AAB2C0', fontSize: 13 }}>
+                  Camara detenida
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 8 }}>
+              <input
+                value={manualToken}
+                onChange={(e) => setManualToken(e.target.value)}
+                placeholder="Pegar token QR manual (fallback)"
+              />
+              <button
+                className="btn-secondary btn-sm"
+                type="button"
+                onClick={() => submitScan(manualToken)}
+                disabled={!String(manualToken || '').trim() || scannerBusy}
+              >
+                {scannerBusy ? 'Procesando...' : 'Procesar token'}
+              </button>
+            </div>
+            {scannerResult ? (
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: `1px solid ${scannerResult.status === 'accepted' ? 'rgba(34,197,94,0.35)' : scannerResult.status === 'already_used' ? 'rgba(245,158,11,0.35)' : 'rgba(239,68,68,0.35)'}`,
+                  background: scannerResult.status === 'accepted' ? 'rgba(34,197,94,0.12)' : scannerResult.status === 'already_used' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
+                  padding: '10px 12px',
+                  color: '#F5F7FA',
+                  fontSize: 13,
+                }}
+              >
+                {scannerResult.text}{scannerResult.at ? ` · ${formatDate(scannerResult.at)}` : ''}
+              </div>
+            ) : null}
+            {scannerError ? <div style={{ color: '#EF4444', fontSize: 13 }}>{scannerError}</div> : null}
+          </div>
+        </Modal>
+      ) : null}
       {msg ? <div className={`alert alert-${msg.type}`} style={{ margin: 0 }}>{msg.text}</div> : null}
     </div>
   )
 }
-
 function QuickCompetitionCreateModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
@@ -3773,7 +3869,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       >
                         <img src={flagUrl(currentEntry.code)} alt={currentEntry.code} style={{ width: 16, height: 12, borderRadius: 2, objectFit: 'cover' }} />
                         <span style={{ fontSize: 11, color: '#AAB2C0' }}>{currentPrefix}</span>
-                        <span style={{ fontSize: 10, color: '#6B7280' }}>▾</span>
+                        <span style={{ fontSize: 10, color: '#6B7280' }}>â–¾</span>
                       </button>
                       {showPhonePrefixDropdown && (
                         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999, background: '#1e2329', border: '1px solid #252A33', borderRadius: 10, padding: 4, display: 'grid', gap: 2, minWidth: 110, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
@@ -4081,7 +4177,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               {form.team_enabled ? (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Tamaño de equipo</label>
+                    <label>TamaÃ±o de equipo</label>
                     <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: e.target.value === '' ? '' : Math.max(1, Number(e.target.value)) }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4207,7 +4303,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Evento enlazado</div>
                       <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>
                         {linkedPhase?.nombre || 'Sin evento enlazado'}
-                        {linkedPhase && item.use_phase_dates ? ' · usa fechas del evento' : ''}
+                        {linkedPhase && item.use_phase_dates ? ' Â· usa fechas del evento' : ''}
                       </div>
                     </div>
                   </div>
@@ -4499,7 +4595,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Completa los datos del evento y agrégalo a la competencia.
+          Completa los datos del evento y agrÃ©galo a la competencia.
         </div>
 
         {/* ---- DATOS BASICOS ---- */}
@@ -4541,7 +4637,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -4597,10 +4693,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- TOGGLE DOS PUNTAJES ---- */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
           <label htmlFor="add-phase-toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: newPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-              {newPhase.part_b_enabled ? 'Sí' : 'No'}
+              {newPhase.part_b_enabled ? 'SÃ­' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id="add-phase-toggle-part-b" type="checkbox" checked={newPhase.part_b_enabled}
@@ -4675,8 +4771,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         {/* ---- CONFIGURACION POR CATEGORIA ---- */}
         {cats.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
-            <span style={{ fontWeight: 700 }}>⚠</span>
-            <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
+            <span style={{ fontWeight: 700 }}>âš </span>
+            <span>No hay categorÃ­as creadas. Ve a la secciÃ³n <strong>Divisiones</strong> y crea las categorÃ­as primero.</span>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -4697,7 +4793,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
                     <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                       <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                       <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -4795,7 +4891,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Completa los datos de la division y agrégala a la competencia.
+          Completa los datos de la division y agrÃ©gala a la competencia.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4843,7 +4939,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Configura la pregunta que verá el atleta en la inscripción.
+          Configura la pregunta que verÃ¡ el atleta en la inscripciÃ³n.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
@@ -5296,7 +5392,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} — ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -5352,10 +5448,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- TOGGLE DOS PUNTAJES ---- */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
+          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
           <label htmlFor={`edit-phase-toggle-part-b-${editingPhase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-              {editingPhase.part_b_enabled ? 'Sí' : 'No'}
+              {editingPhase.part_b_enabled ? 'SÃ­' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id={`edit-phase-toggle-part-b-${editingPhase.id}`} type="checkbox" checked={!!editingPhase.part_b_enabled}
@@ -5430,8 +5526,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         {/* ---- CONFIGURACION POR CATEGORIA ---- */}
         {cats.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
-            <span style={{ fontWeight: 700 }}>⚠</span>
-            <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
+            <span style={{ fontWeight: 700 }}>âš </span>
+            <span>No hay categorÃ­as creadas. Ve a la secciÃ³n <strong>Divisiones</strong> y crea las categorÃ­as primero.</span>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -5453,7 +5549,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
+                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
                     <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                       <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                       <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -6164,7 +6260,7 @@ function CompetitionTvPanel({ competition, onSaved }) {
                 {form.tv_include_total_slide && <option value="total">Total</option>}
                 {phases.map(ph => (
                   <option key={`tv-static-phase-${ph.id}`} value={ph.id}>
-                    {ph.nombre}{ph.estado === 'finalizada' ? ' ✓' : (ph.estado === 'en_progreso' ? ' ⏳' : '')}
+                    {ph.nombre}{ph.estado === 'finalizada' ? ' âœ“' : (ph.estado === 'en_progreso' ? ' â³' : '')}
                   </option>
                 ))}
               </select>
@@ -6513,7 +6609,7 @@ function CompetitionTeamsPanel({ competition }) {
                       <input type="checkbox" checked={selected} onChange={() => !disabled && toggleCreateMember(p.id)} style={{ width: 'auto' }} />
                       <span style={{ fontSize: 13, flex: 1 }}>{p.nombre} {p.apellido}</span>
                       {selected && (
-                        <button type="button" title={isCap ? 'Capitán' : 'Hacer capitán'} onClick={e => { e.preventDefault(); setCreateForm(f => ({ ...f, captain_id: p.id })) }}
+                        <button type="button" title={isCap ? 'CapitÃ¡n' : 'Hacer capitÃ¡n'} onClick={e => { e.preventDefault(); setCreateForm(f => ({ ...f, captain_id: p.id })) }}
                           style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', lineHeight: 1 }}>
                           <Crown size={14} color={isCap ? '#e8a800' : '#ccc'} />
                         </button>
@@ -6533,7 +6629,7 @@ function CompetitionTeamsPanel({ competition }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {(t.nombre || '').trim() || `Equipo ${t.id}`}
-                  {t.captain_id && <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '1px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Crown size={9} /> Capitán asignado</span>}
+                  {t.captain_id && <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '1px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Crown size={9} /> CapitÃ¡n asignado</span>}
                 </div>
                 <div style={{ fontSize: 12, color: '#647063' }}>{(t.members || []).length} integrantes</div>
                 <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
@@ -6541,7 +6637,7 @@ function CompetitionTeamsPanel({ competition }) {
                     <div key={`team-member-${t.id}-${m.id}`} style={{ background: m.id === t.captain_id ? '#fffbef' : '#fff', border: `1px solid ${m.id === t.captain_id ? '#ffe08a' : '#d5ddd3'}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {m.id === t.captain_id && <Crown size={12} color="#e8a800" />}
                       {m.nombre} {m.apellido}
-                      {m.id === t.captain_id && <span style={{ fontSize: 10, color: '#9a6a00', marginLeft: 2 }}>Capitán</span>}
+                      {m.id === t.captain_id && <span style={{ fontSize: 10, color: '#9a6a00', marginLeft: 2 }}>CapitÃ¡n</span>}
                     </div>
                   ))}
                 </div>
@@ -6603,7 +6699,7 @@ function CompetitionTeamsPanel({ competition }) {
                       <input type="checkbox" checked={selected} onChange={() => !disabled && toggleEditMember(p.id)} style={{ width: 'auto' }} />
                       <span style={{ fontSize: 13, flex: 1 }}>{p.nombre} {p.apellido}</span>
                       {selected ? (
-                        <button type="button" title={isCap ? 'Capitán' : 'Hacer capitán'} onClick={e => { e.preventDefault(); setEditForm(f => ({ ...f, captain_id: p.id })) }}
+                        <button type="button" title={isCap ? 'CapitÃ¡n' : 'Hacer capitÃ¡n'} onClick={e => { e.preventDefault(); setEditForm(f => ({ ...f, captain_id: p.id })) }}
                           style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', lineHeight: 1 }}>
                           <Crown size={14} color={isCap ? '#e8a800' : '#ccc'} />
                         </button>
@@ -8282,14 +8378,14 @@ function CompetitionsTab() {
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#8FF3E7' }}>¡Todo listo! Has completado todos los pasos previos.</div>
-                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>La competencia está lista para publicar cuando quieras.</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#8FF3E7' }}>Â¡Todo listo! Has completado todos los pasos previos.</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>La competencia estÃ¡ lista para publicar cuando quieras.</div>
                   </div>
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: 0, fontSize: 15 }}>Progreso de configuración</h4>
+                    <h4 style={{ margin: 0, fontSize: 15 }}>Progreso de configuraciÃ³n</h4>
                     <span style={{ color: '#FFB36F', fontWeight: 800, fontSize: 16 }}>{launchProgress}%</span>
                   </div>
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -8298,7 +8394,7 @@ function CompetitionsTab() {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {launchChecklist.map(item => (
                       <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(0,194,168,0.12)' : 'rgba(255,107,0,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(0,194,168,0.24)' : 'rgba(255,107,0,0.24)'}` }}>
-                        {item.done ? '✓' : '○'} {item.label}
+                        {item.done ? 'âœ“' : 'â—‹'} {item.label}
                       </span>
                     ))}
                   </div>
@@ -8315,7 +8411,7 @@ function CompetitionsTab() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>Vista previa</div>
-                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Revisa textos, imágenes y estados antes de publicar.</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Revisa textos, imÃ¡genes y estados antes de publicar.</div>
                   </div>
                   <button
                     type="button"
@@ -8344,8 +8440,8 @@ function CompetitionsTab() {
                     </div>
                     <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
                       {selectedCompetition.activa
-                        ? 'La competencia será retirada del listado público y las inscripciones se cerrarán.'
-                        : 'La competencia será visible para todos los usuarios de la plataforma.'}
+                        ? 'La competencia serÃ¡ retirada del listado pÃºblico y las inscripciones se cerrarÃ¡n.'
+                        : 'La competencia serÃ¡ visible para todos los usuarios de la plataforma.'}
                     </div>
                   </div>
                   <button
@@ -8388,7 +8484,7 @@ function CompetitionsTab() {
                         className="btn-secondary btn-sm"
                         style={{ flexShrink: 0, background: linkCopied ? 'rgba(94,234,212,0.12)' : undefined, color: linkCopied ? '#5EEAD4' : undefined, border: linkCopied ? '1px solid rgba(94,234,212,0.3)' : undefined }}
                       >
-                        {linkCopied ? '¡Copiado!' : 'Copiar link'}
+                        {linkCopied ? 'Â¡Copiado!' : 'Copiar link'}
                       </button>
                     </div>
                   </div>
@@ -8404,7 +8500,7 @@ function CompetitionsTab() {
                     </div>
                     <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
                       {selectedCompetition.activa
-                        ? (selectedCompetition.enrollment_open ? 'Los participantes ya no podrán registrarse.' : 'Permite que los participantes se registren.')
+                        ? (selectedCompetition.enrollment_open ? 'Los participantes ya no podrÃ¡n registrarse.' : 'Permite que los participantes se registren.')
                         : 'Debes publicar la competencia primero para habilitar las inscripciones.'}
                     </div>
                   </div>
@@ -8429,7 +8525,7 @@ function CompetitionsTab() {
                 </div>
               </div>
 
-              {/* Modal confirmación publicar */}
+              {/* Modal confirmaciÃ³n publicar */}
               {showConfirmPublish && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowConfirmPublish(false)}>
                   <div style={{ background: '#0D1117', border: '1px solid #252A33', borderRadius: 18, padding: 28, maxWidth: 420, width: '100%', display: 'grid', gap: 18 }} onClick={e => e.stopPropagation()}>
@@ -8443,12 +8539,12 @@ function CompetitionsTab() {
                         </svg>
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 16, color: '#F5F7FA' }}>
-                        {selectedCompetition.activa ? '¿Despublicar competencia?' : '¿Publicar competencia?'}
+                        {selectedCompetition.activa ? 'Â¿Despublicar competencia?' : 'Â¿Publicar competencia?'}
                       </div>
                       <div style={{ fontSize: 13, color: '#AAB2C0', lineHeight: 1.6 }}>
                         {selectedCompetition.activa
-                          ? 'La competencia dejará de ser visible para el público y las inscripciones se cerrarán automáticamente.'
-                          : '¿Estás seguro de que deseas hacer pública esta competencia? Será visible para todos los usuarios de la plataforma.'}
+                          ? 'La competencia dejarÃ¡ de ser visible para el pÃºblico y las inscripciones se cerrarÃ¡n automÃ¡ticamente.'
+                          : 'Â¿EstÃ¡s seguro de que deseas hacer pÃºblica esta competencia? SerÃ¡ visible para todos los usuarios de la plataforma.'}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -8464,14 +8560,14 @@ function CompetitionsTab() {
                             setSelectedCompetition(prev => ({ ...prev, ...data }))
                             setShowConfirmPublish(false)
                             load()
-                            if (nextActive) setSuccessToast('¡Competencia publicada exitosamente!')
+                            if (nextActive) setSuccessToast('Â¡Competencia publicada exitosamente!')
                           } catch (err) {
                             setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
                             setShowConfirmPublish(false)
                           }
                         }}
                       >
-                        {selectedCompetition.activa ? 'Sí, despublicar' : 'Sí, publicar'}
+                        {selectedCompetition.activa ? 'SÃ­, despublicar' : 'SÃ­, publicar'}
                       </button>
                     </div>
                   </div>
@@ -8644,7 +8740,7 @@ function CompetitionsTab() {
   )
 }
 
-// ── Participants Tab ──────────────────────────────────────────────────────────
+// â”€â”€ Participants Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ParticipantsTab() {
   const [participants, setParticipants] = useState([])
   const [search, setSearch] = useState('')
@@ -8963,7 +9059,7 @@ function ParticipantsTab() {
   )
 }
 
-// ── Results Tab ───────────────────────────────────────────────────────────────
+// â”€â”€ Results Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const MAX_TEAM_SIZE = 10
 
 function TeamsTab() {
@@ -9850,7 +9946,7 @@ function OrganizerApplicationsTab() {
                   <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Evento propuesto</div>
                   <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, marginTop: 6 }}>{item.requested_event_name}</div>
                   <div style={{ color: '#D7DEE8', fontSize: 13, marginTop: 6 }}>
-                    {[item.requested_event_location, item.requested_event_date].filter(Boolean).join(' · ') || 'Sin fecha o lugar definidos'}
+                    {[item.requested_event_location, item.requested_event_date].filter(Boolean).join(' Â· ') || 'Sin fecha o lugar definidos'}
                   </div>
                   {item.requested_event_description ? <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{item.requested_event_description}</div> : null}
                 </div>
@@ -10075,7 +10171,7 @@ function SystemStatusTab() {
   )
 }
 
-// ── Main AdminDashboard ───────────────────────────────────────────────────────
+// â”€â”€ Main AdminDashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function AdminDashboard() {
   const { role, organizerEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
