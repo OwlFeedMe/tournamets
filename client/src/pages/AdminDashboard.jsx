@@ -2449,6 +2449,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     navigator.clipboard.writeText(url).then(() => {
       setLinkCopied(true)
       setTimeout(() => setLinkCopied(false), 2000)
+    }).catch(() => {
+      setMsg({ type: 'error', text: 'No se pudo copiar el link' })
     })
   }
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false)
