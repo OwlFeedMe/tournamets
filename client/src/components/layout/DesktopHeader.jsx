@@ -60,8 +60,8 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
     width: 42,
     height: 42,
     borderRadius: 14,
-    border: '1px solid rgba(37,42,51,0.96)',
-    background: 'rgba(23,27,33,0.96)',
+    border: '1px solid var(--oa-border)',
+    background: 'rgba(23,26,32,0.96)',
     color: 'var(--oa-text)',
     display: 'grid',
     placeItems: 'center',
@@ -81,7 +81,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
         padding: '12px 24px',
         background: 'rgba(9, 11, 14, 0.92)',
         backdropFilter: 'blur(18px)',
-        borderBottom: '1px solid rgba(37, 42, 51, 0.92)',
+        borderBottom: '1px solid var(--oa-border)',
       }}
     >
       <div
@@ -97,7 +97,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
           to="/"
           style={{
             textDecoration: 'none',
-            color: '#FF6B00',
+            color: 'var(--oa-primary)',
             fontFamily: 'Bebas Neue, sans-serif',
             fontSize: 32,
             letterSpacing: 1,
@@ -126,9 +126,9 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
                   gap: 8,
                   padding: '10px 14px',
                   borderRadius: 14,
-                  border: active ? '1px solid rgba(255, 107, 0, 0.4)' : '1px solid transparent',
+                  border: active ? '1px solid rgba(214, 217, 224, 0.28)' : '1px solid transparent',
                   background: active
-                    ? 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(255,154,61,0.14))'
+                    ? 'linear-gradient(135deg, rgba(214,217,224,0.14), rgba(94,234,212,0.10))'
                     : 'transparent',
                   color: active ? 'var(--oa-text)' : 'var(--oa-text-secondary)',
                   fontWeight: 700,
@@ -198,8 +198,8 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
                 gap: 8,
                 display: 'inline-flex',
                 alignItems: 'center',
-                background: 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(255,154,61,0.14))',
-                border: '1px solid rgba(255, 107, 0, 0.4)',
+                background: 'linear-gradient(135deg, rgba(214,217,224,0.18), rgba(199,205,214,0.12))',
+                border: '1px solid rgba(214, 217, 224, 0.28)',
                 fontWeight: 700,
                 fontSize: 14,
               }}

@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
 const pageBg =
-  'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
+  'radial-gradient(circle at top, rgba(214,217,224,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.12), transparent 24%), #0D0F12'
 
 function normalizeStatus(status) {
   const value = String(status || '').trim().toLowerCase()
@@ -21,7 +21,7 @@ function statusCopy(status) {
     return {
       title: 'Pago aprobado',
       text: 'Tu pago fue confirmado y tu inscripcion quedo activa en esta competencia.',
-      tone: '#00C2A8',
+      tone: '#5EEAD4',
       icon: CheckCircle2,
     }
   }
@@ -123,13 +123,13 @@ export default function CompetitionPaymentResultPage() {
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
       <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 72px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
-          <Link to={`/competitions/${competitionId}`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 12, border: '1px solid #252A33', color: '#F5F7FA', background: 'rgba(13,15,18,0.4)' }}>
+          <Link to={`/competitions/${competitionId}`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 6, border: '1px solid #252A33', color: '#F5F7FA', background: 'rgba(13,15,18,0.4)' }}>
             <ArrowLeft size={16} />
             Volver a la competencia
           </Link>
         </div>
 
-        <section style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: 24, display: 'grid', gap: 16 }}>
+        <section className="fr-cut-card" style={{ border: '1px solid #252A33', background: '#171B21', padding: 24, display: 'grid', gap: 16 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: copy.tone }}>
             <StatusIcon size={22} />
             <span style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>{copy.title}</span>
@@ -140,16 +140,16 @@ export default function CompetitionPaymentResultPage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-            <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+            <div className="fr-cut-card" style={{ border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
               <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 6 }}>Referencia</div>
               <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, wordBreak: 'break-word' }}>{syncState.reference || boldOrderId || 'Sin referencia'}</div>
             </div>
-            <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+            <div className="fr-cut-card" style={{ border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
               <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 6 }}>Estado reportado</div>
               <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>{effectiveStatus}</div>
             </div>
             {syncState.tx ? (
-              <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
+              <div className="fr-cut-card" style={{ border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 14 }}>
                 <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 6 }}>Transaccion Bold</div>
                 <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>{syncState.tx}</div>
               </div>
@@ -157,7 +157,7 @@ export default function CompetitionPaymentResultPage() {
           </div>
 
           {syncState.error ? (
-            <div style={{ borderRadius: 14, border: '1px solid rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+            <div className="fr-cut-card" style={{ border: '1px solid rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
               {syncState.error}
             </div>
           ) : null}

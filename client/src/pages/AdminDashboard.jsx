@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
@@ -24,11 +24,11 @@ function SuccessToast({ text, onDone }) {
       <div style={{
         position: 'relative',
         background: '#0D1117',
-        border: '2px solid #FF6B00',
+        border: '2px solid #D6D9E0',
         borderRadius: 12,
         padding: '18px 24px',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9,
-        boxShadow: '0 0 30px rgba(255,107,0,0.18), 0 4px 20px rgba(0,0,0,0.7)',
+        boxShadow: '0 0 30px rgba(214,217,224,0.18), 0 4px 20px rgba(0,0,0,0.7)',
         animation: 'successToastIn 0.25s cubic-bezier(.34,1.56,.64,1)',
         pointerEvents: 'auto',
       }}>
@@ -44,11 +44,11 @@ function SuccessToast({ text, onDone }) {
         <div style={{
           width: 36, height: 36,
           borderRadius: '50%',
-          border: '2px solid #FF6B00',
+          border: '2px solid #D6D9E0',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(255,107,0,0.08)',
+          background: 'rgba(214,217,224,0.08)',
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D6D9E0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
@@ -123,6 +123,16 @@ function formatDate(value) {
   } catch {
     return String(value)
   }
+}
+
+function formatDurationShort(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds || 0))
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
 }
 
 function toLocalDateTimeInput(value) {
@@ -1205,7 +1215,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
           <div style={{ display: 'grid', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div>
-                <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.9 }}>Wizard de evento</div>
+                <div style={{ color: '#5EEAD4', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.9 }}>Wizard de evento</div>
                 <div style={{ color: '#F5F7FA', fontSize: isMobile ? 18 : 20, fontWeight: 800, marginTop: 4 }}>{wizardSteps[createStep].label}</div>
               </div>
               <div style={{ color: '#AAB2C0', fontSize: 12 }}>{`Paso ${createStep + 1} de ${wizardSteps.length}`}</div>
@@ -1220,8 +1230,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
                   }}
                   style={{
                     borderRadius: 999,
-                    border: index === createStep ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
-                    background: index === createStep ? 'rgba(255,107,0,0.14)' : 'rgba(13,15,18,0.72)',
+                    border: index === createStep ? '1px solid rgba(214,217,224,0.45)' : '1px solid #252A33',
+                    background: index === createStep ? 'rgba(214,217,224,0.14)' : 'rgba(13,15,18,0.72)',
                     color: index <= createStep ? '#F5F7FA' : '#6B7280',
                     padding: '10px 12px',
                     fontSize: 12,
@@ -1264,14 +1274,14 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
                   <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
                   <label htmlFor="toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: form.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: form.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
                       {form.part_b_enabled ? 'Sí' : 'No'}
                     </span>
                     <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                       <input id="toggle-part-b" type="checkbox" checked={form.part_b_enabled}
                         onChange={e => setForm(prev => ({ ...prev, part_b_enabled: e.target.checked, part_b_descripcion: '', part_b_time_cap: '' }))}
                         style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-                      <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: form.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                      <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: form.part_b_enabled ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                       <span style={{ position: 'absolute', top: 3, left: form.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                     </span>
                   </label>
@@ -1279,7 +1289,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 {/* Selector de dia */}
                 {competitionDays.length > 0 && (
                   <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {competitionDays.map(day => (
                         <button
@@ -1292,8 +1302,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
                           }))}
                           style={{
                             borderRadius: 999,
-                            border: form.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
-                            background: form.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                            border: form.start_at === day.value ? '1px solid rgba(214,217,224,0.6)' : '1px solid #252A33',
+                            background: form.start_at === day.value ? 'rgba(214,217,224,0.18)' : 'rgba(13,15,18,0.72)',
                             color: form.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
                             padding: '8px 14px',
                             fontSize: 12,
@@ -1327,7 +1337,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 const isAmrapOrEmom = currentMethod === 'amrap' || currentMethod === 'emom'
                 return (
                   <div style={{ display: 'grid', gap: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>
                       {form.part_b_enabled ? 'Parte A' : 'WOD'}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
@@ -1385,8 +1395,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 const isForTimeB = methodB === 'for_time'
                 const isAmrapOrEmomB = methodB === 'amrap' || methodB === 'emom'
                 return (
-                  <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+                  <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(214,217,224,0.25)', background: 'rgba(214,217,224,0.04)', padding: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
                     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label>Formato</label>
@@ -1440,7 +1450,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
               {/* ---- CONFIGURACION POR CATEGORIA ---- */}
               {categories.length > 0 && (
                 <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
                   {categories.map(cat => {
                     const override = catOverrides[cat.id] || {}
                     const isModified = !!override.modified
@@ -1448,14 +1458,14 @@ function PhasesModal({ competition, onClose, inline = false }) {
                     return (
                       <div
                         key={cat.id}
-                        style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}
+                        style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
                             {cat.nombre.split(' ')[0].toUpperCase()}
                           </span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
-                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(214,217,224,0.15)' : 'rgba(94,234,212,0.12)', border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : 'rgba(94,234,212,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
                             {isModified ? 'Modificado' : 'Hereda base'}
                           </span>
                         </div>
@@ -1468,7 +1478,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                                 onChange={e => setCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, modified: e.target.checked } }))}
                                 style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
                               />
-                              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                               <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                             </span>
                           </label>
@@ -1542,18 +1552,18 @@ function PhasesModal({ competition, onClose, inline = false }) {
               <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
                 <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nuevo evento'}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#D9FFFA', fontSize: 12, fontWeight: 700 }}>
+                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(94,234,212,0.12)', border: '1px solid rgba(94,234,212,0.22)', color: '#D9FFFA', fontSize: 12, fontWeight: 700 }}>
                     {PHASE_MEASUREMENT_LABELS[createActivities[0]?.measurement_method] || createActivities[0]?.measurement_method || 'unidades'}
                   </span>
                   {form.time_cap ? (
-                    <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(214,217,224,0.12)', border: '1px solid rgba(214,217,224,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>
                       {`Cap: ${form.time_cap}`}
                     </span>
                   ) : null}
                   <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(107,114,128,0.12)', border: '1px solid rgba(107,114,128,0.22)', color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>
                     {createActivities[0]?.winner_rule === 'lower_wins' ? 'Gana menor' : 'Gana mayor'}
                   </span>
-                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(255,107,0,0.12)', border: '1px solid rgba(255,107,0,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>{form.estado || 'pendiente'}</span>
+                  <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(214,217,224,0.12)', border: '1px solid rgba(214,217,224,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>{form.estado || 'pendiente'}</span>
                 </div>
                 <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
                   {form.start_at || form.end_at ? `Fechas: ${form.start_at || 'sin inicio'} a ${form.end_at || 'sin cierre'}` : 'Fechas: por definir'}
@@ -1561,19 +1571,19 @@ function PhasesModal({ competition, onClose, inline = false }) {
               </div>
 
               <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#171B21', padding: 12 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>WOD Base</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 }}>WOD Base</div>
                 <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{createActivities[0]?.descripcion}</div>
               </div>
 
               {Object.entries(catOverrides).filter(([, v]) => v.modified && String(v.text || '').trim()).length > 0 && (
                 <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Overrides por categoria</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Overrides por categoria</div>
                   {Object.entries(catOverrides)
                     .filter(([, v]) => v.modified && String(v.text || '').trim())
                     .map(([catId, v]) => {
                       const cat = categories.find(c => String(c.id) === String(catId))
                       return (
-                        <div key={catId} style={{ borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: '#171B21', padding: 12 }}>
+                        <div key={catId} style={{ borderRadius: 12, border: '1px solid rgba(214,217,224,0.25)', background: '#171B21', padding: 12 }}>
                           <div style={{ fontSize: 12, fontWeight: 800, color: '#FFD0AE', marginBottom: 6 }}>{cat?.nombre || catId}</div>
                           <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{v.text}</div>
                         </div>
@@ -1642,7 +1652,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '200px 1fr', gap: 12, alignItems: 'start' }}>
             {/* Lista izquierda */}
             <div style={{ display: 'grid', gap: 4 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Eventos creados</div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 }}>Eventos creados</div>
               {phases.map((p, i) => {
                 const isSelected = String(p.id) === String(ph.id)
                 return (
@@ -1652,8 +1662,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
                     style={{
                       padding: '9px 12px',
                       borderRadius: 10,
-                      border: isSelected ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
-                      background: isSelected ? 'rgba(255,107,0,0.1)' : 'rgba(23,27,33,0.6)',
+                      border: isSelected ? '1px solid rgba(214,217,224,0.45)' : '1px solid #252A33',
+                      background: isSelected ? 'rgba(214,217,224,0.1)' : 'rgba(23,27,33,0.6)',
                       cursor: 'pointer',
                       userSelect: 'none',
                     }}
@@ -1698,10 +1708,10 @@ function PhasesModal({ competition, onClose, inline = false }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
                 <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
                 <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#FF6B00' : '#6B7280' }}>{hasPartB ? 'Sí' : 'No'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#D6D9E0' : '#6B7280' }}>{hasPartB ? 'Sí' : 'No'}</span>
                   <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                     <input id={toggleId} type="checkbox" checked={hasPartB} onChange={e => e.target.checked ? appendDraftActivity(ph.id) : removeDraftActivity(ph.id, 1)} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-                    <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: hasPartB ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                    <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: hasPartB ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                     <span style={{ position: 'absolute', top: 3, left: hasPartB ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                   </span>
                 </label>
@@ -1709,7 +1719,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
               {/* WOD Parte A */}
               <div style={{ display: 'grid', gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>{hasPartB ? 'Parte A' : 'WOD'}</div>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>{hasPartB ? 'Parte A' : 'WOD'}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label>Formato</label>
@@ -1736,8 +1746,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
               {/* WOD Parte B */}
               {hasPartB && (
-                <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+                <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(214,217,224,0.25)', background: 'rgba(214,217,224,0.04)', padding: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>Formato</label>
@@ -1766,20 +1776,20 @@ function PhasesModal({ competition, onClose, inline = false }) {
               {/* Configuracion por categoria */}
               {categories.length > 0 && (
                 <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
                   {categories.map(cat => {
                     const existingEntry = (ph.activities || []).find(a => String(a._cat) === String(cat.id))
                     const draftOverride = (phaseDrafts[ph.id]?.catOverrides || {})[cat.id] || {}
                     const isModified = 'modified' in draftOverride ? draftOverride.modified : !!existingEntry
                     const toggleCatId = `edit-cat-toggle-${ph.id}-${cat.id}`
                     return (
-                      <div key={`edit-cat-${ph.id}-${cat.id}`} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                      <div key={`edit-cat-${ph.id}-${cat.id}`} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
                           <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
                             {cat.nombre.split(' ')[0].toUpperCase()}
                           </span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
-                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                          <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(214,217,224,0.15)' : 'rgba(94,234,212,0.12)', border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : 'rgba(94,234,212,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
                             {isModified ? 'Modificado' : 'Hereda base'}
                           </span>
                         </div>
@@ -1792,7 +1802,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                                 onChange={e => patchDraftCatOverride(ph.id, cat.id, 'modified', e.target.checked)}
                                 style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
                               />
-                              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                               <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                             </span>
                           </label>
@@ -1981,7 +1991,7 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
   return (
     <Modal title={`Inscripciones - ${competition.nombre}`} onClose={onClose} width={420}>
       <form onSubmit={save}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', marginBottom: 14, border: '1px solid #252A33', borderRadius: 14, background: form.enrollment_open ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px', marginBottom: 14, border: '1px solid #252A33', borderRadius: 14, background: form.enrollment_open ? 'linear-gradient(135deg, rgba(214,217,224,0.14), rgba(241,244,248,0.04))' : 'rgba(13,15,18,0.72)' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--oa-text)' }}>Inscripciones habilitadas</div>
             <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>Controla si esta competencia acepta nuevas inscripciones.</div>
@@ -1993,8 +2003,8 @@ function EnrollDatesModal({ competition, onClose, onSaved }) {
               width: 50,
               height: 30,
               borderRadius: 999,
-              border: `1px solid ${form.enrollment_open ? 'rgba(255,154,61,0.95)' : '#313844'}`,
-              background: form.enrollment_open ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#252A33',
+              border: `1px solid ${form.enrollment_open ? 'rgba(241,244,248,0.95)' : '#313844'}`,
+              background: form.enrollment_open ? 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)' : '#252A33',
               padding: 3,
               display: 'flex',
               alignItems: 'center',
@@ -2204,8 +2214,8 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
                   return (
                     <div key={p.id} style={{
                       display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, marginBottom: 8,
-                      border: `1px solid ${enrolled ? 'rgba(0,194,168,0.35)' : '#252A33'}`,
-                      background: enrolled ? 'rgba(0,194,168,0.08)' : 'rgba(13,15,18,0.72)',
+                      border: `1px solid ${enrolled ? 'rgba(94,234,212,0.35)' : '#252A33'}`,
+                      background: enrolled ? 'rgba(94,234,212,0.08)' : 'rgba(13,15,18,0.72)',
                     }}>
                       <input type="checkbox" checked={!!enrolled} onChange={() => toggle(p.id)} style={{ width: 'auto', flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2801,7 +2811,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     border: '1px solid #252A33',
     borderRadius: 18,
     padding: isMobile ? 14 : 18,
-    background: 'linear-gradient(180deg, rgba(255,107,0,0.08) 0%, rgba(23,27,33,0.98) 24%, rgba(9,11,14,0.98) 100%)',
+    background: 'linear-gradient(180deg, rgba(214,217,224,0.08) 0%, rgba(23,27,33,0.98) 24%, rgba(9,11,14,0.98) 100%)',
     marginBottom: 14,
   }
   const sectionTitleStyle = {
@@ -2834,8 +2844,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     width: '100%',
     padding: '14px 16px',
     borderRadius: 16,
-    border: `1px solid ${enabled ? 'rgba(255,107,0,0.45)' : '#252A33'}`,
-    background: enabled ? 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(255,154,61,0.04))' : 'rgba(13,15,18,0.72)',
+    border: `1px solid ${enabled ? 'rgba(214,217,224,0.45)' : '#252A33'}`,
+    background: enabled ? 'linear-gradient(135deg, rgba(214,217,224,0.14), rgba(241,244,248,0.04))' : 'rgba(13,15,18,0.72)',
     color: 'var(--oa-text)',
     textAlign: 'left',
     cursor: 'pointer',
@@ -2844,8 +2854,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     width: 50,
     height: 30,
     borderRadius: 999,
-    background: enabled ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#252a33',
-    border: `1px solid ${enabled ? 'rgba(255,154,61,0.95)' : '#313844'}`,
+    background: enabled ? 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)' : '#252a33',
+    border: `1px solid ${enabled ? 'rgba(241,244,248,0.95)' : '#313844'}`,
     padding: 3,
     display: 'flex',
     alignItems: 'center',
@@ -3143,7 +3153,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       <form onSubmit={save} style={inline ? { display: 'grid', gap: 0 } : { overflowY: 'auto', paddingRight: 4 }}>
         {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
-        <div style={{ ...sectionStyle, background: 'linear-gradient(135deg, rgba(255,107,0,0.16), rgba(23,27,33,0.98) 42%, rgba(9,11,14,0.98) 100%)' }}>
+        <div style={{ ...sectionStyle, background: 'linear-gradient(135deg, rgba(214,217,224,0.16), rgba(23,27,33,0.98) 42%, rgba(9,11,14,0.98) 100%)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div>
               <h4 style={sectionTitleStyle}>Configuracion guiada</h4>
@@ -3160,8 +3170,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 }}
                 style={{
                   borderRadius: 14,
-                  border: index === editorStep ? '1px solid rgba(255,107,0,0.45)' : '1px solid #252A33',
-                  background: index === editorStep ? 'rgba(255,107,0,0.16)' : 'rgba(13,15,18,0.72)',
+                  border: index === editorStep ? '1px solid rgba(214,217,224,0.45)' : '1px solid #252A33',
+                  background: index === editorStep ? 'rgba(214,217,224,0.16)' : 'rgba(13,15,18,0.72)',
                   padding: '12px 14px',
                   textAlign: 'left',
                   color: '#F5F7FA',
@@ -3234,7 +3244,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                                 })
                                 setShowPhonePrefixDropdown(false)
                               }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7, border: 'none', background: p.prefix === currentPrefix ? 'rgba(255,107,0,0.12)' : 'transparent', cursor: 'pointer', color: '#F5F7FA', textAlign: 'left' }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 7, border: 'none', background: p.prefix === currentPrefix ? 'rgba(214,217,224,0.12)' : 'transparent', cursor: 'pointer', color: '#F5F7FA', textAlign: 'left' }}
                             >
                               <img src={flagUrl(p.code)} alt={p.code} style={{ width: 16, height: 12, borderRadius: 2, objectFit: 'cover' }} />
                               <span style={{ fontSize: 12, color: '#AAB2C0' }}>{p.prefix}</span>
@@ -3710,7 +3720,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                      <span style={{ color: '#5EEAD4', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
                         DIVISION {String(idx + 1).padStart(2, '0')}
                       </span>
                     </div>
@@ -3765,7 +3775,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', color: '#D7FFFA', fontSize: 11, fontWeight: 700 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.08)', color: '#D7FFFA', fontSize: 11, fontWeight: 700 }}>
                 <Info size={12} />
                 No agregues preguntas con informacion que ya existe en el perfil del atleta.
               </span>
@@ -3786,7 +3796,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                      <span style={{ color: '#5EEAD4', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
                         PREGUNTA {String(idx + 1).padStart(2, '0')}
                       </span>
                     </div>
@@ -3849,7 +3859,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ color: '#FF6B00', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                        <span style={{ color: '#D6D9E0', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
                           EVENTO {String(idx + 1).padStart(2, '0')}
                         </span>
                         {phase.block_name ? (
@@ -3997,7 +4007,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             if (competitionDays.length > 0) {
               return (
                 <div style={{ display: 'grid', gap: 8, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {competitionDays.map(day => (
                       <button
@@ -4010,8 +4020,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                         }))}
                         style={{
                           borderRadius: 999,
-                          border: newPhase.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
-                          background: newPhase.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                          border: newPhase.start_at === day.value ? '1px solid rgba(214,217,224,0.6)' : '1px solid #252A33',
+                          background: newPhase.start_at === day.value ? 'rgba(214,217,224,0.18)' : 'rgba(13,15,18,0.72)',
                           color: newPhase.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
                           padding: '8px 14px',
                           fontSize: 12,
@@ -4045,14 +4055,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
           <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
           <label htmlFor="add-phase-toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: newPhase.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: newPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
               {newPhase.part_b_enabled ? 'Sí' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id="add-phase-toggle-part-b" type="checkbox" checked={newPhase.part_b_enabled}
                 onChange={e => setNewPhase(p => ({ ...p, part_b_enabled: e.target.checked, part_b_descripcion: '', part_b_time_cap: '' }))}
                 style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: newPhase.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: newPhase.part_b_enabled ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
               <span style={{ position: 'absolute', top: 3, left: newPhase.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
             </span>
           </label>
@@ -4060,7 +4070,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- WOD BASE (Parte A) ---- */}
         <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {newPhase.part_b_enabled ? 'Parte A' : 'WOD Base'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
@@ -4090,8 +4100,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- PARTE B ---- */}
         {newPhase.part_b_enabled && (
-          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(214,217,224,0.25)', background: 'rgba(214,217,224,0.04)', padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Medicion</label>
@@ -4126,19 +4136,19 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
             {cats.map(cat => {
               const override = newPhaseCatOverrides[cat.id] || {}
               const isModified = !!override.modified
               const toggleId = `new-phase-cat-toggle-${cat.id}`
               return (
-                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
                     <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
                       {cat.nombre.split(' ')[0].toUpperCase()}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
-                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(214,217,224,0.15)' : 'rgba(94,234,212,0.12)', border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : 'rgba(94,234,212,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
                       {isModified ? 'Modificado' : 'Hereda base'}
                     </span>
                   </div>
@@ -4151,7 +4161,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                           onChange={e => setNewPhaseCatOverrides(prev => ({ ...prev, [cat.id]: { ...override, modified: e.target.checked } }))}
                           style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
                         />
-                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                         <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                       </span>
                     </label>
@@ -4752,7 +4762,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             if (competitionDays.length > 0) {
               return (
                 <div style={{ display: 'grid', gap: 8, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Dia del evento</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {competitionDays.map(day => (
                       <button
@@ -4765,8 +4775,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                         }}
                         style={{
                           borderRadius: 999,
-                          border: editingPhase.start_at === day.value ? '1px solid rgba(255,107,0,0.6)' : '1px solid #252A33',
-                          background: editingPhase.start_at === day.value ? 'rgba(255,107,0,0.18)' : 'rgba(13,15,18,0.72)',
+                          border: editingPhase.start_at === day.value ? '1px solid rgba(214,217,224,0.6)' : '1px solid #252A33',
+                          background: editingPhase.start_at === day.value ? 'rgba(214,217,224,0.18)' : 'rgba(13,15,18,0.72)',
                           color: editingPhase.start_at === day.value ? '#FFD0AE' : '#AAB2C0',
                           padding: '8px 14px',
                           fontSize: 12,
@@ -4800,14 +4810,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
           <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
           <label htmlFor={`edit-phase-toggle-part-b-${editingPhase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.part_b_enabled ? '#FF6B00' : '#6B7280' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
               {editingPhase.part_b_enabled ? 'Sí' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id={`edit-phase-toggle-part-b-${editingPhase.id}`} type="checkbox" checked={!!editingPhase.part_b_enabled}
                 onChange={e => updatePhase(editingPhase.id, 'part_b_enabled', e.target.checked)}
                 style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: editingPhase.part_b_enabled ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+              <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: editingPhase.part_b_enabled ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
               <span style={{ position: 'absolute', top: 3, left: editingPhase.part_b_enabled ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
             </span>
           </label>
@@ -4815,7 +4825,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- WOD BASE (Parte A) ---- */}
         <div style={{ display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {editingPhase.part_b_enabled ? 'Parte A' : 'WOD Base'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
@@ -4845,8 +4855,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- PARTE B ---- */}
         {editingPhase.part_b_enabled && (
-          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(255,107,0,0.25)', background: 'rgba(255,107,0,0.04)', padding: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#FF6B00', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
+          <div style={{ display: 'grid', gap: 10, borderRadius: 12, border: '1px solid rgba(214,217,224,0.25)', background: 'rgba(214,217,224,0.04)', padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Medicion</label>
@@ -4881,20 +4891,20 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: '#00C2A8', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#5EEAD4', textTransform: 'uppercase', letterSpacing: 0.8 }}>Configuracion por categoria</div>
             {cats.map(cat => {
               const phaseCatOverrides = editingPhase.catOverrides || {}
               const override = phaseCatOverrides[cat.id] || {}
               const isModified = !!override.modified
               const toggleId = `edit-phase-cat-toggle-${editingPhase.id}-${cat.id}`
               return (
-                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
+                <div key={cat.id} style={{ borderRadius: 12, border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : '#252A33'}`, background: '#171B21', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px 8px' }}>
                     <span style={{ padding: '2px 7px', borderRadius: 6, fontSize: 10, fontWeight: 900, background: 'rgba(107,114,128,0.18)', border: '1px solid rgba(107,114,128,0.25)', color: '#9CA3AF', letterSpacing: 0.5, flexShrink: 0 }}>
                       {cat.nombre.split(' ')[0].toUpperCase()}
                     </span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#F5F7FA' }}>{cat.nombre}</span>
-                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(255,107,0,0.15)' : 'rgba(0,194,168,0.12)', border: `1px solid ${isModified ? 'rgba(255,107,0,0.35)' : 'rgba(0,194,168,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, background: isModified ? 'rgba(214,217,224,0.15)' : 'rgba(94,234,212,0.12)', border: `1px solid ${isModified ? 'rgba(214,217,224,0.35)' : 'rgba(94,234,212,0.22)'}`, color: isModified ? '#FFD0AE' : '#D9FFFA' }}>
                       {isModified ? 'Modificado' : 'Hereda base'}
                     </span>
                   </div>
@@ -4907,7 +4917,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                           onChange={e => updatePhase(editingPhase.id, 'catOverrides', { ...phaseCatOverrides, [cat.id]: { ...override, modified: e.target.checked } })}
                           style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
                         />
-                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#FF6B00' : '#374151', transition: 'background 0.2s' }} />
+                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: isModified ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
                         <span style={{ position: 'absolute', top: 3, left: isModified ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
                       </span>
                     </label>
@@ -7416,7 +7426,7 @@ function CompetitionsTab() {
     gap: 12,
     borderRadius: 18,
     border: '1px solid #252A33',
-    background: 'linear-gradient(135deg, rgba(255,107,0,0.10), rgba(23,27,33,0.96) 42%, rgba(0,194,168,0.06) 100%)',
+    background: 'linear-gradient(135deg, rgba(214,217,224,0.10), rgba(23,27,33,0.96) 42%, rgba(94,234,212,0.06) 100%)',
     boxShadow: '0 18px 40px rgba(0,0,0,0.22)',
   }
   const statCardStyle = {
@@ -7429,7 +7439,7 @@ function CompetitionsTab() {
     border: '1px solid #252A33',
     borderRadius: 22,
     padding: isMobile ? 16 : 20,
-    background: 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.96) 40%, rgba(0,194,168,0.08) 100%)',
+    background: 'linear-gradient(135deg, rgba(214,217,224,0.14), rgba(23,27,33,0.96) 40%, rgba(94,234,212,0.08) 100%)',
     boxShadow: '0 22px 50px rgba(0,0,0,0.24)',
     marginBottom: 14,
   }
@@ -7470,8 +7480,8 @@ function CompetitionsTab() {
         flexWrap: 'wrap',
       }
   const sectionTabStyle = (active) => ({
-    border: `1px solid ${active ? 'rgba(255,107,0,0.45)' : '#252A33'}`,
-    background: active ? 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(255,154,61,0.05))' : 'rgba(13,15,18,0.7)',
+    border: `1px solid ${active ? 'rgba(214,217,224,0.45)' : '#252A33'}`,
+    background: active ? 'linear-gradient(135deg, rgba(214,217,224,0.18), rgba(241,244,248,0.05))' : 'rgba(13,15,18,0.7)',
     color: active ? '#F5F7FA' : '#AAB2C0',
     borderRadius: 14,
     padding: isMobile ? '10px 12px' : '12px 14px',
@@ -7481,8 +7491,8 @@ function CompetitionsTab() {
     textAlign: 'left',
   })
   const subSectionBtnStyle = (active) => ({
-    border: `1px solid ${active ? 'rgba(0,194,168,0.45)' : '#252A33'}`,
-    background: active ? 'rgba(0,194,168,0.12)' : 'rgba(13,15,18,0.72)',
+    border: `1px solid ${active ? 'rgba(94,234,212,0.45)' : '#252A33'}`,
+    background: active ? 'rgba(94,234,212,0.12)' : 'rgba(13,15,18,0.72)',
     color: active ? '#F5F7FA' : '#AAB2C0',
     borderRadius: 12,
     padding: '9px 12px',
@@ -7614,7 +7624,7 @@ function CompetitionsTab() {
                   <span
                     className="badge"
                     style={c.activa
-                      ? { background: 'rgba(255,107,0,0.14)', color: '#ff9a3d', border: '1px solid rgba(255,107,0,0.35)' }
+                      ? { background: 'rgba(214,217,224,0.14)', color: '#ff9a3d', border: '1px solid rgba(214,217,224,0.35)' }
                       : { background: 'rgba(170,178,192,0.12)', color: 'var(--oa-text-secondary)', border: '1px solid rgba(170,178,192,0.25)' }}
                   >
                     {c.activa ? 'Activa' : 'Inactiva'}
@@ -7623,11 +7633,11 @@ function CompetitionsTab() {
 
                 <div className="responsive-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div style={statCardStyle}>
-                    <div style={{ color: '#00C2A8', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscritos</div>
+                    <div style={{ color: '#5EEAD4', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Inscritos</div>
                     <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{enrollCounts[c.id] || 0}</div>
                   </div>
                   <div style={statCardStyle}>
-                    <div style={{ color: readiness.progress === 100 ? '#00C2A8' : '#FF6B00', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                    <div style={{ color: readiness.progress === 100 ? '#5EEAD4' : '#D6D9E0', fontSize: 11, marginBottom: 4, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                       {readiness.progress === 100 ? 'Estado' : 'Falta'}
                     </div>
                     <div style={{ fontWeight: 700, color: 'var(--oa-text)' }}>{readinessLabel}</div>
@@ -7665,7 +7675,7 @@ function CompetitionsTab() {
                     <span
                       className="badge"
                       style={selectedCompetition.activa
-                        ? { background: 'rgba(255,107,0,0.14)', color: '#ff9a3d', border: '1px solid rgba(255,107,0,0.35)' }
+                        ? { background: 'rgba(214,217,224,0.14)', color: '#ff9a3d', border: '1px solid rgba(214,217,224,0.35)' }
                         : { background: 'rgba(170,178,192,0.12)', color: 'var(--oa-text-secondary)', border: '1px solid rgba(170,178,192,0.25)' }}
                     >
                       {selectedCompetition.activa ? 'Activa' : 'Inactiva'}
@@ -7719,14 +7729,14 @@ function CompetitionsTab() {
               <div style={{ display: 'grid', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <h4 style={{ margin: 0, fontSize: 16 }}>Lanzamiento</h4>
-                  <div style={{ color: launchProgress === 100 ? '#00C2A8' : '#FFB36F', fontWeight: 800, fontSize: 18 }}>{launchProgress}%</div>
+                  <div style={{ color: launchProgress === 100 ? '#5EEAD4' : '#FFB36F', fontWeight: 800, fontSize: 18 }}>{launchProgress}%</div>
                 </div>
                 <div style={{ height: 10, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                  <div style={{ width: `${launchProgress}%`, height: '100%', background: launchProgress === 100 ? '#00C2A8' : 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+                  <div style={{ width: `${launchProgress}%`, height: '100%', background: launchProgress === 100 ? '#5EEAD4' : 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)' }} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {launchChecklist.map(item => (
-                    <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(0,194,168,0.12)' : 'rgba(255,107,0,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(0,194,168,0.24)' : 'rgba(255,107,0,0.24)'}` }}>
+                    <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(94,234,212,0.12)' : 'rgba(214,217,224,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(94,234,212,0.24)' : 'rgba(214,217,224,0.24)'}` }}>
                       {item.done ? 'Listo' : 'Falta'}: {item.label}
                     </span>
                   ))}
@@ -8098,8 +8108,8 @@ function ParticipantsTab() {
   const roleBadge = (extraRole) => {
     const value = String(extraRole || '').trim().toLowerCase()
     const map = {
-      admin: { label: 'Admin', bg: 'rgba(255,107,0,0.14)', border: 'rgba(255,107,0,0.32)', color: '#FFB36F' },
-      organizer: { label: 'Organizador', bg: 'rgba(0,194,168,0.12)', border: 'rgba(0,194,168,0.28)', color: '#8DF1E4' },
+      admin: { label: 'Admin', bg: 'rgba(214,217,224,0.14)', border: 'rgba(214,217,224,0.32)', color: '#FFB36F' },
+      organizer: { label: 'Organizador', bg: 'rgba(94,234,212,0.12)', border: 'rgba(94,234,212,0.28)', color: '#8DF1E4' },
       judge: { label: 'Juez', bg: 'rgba(212,165,55,0.14)', border: 'rgba(212,165,55,0.28)', color: '#E9CB78' },
     }
     const item = map[value] || { label: 'Atleta', bg: 'rgba(255,255,255,0.04)', border: '#252A33', color: '#F5F7FA' }
@@ -8752,7 +8762,7 @@ function FinanceTab() {
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       {msg ? (
-        <div style={{ borderRadius: 14, border: `1px solid ${msg.type === 'success' ? 'rgba(0,194,168,0.26)' : 'rgba(255,107,0,0.26)'}`, background: msg.type === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: '12px 14px', color: '#F5F7FA', fontSize: 14 }}>
+        <div style={{ borderRadius: 14, border: `1px solid ${msg.type === 'success' ? 'rgba(94,234,212,0.26)' : 'rgba(214,217,224,0.26)'}`, background: msg.type === 'success' ? 'rgba(94,234,212,0.08)' : 'rgba(214,217,224,0.08)', padding: '12px 14px', color: '#F5F7FA', fontSize: 14 }}>
           {msg.text}
         </div>
       ) : null}
@@ -8766,7 +8776,7 @@ function FinanceTab() {
             )}
           </div>
           {configMsg && (
-            <div style={{ borderRadius: 10, border: `1px solid ${configMsg.type === 'success' ? 'rgba(0,194,168,0.26)' : 'rgba(255,107,0,0.26)'}`, background: configMsg.type === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: '8px 12px', color: '#F5F7FA', fontSize: 13, marginBottom: 10 }}>
+            <div style={{ borderRadius: 10, border: `1px solid ${configMsg.type === 'success' ? 'rgba(94,234,212,0.26)' : 'rgba(214,217,224,0.26)'}`, background: configMsg.type === 'success' ? 'rgba(94,234,212,0.08)' : 'rgba(214,217,224,0.08)', padding: '8px 12px', color: '#F5F7FA', fontSize: 13, marginBottom: 10 }}>
               {configMsg.text}
             </div>
           )}
@@ -8862,8 +8872,8 @@ function FinanceTab() {
                 style={{
                   textAlign: 'left',
                   borderRadius: 14,
-                  border: `1px solid ${selectedCompetitionId === item.competition_id ? 'rgba(255,107,0,0.38)' : '#252A33'}`,
-                  background: selectedCompetitionId === item.competition_id ? 'rgba(255,107,0,0.08)' : 'rgba(13,15,18,0.62)',
+                  border: `1px solid ${selectedCompetitionId === item.competition_id ? 'rgba(214,217,224,0.38)' : '#252A33'}`,
+                  background: selectedCompetitionId === item.competition_id ? 'rgba(214,217,224,0.08)' : 'rgba(13,15,18,0.62)',
                   padding: 14,
                   color: '#F5F7FA',
                   cursor: 'pointer',
@@ -9172,7 +9182,7 @@ function OrganizerApplicationsTab() {
                   {item.requested_event_description ? <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{item.requested_event_description}</div> : null}
                 </div>
                 <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
-                  <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Por que quiere ser organizador</div>
+                  <div style={{ color: '#5EEAD4', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Por que quiere ser organizador</div>
                   <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.7, marginTop: 8 }}>{item.why_organizer}</div>
                 </div>
                 {item.prior_events_summary ? (
@@ -9211,6 +9221,187 @@ function OrganizerApplicationsTab() {
   )
 }
 
+function SystemStatusCard({ title, value, tone = '#F5F7FA', hint, children }) {
+  return (
+    <div style={{
+      background: '#171B21',
+      border: '1px solid #252A33',
+      borderRadius: 8,
+      padding: 16,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      minWidth: 0,
+    }}>
+      <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.2 }}>{title}</div>
+      <div style={{ color: tone, fontSize: 28, fontWeight: 800, lineHeight: 1.05 }}>{value}</div>
+      {hint ? <div style={{ color: '#6B7280', fontSize: 12 }}>{hint}</div> : null}
+      {children}
+    </div>
+  )
+}
+
+function SystemStatusTab() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [error, setError] = useState('')
+
+  const load = async ({ silent = false } = {}) => {
+    if (silent) setRefreshing(true)
+    else setLoading(true)
+    setError('')
+    try {
+      const res = await api.get('/system/status')
+      setData(res.data)
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'No se pudo cargar el estado del sistema')
+    } finally {
+      if (silent) setRefreshing(false)
+      else setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  const db = data?.database
+  const pool = data?.pool
+  const app = data?.app
+  const cache = data?.cache
+  const server = data?.server
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ color: '#F5F7FA', fontSize: 22, fontWeight: 800 }}>Estado del sistema</div>
+          <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
+            Backend, base de datos, pool de conexiones y cache en tiempo real.
+          </div>
+        </div>
+        <button type="button" className="btn-secondary" onClick={() => load({ silent: true })} disabled={loading || refreshing}>
+          {loading || refreshing ? 'Actualizando...' : 'Actualizar'}
+        </button>
+      </div>
+
+      {error ? (
+        <div style={{ background: 'rgba(239,68,68,0.12)', color: '#FFB4B4', border: '1px solid rgba(239,68,68,0.28)', borderRadius: 8, padding: 14 }}>
+          {error}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 12 }}>
+        <SystemStatusCard
+          title="Backend"
+          value={app ? 'Operativo' : loading ? '...' : 'Sin datos'}
+          tone={app ? '#22C55E' : '#AAB2C0'}
+          hint={app ? `PID ${app.process_id} | uptime ${formatDurationShort(app.uptime_seconds)}` : ''}
+        />
+        <SystemStatusCard
+          title="Base de datos"
+          value={db?.ok ? 'Conectada' : loading ? '...' : 'Con error'}
+          tone={db?.ok ? '#22C55E' : '#EF4444'}
+          hint={db?.target?.host ? `${db.target.host}:${db.target.port || ''}` : db?.error || ''}
+        />
+        <SystemStatusCard
+          title="Conexiones activas"
+          value={db?.activity_totals?.active ?? (loading ? '...' : '0')}
+          tone="#00C2A8"
+          hint={`Total ${db?.activity_totals?.total ?? 0} | idle ${db?.activity_totals?.idle ?? 0}`}
+        />
+        <SystemStatusCard
+          title="Pool checkout"
+          value={pool?.checked_out ?? (loading ? '...' : '0')}
+          tone={Number(pool?.checked_out || 0) > Number(pool?.configured_pool_size || 0) ? '#F59E0B' : '#FF6B00'}
+          hint={`pool ${pool?.size ?? 0} | overflow ${pool?.overflow ?? 0}`}
+        />
+        <SystemStatusCard
+          title="Latencia DB"
+          value={db?.latency_ms != null ? `${db.latency_ms} ms` : (loading ? '...' : '--')}
+          tone="#F5F7FA"
+          hint={db?.server_version ? `PostgreSQL ${db.server_version}` : ''}
+        />
+        <SystemStatusCard
+          title="Cache"
+          value={cache?.connected ? 'Redis OK' : cache?.redis_url_configured ? 'Sin conexion' : 'Desactivada'}
+          tone={cache?.connected ? '#22C55E' : cache?.redis_url_configured ? '#F59E0B' : '#AAB2C0'}
+          hint={cache?.redis_url_configured ? 'CACHE_ENABLED activo' : 'Sin REDIS_URL configurado'}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
+        <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 8, padding: 16 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 800, marginBottom: 12 }}>Servidor</div>
+          <div style={{ display: 'grid', gap: 8, color: '#AAB2C0', fontSize: 13 }}>
+            <div><span style={{ color: '#6B7280' }}>Entorno:</span> {app?.environment || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Python:</span> {app?.python_version || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Plataforma:</span> {app?.platform || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Host / puerto:</span> {server?.host || '--'}:{server?.port || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Inicio:</span> {formatDate(app?.started_at)}</div>
+            <div><span style={{ color: '#6B7280' }}>Generado:</span> {formatDate(data?.generated_at)}</div>
+          </div>
+        </div>
+
+        <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 8, padding: 16 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 800, marginBottom: 12 }}>Pool de conexiones</div>
+          <div style={{ display: 'grid', gap: 8, color: '#AAB2C0', fontSize: 13 }}>
+            <div><span style={{ color: '#6B7280' }}>Pool configurado:</span> {pool?.configured_pool_size ?? '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Max overflow:</span> {pool?.configured_max_overflow ?? '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Checkout actual:</span> {pool?.checked_out ?? '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Overflow actual:</span> {pool?.overflow ?? '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Timeout pool:</span> {pool?.configured_pool_timeout_seconds ?? '--'} s</div>
+            <div><span style={{ color: '#6B7280' }}>Recycle pool:</span> {pool?.configured_pool_recycle_seconds ?? '--'} s</div>
+            <div style={{ color: '#6B7280', marginTop: 4 }}>{pool?.status_text || 'Sin datos del pool'}</div>
+          </div>
+        </div>
+
+        <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 8, padding: 16 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 800, marginBottom: 12 }}>Base de datos</div>
+          <div style={{ display: 'grid', gap: 8, color: '#AAB2C0', fontSize: 13 }}>
+            <div><span style={{ color: '#6B7280' }}>Driver:</span> {db?.target?.driver || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Host:</span> {db?.target?.host || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Base:</span> {db?.current_database || db?.target?.database || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Usuario:</span> {db?.current_user || '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Max connections:</span> {db?.max_connections ?? '--'}</div>
+            <div><span style={{ color: '#6B7280' }}>Reservadas superuser:</span> {db?.superuser_reserved_connections ?? '--'}</div>
+            {db?.error ? <div style={{ color: '#FF8B8B' }}>{db.error}</div> : null}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 8, padding: 16 }}>
+        <div style={{ color: '#F5F7FA', fontWeight: 800, marginBottom: 12 }}>Resumen de conexiones en PostgreSQL</div>
+        {loading ? (
+          <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando estado...</div>
+        ) : !db?.activity_summary?.length ? (
+          <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay datos de actividad disponibles.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Aplicacion</th>
+                <th>Estado</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {db.activity_summary.map((row, index) => (
+                <tr key={`${row.application_name}-${row.state}-${index}`}>
+                  <td>{row.application_name}</td>
+                  <td style={{ textTransform: 'lowercase' }}>{row.state}</td>
+                  <td>{row.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main AdminDashboard ───────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const { role, organizerEnabled } = useAuth()
@@ -9235,6 +9426,11 @@ export default function AdminDashboard() {
             Finanzas
           </button>
           {!isOrganizer && (
+            <button className={`tab ${mainTab === 'system' ? 'active' : ''}`} onClick={() => setMainTab('system')} style={{ flexShrink: 0 }}>
+              Estado del sistema
+            </button>
+          )}
+          {!isOrganizer && (
             <button className={`tab ${mainTab === 'athletes' ? 'active' : ''}`} onClick={() => setMainTab('athletes')} style={{ flexShrink: 0 }}>
               Usuarios
             </button>
@@ -9247,6 +9443,7 @@ export default function AdminDashboard() {
         </div>
         {mainTab === 'competitions' && <CompetitionsTab />}
         {mainTab === 'finance' && <FinanceTab />}
+        {!isOrganizer && mainTab === 'system' && <SystemStatusTab />}
         {!isOrganizer && mainTab === 'athletes' && <ParticipantsTab />}
         {!isOrganizer && mainTab === 'organizer-requests' && <OrganizerApplicationsTab />}
       </div>

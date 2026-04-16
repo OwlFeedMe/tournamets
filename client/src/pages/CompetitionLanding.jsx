@@ -278,15 +278,15 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
           const wodB = catOverride?.part_b_descripcion ?? baseActivities[1]?.descripcion ?? null
 
           return (
-            <div key={phase.id} style={{ borderRadius: 16, border: `1px solid ${isExpanded ? hexToRgba(theme.primary, 0.35) : theme.border}`, background: hexToRgba(theme.background, 0.58), overflow: 'hidden', transition: 'border-color 0.2s' }}>
-              {/* Header — click para colapsar */}
+            <div key={phase.id} className="fr-cut-card" style={{ border: `1px solid ${isExpanded ? hexToRgba(theme.primary, 0.35) : theme.border}`, background: hexToRgba(theme.background, 0.58), overflow: 'hidden', transition: 'border-color 0.2s' }}>
+              {/* Header â€” click para colapsar */}
               <div
                 onClick={() => setExpandedPhaseId(isExpanded ? null : phase.id)}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: isMobile ? '12px 14px' : '14px 18px', cursor: 'pointer', userSelect: 'none' }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
                   <span style={{ color: '#F5F7FA', fontSize: isMobile ? 15 : 16, fontWeight: 800, lineHeight: 1.25 }}>{phase.nombre}</span>
-                  {/* Selector de categorías en el header */}
+                  {/* Selector de categorÃ­as en el header */}
                   {isExpanded && categories.length > 0 && (
                     <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                       <select
@@ -311,11 +311,11 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
                           <option key={cat.id} value={cat.id} style={{ background: '#171B21', color: '#F5F7FA' }}>{cat.nombre}</option>
                         ))}
                       </select>
-                      <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 9, color: catId ? '#FFD0AE' : '#D9FFFA' }}>▼</span>
+                      <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', fontSize: 9, color: catId ? '#FFD0AE' : '#D9FFFA' }}>â–¼</span>
                     </div>
                   )}
                 </div>
-                <span style={{ color: theme.textSecondary, fontSize: 13, flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                <span style={{ color: theme.textSecondary, fontSize: 13, flexShrink: 0 }}>{isExpanded ? 'â–²' : 'â–¼'}</span>
               </div>
 
               {/* Contenido expandido */}
@@ -549,16 +549,16 @@ export default function CompetitionLanding() {
         {loading ? (
           <div style={{ color: theme.textSecondary, fontSize: 14 }}>Cargando competencia...</div>
         ) : error ? (
-          <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
+          <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
             {error}
           </div>
         ) : competition ? (
           <>
             <section
+              className="fr-cut-card"
               style={{
                 position: 'relative',
                 overflow: 'hidden',
-                borderRadius: 28,
                 border: `1px solid ${hexToRgba(theme.border, 0.96)}`,
                 background: bannerUrl
                   ? `linear-gradient(180deg, ${hexToRgba(theme.background, 0.18)}, ${hexToRgba(theme.background, 0.82)}), url("${bannerUrl}") center/cover`
@@ -573,7 +573,7 @@ export default function CompetitionLanding() {
                   <div style={{
                     width: isMobile ? 84 : 96,
                     height: isMobile ? 84 : 96,
-                    borderRadius: 24,
+                    borderRadius: 6,
                     background: `${theme.background} url("${profileImageUrl}") center/cover no-repeat`,
                     border: '1px solid rgba(245,247,250,0.18)',
                     boxShadow: '0 10px 30px rgba(0,0,0,0.24)',
@@ -641,7 +641,7 @@ export default function CompetitionLanding() {
                     style={{
                       marginTop: 16,
                       maxWidth: 560,
-                      borderRadius: 18,
+                      borderRadius: 6,
                       padding: isMobile ? '12px 14px' : '14px 16px',
                       background: hexToRgba(theme.background, 0.72),
                       border: `1px solid ${hexToRgba(theme.primary, 0.28)}`,
@@ -672,7 +672,7 @@ export default function CompetitionLanding() {
                       alignItems: 'center',
                       gap: 8,
                       padding: '12px 16px',
-                      borderRadius: 14,
+                      borderRadius: 6,
                       background: `linear-gradient(135deg, ${theme.primary} 0%, ${hexToRgba(theme.primary, 0.72)} 100%)`,
                       color: primaryTextColor,
                       fontWeight: 800,
@@ -689,7 +689,7 @@ export default function CompetitionLanding() {
                       alignItems: 'center',
                       gap: 8,
                       padding: '12px 16px',
-                      borderRadius: 14,
+                      borderRadius: 6,
                       border: `1px solid ${hexToRgba(theme.accent, 0.22)}`,
                       background: hexToRgba(theme.background, 0.58),
                       color: theme.text,
@@ -707,7 +707,7 @@ export default function CompetitionLanding() {
                         alignItems: 'center',
                         gap: 8,
                         padding: '12px 16px',
-                        borderRadius: 14,
+                        borderRadius: 6,
                         border: `1px solid ${hexToRgba(theme.primary, 0.28)}`,
                         background: 'rgba(13,15,18,0.58)',
                         color: '#F5F7FA',
@@ -726,7 +726,7 @@ export default function CompetitionLanding() {
                       alignItems: 'center',
                       gap: 8,
                       padding: '12px 16px',
-                      borderRadius: 14,
+                      borderRadius: 6,
                       cursor: enrollmentButton.disabled || ctaBusy ? 'not-allowed' : 'pointer',
                       border: `1px solid ${theme.border}`,
                       background: !enrollmentButton.disabled ? hexToRgba(theme.background, 0.36) : hexToRgba(theme.background, 0.62),
@@ -745,7 +745,7 @@ export default function CompetitionLanding() {
 
             {landingSections && (hasExperienceSection || hasFormatSection || hasHighlightSection) ? (
               <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : (hasRightNarrativeColumn ? '1.2fr 0.8fr' : '1fr'), gap: 14, marginBottom: 18 }}>
-                <div style={{ borderRadius: 24, border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
+                <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
                   <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                     {landingSections.experience?.title ? 'Experiencia' : 'Portada'}
                   </div>
@@ -758,7 +758,7 @@ export default function CompetitionLanding() {
                   {experienceItems.length ? (
                     <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
                       {experienceItems.map((item) => (
-                        <div key={item.id} style={{ borderRadius: 16, border: `1px solid ${hexToRgba(theme.border, 0.96)}`, background: hexToRgba(theme.background, 0.42), padding: '12px 14px' }}>
+                        <div key={item.id} className="fr-cut-card" style={{ border: `1px solid ${hexToRgba(theme.border, 0.96)}`, background: hexToRgba(theme.background, 0.42), padding: '12px 14px' }}>
                           <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{item.title}</div>
                           {item.body ? <div style={{ marginTop: 4, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.body}</div> : null}
                         </div>
@@ -770,7 +770,7 @@ export default function CompetitionLanding() {
                 {hasRightNarrativeColumn ? (
                   <div style={{ display: 'grid', gap: 14 }}>
                   {(landingSections.format?.title || formatItems.length) ? (
-                    <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+                    <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                       <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase' }}>
                         {landingSections.format?.title || 'Formato'}
                       </div>
@@ -786,7 +786,7 @@ export default function CompetitionLanding() {
                   ) : null}
 
                   {(landingSections.highlights?.title || highlightItems.length) ? (
-                    <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+                    <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                       <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1, textTransform: 'uppercase' }}>
                         {landingSections.highlights?.title || 'Puntos clave'}
                       </div>
@@ -806,14 +806,14 @@ export default function CompetitionLanding() {
             ) : null}
 
             <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
-              <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
                   <MapPin size={14} />
                   Lugar
                 </div>
                 <div style={{ marginTop: 10, fontSize: isMobile ? 20 : 22, fontWeight: 800, lineHeight: 1.25, wordBreak: 'break-word' }}>{competition.lugar || 'Por confirmar'}</div>
               </div>
-              <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
                   <CalendarDays size={14} />
                   Fechas
@@ -822,7 +822,7 @@ export default function CompetitionLanding() {
                   {formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end)}
                 </div>
               </div>
-              <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
                   <Medal size={14} />
                   Formato
@@ -841,7 +841,7 @@ export default function CompetitionLanding() {
                   </div>
                 ) : null}
               </div>
-              <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
                   <Phone size={14} />
                   Contacto
@@ -896,7 +896,7 @@ export default function CompetitionLanding() {
             </section>
 
             <section style={{ display: 'grid', gap: 18 }}>
-              <div style={{ borderRadius: 24, border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22 }}>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
                   {detailTabs.map((tab) => (
                     <button
@@ -929,7 +929,7 @@ export default function CompetitionLanding() {
                     {experienceItems.length ? (
                       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14 }}>
                         {experienceItems.map((item) => (
-                          <div key={`overview-${item.id}`} style={{ borderRadius: 18, border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: 14 }}>
+                          <div key={`overview-${item.id}`} className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: 14 }}>
                             <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{item.title}</div>
                             {item.body ? <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.body}</div> : null}
                           </div>
@@ -988,7 +988,7 @@ export default function CompetitionLanding() {
                     </div>
                     <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                       {scheduleItems.length ? scheduleItems.map((item) => (
-                        <div key={item.id} style={{ borderRadius: 18, border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: isMobile ? 14 : 16 }}>
+                        <div key={item.id} className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: isMobile ? 14 : 16 }}>
                           {item.linked_phase_name ? (
                             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                               Fase enlazada: {item.linked_phase_name}
@@ -1123,7 +1123,7 @@ export default function CompetitionLanding() {
                 ) : null}
               </div>
 
-              <div style={{ borderRadius: 24, border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.12)}, ${hexToRgba(theme.surface, 0.96)})`, padding: isMobile ? 18 : 22 }}>
                 <div style={{ color: '#F5F7FA', fontSize: isMobile ? 22 : 24, fontWeight: 800, lineHeight: 1.1 }}>
                   Sigue el rendimiento en tiempo real.
                 </div>

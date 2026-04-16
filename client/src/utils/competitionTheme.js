@@ -1,12 +1,12 @@
 export const FINALREP_COMPETITION_THEME = {
   background: '#0D0F12',
-  surface: '#171B21',
-  primary: '#FF6B00',
-  accent: '#00C2A8',
-  border: '#252A33',
+  surface: '#171A20',
+  primary: '#D6D9E0',
+  accent: '#5EEAD4',
+  border: 'rgba(214, 217, 224, 0.14)',
   text: '#F5F7FA',
-  textSecondary: '#AAB2C0',
-  textMuted: '#6B7280',
+  textSecondary: '#C7CDD6',
+  textMuted: '#8B94A3',
 }
 
 const HEX_COLOR_RE = /^#?[0-9a-f]{6}$/i
@@ -43,16 +43,8 @@ export function getReadableTextColor(color, dark = '#0D0F12', light = '#F5F7FA')
 }
 
 export function resolveCompetitionTheme(competition) {
-  const background = normalizeHexColor(competition?.theme_background_color) || FINALREP_COMPETITION_THEME.background
-  const surface = normalizeHexColor(competition?.theme_surface_color) || FINALREP_COMPETITION_THEME.surface
-  const primary = normalizeHexColor(competition?.theme_primary_color) || FINALREP_COMPETITION_THEME.primary
-  const accent = normalizeHexColor(competition?.theme_accent_color) || FINALREP_COMPETITION_THEME.accent
   return {
     ...FINALREP_COMPETITION_THEME,
-    background,
-    surface,
-    primary,
-    accent,
   }
 }
 

@@ -72,8 +72,8 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
             width: '100%',
             maxWidth: 460,
             borderRadius: 24,
-            border: '1px solid rgba(37, 42, 51, 0.96)',
-            background: 'rgba(23, 27, 33, 0.98)',
+            border: '1px solid var(--oa-border)',
+            background: 'rgba(23, 26, 32, 0.98)',
             backdropFilter: 'blur(20px)',
             boxShadow: '0 28px 80px rgba(0, 0, 0, 0.38)',
             padding: 18,
@@ -110,8 +110,8 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
                 key={`${item.title}-${idx}`}
                 style={{
                   borderRadius: 18,
-                  border: `1px solid ${item.tone === 'danger' ? 'rgba(255,69,58,0.28)' : item.tone === 'success' ? 'rgba(0,194,168,0.28)' : 'rgba(37,42,51,0.92)'}`,
-                  background: item.tone === 'danger' ? 'rgba(255,69,58,0.08)' : item.tone === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(13,15,18,0.5)',
+                  border: `1px solid ${item.tone === 'danger' ? 'rgba(255,69,58,0.28)' : item.tone === 'success' ? 'rgba(94,234,212,0.28)' : 'var(--oa-border)'}`,
+                  background: item.tone === 'danger' ? 'rgba(255,69,58,0.08)' : item.tone === 'success' ? 'rgba(94,234,212,0.08)' : 'rgba(13,15,18,0.5)',
                   padding: 14,
                 }}
               >
@@ -131,7 +131,7 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  color: '#FF9A3D',
+                  color: 'var(--oa-primary)',
                   fontWeight: 800,
                 }}
               >
@@ -278,7 +278,7 @@ export function AuthenticatedShell() {
         minHeight: '100dvh',
         ...(isLoginRoute ? { height: '100dvh', overflow: 'hidden' } : {}),
         background:
-          'radial-gradient(circle at top, rgba(255,107,0,0.10), transparent 26%), radial-gradient(circle at bottom right, rgba(0,194,168,0.08), transparent 24%), var(--oa-bg)',
+          'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 26%), radial-gradient(circle at bottom right, rgba(94,234,212,0.08), transparent 24%), var(--oa-bg)',
         paddingTop: topInset,
         paddingBottom: bottomInset,
       }}
@@ -297,7 +297,7 @@ export function AuthenticatedShell() {
             padding: 'calc(10px + env(safe-area-inset-top, 0px)) 14px 10px',
             background: 'rgba(9, 11, 14, 0.92)',
             backdropFilter: 'blur(18px)',
-            borderBottom: '1px solid rgba(37, 42, 51, 0.92)',
+            borderBottom: '1px solid var(--oa-border)',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
@@ -305,7 +305,7 @@ export function AuthenticatedShell() {
               to="/"
               style={{
                 textDecoration: 'none',
-                color: '#FF6B00',
+                color: 'var(--oa-primary)',
                 fontFamily: 'Bebas Neue, sans-serif',
                 fontSize: 30,
                 letterSpacing: 1,
@@ -324,8 +324,8 @@ export function AuthenticatedShell() {
                   width: 42,
                   height: 42,
                   borderRadius: 14,
-                  border: '1px solid rgba(37,42,51,0.96)',
-                  background: 'rgba(23,27,33,0.96)',
+                  border: '1px solid var(--oa-border)',
+                  background: 'rgba(23,26,32,0.96)',
                   color: 'var(--oa-text)',
                   display: 'grid',
                   placeItems: 'center',
@@ -350,7 +350,7 @@ export function AuthenticatedShell() {
                       fontWeight: 800,
                       display: 'grid',
                       placeItems: 'center',
-                      border: '2px solid rgba(23,27,33,0.96)',
+                    border: '2px solid rgba(23,26,32,0.96)',
                     }}
                   >
                     {unreadCount > 9 ? '9+' : unreadCount}
@@ -369,8 +369,8 @@ export function AuthenticatedShell() {
                     width: 42,
                     height: 42,
                     borderRadius: 14,
-                    border: '1px solid rgba(37,42,51,0.96)',
-                    background: 'rgba(23,27,33,0.96)',
+                    border: '1px solid var(--oa-border)',
+                    background: 'rgba(23,26,32,0.96)',
                     color: 'var(--oa-text)',
                     display: 'grid',
                     placeItems: 'center',

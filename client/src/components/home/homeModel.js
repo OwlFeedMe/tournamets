@@ -1,20 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import api from '../api/axios'
-import {
-  CommandStrip,
-  CompetitionGrid,
-  CompetitionSearch,
-  CompetitionSectionHeader,
-  HomeCompetitionCard,
-  HomeEmptyState,
-  HomeHero,
-} from '../components/home/HomeSections'
-import { getHomePath, useAuth } from '../context/AuthContext'
-import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
-import { getMissingParticipantProfileFields } from '../utils/participantProfile'
-
-const pageBg =
+export const homePageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 24%), radial-gradient(circle at 82% 18%, rgba(94,234,212,0.10), transparent 20%), radial-gradient(circle at 20% 78%, rgba(205,170,107,0.08), transparent 18%), #0D0F12'
 
 function formatDate(value) {
@@ -24,7 +8,7 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
 }
 
-function resolveCompetitionAsset(competition, asset) {
+export function resolveCompetitionAsset(competition, asset) {
   if (!competition) return ''
   const profile = competition.profile_image_url || ''
   const banner = competition.banner_image_url || ''
@@ -55,7 +39,7 @@ function parseScheduleItems(raw) {
   }
 }
 
-function scheduleSummary(competition) {
+export function scheduleSummary(competition) {
   const items = parseScheduleItems(competition?.schedule_items)
   if (items.length) {
     const main = items.slice(0, 2).map(item => {
@@ -80,13 +64,13 @@ function scheduleSummary(competition) {
     : 'Fechas por confirmar'
 }
 
-function truncate(text, max = 140) {
+export function truncate(text, max = 140) {
   const value = (text || '').trim()
   if (!value) return 'Consulta fechas, formatos y acceso directo al ranking del evento.'
   return value.length > max ? `${value.slice(0, max - 1)}...` : value
 }
 
-function getCompetitionState(competition) {
+export function getCompetitionState(competition) {
   const now = Date.now()
   const start = competition.enrollment_start ? Date.parse(competition.enrollment_start) : null
   const end = competition.enrollment_end ? Date.parse(competition.enrollment_end) : null
@@ -106,7 +90,7 @@ function getCompetitionState(competition) {
   return { label: 'Borrador', tone: '#6B7280', weight: 4 }
 }
 
-function cardVisualStyle(competition, index, bannerUrl = '') {
+export function cardVisualStyle(competition, index, bannerUrl = '') {
   if (bannerUrl) {
     return `linear-gradient(180deg, rgba(13,15,18,0.12), rgba(13,15,18,0.58)), url("${bannerUrl}")`
   }
@@ -132,13 +116,13 @@ function competitionSearchText(competition) {
     .toLowerCase()
 }
 
-function filterCompetitionsByQuery(items, query) {
+export function filterCompetitionsByQuery(items, query) {
   const value = String(query || '').trim().toLowerCase()
   if (!value) return items
   return (items || []).filter((competition) => competitionSearchText(competition).includes(value))
 }
 
-function buttonStateForCompetition(competition, isAthlete, enrollmentState) {
+export function buttonStateForCompetition(competition, isAthlete, enrollmentState) {
   if (!isAthlete) return { label: 'Quiero participar', tone: 'secondary', disabled: false }
   if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', tone: 'muted', disabled: true }
   if (enrollmentState === 'pendiente') return { label: 'Inscripcion en proceso', tone: 'muted', disabled: true }
@@ -150,7 +134,7 @@ function buttonStateForCompetition(competition, isAthlete, enrollmentState) {
   return { label: 'Quiero participar', tone: 'secondary', disabled: false }
 }
 
-function buildCommandItems(competitions) {
+export function buildCommandItems(competitions) {
   const openCount = competitions.filter(item => item.enrollment_open).length
   const activeCount = competitions.filter(item => item.activa).length
   const upcomingCount = competitions.filter(item => getCompetitionState(item).label === 'Proximamente').length
@@ -180,7 +164,7 @@ function buildCommandItems(competitions) {
   ]
 }
 
-function mapCompetitionViewModel(competition, index) {
+export function mapCompetitionViewModel(competition, index) {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   return {
@@ -195,155 +179,4 @@ function mapCompetitionViewModel(competition, index) {
     profileImageUrl,
     initials: (competition.nombre || 'FR').slice(0, 2).toUpperCase(),
   }
-}
-
-export default function Home() {
-  const navigate = useNavigate()
-  const { session, role, participantId, isAthlete } = useAuth()
-  const [competitions, setCompetitions] = useState([])
-  const [myComps, setMyComps] = useState([])
-  const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 768)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-
-  useEffect(() => {
-    let active = true
-    Promise.all([
-      api.get('/competitions?scope=public').catch(() => ({ data: [] })),
-      isAthlete && participantId
-        ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
-        : Promise.resolve({ data: [] }),
-    ])
-      .then(([competitionsResponse, mineResponse]) => {
-        if (!active) return
-        setCompetitions(Array.isArray(competitionsResponse.data) ? competitionsResponse.data : [])
-        setMyComps(Array.isArray(mineResponse.data) ? mineResponse.data : [])
-      })
-      .finally(() => {
-        if (!active) return
-        setLoading(false)
-      })
-    return () => {
-      active = false
-    }
-  }, [isAthlete, participantId, role])
-
-  const enrollmentByComp = useMemo(() => {
-    const map = {}
-    for (const competition of myComps) {
-      map[competition.id] = competition.enrollment_estado || null
-    }
-    return map
-  }, [myComps])
-
-  const featuredCompetitions = useMemo(() => {
-    return [...competitions]
-      .sort((a, b) => {
-        const stateDiff = getCompetitionState(a).weight - getCompetitionState(b).weight
-        if (stateDiff !== 0) return stateDiff
-        return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-      })
-      .slice(0, 6)
-  }, [competitions])
-
-  const filteredCompetitions = useMemo(
-    () => filterCompetitionsByQuery(featuredCompetitions, query),
-    [featuredCompetitions, query]
-  )
-
-  const competitionCards = useMemo(
-    () => filteredCompetitions.map((competition, index) => mapCompetitionViewModel(competition, index)),
-    [filteredCompetitions]
-  )
-
-  const commandItems = useMemo(() => buildCommandItems(featuredCompetitions), [featuredCompetitions])
-  const openCount = featuredCompetitions.filter(item => item.enrollment_open).length
-  const activeCount = featuredCompetitions.filter(item => item.activa).length
-
-  const handleParticipate = async (competition) => {
-    if (!session) {
-      navigate('/login')
-      return
-    }
-    if (!isAthlete) {
-      navigate(getHomePath(role))
-      return
-    }
-    if (enrollmentByComp[competition.id] && enrollmentByComp[competition.id] !== 'rechazado') return
-    if (!competition.enrollment_open) return
-    try {
-      const { data } = await api.get('/participants/me')
-      const missingFields = getMissingParticipantProfileFields(data)
-      if (missingFields.length) {
-        navigate('/profile', {
-          state: {
-            profileRequiredForEnrollment: true,
-            missingFields,
-            competitionName: competition.nombre || '',
-          },
-        })
-        return
-      }
-    } catch {
-      navigate('/profile', {
-        state: {
-          profileRequiredForEnrollment: true,
-          missingFields: ['perfil'],
-          competitionName: competition.nombre || '',
-        },
-      })
-      return
-    }
-    navigate(`/competitions/${competition.id}/register`)
-  }
-
-  return (
-    <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
-      <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 72px' }}>
-        <HomeHero
-          isMobile={isMobile}
-          session={session}
-          totalCompetitions={featuredCompetitions.length}
-          openCount={openCount}
-          activeCount={activeCount}
-          panelHref={session ? getHomePath(session.role) : '/login'}
-        />
-
-        <CommandStrip items={commandItems} isMobile={isMobile} />
-
-        <section>
-          <CompetitionSectionHeader totalVisible={competitionCards.length} query={query} />
-          <CompetitionSearch value={query} onChange={setQuery} />
-
-          {loading ? (
-            <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando competencias...</div>
-          ) : competitionCards.length ? (
-            <CompetitionGrid
-              competitions={competitionCards}
-              isMobile={isMobile}
-              renderCard={(competition, index) => (
-                <HomeCompetitionCard
-                  competition={competition}
-                  index={index}
-                  isFeatured={index === 0}
-                  isAthlete={isAthlete}
-                  enrollmentState={enrollmentByComp[competition.id]}
-                  onParticipate={handleParticipate}
-                  getButtonState={buttonStateForCompetition}
-                />
-              )}
-            />
-          ) : (
-            <HomeEmptyState hasCompetitions={featuredCompetitions.length > 0} />
-          )}
-        </section>
-      </div>
-    </div>
-  )
 }

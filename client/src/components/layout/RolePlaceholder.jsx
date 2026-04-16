@@ -26,7 +26,7 @@ export function RolePlaceholder({ role }) {
         style={{
           borderRadius: 24,
           padding: '24px 20px',
-          background: 'linear-gradient(135deg, rgba(255,107,0,0.16), rgba(23,27,33,0.96) 50%, rgba(0,194,168,0.10))',
+          background: 'linear-gradient(135deg, rgba(214,217,224,0.16), rgba(23,27,33,0.96) 50%, rgba(94,234,212,0.10))',
           border: '1px solid rgba(37,42,51,0.95)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.28)',
         }}
@@ -37,7 +37,7 @@ export function RolePlaceholder({ role }) {
               width: 58,
               height: 58,
               borderRadius: 18,
-              background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
+              background: 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)',
               color: '#fff',
               display: 'flex',
               alignItems: 'center',

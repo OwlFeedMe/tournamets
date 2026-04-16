@@ -198,8 +198,7 @@ function ScheduleItemCard({ item, personal = false, theme }) {
   const participants = item.participants || []
   const firstParticipant = participants[0]
   return (
-    <div style={{
-      borderRadius: 18,
+    <div className="fr-cut-card" style={{
       border: `1px solid ${theme.border}`,
       background: hexToRgba(theme.background, 0.62),
       padding: 16,
@@ -259,7 +258,7 @@ function ScheduleItemCard({ item, personal = false, theme }) {
               <div
                 key={participant.id}
                 style={{
-                  borderRadius: 14,
+                  borderRadius: 6,
                   border: `1px solid ${theme.border}`,
                   background: participant.note ? hexToRgba(theme.accent, 0.08) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
@@ -308,8 +307,7 @@ function ScheduleItemCard({ item, personal = false, theme }) {
 
 function ScheduleSection({ section, personal = false, theme }) {
   return (
-    <section style={{
-      borderRadius: 24,
+    <section className="fr-cut-card" style={{
       border: `1px solid ${theme.border}`,
       background: theme.surface,
       padding: 18,
@@ -501,7 +499,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
               alignItems: 'center',
               gap: 8,
               padding: '10px 14px',
-              borderRadius: 12,
+              borderRadius: 6,
               border: `1px solid ${theme.border}`,
               color: theme.text,
               background: hexToRgba(theme.background, 0.4),
@@ -521,7 +519,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
                 alignItems: 'center',
                 gap: 8,
                 padding: '12px 16px',
-                borderRadius: 14,
+                borderRadius: 6,
                 background: `linear-gradient(135deg, ${theme.primary} 0%, ${hexToRgba(theme.primary, 0.72)} 100%)`,
                 color: primaryTextColor,
                 fontWeight: 800,
@@ -539,7 +537,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
                   alignItems: 'center',
                   gap: 8,
                   padding: '12px 16px',
-                  borderRadius: 14,
+                  borderRadius: 6,
                   border: `1px solid ${theme.border}`,
                   background: hexToRgba(theme.background, 0.62),
                   color: theme.text,
@@ -552,8 +550,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           </div>
         </div>
 
-        <section style={{
-          borderRadius: 28,
+        <section className="fr-cut-card" style={{
           border: `1px solid ${theme.border}`,
           background: `linear-gradient(135deg, ${hexToRgba(theme.primary, 0.14)}, ${hexToRgba(theme.surface, 0.96)} 40%, ${hexToRgba(theme.accent, 0.08)} 100%)`,
           padding: 22,
@@ -593,19 +590,19 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         </section>
 
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
-          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{isPersonal ? 'Personal' : 'Publica'}</div>
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
               {isPersonal ? 'Solo tus salidas y tus cambios.' : 'Todo lo que ya esta publicado.'}
             </div>
           </div>
-          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{sectionCount}</div>
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Eventos, heats y bloques publicados.</div>
           </div>
-          <div style={{ borderRadius: 20, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{competition?.lugar || 'Por confirmar'}</div>
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Si cambia el venue por heat, quedara indicado en cada card.</div>
@@ -613,11 +610,11 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         </section>
 
         {loading ? (
-          <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+          <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
             Cargando cronograma...
           </div>
         ) : error ? (
-          <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
+          <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
             <div style={{ fontWeight: 800, marginBottom: 8 }}>No se pudo cargar el cronograma</div>
             <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>{error}</div>
           </div>
@@ -626,7 +623,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
             {sections.length ? sections.map((section) => (
               <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} />
             )) : (
-              <div style={{ borderRadius: 22, padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+              <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                 {modeCopy.empty}
               </div>
             )}
@@ -636,7 +633,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         {isPersonal && !hasPersonalAccess ? (
           <div style={{
             marginTop: 16,
-            borderRadius: 18,
+            borderRadius: 6,
             border: `1px solid ${hexToRgba(theme.primary, 0.22)}`,
             background: hexToRgba(theme.primary, 0.08),
             padding: 16,

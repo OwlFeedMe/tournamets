@@ -7,7 +7,7 @@ import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { formatMissingParticipantProfileFields, getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 const pageBg =
-  'radial-gradient(circle at top, rgba(255,107,0,0.18), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
+  'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
 
 function formatDate(value) {
   if (!value) return null
@@ -207,7 +207,7 @@ function StepCard({ number, title, hint, children }) {
   return (
     <section style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: 22 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <div style={{ width: 30, height: 30, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'rgba(255,107,0,0.16)', color: '#FFB36F', fontSize: 13, fontWeight: 800 }}>{number}</div>
+        <div style={{ width: 30, height: 30, borderRadius: 999, display: 'grid', placeItems: 'center', background: 'rgba(214,217,224,0.16)', color: '#FFB36F', fontSize: 13, fontWeight: 800 }}>{number}</div>
         <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.05 }}>{title}</h2>
       </div>
       {hint ? <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6, marginBottom: 14 }}>{hint}</div> : null}
@@ -498,17 +498,17 @@ export default function CompetitionEnrollmentPage() {
             <ArrowLeft size={16} />
             Volver a la competencia
           </Link>
-          <Link to={`/leaderboard/${competition.id}`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 14, background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)', color: '#0D0F12', fontWeight: 800 }}>
+          <Link to={`/leaderboard/${competition.id}`} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 14, background: 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)', color: '#0D0F12', fontWeight: 800 }}>
             Ver leaderboard
             <ArrowRight size={16} />
           </Link>
         </div>
 
-        <section style={{ position: 'relative', overflow: 'hidden', borderRadius: 28, border: '1px solid rgba(37,42,51,0.96)', background: bannerUrl ? `linear-gradient(180deg, rgba(13,15,18,0.2), rgba(13,15,18,0.84)), url("${bannerUrl}") center/cover` : 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(0,194,168,0.12) 55%, rgba(23,27,33,0.98) 100%)', padding: isMobile ? '20px 18px 22px' : 'clamp(24px, 5vw, 42px)', boxShadow: '0 20px 70px rgba(0,0,0,0.28)', marginBottom: 18 }}>
+        <section style={{ position: 'relative', overflow: 'hidden', borderRadius: 28, border: '1px solid rgba(37,42,51,0.96)', background: bannerUrl ? `linear-gradient(180deg, rgba(13,15,18,0.2), rgba(13,15,18,0.84)), url("${bannerUrl}") center/cover` : 'linear-gradient(135deg, rgba(214,217,224,0.22), rgba(94,234,212,0.12) 55%, rgba(23,27,33,0.98) 100%)', padding: isMobile ? '20px 18px 22px' : 'clamp(24px, 5vw, 42px)', boxShadow: '0 20px 70px rgba(0,0,0,0.28)', marginBottom: 18 }}>
           <div style={{ maxWidth: 860 }}>
             {profileImageUrl ? <div style={{ width: isMobile ? 84 : 96, height: isMobile ? 84 : 96, borderRadius: 24, background: `#0D0F12 url("${profileImageUrl}") center/cover no-repeat`, border: '1px solid rgba(245,247,250,0.18)', boxShadow: '0 10px 30px rgba(0,0,0,0.24)', marginBottom: 16 }} /> : null}
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.7)', border: `1px solid ${competition.enrollment_open ? '#00C2A866' : '#7E879666'}`, color: '#F5F7FA', fontSize: 12, fontWeight: 800, marginBottom: 16, flexWrap: 'wrap' }}>
-              <ShieldCheck size={14} color={competition.enrollment_open ? '#00C2A8' : '#7E8796'} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.7)', border: `1px solid ${competition.enrollment_open ? '#5EEAD466' : '#7E879666'}`, color: '#F5F7FA', fontSize: 12, fontWeight: 800, marginBottom: 16, flexWrap: 'wrap' }}>
+              <ShieldCheck size={14} color={competition.enrollment_open ? '#5EEAD4' : '#7E8796'} />
               {competition.enrollment_open ? 'Inscripciones abiertas' : 'Inscripciones cerradas'}
             </span>
             <h1 style={{ margin: 0, fontSize: isMobile ? 34 : 'clamp(34px, 6vw, 60px)', lineHeight: 0.95 }}>Registro a {competition.nombre}</h1>
@@ -516,17 +516,17 @@ export default function CompetitionEnrollmentPage() {
               {ENROLLMENT_INTRO_COPY}
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#00C2A8" />{competition.lugar || 'Lugar por confirmar'}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#00C2A8" />{formatDateRange(competition.enrollment_start, competition.enrollment_end)}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><Medal size={14} color="#00C2A8" />{categories.length || 0} categorias disponibles</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#5EEAD4" />{competition.lugar || 'Lugar por confirmar'}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#5EEAD4" />{formatDateRange(competition.enrollment_start, competition.enrollment_end)}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><Medal size={14} color="#5EEAD4" />{categories.length || 0} categorias disponibles</span>
             </div>
           </div>
         </section>
 
-        {msg ? <div style={{ borderRadius: 18, border: `1px solid ${msg.type === 'success' ? 'rgba(0,194,168,0.32)' : 'rgba(255,107,0,0.32)'}`, background: msg.type === 'success' ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, marginBottom: 18 }}>{msg.text}{submitted ? <div style={{ marginTop: 10 }}><button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/profile')}>Ir a mi perfil</button></div> : null}</div> : null}
+        {msg ? <div style={{ borderRadius: 18, border: `1px solid ${msg.type === 'success' ? 'rgba(94,234,212,0.32)' : 'rgba(214,217,224,0.32)'}`, background: msg.type === 'success' ? 'rgba(94,234,212,0.08)' : 'rgba(214,217,224,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, marginBottom: 18 }}>{msg.text}{submitted ? <div style={{ marginTop: 10 }}><button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/profile')}>Ir a mi perfil</button></div> : null}</div> : null}
 
         {submitted ? (
-          <section style={{ borderRadius: 24, border: '1px solid rgba(0,194,168,0.28)', background: 'linear-gradient(180deg, rgba(0,194,168,0.08), rgba(23,27,33,0.96))', padding: isMobile ? 18 : 24 }}>
+          <section style={{ borderRadius: 24, border: '1px solid rgba(94,234,212,0.28)', background: 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(23,27,33,0.96))', padding: isMobile ? 18 : 24 }}>
             <div style={{ display: 'grid', gap: 12 }}>
               <div style={{ color: '#8DF1E4', fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                 Pago aprobado
@@ -566,7 +566,7 @@ export default function CompetitionEnrollmentPage() {
             <div style={{ color: '#AAB2C0', fontSize: 13 }}>Paso {currentStep} de 4</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[1, 2, 3, 4].map((step) => (
-                <div key={step} style={{ width: 30, height: 30, borderRadius: 999, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, background: step === currentStep ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : 'rgba(255,255,255,0.06)', color: step === currentStep ? '#0D0F12' : '#F5F7FA', border: step === currentStep ? 'none' : '1px solid #252A33' }}>
+                <div key={step} style={{ width: 30, height: 30, borderRadius: 999, display: 'grid', placeItems: 'center', fontSize: 12, fontWeight: 800, background: step === currentStep ? 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)' : 'rgba(255,255,255,0.06)', color: step === currentStep ? '#0D0F12' : '#F5F7FA', border: step === currentStep ? 'none' : '1px solid #252A33' }}>
                   {step}
                 </div>
               ))}
@@ -581,14 +581,14 @@ export default function CompetitionEnrollmentPage() {
                     const isSelected = selectedCategory === category.nombre
                     const isExpanded = expandedCategoryId === category.id
                     return (
-                      <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(0,194,168,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(0,194,168,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden' }}>
+                      <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(94,234,212,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden' }}>
                         <button type="button" onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: 'pointer', display: 'grid', gap: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                             <div>
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
-                                {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(0,194,168,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(255,107,0,0.14)', color: '#FFB36F', fontSize: 11, fontWeight: 800 }}>
+                                {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(214,217,224,0.14)', color: '#FFB36F', fontSize: 11, fontWeight: 800 }}>
                                   {formatCop(calculateEnrollmentPricing(category.enrollment_price, platformFeeRate).totalPrice)}
                                 </span>
                               </div>
@@ -617,12 +617,12 @@ export default function CompetitionEnrollmentPage() {
                     {question.field_type === 'image' ? (
                       <div style={{ display: 'grid', gap: 10 }}>
                         <label htmlFor={`upload-${question.id}`} style={{ borderRadius: 16, border: '1px dashed #3B4452', background: 'rgba(13,15,18,0.55)', padding: '16px 14px', display: 'flex', alignItems: 'center', gap: 10, color: '#D7DEE8', cursor: 'pointer' }}>
-                          <Upload size={16} color="#00C2A8" />
+                          <Upload size={16} color="#5EEAD4" />
                           <span>{uploadingQuestionId === question.id ? 'Subiendo imagen...' : 'Seleccionar imagen'}</span>
                         </label>
                         <input id={`upload-${question.id}`} type="file" accept="image/*" onChange={e => uploadAnswerImage(question, e.target.files?.[0])} required={!!question.required && !answers[question.id]} />
                         <div style={{ color: '#AAB2C0', fontSize: 12 }}>{answers[question.id] ? 'Imagen cargada correctamente.' : (question.placeholder || 'Sube una imagen clara y legible.')}</div>
-                        {answers[question.id] ? <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12 }}>Ver archivo cargado</a> : null}
+                        {answers[question.id] ? <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#5EEAD4', fontSize: 12 }}>Ver archivo cargado</a> : null}
                       </div>
                     ) : question.field_type === 'number' ? (
                       <input
@@ -658,7 +658,7 @@ export default function CompetitionEnrollmentPage() {
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                     <button type="button" className="btn-secondary" onClick={() => { setActiveTermsModal('competition'); setCompetitionTermsScrolledToEnd(false); setShowTermsModal(true) }}>Ver terminos de la competencia</button>
                     <div style={{ color: competitionTermsAccepted ? '#8DF1E4' : '#AAB2C0', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                      <CheckCircle2 size={14} color={competitionTermsAccepted ? '#00C2A8' : '#AAB2C0'} />
+                      <CheckCircle2 size={14} color={competitionTermsAccepted ? '#5EEAD4' : '#AAB2C0'} />
                       {competitionTermsAccepted ? 'Terminos de competencia aceptados' : 'Competencia pendiente'}
                     </div>
                   </div>
@@ -666,7 +666,7 @@ export default function CompetitionEnrollmentPage() {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button type="button" className="btn-secondary" onClick={() => { setActiveTermsModal('app'); setAppTermsScrolledToEnd(false); setShowTermsModal(true) }}>Ver terminos de la app</button>
                   <div style={{ color: appTermsAccepted ? '#8DF1E4' : '#AAB2C0', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <CheckCircle2 size={14} color={appTermsAccepted ? '#00C2A8' : '#AAB2C0'} />
+                    <CheckCircle2 size={14} color={appTermsAccepted ? '#5EEAD4' : '#AAB2C0'} />
                     {appTermsAccepted ? 'Terminos de la app aceptados' : 'App pendiente'}
                   </div>
                 </div>
@@ -678,7 +678,7 @@ export default function CompetitionEnrollmentPage() {
             <StepCard number="4" title="Pago de inscripcion" hint="FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.">
               <div style={{ display: 'grid', gap: 14 }}>
                 {!selectedCategoryData ? (
-                  <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+                  <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                     Selecciona una categoria para habilitar el pago.
                   </div>
                 ) : (
@@ -694,7 +694,7 @@ export default function CompetitionEnrollmentPage() {
                           <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
                           <div style={{ color: '#FFB36F', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.platformFee)}</div>
                         </div>
-                        <div style={{ borderRadius: 14, border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.08)', padding: 12 }}>
+                        <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.24)', background: 'rgba(94,234,212,0.08)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Total a pagar</div>
                           <div style={{ color: '#8DF1E4', fontSize: 18, fontWeight: 900 }}>{formatCop(pricing.totalPrice)}</div>
                         </div>
@@ -740,14 +740,14 @@ export default function CompetitionEnrollmentPage() {
           <section style={{ borderRadius: 24, border: '1px solid #252A33', background: '#171B21', padding: 22 }}>
               {!session ? (
                 <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+                  <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                     Debes iniciar sesion como participante para completar la inscripcion.
                   </div>
                   <button type="button" className="btn-primary" onClick={() => navigate('/login')}>Iniciar sesion</button>
                 </div>
               ) : !isAthlete ? (
                 <div style={{ display: 'grid', gap: 10 }}>
-                  <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+                  <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                     Solo las cuentas de participante pueden inscribirse en competencias.
                   </div>
                   <button type="button" className="btn-secondary" onClick={() => navigate(getHomePath(role))}>Ir a mi panel</button>
@@ -755,7 +755,7 @@ export default function CompetitionEnrollmentPage() {
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
                   {profileIncomplete ? (
-                    <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+                    <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
                       Completa tu perfil antes de continuar con esta inscripcion. Faltan: {formatMissingParticipantProfileFields(profileMissingFields)}.
                     </div>
                   ) : null}
@@ -766,11 +766,11 @@ export default function CompetitionEnrollmentPage() {
                         border: `1px solid ${
                           enrollmentState === 'rechazado' || ['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
                             ? 'rgba(255,69,58,0.28)'
-                            : 'rgba(0,194,168,0.22)'
+                            : 'rgba(94,234,212,0.22)'
                         }`,
                         background: enrollmentState === 'rechazado' || ['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
                           ? 'rgba(255,69,58,0.08)'
-                          : 'rgba(0,194,168,0.08)',
+                          : 'rgba(94,234,212,0.08)',
                         padding: 14,
                         color: '#F5F7FA',
                         fontSize: 14,
@@ -819,7 +819,7 @@ export default function CompetitionEnrollmentPage() {
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ color: (activeTermsModal === 'competition' ? competitionTermsAccepted : appTermsAccepted) ? '#8DF1E4' : '#AAB2C0', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <CheckCircle2 size={16} color={(activeTermsModal === 'competition' ? competitionTermsAccepted : appTermsAccepted) ? '#00C2A8' : '#AAB2C0'} />
+                  <CheckCircle2 size={16} color={(activeTermsModal === 'competition' ? competitionTermsAccepted : appTermsAccepted) ? '#5EEAD4' : '#AAB2C0'} />
                   {(activeTermsModal === 'competition' ? competitionTermsAccepted : appTermsAccepted)
                     ? 'Terminos aceptados'
                     : ((activeTermsModal === 'competition' ? competitionTermsScrolledToEnd : appTermsScrolledToEnd) ? 'Ya puedes confirmar la lectura' : 'Lee hasta el final para continuar')}

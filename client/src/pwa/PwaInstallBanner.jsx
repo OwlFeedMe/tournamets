@@ -19,7 +19,7 @@ export function PwaInstallBanner() {
       <div style={{
         maxWidth: 460,
         marginLeft: 'auto',
-        background: 'linear-gradient(135deg, rgba(255,107,0,0.98) 0%, rgba(255,154,61,0.96) 100%)',
+        background: 'linear-gradient(135deg, rgba(241,244,248,0.98) 0%, rgba(199,205,214,0.96) 100%)',
         color: '#fff',
         borderRadius: 18,
         padding: '14px 14px 14px 16px',

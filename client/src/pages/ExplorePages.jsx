@@ -8,7 +8,7 @@ import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 const pageStyle = {
   minHeight: '100vh',
   background:
-    'radial-gradient(circle at top, rgba(255,107,0,0.16), transparent 26%), radial-gradient(circle at bottom right, rgba(0,194,168,0.08), transparent 24%), #0D0F12',
+    'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 26%), radial-gradient(circle at bottom right, rgba(94,234,212,0.08), transparent 24%), #0D0F12',
   color: '#F5F7FA',
 }
 
@@ -110,12 +110,12 @@ function TopBlock({ kicker, title, text }) {
       style={{
         borderRadius: 26,
         padding: '24px 20px',
-        border: '1px solid rgba(255,107,0,0.22)',
-        background: 'linear-gradient(135deg, rgba(255,107,0,0.15), rgba(255,154,61,0.06) 42%, rgba(23,27,33,0.94) 100%)',
+        border: '1px solid var(--oa-border)',
+        background: 'linear-gradient(135deg, rgba(214,217,224,0.10), rgba(94,234,212,0.08) 42%, rgba(23,27,33,0.94) 100%)',
         marginBottom: 18,
       }}
     >
-      <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2 }}>{kicker}</div>
+      <div style={{ color: 'var(--oa-accent)', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2 }}>{kicker}</div>
       <h1 style={{ margin: '10px 0 8px', fontSize: 'clamp(30px, 6vw, 52px)', lineHeight: 0.98 }}>{title}</h1>
       <p style={{ margin: 0, color: '#AAB2C0', fontSize: 15, lineHeight: 1.7 }}>{text}</p>
     </section>
@@ -165,7 +165,7 @@ export function EventsPage() {
                       border: '1px solid rgba(255,255,255,0.08)',
                       background: profileImageUrl
                         ? `#0D0F12 url("${profileImageUrl}") center/cover no-repeat`
-                        : 'linear-gradient(135deg, rgba(255,107,0,0.26), rgba(0,194,168,0.18))',
+                        : 'linear-gradient(135deg, rgba(214,217,224,0.18), rgba(94,234,212,0.18))',
                       display: 'grid',
                       placeItems: 'center',
                     }}
@@ -179,7 +179,7 @@ export function EventsPage() {
                         <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
                         <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
                       </div>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: competition.enrollment_open ? '#22C55E' : '#FF6B00', fontWeight: 700, fontSize: 12 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: competition.enrollment_open ? '#22C55E' : 'var(--oa-primary)', fontWeight: 700, fontSize: 12 }}>
                         <Flame size={14} />
                         {competition.enrollment_open ? 'Abierta' : 'Visible'}
                       </div>
@@ -187,17 +187,17 @@ export function EventsPage() {
 
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <CalendarDays size={14} color="#00C2A8" />
+                        <CalendarDays size={14} color="var(--oa-accent)" />
                         {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}{competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Trophy size={14} color="#D4A537" />
+                        <Trophy size={14} color="var(--oa-gold)" />
                         Pagina publica
                       </span>
                     </div>
 
                     <div style={{ marginTop: 14 }}>
-                      <Link to={`/competitions/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Link to={`/competitions/${competition.id}`} style={{ color: 'var(--oa-primary)', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Ver competencia
                         <ChevronRight size={16} />
                       </Link>
@@ -261,21 +261,21 @@ export function WorkoutsPage() {
                     <div style={{ fontSize: 20, fontWeight: 800 }}>{competition.nombre}</div>
                     <div style={{ color: '#AAB2C0', marginTop: 6 }}>Consulta las pruebas cargadas para esta competencia.</div>
                   </div>
-                  <Dumbbell size={20} color="#FF6B00" />
+                  <Dumbbell size={20} color="#D6D9E0" />
                 </div>
 
                 {phases.length ? (
                   <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
                     {phases.slice(0, 3).map((phase, index) => (
                       <div key={phase.id || `${competition.id}-${index}`} style={{ borderRadius: 16, background: 'rgba(13,15,18,0.55)', border: '1px solid rgba(37,42,51,0.9)', padding: 14 }}>
-                        <div style={{ fontSize: 14, color: '#00C2A8', fontWeight: 800 }}>
+                        <div style={{ fontSize: 14, color: '#5EEAD4', fontWeight: 800 }}>
                           {(phase.phase_format || 'activity') === 'wod' ? `WOD ${index + 1}` : `Actividad ${index + 1}`}
                         </div>
                         <div style={{ marginTop: 4, fontWeight: 700 }}>{phase.nombre}</div>
                         <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>{truncate(phase.descripcion, 90)}</div>
                         {Array.isArray(phase.activities) && phase.activities.length > 1 ? (
                           <div style={{ marginTop: 8, color: '#D7DEE8', fontSize: 12, lineHeight: 1.5 }}>
-                            {phase.activities.map((activity) => activity?.nombre).filter(Boolean).join(' • ')}
+                            {phase.activities.map((activity) => activity?.nombre).filter(Boolean).join(' â€¢ ')}
                           </div>
                         ) : null}
                       </div>
@@ -363,7 +363,7 @@ export function MyEventsPage() {
                       border: '1px solid rgba(255,255,255,0.08)',
                       background: profileImageUrl
                         ? `#0D0F12 url("${profileImageUrl}") center/cover no-repeat`
-                        : 'linear-gradient(135deg, rgba(255,107,0,0.26), rgba(0,194,168,0.18))',
+                        : 'linear-gradient(135deg, rgba(214,217,224,0.26), rgba(94,234,212,0.18))',
                       display: 'grid',
                       placeItems: 'center',
                     }}
@@ -398,7 +398,7 @@ export function MyEventsPage() {
 
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <CalendarDays size={14} color="#00C2A8" />
+                        <CalendarDays size={14} color="#5EEAD4" />
                         {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}
                         {competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
                       </span>
@@ -411,11 +411,11 @@ export function MyEventsPage() {
                     </div>
 
                     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14 }}>
-                      <Link to={`/competitions/${competition.id}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Link to={`/competitions/${competition.id}`} style={{ color: '#F1F4F8', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Ver competencia
                         <ChevronRight size={16} />
                       </Link>
-                      <Link to={`/leaderboard/${competition.id}`} style={{ color: '#00C2A8', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Link to={`/leaderboard/${competition.id}`} style={{ color: '#5EEAD4', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Ver leaderboard
                         <ChevronRight size={16} />
                       </Link>
@@ -446,7 +446,7 @@ export function NotificationsPage() {
         <section style={{ display: 'grid', gap: 14 }}>
           <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Bell size={18} color="#FF6B00" />
+              <Bell size={18} color="#D6D9E0" />
               <div style={{ fontWeight: 800 }}>{session ? `Avisos para ${displayName || 'tu cuenta'}` : 'Novedades y acceso personal'}</div>
             </div>
             <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
@@ -457,13 +457,13 @@ export function NotificationsPage() {
           </article>
 
           {!session ? (
-            <article style={{ borderRadius: 22, border: '1px solid rgba(255,107,0,0.24)', background: 'rgba(23,27,33,0.94)', padding: 18 }}>
+            <article style={{ borderRadius: 22, border: '1px solid rgba(214,217,224,0.24)', background: 'rgba(23,27,33,0.94)', padding: 18 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Lock size={18} color="#00C2A8" />
+                <Lock size={18} color="#5EEAD4" />
                 <div style={{ fontWeight: 800 }}>Ingresa para desbloquear notificaciones personalizadas</div>
               </div>
               <div style={{ marginTop: 10 }}>
-                <Link to="/login" style={{ textDecoration: 'none', color: '#FF9A3D', fontWeight: 800 }}>
+                <Link to="/login" style={{ textDecoration: 'none', color: '#F1F4F8', fontWeight: 800 }}>
                   Ir a ingresar
                 </Link>
               </div>

@@ -78,7 +78,7 @@ export function PwaInstallPrompt() {
           width: 42,
           height: 42,
           borderRadius: 14,
-          background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
+          background: 'linear-gradient(135deg, #F1F4F8 0%, #C7CDD6 100%)',
           color: '#fff',
           display: 'flex',
           alignItems: 'center',

@@ -287,7 +287,7 @@ export function CompetitionSchedulePanel({ competition }) {
         </form>
 
         {msg ? (
-          <div style={{ marginTop: 12, color: msg.type === 'error' ? '#EF4444' : '#00C2A8', fontSize: 13 }}>
+          <div style={{ marginTop: 12, color: msg.type === 'error' ? '#EF4444' : '#5EEAD4', fontSize: 13 }}>
             {msg.text}
           </div>
         ) : null}
@@ -396,12 +396,12 @@ export function CompetitionSchedulePanel({ competition }) {
                     <div key={item.id} style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                         <div>
-                          <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                          <div style={{ color: '#5EEAD4', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                             Heat {item.heat_number}
                           </div>
                           <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15, marginTop: 4 }}>{item.heat_label}</div>
                         </div>
-                        <span style={{ padding: '6px 10px', borderRadius: 999, border: `1px solid ${item.is_published ? 'rgba(0,194,168,0.28)' : 'rgba(255,107,0,0.28)'}`, color: item.is_published ? '#9AF7EA' : '#FFD0AE', background: item.is_published ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.10)', fontSize: 12, fontWeight: 800 }}>
+                        <span style={{ padding: '6px 10px', borderRadius: 999, border: `1px solid ${item.is_published ? 'rgba(94,234,212,0.28)' : 'rgba(214,217,224,0.28)'}`, color: item.is_published ? '#9AF7EA' : '#FFD0AE', background: item.is_published ? 'rgba(94,234,212,0.08)' : 'rgba(214,217,224,0.10)', fontSize: 12, fontWeight: 800 }}>
                           {item.is_published ? 'Publicado' : 'Borrador'}
                         </span>
                       </div>
@@ -424,7 +424,7 @@ export function CompetitionSchedulePanel({ competition }) {
                             <div key={participant.id} style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', padding: '10px 12px' }}>
                               <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 13 }}>{participant.participant_name}</div>
                               <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-                                Lane {participant.lane_number}{participant.categoria ? ` · ${participant.categoria}` : ''}
+                                Lane {participant.lane_number}{participant.categoria ? ` Â· ${participant.categoria}` : ''}
                               </div>
                             </div>
                           ))}

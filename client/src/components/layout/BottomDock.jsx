@@ -67,8 +67,8 @@ export function BottomDock() {
         width: 'min(100vw - 16px, 760px)',
         zIndex: 50,
         borderRadius: 22,
-        border: '1px solid rgba(37, 42, 51, 0.92)',
-        background: 'rgba(23, 27, 33, 0.92)',
+        border: '1px solid var(--oa-border)',
+        background: 'rgba(23, 26, 32, 0.92)',
         backdropFilter: 'blur(18px)',
         boxShadow: '0 18px 50px rgba(0, 0, 0, 0.38)',
         padding: '8px',
@@ -90,9 +90,9 @@ export function BottomDock() {
                 minHeight: 56,
                 borderRadius: 16,
                 padding: '8px 10px',
-                border: active ? '1px solid rgba(255, 107, 0, 0.4)' : '1px solid transparent',
+                border: active ? '1px solid rgba(214, 217, 224, 0.28)' : '1px solid transparent',
                 background: active
-                  ? 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(255,154,61,0.14))'
+                  ? 'linear-gradient(135deg, rgba(214,217,224,0.14), rgba(94,234,212,0.10))'
                   : 'transparent',
                 color: active ? 'var(--oa-text)' : 'var(--oa-text-secondary)',
                 display: 'flex',

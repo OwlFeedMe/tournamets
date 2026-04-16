@@ -10,7 +10,7 @@ import {
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff,
 } from 'lucide-react'
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function statusBadge(estado) {
   if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
@@ -82,7 +82,7 @@ function parseTimeToSeconds(value) {
 function normalizeMeasurementMethod(raw, tipo) {
   const value = (raw || '').toString().trim().toLowerCase()
   if (value === 'tiempo_hms' || value === 'hh:mm:ss' || value === 'hms') return 'tiempo_hms'
-  if (value === 'posicion' || value === 'posición') return 'posicion'
+  if (value === 'posicion' || value === 'posiciÃ³n') return 'posicion'
   if (value) return value
   const t = (tipo || '').toString().trim().toLowerCase()
   if (t === 'tiempo') return 'tiempo_hms'
@@ -108,7 +108,7 @@ function organizerApplicationBadge(status) {
   return { label: 'Pendiente', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
 }
 
-// ── Competition Detail Modal ──────────────────────────────────────────────────
+// â”€â”€ Competition Detail Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm }) {
   if (!competition) return null
@@ -150,7 +150,7 @@ function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm })
               ? 'Ya existe un pago asociado a esta inscripcion. Si deseas devolucion, debes solicitarla directamente al organizador despues del cierre de inscripciones.'
               : 'Esta accion retirara tu inscripcion de la competencia.'}
           </div>
-          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(255,107,0,0.24)', background: 'linear-gradient(135deg, rgba(255,107,0,0.12), rgba(255,154,61,0.04))', color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
+          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(214,217,224,0.24)', background: 'linear-gradient(135deg, rgba(214,217,224,0.12), rgba(241,244,248,0.04))', color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
             {competition.nombre}
           </div>
           {paidOrInProgress ? (
@@ -273,12 +273,12 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   }
 
   const handleTransferCaptain = async (newCaptainId) => {
-    if (!window.confirm('¿Seguro que quieres transferir la capitanía?')) return
+    if (!window.confirm('Â¿Seguro que quieres transferir la capitanÃ­a?')) return
     setTransferBusy(newCaptainId)
     setTransferMsg(null)
     try {
       await api.put(`/teams/${team.id}/transfer-captain`, { captain_id: newCaptainId })
-      setTransferMsg({ type: 'success', text: 'Capitanía transferida' })
+      setTransferMsg({ type: 'success', text: 'CapitanÃ­a transferida' })
       await loadTeam()
     } catch (err) {
       setTransferMsg({ type: 'error', text: err.response?.data?.detail || 'Error al transferir' })
@@ -339,8 +339,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             <div style={{ marginBottom: 18 }}>
               {/* Team header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Users size={15} color="#FF6B00" />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#FF6B00' }}>Tu equipo</span>
+                <Users size={15} color="#D6D9E0" />
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0' }}>Tu equipo</span>
                 {isCaptain && (
                   <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 7px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <Crown size={10} /> CAPITAN
@@ -392,27 +392,27 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                       width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
                       background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255,255,255,0.06)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#fbbf24' : '#FF6B00',
+                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#fbbf24' : '#D6D9E0',
                     }}>
                       {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
-                      {m.id === participantId && <span style={{ fontSize: 11, color: '#FF6B00', marginLeft: 6 }}>(tú)</span>}
+                      {m.id === participantId && <span style={{ fontSize: 11, color: '#D6D9E0', marginLeft: 6 }}>(tÃº)</span>}
                     </div>
                     {m.is_captain ? (
                       <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                        <Crown size={9} /> Capitán
+                        <Crown size={9} /> CapitÃ¡n
                       </span>
                     ) : isCaptain && (
                       <button
                         className="btn-secondary btn-sm"
-                        title="Transferir capitanía a este miembro"
+                        title="Transferir capitanÃ­a a este miembro"
                         onClick={() => handleTransferCaptain(m.id)}
                         disabled={transferBusy === m.id}
                         style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}
                       >
-                        <Crown size={11} /> {transferBusy === m.id ? '...' : 'Dar capitanía'}
+                        <Crown size={11} /> {transferBusy === m.id ? '...' : 'Dar capitanÃ­a'}
                       </button>
                     )}
                   </div>
@@ -422,7 +422,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
               {/* Captain: invite section */}
               {isCaptain && (
                 <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--oa-border)' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#FF6B00', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <UserPlus size={14} /> Invitar participante
                   </div>
                   <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
@@ -462,7 +462,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           {/* Results section */}
           {compResults.length > 0 && (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#FF6B00', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trophy size={14} /> Tus resultados
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
@@ -475,12 +475,12 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
                         <>
-                          <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 20 }}>#{r.posicion}</div>
+                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 20 }}>#{r.posicion}</div>
                           <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, color: '#FF6B00', fontSize: 22 }}>{r.puntos}</div>
+                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 22 }}>{r.puntos}</div>
                           <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                         </>
                       )}
@@ -501,7 +501,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             {canSeeMySchedule ? (
               <Link
                 to={getCompetitionScheduleHref(comp.id, true)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid rgba(0,194,168,0.24)', background: 'linear-gradient(135deg, rgba(0,194,168,0.12), rgba(13,15,18,0.92))', color: '#DFFFF9', fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid rgba(94,234,212,0.24)', background: 'linear-gradient(135deg, rgba(94,234,212,0.12), rgba(13,15,18,0.92))', color: '#DFFFF9', fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
               >
                 <Clock3 size={16} /> Mi cronograma <ChevronRight size={14} />
               </Link>
@@ -515,7 +515,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
               </Link>
               <a
                 href={`/leaderboard/${comp.id}`}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#FF6B00', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#D6D9E0', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 <Medal size={16} /> Leaderboard
               </a>
@@ -527,7 +527,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   )
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ParticipantProfile() {
   const location = useLocation()
@@ -1169,14 +1169,14 @@ export default function ParticipantProfile() {
 
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
         {profileRequirementNotice ? (
-          <div style={{ marginBottom: 16, borderRadius: 16, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 16, borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
             {profileRequirementNotice}
           </div>
         ) : null}
 
         {/* Profile hero */}
         <div style={{
-          background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)', borderRadius: 14,
+          background: 'linear-gradient(135deg, #D6D9E0 0%, #F1F4F8 100%)', borderRadius: 14,
           padding: isMobile ? '18px 16px' : '24px',
           marginBottom: 16, display: 'flex', alignItems: 'center', gap: isMobile ? 14 : 20,
         }}>
@@ -1196,7 +1196,7 @@ export default function ParticipantProfile() {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: isMobile ? 16 : 20, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{myProfile ? `${myProfile.nombre} ${myProfile.apellido}` : nombre}</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${formatCedula(myProfile?.cedula)}` : ''}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` Â· ${formatCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {myProfile?.categoria && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
               {myProfile?.box && <span style={{ fontSize: 11, color: '#fff', background: 'rgba(255,255,255,0.12)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
@@ -1244,7 +1244,7 @@ export default function ParticipantProfile() {
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
                 {(editMsg || photoMsg) && <div className={`alert alert-${(editMsg || photoMsg).type}`} style={{ marginBottom: 12 }}>{(editMsg || photoMsg).text}</div>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
-                  <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.05)', border: '3px solid var(--oa-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#FF6B00' }}>
+                  <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.05)', border: '3px solid var(--oa-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#D6D9E0' }}>
                     {profilePhotoUrl ? (
                       <img src={profilePhotoUrl} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : initial}
@@ -1271,8 +1271,8 @@ export default function ParticipantProfile() {
                   <input value={editForm.apellido || ''} onChange={e => setEditForm(f => ({ ...f, apellido: e.target.value }))} placeholder="Apellido" required />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Cédula</label>
-                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value.replace(/\D/g, '') }))} placeholder="Cédula" inputMode="numeric" />
+                  <label>CÃ©dula</label>
+                  <input value={editForm.cedula || ''} onChange={e => setEditForm(f => ({ ...f, cedula: e.target.value.replace(/\D/g, '') }))} placeholder="CÃ©dula" inputMode="numeric" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
@@ -1363,7 +1363,7 @@ export default function ParticipantProfile() {
                   </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
-                  <label>Categoría</label>
+                  <label>CategorÃ­a</label>
                   <input value={editForm.categoria || ''} onChange={e => setEditForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Ej: Rx, Scaled, Masters..." />
                 </div>
                   </div>
@@ -1399,7 +1399,7 @@ export default function ParticipantProfile() {
                     </div>
                     {inv.captain_nombre && (
                       <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Crown size={11} color="#e8a800" /> Capitán: {inv.captain_nombre}
+                        <Crown size={11} color="#e8a800" /> CapitÃ¡n: {inv.captain_nombre}
                       </div>
                     )}
                     {inv.team?.members?.length > 0 && (
@@ -1438,7 +1438,7 @@ export default function ParticipantProfile() {
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700 }}>Cargar resultado</h3>
-              <button className="btn-secondary btn-sm" onClick={() => setShowForm(false)}>✕ Cancelar</button>
+              <button className="btn-secondary btn-sm" onClick={() => setShowForm(false)}>âœ• Cancelar</button>
             </div>
             <form onSubmit={submitResult}>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
@@ -1467,7 +1467,7 @@ export default function ParticipantProfile() {
               {phaseObj && (
                 <>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                    <span style={{ fontSize: 12, background: 'rgba(255, 107, 0, 0.14)', color: '#FF9A3D', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
+                    <span style={{ fontSize: 12, background: 'rgba(255, 107, 0, 0.14)', color: '#F1F4F8', borderRadius: 6, padding: '4px 10px', fontWeight: 600 }}>
                       {isPosition ? 'Por posicion' : isTime ? 'Por tiempo' : 'Por cantidad'}
                     </span>
                     {teamMode && (

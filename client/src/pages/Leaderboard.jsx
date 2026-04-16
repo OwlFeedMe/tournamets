@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { CheckCircle2, Clock3, Circle } from 'lucide-react'
 import api from '../api/axios'
@@ -9,15 +9,15 @@ const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
 const THEME = {
-  primary: '#FF6B00',
-  primaryHover: '#E45E00',
-  accent: '#00C2A8',
-  border: '#252A33',
+  primary: '#D6D9E0',
+  primaryHover: '#F1F4F8',
+  accent: '#5EEAD4',
+  border: 'rgba(214, 217, 224, 0.14)',
   ink: '#F5F7FA',
   paper: '#0D0F12',
-  surface: '#171B21',
-  muted: '#AAB2C0',
-  soft: '#6B7280',
+  surface: '#171A20',
+  muted: '#C7CDD6',
+  soft: '#8B94A3',
 }
 
 function safeServerNowMs(value) {
@@ -131,7 +131,7 @@ function MoveBadge({ delta, tvMode = false }) {
   const pad = tvMode ? '2px 8px' : '1px 6px'
   if (delta > 0) {
     return (
-      <span style={{ color: THEME.accent, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.28)', borderRadius: 999, padding: pad, fontSize: size, fontWeight: 700 }}>
+      <span style={{ color: THEME.accent, background: 'rgba(94,234,212,0.12)', border: '1px solid rgba(94,234,212,0.28)', borderRadius: 999, padding: pad, fontSize: size, fontWeight: 700 }}>
         +{delta}
       </span>
     )
@@ -982,8 +982,8 @@ export default function Leaderboard() {
         .lb-root .tab:hover:not(.active) { color: ${THEME.ink}; background: rgba(255,255,255,0.04); }
         .lb-root h1 { color: ${THEME.ink} !important; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.5px; font-size: 38px !important; }
         .lb-root select, .lb-root input { background: ${THEME.surface}; color: ${THEME.ink}; border: 1px solid ${THEME.border}; }
-        .lb-root .badge-rx { background: rgba(255,107,0,0.12); color: #ff9a3d; border-color: rgba(255,107,0,0.35); }
-        .lb-root .badge-scaled { background: rgba(0,194,168,0.12); color: #6ff3e1; border-color: rgba(0,194,168,0.35); }
+        .lb-root .badge-rx { background: rgba(214,217,224,0.12); color: #ff9a3d; border-color: rgba(214,217,224,0.35); }
+        .lb-root .badge-scaled { background: rgba(94,234,212,0.12); color: #6ff3e1; border-color: rgba(94,234,212,0.35); }
         .lb-root .badge-masters { background: rgba(212,165,55,0.12); color: #f1ce75; border-color: rgba(212,165,55,0.35); }
         .lb-root .badge-default { background: rgba(170,178,192,0.12); color: ${THEME.muted}; border-color: rgba(170,178,192,0.25); }
         @keyframes shimmer {
@@ -996,11 +996,11 @@ export default function Leaderboard() {
           animation: shimmer 1.4s infinite;
         }
         @keyframes flashUp {
-          0%   { background: rgba(0,194,168,0.28); }
+          0%   { background: rgba(94,234,212,0.28); }
           100% { background: transparent; }
         }
         @keyframes flashDown {
-          0%   { background: rgba(255,107,0,0.28); }
+          0%   { background: rgba(214,217,224,0.28); }
           100% { background: transparent; }
         }
         @keyframes flashNew {
@@ -1047,7 +1047,7 @@ export default function Leaderboard() {
         .tv-phase-progress > span {
           display: block;
           height: 100%;
-          background: linear-gradient(135deg, ${THEME.primary} 0%, #FF9A3D 100%);
+          background: linear-gradient(135deg, ${THEME.primary} 0%, #F1F4F8 100%);
           animation-name: tvProgress;
           animation-timing-function: linear;
           animation-fill-mode: forwards;
@@ -1196,7 +1196,7 @@ export default function Leaderboard() {
                     <div style={{
                       position: 'absolute', inset: 0,
                       clipPath: 'polygon(0 27%, 68% 27%, 68% 0%, 100% 50%, 68% 100%, 68% 73%, 0 73%)',
-                      background: 'rgba(255,107,0,0.22)',
+                      background: 'rgba(214,217,224,0.22)',
                     }} />
                     {/* CSS-animated fill — uses the existing tvProgress keyframe */}
                     <div style={{

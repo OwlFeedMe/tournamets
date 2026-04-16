@@ -614,10 +614,10 @@ export default function Login() {
   }
 
   return (
-    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: '20px 20px 8px', background: 'radial-gradient(circle at top, rgba(255,107,0,0.14), transparent 32%), transparent' }}>
+    <div className="app-shell auth-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100%', padding: '20px 20px 8px', background: 'radial-gradient(circle at top, rgba(214,217,224,0.12), transparent 32%), radial-gradient(circle at 82% 18%, rgba(94,234,212,0.10), transparent 20%), transparent' }}>
       <div className="auth-card-wrap" style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <h1 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 42, fontWeight: 800, color: '#FF6B00', letterSpacing: '0.8px' }}>
+          <h1 style={{ fontFamily: 'Bebas Neue, sans-serif', fontSize: 42, fontWeight: 800, color: 'var(--oa-primary)', letterSpacing: '0.8px' }}>
             FinalRep
           </h1>
           <p style={{ color: '#AAB2C0', marginTop: 6, fontSize: 14 }}>Inicia sesion con tu correo o usuario administrativo</p>
@@ -673,7 +673,7 @@ export default function Login() {
         </div>
 
         <p style={{ textAlign: 'center', marginTop: 12, fontSize: 13, color: '#AAB2C0' }}>
-          <Link to="/" style={{ color: '#FF6B00' }}>Volver al inicio</Link>
+          <Link to="/" style={{ color: 'var(--oa-primary)' }}>Volver al inicio</Link>
         </p>
       </div>
 
