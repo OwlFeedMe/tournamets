@@ -288,7 +288,9 @@ def _validate_competition_dates(payload: dict):
 
 
 def _normalize_competition_visibility(payload: dict):
-    if not payload.get("activa"):
+    # Only force enrollment closure when visibility is explicitly set to inactive.
+    # In partial updates (e.g. toggling enrollment_open only), `activa` may be omitted.
+    if "activa" in payload and not payload.get("activa"):
         payload["enrollment_open"] = 0
 
 
