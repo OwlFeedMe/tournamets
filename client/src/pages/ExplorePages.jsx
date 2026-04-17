@@ -335,7 +335,7 @@ export function WorkoutsPage() {
                         <div style={{ marginTop: 6, color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>{truncate(phase.descripcion, 90)}</div>
                         {Array.isArray(phase.activities) && phase.activities.length > 1 ? (
                           <div style={{ marginTop: 8, color: '#D7DEE8', fontSize: 12, lineHeight: 1.5 }}>
-                            {phase.activities.map((activity) => activity?.nombre).filter(Boolean).join(' â€¢ ')}
+                    {phase.activities.map((activity) => activity?.nombre).filter(Boolean).join(' • ')}
                           </div>
                         ) : null}
                       </div>

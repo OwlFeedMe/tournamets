@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
 from auth import get_current_user_optional, has_organizer_access, require_staff
+from competition_rules import filter_visible_phases, normalize_phase_measurement_method, normalize_phase_visibility, normalize_rm_unit, type_from_measurement_method
 from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 from phase_status import compute_phase_status_map
@@ -291,6 +292,11 @@ def _normalize_competition_visibility(payload: dict):
         payload["enrollment_open"] = 0
 
 
+def _normalize_rm_unit_field(payload: dict):
+    if "rm_unit" in payload:
+        payload["rm_unit"] = normalize_rm_unit(payload.get("rm_unit"))
+
+
 def _delete_local_competition_asset(asset_url: Optional[str]) -> None:
     if not asset_url or not asset_url.startswith("/uploads/competition_assets/"):
         return
@@ -552,7 +558,7 @@ def get_public_competition_detail(
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, estado, start_at, end_at, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, estado, is_visible, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
@@ -569,6 +575,8 @@ def get_public_competition_detail(
         item["modality"] = _normalize_modality(item.get("modality"))
         item["block_name"] = str(item.get("block_name") or "").strip() or None
         item["block_order"] = int(item.get("block_order") or 0)
+        item["measurement_method"] = normalize_phase_measurement_method(item.get("measurement_method"), item.get("tipo"))
+        item["tipo"] = type_from_measurement_method(item["measurement_method"])
         phase_format = str(item.get("phase_format") or "activity").strip().lower()
         if phase_format in {"actividad", "activity"}:
             phase_format = "activity"
@@ -580,12 +588,21 @@ def get_public_competition_detail(
         item["points_mode"] = item.get("points_mode") or "manual"
         item["allow_multiple_results"] = int(item.get("allow_multiple_results") or 0)
         item["team_result_mode"] = item.get("team_result_mode") or "sum_two"
+        item["is_visible"] = normalize_phase_visibility(item.get("is_visible"))
         try:
             parsed_activities = json.loads(item.get("activities") or "[]")
         except Exception:
             parsed_activities = []
         if isinstance(parsed_activities, list) and parsed_activities:
-            item["activities"] = parsed_activities
+            item["activities"] = [
+                {
+                    **activity,
+                    "measurement_method": normalize_phase_measurement_method((activity or {}).get("measurement_method"), (activity or {}).get("tipo")),
+                    "tipo": type_from_measurement_method(normalize_phase_measurement_method((activity or {}).get("measurement_method"), (activity or {}).get("tipo"))),
+                }
+                for activity in parsed_activities
+                if isinstance(activity, dict)
+            ]
         else:
             item["activities"] = [{
                 "nombre": item.get("nombre"),
@@ -599,6 +616,7 @@ def get_public_competition_detail(
                 "orden": 0,
             }]
         normalized_phases.append(item)
+    normalized_phases = filter_visible_phases(normalized_phases)
 
     normalized_categories = []
     for category in categories:
@@ -637,8 +655,11 @@ def get_public_competition_detail(
         {"cid": competition_id_int},
     ).mappings().first() or {}
 
+    competition_payload = competition.model_dump()
+    competition_payload["rm_unit"] = normalize_rm_unit(competition_payload.get("rm_unit"))
+
     return {
-        "competition": competition.model_dump(),
+        "competition": competition_payload,
         "categories": normalized_categories,
         "phases": normalized_phases,
         "categories_by_modality": categories_by_modality,
@@ -699,6 +720,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     payload["enrollment_payment_methods"] = None
     _normalize_competition_theme(payload)
     _normalize_competition_visibility(payload)
+    _normalize_rm_unit_field(payload)
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
     _serialize_schedule_items(payload)
@@ -751,6 +773,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     data["enrollment_payment_methods"] = None
     _normalize_competition_theme(data)
     _normalize_competition_visibility(data)
+    _normalize_rm_unit_field(data)
     _normalize_competition_dates(data)
     _validate_competition_dates(data)
     _serialize_schedule_items(data)

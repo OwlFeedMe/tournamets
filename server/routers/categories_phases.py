@@ -10,6 +10,13 @@ from auth import get_current_user_optional, require_staff
 from database import get_session
 from phase_status import compute_phase_status_map
 from constants import MedicionFase
+from competition_rules import (
+    PHASE_MEASUREMENT_METHODS_ALLOWED,
+    default_measurement_method_for_type,
+    normalize_phase_measurement_method,
+    normalize_phase_visibility,
+    type_from_measurement_method,
+)
 from models import (
     CompetitionCategory, CompetitionPhase,
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
@@ -23,7 +30,7 @@ PHASE_ESTADOS_VALIDOS = {"pendiente", "en_progreso", "finalizada"}
 PHASE_TEAM_MODES_VALIDOS = {"sum_two", "single_member", "total"}
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
-PHASE_MEASUREMENT_METHODS_VALIDOS = MedicionFase.ALL
+PHASE_MEASUREMENT_METHODS_VALIDOS = PHASE_MEASUREMENT_METHODS_ALLOWED
 PHASE_TIPO_ALIAS = {
     "puntos": "cantidad",
     "peso": "cantidad",
@@ -77,23 +84,6 @@ def _default_winner_rule_for_type(phase_type: str | None) -> str:
     return "higher_wins"
 
 
-def _default_measurement_method_for_type(phase_type: str | None) -> str:
-    if phase_type == "tiempo":
-        return MedicionFase.TIEMPO_HMS
-    if phase_type == "posicion":
-        return MedicionFase.POSICION
-    return MedicionFase.UNIDADES
-
-
-def _type_from_measurement_method(method: str | None) -> str:
-    m = (method or "").strip().lower()
-    if m in MedicionFase.TIPO_TIEMPO:
-        return "tiempo"
-    if m in MedicionFase.TIPO_POSICION:
-        return "posicion"
-    return "cantidad"
-
-
 def _normalize_winner_rule(raw: str | None, phase_type: str | None) -> str:
     value = (raw or "").strip().lower()
     value = PHASE_WINNER_ALIAS.get(value, value)
@@ -103,11 +93,7 @@ def _normalize_winner_rule(raw: str | None, phase_type: str | None) -> str:
 
 
 def _normalize_measurement_method(raw: str | None, phase_type: str | None) -> str:
-    value = (raw or "").strip().lower()
-    value = PHASE_MEASUREMENT_ALIAS.get(value, value)
-    if not value:
-        return _default_measurement_method_for_type(phase_type)
-    return value
+    return normalize_phase_measurement_method(raw, phase_type)
 
 
 def _normalize_phase_status(raw: str | None) -> str:
@@ -177,7 +163,7 @@ def _serialize_phase_activities(
         measurement_method = _normalize_measurement_method(item.get("measurement_method"), activity_type)
         if measurement_method not in PHASE_MEASUREMENT_METHODS_VALIDOS:
             measurement_method = fallback_measurement_method
-        activity_type = _type_from_measurement_method(measurement_method)
+        activity_type = type_from_measurement_method(measurement_method)
         winner_rule = _normalize_winner_rule(item.get("winner_rule"), activity_type)
         if winner_rule not in PHASE_WINNER_RULES_VALIDOS:
             winner_rule = fallback_winner_rule
@@ -291,12 +277,20 @@ def _parse_phase_activities(phase: CompetitionPhase) -> list[dict]:
         except Exception:
             parsed = []
     if parsed:
-        return parsed
+        normalized_items: list[dict] = []
+        for item in parsed:
+            measurement_method = _normalize_measurement_method(item.get("measurement_method"), item.get("tipo"))
+            normalized_items.append({
+                **item,
+                "measurement_method": measurement_method,
+                "tipo": type_from_measurement_method(measurement_method),
+            })
+        return normalized_items
     return [{
         "nombre": phase.nombre,
         "descripcion": phase.descripcion,
-        "tipo": phase.tipo,
-        "measurement_method": getattr(phase, "measurement_method", None),
+        "tipo": type_from_measurement_method(getattr(phase, "measurement_method", None)),
+        "measurement_method": _normalize_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None)),
         "winner_rule": getattr(phase, "winner_rule", None),
         "points_mode": getattr(phase, "points_mode", None),
         "scoring_rules": getattr(phase, "scoring_rules", None),
@@ -308,6 +302,9 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload = phase.model_dump()
     payload["modality"] = _normalize_modality(getattr(phase, "modality", None))
     payload["block_name"] = _normalize_block_name(getattr(phase, "block_name", None))
+    payload["measurement_method"] = _normalize_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None))
+    payload["tipo"] = type_from_measurement_method(payload["measurement_method"])
+    payload["is_visible"] = normalize_phase_visibility(getattr(phase, "is_visible", 1))
     payload["activities"] = _parse_phase_activities(phase)
     payload["phase_format"] = _phase_format_from_count(len(payload["activities"]))
     return payload
@@ -438,7 +435,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
     measurement_method = _normalize_measurement_method(body.measurement_method, phase_type)
     if measurement_method not in PHASE_MEASUREMENT_METHODS_VALIDOS:
         raise HTTPException(400, "measurement_method invalido")
-    phase_type = _type_from_measurement_method(measurement_method)
+    phase_type = type_from_measurement_method(measurement_method)
     phase_status = _normalize_phase_status(body.estado)
     if phase_status not in PHASE_ESTADOS_VALIDOS:
         raise HTTPException(400, "Estado de fase invalido. Usa: pendiente, en_progreso o finalizada")
@@ -482,6 +479,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         allow_multiple_results=1 if body.allow_multiple_results else 0,
         team_result_mode=team_mode,
         estado=phase_status,
+        is_visible=normalize_phase_visibility(body.is_visible),
         start_at=body.start_at,
         end_at=body.end_at,
         orden=body.orden,
@@ -518,9 +516,11 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["measurement_method"] = _normalize_measurement_method(data["measurement_method"], data.get("tipo", phase.tipo))
         if data["measurement_method"] not in PHASE_MEASUREMENT_METHODS_VALIDOS:
             raise HTTPException(400, "measurement_method invalido")
-        data["tipo"] = _type_from_measurement_method(data["measurement_method"])
+        data["tipo"] = type_from_measurement_method(data["measurement_method"])
     elif "tipo" in data:
-        data["measurement_method"] = _default_measurement_method_for_type(data["tipo"])
+        data["measurement_method"] = default_measurement_method_for_type(data["tipo"])
+    if "is_visible" in data:
+        data["is_visible"] = normalize_phase_visibility(data["is_visible"])
     if "winner_rule" in data:
         data["winner_rule"] = _normalize_winner_rule(data["winner_rule"], data.get("tipo", phase.tipo))
         if data["winner_rule"] not in PHASE_WINNER_RULES_VALIDOS:

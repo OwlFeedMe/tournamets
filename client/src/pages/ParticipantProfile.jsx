@@ -81,18 +81,20 @@ function parseTimeToSeconds(value) {
 
 function normalizeMeasurementMethod(raw, tipo) {
   const value = (raw || '').toString().trim().toLowerCase()
-  if (value === 'tiempo_hms' || value === 'hh:mm:ss' || value === 'hms') return 'tiempo_hms'
+  if (value === 'for_time' || value === 'tiempo_hms' || value === 'hh:mm:ss' || value === 'hms') return 'for_time'
+  if (value === 'kg' || value === 'g' || value === 'lb' || value === 'lbs' || value === 'kilogramos' || value === 'gramos' || value === 'libras' || value === 'rm') return 'rm'
+  if (value === 'repeticiones' || value === 'reps' || value === 'rep' || value === 'unidades' || value === 'amrap' || value === 'emom') return value === 'emom' ? 'emom' : 'amrap'
   if (value === 'posicion' || value === 'posición') return 'posicion'
   if (value) return value
   const t = (tipo || '').toString().trim().toLowerCase()
-  if (t === 'tiempo') return 'tiempo_hms'
+  if (t === 'tiempo') return 'for_time'
   if (t === 'posicion') return 'posicion'
-  return 'unidades'
+  return 'amrap'
 }
 
 function phaseTypeFromMethod(method) {
   const m = normalizeMeasurementMethod(method)
-  if (m === 'tiempo_hms') return 'tiempo'
+  if (m === 'for_time') return 'tiempo'
   if (m === 'posicion') return 'posicion'
   return 'cantidad'
 }
@@ -945,7 +947,7 @@ export default function ParticipantProfile() {
     const phaseObj = (phasesByComp[compId] || []).find(p => p.id === Number(form.phase_id))
     const measurementMethod = normalizeMeasurementMethod(phaseObj?.measurement_method, phaseObj?.tipo)
     const isPosition = phaseTypeFromMethod(measurementMethod) === 'posicion'
-    const isTime = measurementMethod === 'tiempo_hms'
+    const isTime = measurementMethod === 'for_time'
     const metricValue = isPosition ? null : (isTime ? parseTimeToSeconds(form.puntos) : Number(form.puntos || 0))
     if (!isPosition && (metricValue == null || Number.isNaN(metricValue))) {
       setMsg({ type: 'error', text: isTime ? 'Tiempo invalido. Usa HH:MM:SS' : 'Valor invalido' })
@@ -1009,7 +1011,7 @@ export default function ParticipantProfile() {
   const phaseObj = phasesForComp.find(p => p.id === Number(form.phase_id))
   const measurementMethod = normalizeMeasurementMethod(phaseObj?.measurement_method, phaseObj?.tipo)
   const isPosition = phaseTypeFromMethod(measurementMethod) === 'posicion'
-  const isTime = measurementMethod === 'tiempo_hms'
+  const isTime = measurementMethod === 'for_time'
   const myTeam = myTeamByComp[compId]
   const teamMode = phaseObj?.team_result_mode
 
@@ -1440,7 +1442,7 @@ export default function ParticipantProfile() {
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ fontSize: 16, fontWeight: 700 }}>Cargar resultado</h3>
-              <button className="btn-secondary btn-sm" onClick={() => setShowForm(false)}>âœ• Cancelar</button>
+                <button className="btn-secondary btn-sm" onClick={() => setShowForm(false)}>✕ Cancelar</button>
             </div>
             <form onSubmit={submitResult}>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>

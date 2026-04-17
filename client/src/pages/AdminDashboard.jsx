@@ -367,11 +367,15 @@ const SHARED_MODE_CHIP_BASE_STYLE = {
 function getPhaseModeSummary(phase) {
   const activityCount = Array.isArray(phase?.activities) && phase.activities.length ? phase.activities.length : 1
   const formatLabel = activityCount === 1 ? '1 actividad' : `${activityCount} actividades`
-  const measurement = PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)] || normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
+  const normalizedMeasurement = normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
+  const measurement = normalizedMeasurement === 'rm'
+    ? `RM (${String(phase?.rm_unit || 'kg').toUpperCase()})`
+    : (PHASE_MEASUREMENT_LABELS[normalizedMeasurement] || normalizedMeasurement)
   const winner = normalizeWinnerRule(phase?.winner_rule, phaseTypeFromPhase(phase)) === 'lower_wins' ? 'Gana menor' : 'Gana mayor'
   const resultCount = Number(phase?.allow_multiple_results) ? 'Multiples' : 'Unico'
   const status = phase?.estado || 'pendiente'
   const summary = [formatLabel, measurement, winner, resultCount, status]
+  if (!Number(phase?.is_visible == null ? 1 : phase.is_visible)) summary.push('Oculto')
   if ((phase?.modality || 'individual') === 'teams') {
     const teamMode = (phase?.team_result_mode || 'sum_two') === 'single_member'
       ? 'Equipo: uno'
@@ -723,21 +727,15 @@ function CategoriesModal({ competition, onClose }) {
 
 // â”€â”€ Phases Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const PHASE_TIPOS = ['posicion', 'cantidad', 'tiempo']
-const PHASE_MEASUREMENT_METHODS = ['amrap', 'emom', 'for_time', 'rm', 'unidades', 'metros', 'tiempo_hms', 'repeticiones', 'kilogramos', 'gramos', 'libras', 'posicion']
+const PHASE_MEASUREMENT_METHODS = ['for_time', 'amrap', 'emom', 'metros', 'rm']
 const PHASE_MEASUREMENT_LABELS = {
+  for_time: 'For Time',
   amrap: 'AMRAP',
   emom: 'EMOM',
-  for_time: 'For Time',
-  rm: 'RM (Repetition Maximum)',
-  unidades: 'Unidades',
   metros: 'Metros (m)',
-  tiempo_hms: 'Tiempo (HH:MM:SS)',
-  repeticiones: 'Repeticiones',
-  kilogramos: 'Kilogramos (kg)',
-  gramos: 'Gramos (g)',
-  libras: 'Libras (lb)',
-  posicion: 'Posicion',
+  rm: 'RM',
 }
+const RM_UNIT_OPTIONS = ['kg', 'lb']
 const PHASE_ESTADOS = ['pendiente', 'en_progreso', 'finalizada']
 const PHASE_TEAM_MODES = ['sum_two', 'total', 'single_member']
 const PHASE_WINNER_RULES = ['higher_wins', 'lower_wins']
@@ -756,31 +754,27 @@ function defaultWinnerRuleForType(tipo) {
 
 function defaultMeasurementMethodForType(tipo) {
   const t = normalizePhaseType(tipo)
-  if (t === 'tiempo') return 'tiempo_hms'
-  if (t === 'posicion') return 'posicion'
-  return 'unidades'
+  if (t === 'tiempo') return 'for_time'
+  return 'amrap'
 }
 
 function normalizeMeasurementMethod(raw, tipo) {
   const value = (raw || '').toString().trim().toLowerCase()
   if (PHASE_MEASUREMENT_METHODS.includes(value)) return value
-  if (value === 'kg') return 'kilogramos'
-  if (value === 'g') return 'gramos'
-  if (value === 'lb' || value === 'lbs') return 'libras'
-  if (value === 'hms' || value === 'hh:mm:ss') return 'tiempo_hms'
-  if (value === 'reps' || value === 'rep') return 'repeticiones'
+  if (value === 'kg' || value === 'g' || value === 'lb' || value === 'lbs' || value === 'kilogramos' || value === 'gramos' || value === 'libras') return 'rm'
+  if (value === 'hms' || value === 'hh:mm:ss' || value === 'tiempo_hms' || value === 'posicion' || value === 'posición') return 'for_time'
+  if (value === 'reps' || value === 'rep' || value === 'repeticiones' || value === 'unidades') return 'amrap'
   if (value === 'metro') return 'metros'
   return defaultMeasurementMethodForType(tipo)
 }
 
 function isTimeMeasurement(method) {
-  return normalizeMeasurementMethod(method) === 'tiempo_hms'
+  return normalizeMeasurementMethod(method) === 'for_time'
 }
 
 function phaseTypeFromMethod(method) {
   const m = normalizeMeasurementMethod(method)
-  if (m === 'tiempo_hms') return 'tiempo'
-  if (m === 'posicion') return 'posicion'
+  if (m === 'for_time') return 'tiempo'
   return 'cantidad'
 }
 
@@ -815,8 +809,8 @@ function createDefaultPhaseActivity(index = 0) {
   return {
     nombre: `Actividad ${index + 1}`,
     descripcion: '',
-    measurement_method: 'unidades',
-    winner_rule: 'higher_wins',
+    measurement_method: 'for_time',
+    winner_rule: 'lower_wins',
     points_mode: 'manual',
   }
 }
@@ -858,6 +852,7 @@ function createPhaseFormState() {
     allow_multiple_results: 0,
     team_result_mode: 'sum_two',
     estado: 'pendiente',
+    is_visible: 1,
     start_at: '',
     end_at: '',
     activities: [createDefaultPhaseActivity()],
@@ -871,6 +866,7 @@ function createPhaseDraftState(phase) {
     allow_multiple_results: Number(phase.allow_multiple_results || 0),
     team_result_mode: phase.team_result_mode || 'sum_two',
     estado: phase.estado || 'pendiente',
+    is_visible: phase.is_visible == null ? 1 : Number(phase.is_visible),
     start_at: toDateInput(phase.start_at),
     end_at: toDateInput(phase.end_at),
     activities: normalizePhaseActivities(phase.activities, phase),
@@ -910,9 +906,9 @@ function buildPhasePayload(values, orden = 0) {
     }
   })
   const primary = activities[0] || {
-    measurement_method: 'unidades',
-    tipo: 'cantidad',
-    winner_rule: 'higher_wins',
+    measurement_method: 'for_time',
+    tipo: 'tiempo',
+    winner_rule: 'lower_wins',
     points_mode: 'manual',
   }
   const timeCapMin = parseInt(values.time_cap, 10)
@@ -925,6 +921,7 @@ function buildPhasePayload(values, orden = 0) {
     allow_multiple_results: Number(values.allow_multiple_results || 0),
     team_result_mode: values.team_result_mode || 'sum_two',
     estado: values.estado || 'pendiente',
+    is_visible: Number(values.is_visible == null ? 1 : values.is_visible) ? 1 : 0,
     start_at: dateInputToStartOfDay(values.start_at),
     end_at: dateInputToEndOfDay(values.end_at),
     orden,
@@ -1247,7 +1244,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
   }
 
   const createActivities = normalizePhaseActivities(form.activities)
-  const currentMethod = createActivities[0]?.measurement_method || 'unidades'
+  const currentMethod = createActivities[0]?.measurement_method || 'for_time'
   const wizardSteps = [
     { id: 'overview', label: 'Ajustes generales' },
     { id: 'activities', label: 'Actividades' },
@@ -1317,7 +1314,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                label: `Dia ${dayIndex} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -1332,10 +1329,10 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 </div>
                 {/* ---- TOGGLE PARTE B ---- */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
+                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
                   <label htmlFor="toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: form.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-                      {form.part_b_enabled ? 'SÃ­' : 'No'}
+                      {form.part_b_enabled ? 'Sí' : 'No'}
                     </span>
                     <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                       <input id="toggle-part-b" type="checkbox" checked={form.part_b_enabled}
@@ -1445,13 +1442,39 @@ function PhasesModal({ competition, onClose, inline = false }) {
                         style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
                       />
                     </div>
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      {currentMethod === 'rm' && (
+                        <div style={{ borderRadius: 12, border: '1px solid rgba(94,234,212,0.2)', background: 'rgba(94,234,212,0.08)', padding: '10px 12px', color: '#D9FFFA', fontSize: 12 }}>
+                          {`Este evento RM usará ${String(competition?.rm_unit || 'kg').toUpperCase()} como unidad global de la competencia.`}
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+                        <span style={{ fontSize: 13, color: '#AAB2C0' }}>Mostrar evento en la vista previa y pública</span>
+                        <label htmlFor="toggle-phase-visibility" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: form.is_visible ? '#D6D9E0' : '#6B7280' }}>
+                            {form.is_visible ? 'Visible' : 'Oculto'}
+                          </span>
+                          <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                            <input
+                              id="toggle-phase-visibility"
+                              type="checkbox"
+                              checked={!!form.is_visible}
+                              onChange={e => setForm(prev => ({ ...prev, is_visible: e.target.checked ? 1 : 0 }))}
+                              style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                            />
+                            <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: form.is_visible ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
+                            <span style={{ position: 'absolute', top: 3, left: form.is_visible ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 )
               })()}
 
               {/* ---- PARTE B ---- */}
               {form.part_b_enabled && (() => {
-                const methodB = createActivities[1]?.measurement_method || 'unidades'
+                const methodB = createActivities[1]?.measurement_method || 'for_time'
                 const isForTimeB = methodB === 'for_time'
                 const isAmrapOrEmomB = methodB === 'amrap' || methodB === 'emom'
                 return (
@@ -1530,7 +1553,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
                           <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                             <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -1613,7 +1636,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{form.nombre || 'Nuevo evento'}</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(94,234,212,0.12)', border: '1px solid rgba(94,234,212,0.22)', color: '#D9FFFA', fontSize: 12, fontWeight: 700 }}>
-                    {PHASE_MEASUREMENT_LABELS[createActivities[0]?.measurement_method] || createActivities[0]?.measurement_method || 'unidades'}
+                    {PHASE_MEASUREMENT_LABELS[createActivities[0]?.measurement_method] || createActivities[0]?.measurement_method || 'for_time'}
                   </span>
                   {form.time_cap ? (
                     <span style={{ padding: '6px 10px', borderRadius: 999, background: 'rgba(214,217,224,0.12)', border: '1px solid rgba(214,217,224,0.22)', color: '#FFD0AE', fontSize: 12, fontWeight: 700 }}>
@@ -1688,7 +1711,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
           const end = new Date(compEnd); end.setHours(0,0,0,0)
           let di = 1
           while (cursor <= end) {
-            competitionDays.push({ label: `Dia ${di} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`, value: cursor.toISOString().slice(0,10) })
+            competitionDays.push({ label: `Dia ${di} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`, value: cursor.toISOString().slice(0,10) })
             cursor.setDate(cursor.getDate() + 1); di++
           }
         }
@@ -1697,11 +1720,11 @@ function PhasesModal({ competition, onClose, inline = false }) {
         const actA = draftActivities[0] || {}
         const actB = draftActivities[1] || null
         const hasPartB = draftActivities.length > 1
-        const methodA = actA.measurement_method || 'unidades'
+        const methodA = actA.measurement_method || 'for_time'
         const isForTimeA = methodA === 'for_time'
         const isAmrapOrEmomA = methodA === 'amrap' || methodA === 'emom'
         const draftTimeCapA = phaseDrafts[ph.id]?.time_cap ?? (ph.time_cap ? String(Math.round(ph.time_cap / 60)) : '')
-        const methodB = actB?.measurement_method || 'unidades'
+        const methodB = actB?.measurement_method || 'for_time'
         const isForTimeB = methodB === 'for_time'
         const isAmrapOrEmomB = methodB === 'amrap' || methodB === 'emom'
         const draftTimeCapB = phaseDrafts[ph.id]?.part_b_time_cap ?? (ph.activities?.find((_,idx) => idx === 1)?.time_cap ? String(Math.round(ph.activities.find((_,idx) => idx === 1).time_cap / 60)) : '')
@@ -1766,9 +1789,9 @@ function PhasesModal({ competition, onClose, inline = false }) {
 
               {/* Toggle dos puntajes */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-                <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
+                <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
                 <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#D6D9E0' : '#6B7280' }}>{hasPartB ? 'SÃ­' : 'No'}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: hasPartB ? '#D6D9E0' : '#6B7280' }}>{hasPartB ? 'Sí' : 'No'}</span>
                   <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
                     <input id={toggleId} type="checkbox" checked={hasPartB} onChange={e => e.target.checked ? appendDraftActivity(ph.id) : removeDraftActivity(ph.id, 1)} style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
                     <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: hasPartB ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
@@ -1801,6 +1824,32 @@ function PhasesModal({ competition, onClose, inline = false }) {
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>WOD {hasPartB ? 'Parte A' : '*'}</label>
                   <textarea value={actA.descripcion || ''} onChange={e => patchDraftActivity(ph.id, 0, 'descripcion', e.target.value)} placeholder={'Escribe el WOD aqui...\nEj: 21-15-9\nThrusters 43/29 kg\nPull-ups'} rows={6} style={{ resize:'vertical', fontFamily:'monospace', fontSize:13 }} />
+                </div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {methodA === 'rm' && (
+                    <div style={{ borderRadius: 12, border: '1px solid rgba(94,234,212,0.2)', background: 'rgba(94,234,212,0.08)', padding: '10px 12px', color: '#D9FFFA', fontSize: 12 }}>
+                      {`Este evento RM usará ${String(competition?.rm_unit || 'kg').toUpperCase()} como unidad global de la competencia.`}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>Mostrar evento en la vista previa y pública</span>
+                    <label htmlFor={`edit-toggle-visibility-${ph.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: (phaseDrafts[ph.id]?.is_visible ?? ph.is_visible ?? 1) ? '#D6D9E0' : '#6B7280' }}>
+                        {(phaseDrafts[ph.id]?.is_visible ?? ph.is_visible ?? 1) ? 'Visible' : 'Oculto'}
+                      </span>
+                      <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                        <input
+                          id={`edit-toggle-visibility-${ph.id}`}
+                          type="checkbox"
+                          checked={!!(phaseDrafts[ph.id]?.is_visible ?? ph.is_visible ?? 1)}
+                          onChange={e => patchPhaseDraft(ph.id, 'is_visible', e.target.checked ? 1 : 0)}
+                          style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                        />
+                        <span style={{ position: 'absolute', inset: 0, borderRadius: 999, background: (phaseDrafts[ph.id]?.is_visible ?? ph.is_visible ?? 1) ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
+                        <span style={{ position: 'absolute', top: 3, left: (phaseDrafts[ph.id]?.is_visible ?? ph.is_visible ?? 1) ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                      </span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -1854,7 +1903,7 @@ function PhasesModal({ competition, onClose, inline = false }) {
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
+                      <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
                           <label htmlFor={toggleCatId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                             <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -2585,17 +2634,54 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
       setScannerOpen(true)
       loadCameraDevices()
 
-      if (!supportsDetector) {
-        setScannerError('BarcodeDetector no disponible. Usa ingreso manual o Chrome/PWA actualizado.')
-        return
+      // Helper: load jsQR dynamically as fallback when BarcodeDetector is unavailable
+      const loadJsQR = () => new Promise((resolve, reject) => {
+        if (window.jsQR) { resolve(window.jsQR); return }
+        const s = document.createElement('script')
+        s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js'
+        s.onload = () => resolve(window.jsQR)
+        s.onerror = () => reject(new Error('No se pudo cargar jsQR'))
+        document.head.appendChild(s)
+      })
+
+      let jsQRLib = null
+      let canvasEl = null
+      let canvasCtx = null
+
+      if ('BarcodeDetector' in window) {
+        detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] })
+      } else {
+        try {
+          jsQRLib = await loadJsQR()
+          canvasEl = document.createElement('canvas')
+          canvasCtx = canvasEl.getContext('2d')
+          setScannerError('')
+        } catch {
+          setScannerError('No se pudo cargar el lector QR. Usa ingreso manual.')
+          return
+        }
       }
 
-      detectorRef.current = new window.BarcodeDetector({ formats: ['qr_code'] })
       const loop = async () => {
-        if (!videoRef.current || !detectorRef.current) return
+        if (!videoRef.current) return
         try {
-          const barcodes = await detectorRef.current.detect(videoRef.current)
-          const raw = String(barcodes?.[0]?.rawValue || '').trim()
+          let raw = ''
+          if (detectorRef.current) {
+            const barcodes = await detectorRef.current.detect(videoRef.current)
+            raw = String(barcodes?.[0]?.rawValue || '').trim()
+          } else if (jsQRLib && canvasEl && canvasCtx) {
+            const video = videoRef.current
+            const w = video.videoWidth || 640
+            const h = video.videoHeight || 480
+            if (w > 0 && h > 0) {
+              canvasEl.width = w
+              canvasEl.height = h
+              canvasCtx.drawImage(video, 0, 0, w, h)
+              const imageData = canvasCtx.getImageData(0, 0, w, h)
+              const code = jsQRLib(imageData.data, w, h, { inversionAttempts: 'dontInvert' })
+              raw = String(code?.data || '').trim()
+            }
+          }
           const now = Date.now()
           if (raw && (!lastValueRef.current || raw !== lastValueRef.current || (now - lastTimeRef.current) > 1400)) {
             lastValueRef.current = raw
@@ -2793,7 +2879,7 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
               )}
               <button className="btn-secondary btn-sm" type="button" onClick={loadCameraDevices}>Actualizar camaras</button>
             </div>
-            {!supportsDetector ? <div style={{ color: '#F59E0B', fontSize: 12 }}>Deteccion automatica no soportada. Usa ingreso manual.</div> : null}
+            {!supportsDetector ? <div style={{ color: '#8B9AAB', fontSize: 12 }}>Usando modo de compatibilidad (jsQR). El escaneo funciona normalmente.</div> : null}
             <div style={{ position: 'relative', borderRadius: 12, border: '1px solid #252A33', background: '#090B0E', overflow: 'hidden', minHeight: 220 }}>
               <video
                 ref={videoRef}
@@ -2962,11 +3048,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     enrollment_terms_text: '',
     platform_fee_rate: 0.05,
     scoring_mode: 'highest_wins',
+    rm_unit: 'kg',
   })
   const [cats, setCats] = useState([])
   const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0 })
   const [phases, setPhases] = useState([])
-  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'unidades' })
+  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
   const [questions, setQuestions] = useState([])
   const [questionDraft, setQuestionDraft] = useState({ label: '', field_type: 'text', required: 0, placeholder: '' })
   const [scheduleItems, setScheduleItems] = useState([])
@@ -3032,6 +3119,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         enrollment_terms_text: source.enrollment_terms_text || '',
         platform_fee_rate: Number(source.platform_fee_rate || 0.05),
         scoring_mode: source.scoring_mode || 'highest_wins',
+        rm_unit: source.rm_unit === 'lb' ? 'lb' : 'kg',
       })
       setQuestions(parseEnrollmentQuestions(source.enrollment_questions))
       setScheduleItems(parseScheduleItems(source.schedule_items))
@@ -3081,12 +3169,13 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           tipo: phaseTypeFromMethod(normalizeMeasurementMethod(p.measurement_method, p.tipo)),
           descripcion: baseActivities[0]?.descripcion || p.descripcion || '',
           team_result_mode: p.team_result_mode || 'sum_two',
+          is_visible: p.is_visible == null ? 1 : Number(p.is_visible),
           start_at: toDateInput(p.start_at),
           end_at: toDateInput(p.end_at),
           activities: baseActivities,
           part_b_enabled: baseActivities.length > 1,
           part_b_descripcion: secondBaseActivity?.descripcion || '',
-          part_b_measurement_method: secondBaseActivity?.measurement_method || 'unidades',
+          part_b_measurement_method: secondBaseActivity?.measurement_method || 'for_time',
           time_cap: baseActivities[0]?.time_cap ? String(Math.round(Number(baseActivities[0].time_cap) / 60)) : '',
           part_b_time_cap: secondBaseActivity?.time_cap ? String(Math.round(Number(secondBaseActivity.time_cap) / 60)) : '',
           catOverrides: categoryOverrides,
@@ -3198,11 +3287,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       measurement_method: newPhase.measurement_method,
       descripcion: newPhase.descripcion.trim(),
       team_result_mode: newPhase.team_result_mode,
+      is_visible: Number(newPhase.is_visible == null ? 1 : newPhase.is_visible) ? 1 : 0,
       start_at: newPhase.start_at || '',
       end_at: newPhase.end_at || '',
       catOverrides: newPhaseCatOverrides,
     }])
-    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'unidades', descripcion: '', team_result_mode: 'sum_two', start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'unidades' }))
+    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' }))
     setNewPhaseCatOverrides({})
     return true
   }
@@ -3346,6 +3436,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       },
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
       platform_fee_rate: Number(form.platform_fee_rate || 0.05),
+      rm_unit: form.rm_unit === 'lb' ? 'lb' : 'kg',
       enrollment_questions: questions
         .map((question, idx) => ({
           id: String(question.id || `q_${idx + 1}`),
@@ -3881,7 +3972,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       >
                         <img src={flagUrl(currentEntry.code)} alt={currentEntry.code} style={{ width: 16, height: 12, borderRadius: 2, objectFit: 'cover' }} />
                         <span style={{ fontSize: 11, color: '#AAB2C0' }}>{currentPrefix}</span>
-                        <span style={{ fontSize: 10, color: '#6B7280' }}>â–¾</span>
+                      <span style={{ fontSize: 10, color: '#6B7280' }}>▾</span>
                       </button>
                       {showPhonePrefixDropdown && (
                         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 999, background: '#1e2329', border: '1px solid #252A33', borderRadius: 10, padding: 4, display: 'grid', gap: 2, minWidth: 110, boxShadow: '0 8px 24px rgba(0,0,0,0.35)' }}>
@@ -4189,7 +4280,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               {form.team_enabled ? (
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>TamaÃ±o de equipo</label>
+                  <label>Tamaño de equipo</label>
                     <input type="number" min="1" max="10" value={form.team_size} onChange={e => setForm(f => ({ ...f, team_size: e.target.value === '' ? '' : Math.max(1, Number(e.target.value)) }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4201,6 +4292,21 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   </div>
                 </div>
               ) : null}
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={sectionRowLabelStyle}>Unidad global para RM</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 220px) minmax(0, 1fr)', gap: 10, alignItems: 'end' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Unidad de carga</label>
+                  <select value={form.rm_unit || 'kg'} onChange={e => setForm(f => ({ ...f, rm_unit: e.target.value === 'lb' ? 'lb' : 'kg' }))}>
+                    {RM_UNIT_OPTIONS.map(unit => <option key={unit} value={unit}>{unit.toUpperCase()}</option>)}
+                  </select>
+                </div>
+                <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px', color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
+                  Todos los eventos configurados como <strong style={{ color: '#F5F7FA' }}>RM</strong> usarán esta unidad en el panel y en la vista pública.
+                </div>
+              </div>
             </div>
 
           </div>
@@ -4315,7 +4421,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Evento enlazado</div>
                       <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, wordBreak: 'break-word' }}>
                         {linkedPhase?.nombre || 'Sin evento enlazado'}
-                        {linkedPhase && item.use_phase_dates ? ' Â· usa fechas del evento' : ''}
+                    {linkedPhase && item.use_phase_dates ? ' · usa fechas del evento' : ''}
                       </div>
                     </div>
                   </div>
@@ -4539,7 +4645,9 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
                         <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Medicion</div>
                         <div style={{ color: '#F5F7FA', fontSize: 13 }}>
-                          {PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase.measurement_method, phase.tipo)] || normalizeMeasurementMethod(phase.measurement_method, phase.tipo)}
+                          {normalizeMeasurementMethod(phase.measurement_method, phase.tipo) === 'rm'
+                            ? `RM (${String(form.rm_unit || 'kg').toUpperCase()})`
+                            : (PHASE_MEASUREMENT_LABELS[normalizeMeasurementMethod(phase.measurement_method, phase.tipo)] || normalizeMeasurementMethod(phase.measurement_method, phase.tipo))}
                         </div>
                       </div>
                     </div>
@@ -4564,6 +4672,30 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
                         {phase.descripcion || 'Sin descripcion'}
                       </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, borderRadius: 12, border: `1px solid ${phase.is_visible ? 'rgba(214,217,224,0.28)' : '#252A33'}`, background: phase.is_visible ? 'rgba(214,217,224,0.08)' : 'rgba(13,15,18,0.45)', padding: '12px 14px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Visibilidad del evento</div>
+                        <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, lineHeight: 1.45 }}>
+                          {phase.is_visible ? 'Se mostrará en la vista previa y en la página pública.' : 'Quedará oculto en la vista previa y en la página pública.'}
+                        </div>
+                      </div>
+                      <label htmlFor={`phase-visibility-card-${phase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: phase.is_visible ? '#D6D9E0' : '#6B7280' }}>
+                          {phase.is_visible ? 'Visible' : 'Oculto'}
+                        </span>
+                        <span style={{ position: 'relative', display: 'inline-block', width: 40, height: 22 }}>
+                          <input
+                            id={`phase-visibility-card-${phase.id}`}
+                            type="checkbox"
+                            checked={!!phase.is_visible}
+                            onChange={e => updatePhase(phase.id, 'is_visible', e.target.checked ? 1 : 0)}
+                            style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                          />
+                          <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: phase.is_visible ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
+                          <span style={{ position: 'absolute', top: 3, left: phase.is_visible ? 21 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                        </span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -4607,7 +4739,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 14 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Completa los datos del evento y agrÃ©galo a la competencia.
+                    Completa los datos del evento y agrégalo a la competencia.
         </div>
 
         {/* ---- DATOS BASICOS ---- */}
@@ -4649,7 +4781,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  label: `Dia ${dayIndex} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -4705,10 +4837,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- TOGGLE DOS PUNTAJES ---- */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
+                  <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
           <label htmlFor="add-phase-toggle-part-b" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: newPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-              {newPhase.part_b_enabled ? 'SÃ­' : 'No'}
+                      {newPhase.part_b_enabled ? 'Sí' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id="add-phase-toggle-part-b" type="checkbox" checked={newPhase.part_b_enabled}
@@ -4783,8 +4915,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         {/* ---- CONFIGURACION POR CATEGORIA ---- */}
         {cats.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
-            <span style={{ fontWeight: 700 }}>âš </span>
-            <span>No hay categorÃ­as creadas. Ve a la secciÃ³n <strong>Divisiones</strong> y crea las categorÃ­as primero.</span>
+                    <span style={{ fontWeight: 700 }}>⚠</span>
+                    <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -4805,7 +4937,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
                     <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                       <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                       <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -4903,7 +5035,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Completa los datos de la division y agrÃ©gala a la competencia.
+                    Completa los datos de la division y agrégala a la competencia.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4951,7 +5083,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     >
       <div style={{ display: 'grid', gap: 12 }}>
         <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.5 }}>
-          Configura la pregunta que verÃ¡ el atleta en la inscripciÃ³n.
+                    Configura la pregunta que verá el atleta en la inscripción.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
@@ -5404,7 +5536,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               let dayIndex = 1
               while (cursor <= end) {
                 competitionDays.push({
-                  label: `Dia ${dayIndex} â€” ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+                  label: `Dia ${dayIndex} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
                   value: cursor.toISOString().slice(0, 10),
                 })
                 cursor.setDate(cursor.getDate() + 1)
@@ -5460,10 +5592,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
         {/* ---- TOGGLE DOS PUNTAJES ---- */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
-          <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Este WOD tiene dos puntajes?</span>
+                <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Este WOD tiene dos puntajes?</span>
           <label htmlFor={`edit-phase-toggle-part-b-${editingPhase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.part_b_enabled ? '#D6D9E0' : '#6B7280' }}>
-              {editingPhase.part_b_enabled ? 'SÃ­' : 'No'}
+                    {editingPhase.part_b_enabled ? 'Sí' : 'No'}
             </span>
             <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
               <input id={`edit-phase-toggle-part-b-${editingPhase.id}`} type="checkbox" checked={!!editingPhase.part_b_enabled}
@@ -5503,6 +5635,32 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <label>WOD{editingPhase.part_b_enabled ? ' Parte A' : ''}</label>
             <textarea rows={4} value={editingPhase.descripcion || ''} onChange={e => updatePhase(editingPhase.id, 'descripcion', e.target.value)} placeholder={'Escribe el WOD aqui...'} style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }} />
           </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo) === 'rm' && (
+              <div style={{ borderRadius: 12, border: '1px solid rgba(94,234,212,0.2)', background: 'rgba(94,234,212,0.08)', padding: '10px 12px', color: '#D9FFFA', fontSize: 12 }}>
+                {`Este evento RM usará ${String(form.rm_unit || 'kg').toUpperCase()} como unidad global de la competencia.`}
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.5)' }}>
+              <span style={{ fontSize: 13, color: '#AAB2C0' }}>Mostrar evento en la vista previa y pública</span>
+              <label htmlFor={`edit-phase-toggle-visible-${editingPhase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: editingPhase.is_visible ? '#D6D9E0' : '#6B7280' }}>
+                  {editingPhase.is_visible ? 'Visible' : 'Oculto'}
+                </span>
+                <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
+                  <input
+                    id={`edit-phase-toggle-visible-${editingPhase.id}`}
+                    type="checkbox"
+                    checked={!!editingPhase.is_visible}
+                    onChange={e => updatePhase(editingPhase.id, 'is_visible', e.target.checked ? 1 : 0)}
+                    style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                  />
+                  <span style={{ position: 'absolute', inset: 0, borderRadius: 999, cursor: 'pointer', background: editingPhase.is_visible ? '#D6D9E0' : '#374151', transition: 'background 0.2s' }} />
+                  <span style={{ position: 'absolute', top: 3, left: editingPhase.is_visible ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', pointerEvents: 'none' }} />
+                </span>
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* ---- PARTE B ---- */}
@@ -5512,12 +5670,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Medicion</label>
-                <select value={editingPhase.part_b_measurement_method || 'unidades'} onChange={e => updatePhase(editingPhase.id, 'part_b_measurement_method', e.target.value)}>
+                <select value={editingPhase.part_b_measurement_method || 'for_time'} onChange={e => updatePhase(editingPhase.id, 'part_b_measurement_method', e.target.value)}>
                   {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>{(editingPhase.part_b_measurement_method || 'unidades') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                <label>{(editingPhase.part_b_measurement_method || 'for_time') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
                 <input
                   type="number" min="1" max="999"
                   value={editingPhase.part_b_time_cap || ''}
@@ -5538,8 +5696,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         {/* ---- CONFIGURACION POR CATEGORIA ---- */}
         {cats.length === 0 ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 10, border: '1px solid rgba(255,193,7,0.3)', background: 'rgba(255,193,7,0.07)', color: '#FFD700', fontSize: 13 }}>
-            <span style={{ fontWeight: 700 }}>âš </span>
-            <span>No hay categorÃ­as creadas. Ve a la secciÃ³n <strong>Divisiones</strong> y crea las categorÃ­as primero.</span>
+                    <span style={{ fontWeight: 700 }}>⚠</span>
+                    <span>No hay categorías creadas. Ve a la sección <strong>Divisiones</strong> y crea las categorías primero.</span>
           </div>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -5561,7 +5719,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 14px 10px' }}>
-                    <span style={{ fontSize: 13, color: '#AAB2C0' }}>Â¿Modificar el WOD para esta categoria?</span>
+                          <span style={{ fontSize: 13, color: '#AAB2C0' }}>¿Modificar el WOD para esta categoria?</span>
                     <label htmlFor={toggleId} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', flexShrink: 0 }}>
                       <span style={{ fontSize: 12, color: '#6B7280' }}>{isModified ? '' : 'No'}</span>
                       <span style={{ position: 'relative', display: 'inline-block', width: 36, height: 20 }}>
@@ -5604,7 +5762,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                         <div style={{ display: 'grid', gap: 8, borderTop: '1px solid #252A33', paddingTop: 10 }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.6 }}>Parte B</div>
                           <div className="form-group" style={{ marginBottom: 0 }}>
-                            <label>{(editingPhase.part_b_measurement_method || 'unidades') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+                            <label>{(editingPhase.part_b_measurement_method || 'for_time') === 'for_time' ? 'Time cap' : 'Duracion'} <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
                             <input
                               type="number" min="1" max="999"
                               value={override.part_b_time_cap ?? ''}
@@ -6272,7 +6430,7 @@ function CompetitionTvPanel({ competition, onSaved }) {
                 {form.tv_include_total_slide && <option value="total">Total</option>}
                 {phases.map(ph => (
                   <option key={`tv-static-phase-${ph.id}`} value={ph.id}>
-                    {ph.nombre}{ph.estado === 'finalizada' ? ' âœ“' : (ph.estado === 'en_progreso' ? ' â³' : '')}
+                              {ph.nombre}{ph.estado === 'finalizada' ? ' ✓' : (ph.estado === 'en_progreso' ? ' ⏳' : '')}
                   </option>
                 ))}
               </select>
@@ -6621,7 +6779,7 @@ function CompetitionTeamsPanel({ competition }) {
                       <input type="checkbox" checked={selected} onChange={() => !disabled && toggleCreateMember(p.id)} style={{ width: 'auto' }} />
                       <span style={{ fontSize: 13, flex: 1 }}>{p.nombre} {p.apellido}</span>
                       {selected && (
-                        <button type="button" title={isCap ? 'CapitÃ¡n' : 'Hacer capitÃ¡n'} onClick={e => { e.preventDefault(); setCreateForm(f => ({ ...f, captain_id: p.id })) }}
+                                            <button type="button" title={isCap ? 'Capitán' : 'Hacer capitán'} onClick={e => { e.preventDefault(); setCreateForm(f => ({ ...f, captain_id: p.id })) }}
                           style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', lineHeight: 1 }}>
                           <Crown size={14} color={isCap ? '#e8a800' : '#ccc'} />
                         </button>
@@ -6641,7 +6799,7 @@ function CompetitionTeamsPanel({ competition }) {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                   {(t.nombre || '').trim() || `Equipo ${t.id}`}
-                  {t.captain_id && <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '1px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Crown size={9} /> CapitÃ¡n asignado</span>}
+                                  {t.captain_id && <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '1px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}><Crown size={9} /> Capitán asignado</span>}
                 </div>
                 <div style={{ fontSize: 12, color: '#647063' }}>{(t.members || []).length} integrantes</div>
                 <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
@@ -6649,7 +6807,7 @@ function CompetitionTeamsPanel({ competition }) {
                     <div key={`team-member-${t.id}-${m.id}`} style={{ background: m.id === t.captain_id ? '#fffbef' : '#fff', border: `1px solid ${m.id === t.captain_id ? '#ffe08a' : '#d5ddd3'}`, borderRadius: 6, padding: '6px 10px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
                       {m.id === t.captain_id && <Crown size={12} color="#e8a800" />}
                       {m.nombre} {m.apellido}
-                      {m.id === t.captain_id && <span style={{ fontSize: 10, color: '#9a6a00', marginLeft: 2 }}>CapitÃ¡n</span>}
+                                        {m.id === t.captain_id && <span style={{ fontSize: 10, color: '#9a6a00', marginLeft: 2 }}>Capitán</span>}
                     </div>
                   ))}
                 </div>
@@ -6711,7 +6869,7 @@ function CompetitionTeamsPanel({ competition }) {
                       <input type="checkbox" checked={selected} onChange={() => !disabled && toggleEditMember(p.id)} style={{ width: 'auto' }} />
                       <span style={{ fontSize: 13, flex: 1 }}>{p.nombre} {p.apellido}</span>
                       {selected ? (
-                        <button type="button" title={isCap ? 'CapitÃ¡n' : 'Hacer capitÃ¡n'} onClick={e => { e.preventDefault(); setEditForm(f => ({ ...f, captain_id: p.id })) }}
+                                            <button type="button" title={isCap ? 'Capitán' : 'Hacer capitán'} onClick={e => { e.preventDefault(); setEditForm(f => ({ ...f, captain_id: p.id })) }}
                           style={{ background: 'none', border: 'none', padding: 2, cursor: 'pointer', lineHeight: 1 }}>
                           <Crown size={14} color={isCap ? '#e8a800' : '#ccc'} />
                         </button>
@@ -8390,14 +8548,14 @@ function CompetitionsTab() {
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                   </div>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: '#8FF3E7' }}>Â¡Todo listo! Has completado todos los pasos previos.</div>
-                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>La competencia estÃ¡ lista para publicar cuando quieras.</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#8FF3E7' }}>¡Todo listo! Has completado todos los pasos previos.</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>La competencia está lista para publicar cuando quieras.</div>
                   </div>
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: 0, fontSize: 15 }}>Progreso de configuraciÃ³n</h4>
+                  <h4 style={{ margin: 0, fontSize: 15 }}>Progreso de configuración</h4>
                     <span style={{ color: '#FFB36F', fontWeight: 800, fontSize: 16 }}>{launchProgress}%</span>
                   </div>
                   <div style={{ height: 8, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -8406,7 +8564,7 @@ function CompetitionsTab() {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {launchChecklist.map(item => (
                       <span key={item.label} style={{ ...SHARED_MODE_CHIP_BASE_STYLE, background: item.done ? 'rgba(0,194,168,0.12)' : 'rgba(255,107,0,0.12)', color: item.done ? '#8FF3E7' : '#FFB36F', border: `1px solid ${item.done ? 'rgba(0,194,168,0.24)' : 'rgba(255,107,0,0.24)'}` }}>
-                        {item.done ? 'âœ“' : 'â—‹'} {item.label}
+                        {item.done ? '✓' : '○'} {item.label}
                       </span>
                     ))}
                   </div>
@@ -8423,7 +8581,7 @@ function CompetitionsTab() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>Vista previa</div>
-                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Revisa textos, imÃ¡genes y estados antes de publicar.</div>
+                    <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Revisa textos, imágenes y estados antes de publicar.</div>
                   </div>
                   <button
                     type="button"
@@ -8452,8 +8610,8 @@ function CompetitionsTab() {
                     </div>
                     <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
                       {selectedCompetition.activa
-                        ? 'La competencia serÃ¡ retirada del listado pÃºblico y las inscripciones se cerrarÃ¡n.'
-                        : 'La competencia serÃ¡ visible para todos los usuarios de la plataforma.'}
+                        ? 'La competencia será retirada del listado público y las inscripciones se cerrarán.'
+                        : 'La competencia será visible para todos los usuarios de la plataforma.'}
                     </div>
                   </div>
                   <button
@@ -8496,7 +8654,7 @@ function CompetitionsTab() {
                         className="btn-secondary btn-sm"
                         style={{ flexShrink: 0, background: linkCopied ? 'rgba(94,234,212,0.12)' : undefined, color: linkCopied ? '#5EEAD4' : undefined, border: linkCopied ? '1px solid rgba(94,234,212,0.3)' : undefined }}
                       >
-                        {linkCopied ? 'Â¡Copiado!' : 'Copiar link'}
+                        {linkCopied ? '¡Copiado!' : 'Copiar link'}
                       </button>
                     </div>
                   </div>
@@ -8512,7 +8670,7 @@ function CompetitionsTab() {
                     </div>
                     <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
                       {selectedCompetition.activa
-                        ? (selectedCompetition.enrollment_open ? 'Los participantes ya no podrÃ¡n registrarse.' : 'Permite que los participantes se registren.')
+                      ? (selectedCompetition.enrollment_open ? 'Los participantes ya no podrán registrarse.' : 'Permite que los participantes se registren.')
                         : 'Debes publicar la competencia primero para habilitar las inscripciones.'}
                     </div>
                   </div>
@@ -8537,7 +8695,7 @@ function CompetitionsTab() {
                 </div>
               </div>
 
-              {/* Modal confirmaciÃ³n publicar */}
+                {/* Modal confirmación publicar */}
               {showConfirmPublish && (
                 <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowConfirmPublish(false)}>
                   <div style={{ background: '#0D1117', border: '1px solid #252A33', borderRadius: 18, padding: 28, maxWidth: 420, width: '100%', display: 'grid', gap: 18 }} onClick={e => e.stopPropagation()}>
@@ -8551,12 +8709,12 @@ function CompetitionsTab() {
                         </svg>
                       </div>
                       <div style={{ fontWeight: 700, fontSize: 16, color: '#F5F7FA' }}>
-                        {selectedCompetition.activa ? 'Â¿Despublicar competencia?' : 'Â¿Publicar competencia?'}
+                        {selectedCompetition.activa ? '¿Despublicar competencia?' : '¿Publicar competencia?'}
                       </div>
                       <div style={{ fontSize: 13, color: '#AAB2C0', lineHeight: 1.6 }}>
                         {selectedCompetition.activa
-                          ? 'La competencia dejarÃ¡ de ser visible para el pÃºblico y las inscripciones se cerrarÃ¡n automÃ¡ticamente.'
-                          : 'Â¿EstÃ¡s seguro de que deseas hacer pÃºblica esta competencia? SerÃ¡ visible para todos los usuarios de la plataforma.'}
+                          ? 'La competencia dejará de ser visible para el público y las inscripciones se cerrarán automáticamente.'
+                          : '¿Estás seguro de que deseas hacer pública esta competencia? Será visible para todos los usuarios de la plataforma.'}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -8572,14 +8730,14 @@ function CompetitionsTab() {
                             setSelectedCompetition(prev => ({ ...prev, ...data }))
                             setShowConfirmPublish(false)
                             load()
-                            if (nextActive) setSuccessToast('Â¡Competencia publicada exitosamente!')
+                    if (nextActive) setSuccessToast('¡Competencia publicada exitosamente!')
                           } catch (err) {
                             setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
                             setShowConfirmPublish(false)
                           }
                         }}
                       >
-                        {selectedCompetition.activa ? 'SÃ­, despublicar' : 'SÃ­, publicar'}
+                        {selectedCompetition.activa ? 'Sí, despublicar' : 'Sí, publicar'}
                       </button>
                     </div>
                   </div>
@@ -9958,7 +10116,7 @@ function OrganizerApplicationsTab() {
                   <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Evento propuesto</div>
                   <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, marginTop: 6 }}>{item.requested_event_name}</div>
                   <div style={{ color: '#D7DEE8', fontSize: 13, marginTop: 6 }}>
-                    {[item.requested_event_location, item.requested_event_date].filter(Boolean).join(' Â· ') || 'Sin fecha o lugar definidos'}
+                  {[item.requested_event_location, item.requested_event_date].filter(Boolean).join(' · ') || 'Sin fecha o lugar definidos'}
                   </div>
                   {item.requested_event_description ? <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{item.requested_event_description}</div> : null}
                 </div>

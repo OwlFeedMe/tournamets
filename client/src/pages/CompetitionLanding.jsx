@@ -513,7 +513,10 @@ export default function CompetitionLanding() {
   )
   const modalityConfig = payload?.modality_config || null
   const competitionMode = getCompetitionMode(modalityConfig)
-  const phases = useMemo(() => payload?.phases || [], [payload])
+  const phases = useMemo(
+    () => (payload?.phases || []).filter(phase => Number(phase?.is_visible == null ? 1 : phase.is_visible)),
+    [payload]
+  )
   const scheduleItems = useMemo(
     () => resolveScheduleItemsWithPhases(parseScheduleItems(competition?.schedule_items), phases),
     [competition, phases]
