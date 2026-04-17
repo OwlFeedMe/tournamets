@@ -36,6 +36,8 @@ App disponible en `http://localhost:5173`
 docker compose up --build
 ```
 
+- Docker local levanta un PostgreSQL propio del proyecto en `localhost:5432`.
+- El backend local en Docker ya no usa la base de dev; corre `alembic upgrade head` al iniciar.
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8000`
 - Docs API: `http://localhost:8000/docs`
@@ -54,6 +56,8 @@ BOLD_IDENTITY_KEY=tu_llave_de_identidad
 BOLD_SECRET_KEY=tu_llave_secreta
 BOLD_WEBHOOK_TEST_MODE=0
 ```
+
+Si corres el backend fuera de Docker, [server/.env](/C:/Users/Administrador/source/repos/tournamets/server/.env) ya quedó apuntando a ese mismo PostgreSQL local.
 
 ## Deploy automatico
 
@@ -92,6 +96,31 @@ cedula,nombre,apellido,email,sexo,categoria
 
 ## Categorias disponibles
 Rx · Scaled · Masters · Teens · Otro
+
+## Pagos con Bold
+
+### Flujo de inscripcion con pago
+
+1. El participante completa los pasos del formulario de inscripcion.
+2. Al confirmar, el backend genera un `CompetitionPaymentIntent` con estado `created` y devuelve los datos del checkout de Bold.
+3. El frontend abre el widget de Bold. Bold procesa el pago y notifica al backend via webhook.
+4. El webhook actualiza el estado del intent (`processing` → `approved` / `rejected`) y, si es aprobado, crea la inscripcion.
+
+### Comportamiento ante intents pendientes
+
+Al iniciar un nuevo pago, el backend valida si ya existe un intent activo para ese participante/competencia usando la funcion `_is_payment_intent_blocking` ([server/routers/enrollments.py](server/routers/enrollments.py)):
+
+| Estado del intent existente | Tiempo transcurrido | Resultado |
+|-----------------------------|---------------------|-----------|
+| `created` | < 15 min | Bloqueado — puede estar en el checkout |
+| `created` | >= 15 min | Permitido — intent expirado (usuario abandono la pestana) |
+| `processing` / `pending` | cualquiera | Bloqueado — Bold tiene el pago activo |
+| `approved` | cualquiera | Bloqueado — ya existe un pago aprobado |
+| `rejected` / `failed` | cualquiera | Permitido — puede reintentar |
+
+**Problema que resuelve:** si un usuario cierra la pestana del checkout antes de completar el pago, el intent queda en estado `created` indefinidamente. Sin el timeout, el sistema bloquearia cualquier nuevo intento con el mensaje "Ya tienes un pago en progreso", requiriendo intervencion manual del administrador. Con el timeout de 15 minutos, el bloqueo se libera automaticamente.
+
+El timeout se configura con la constante `_CREATED_INTENT_TIMEOUT_MINUTES` en [server/routers/enrollments.py](server/routers/enrollments.py).
 
 ## Equipos
 - Se crean desde **Admin -> Equipos**

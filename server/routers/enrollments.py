@@ -14,7 +14,7 @@ from urllib import request as urllib_request
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlmodel import Session, select
 
 from access import require_competition_access
@@ -22,7 +22,7 @@ from auth import get_current_user, get_effective_participant_id, is_end_user, re
 from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
-    EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
+    CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
 )
 from routers.config import get_pricing_config
 from services.emailer import send_email
@@ -41,6 +41,7 @@ ENROLLMENT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_ENROLLMENT_IMAGE_SIDE = 1600
 BOLD_PLATFORM_FEE_RATE_DEFAULT = 0.05
 PAYMENT_PENDING_STATE = "pago_pendiente"
+SYSTEM_CHECKIN_PHASE_CODE = "check_in"
 
 
 def _parse_enrollment_questions(raw: str | None) -> list[dict]:
@@ -87,6 +88,45 @@ def _process_enrollment_image(file: UploadFile, participant_id: int) -> str:
     filename = f"enrollment_{participant_id}_{uuid.uuid4().hex}.jpg"
     image.save(ENROLLMENT_UPLOAD_DIR / filename, format="JPEG", quality=86, optimize=True)
     return f"/uploads/enrollment_answers/{filename}"
+
+
+def _get_checkin_usage_by_participant(session: Session, competition_id: int) -> dict[int, datetime]:
+    rows = session.exec(
+        select(CompetitionCheckinUsage.participant_id, func.min(CompetitionCheckinUsage.used_at))
+        .join(CompetitionCheckinPhase, CompetitionCheckinPhase.id == CompetitionCheckinUsage.phase_id)
+        .where(CompetitionCheckinUsage.competition_id == competition_id)
+        .where(CompetitionCheckinPhase.competition_id == competition_id)
+        .where(CompetitionCheckinPhase.code == SYSTEM_CHECKIN_PHASE_CODE)
+        .group_by(CompetitionCheckinUsage.participant_id)
+    ).all()
+    return {
+        int(participant_id): used_at
+        for participant_id, used_at in rows
+        if participant_id is not None and used_at is not None
+    }
+
+
+def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datetime]) -> list[dict]:
+    items = []
+    for cp, p in rows:
+        checkin_used_at = checkin_usage_by_participant.get(int(p.id))
+        items.append(
+            {
+                **p.model_dump(),
+                "categoria_competencia": cp.categoria,
+                "estado": cp.estado,
+                "enrollment_answers": cp.enrollment_answers,
+                "payment_status": cp.payment_status,
+                "payment_reference": cp.payment_reference,
+                "payment_transaction_id": cp.payment_transaction_id,
+                "payment_processor_fee": cp.payment_processor_fee,
+                "payment_platform_net": cp.payment_platform_net,
+                "payment_amount_total": cp.payment_amount_total,
+                "check_in_done": bool(checkin_used_at),
+                "check_in_used_at": checkin_used_at,
+            }
+        )
+    return items
 
 
 def _serialize_enrollment_answers(questions: list[dict], answers: list | None, extra_items: list[dict] | None = None) -> str | None:
@@ -205,6 +245,33 @@ def _payment_status_label(value: str | None) -> str:
     if normalized in {"created", "processing", "pending"}:
         return normalized
     return "unknown"
+
+
+_CREATED_INTENT_TIMEOUT_MINUTES = 15
+
+
+def _is_payment_intent_blocking(intent) -> bool:
+    """
+    Determina si un CompetitionPaymentIntent existente debe bloquear un nuevo intento de pago.
+
+    Reglas:
+    - Sin intent → no bloquea.
+    - Estado 'processing' o 'pending' → siempre bloquea (Bold tiene el pago activo).
+    - Estado 'approved' → siempre bloquea (ya existe un pago aprobado).
+    - Estado 'created' → bloquea solo si fue actualizado hace menos de
+      _CREATED_INTENT_TIMEOUT_MINUTES minutos. Si el usuario abandonó la
+      pestaña, el intent queda en 'created' indefinidamente y expira por timeout.
+    - Cualquier otro estado (rejected, failed, unknown) → no bloquea.
+    """
+    if intent is None:
+        return False
+    state = _payment_status_label(intent.payment_status)
+    if state in {"processing", "pending", "approved"}:
+        return True
+    if state == "created":
+        age = datetime.now(timezone.utc) - intent.payment_updated_at
+        return age.total_seconds() < _CREATED_INTENT_TIMEOUT_MINUTES * 60
+    return False
 
 
 def _verify_bold_webhook_signature(raw_body: bytes, signature: str | None) -> bool:
@@ -430,22 +497,8 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
         .where(CompetitionParticipant.competition_id == competition_id)
         .order_by(CompetitionParticipant.estado, Participant.apellido, Participant.nombre)
     ).all()
-
-    return [
-        {
-            **p.model_dump(),
-            "categoria_competencia": cp.categoria,
-            "estado": cp.estado,
-            "enrollment_answers": cp.enrollment_answers,
-            "payment_status": cp.payment_status,
-            "payment_reference": cp.payment_reference,
-            "payment_transaction_id": cp.payment_transaction_id,
-            "payment_processor_fee": cp.payment_processor_fee,
-            "payment_platform_net": cp.payment_platform_net,
-            "payment_amount_total": cp.payment_amount_total,
-        }
-        for cp, p in rows
-    ]
+    checkin_usage_by_participant = _get_checkin_usage_by_participant(session, competition_id)
+    return _serialize_enrolled_rows(rows, checkin_usage_by_participant)
 
 
 @router.post("/api/competitions/{competition_id}/participants", status_code=201)
@@ -653,16 +706,16 @@ def create_bold_checkout(
         .where(CompetitionPaymentIntent.participant_id == participant_id)
         .order_by(CompetitionPaymentIntent.payment_updated_at.desc(), CompetitionPaymentIntent.id.desc())
     ).first()
-    latest_payment_state = _payment_status_label(latest_intent.payment_status if latest_intent else None)
-    if latest_payment_state in {"created", "processing", "pending"}:
+    if _is_payment_intent_blocking(latest_intent):
+        latest_payment_state = _payment_status_label(latest_intent.payment_status if latest_intent else None)
+        if latest_payment_state == "approved":
+            raise HTTPException(
+                409,
+                "Tu ultimo pago ya aparece aprobado. Espera unos segundos y vuelve a consultar el estado.",
+            )
         raise HTTPException(
             409,
             "Ya tienes un pago en progreso. Espera la confirmacion de Bold antes de intentar de nuevo.",
-        )
-    if latest_payment_state == "approved":
-        raise HTTPException(
-            409,
-            "Tu ultimo pago ya aparece aprobado. Espera unos segundos y vuelve a consultar el estado.",
         )
 
     now = datetime.now(timezone.utc)
