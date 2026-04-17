@@ -50,6 +50,10 @@ class PaymentIntentBlockingTests(unittest.TestCase):
 
     # --- Estados que nunca bloquean ---
 
+    def test_prepared_does_not_block(self):
+        intent = _make_intent("prepared", minutes_ago=1)
+        self.assertFalse(_is_payment_intent_blocking(intent))
+
     def test_rejected_does_not_block(self):
         intent = _make_intent("rejected", minutes_ago=1)
         self.assertFalse(_is_payment_intent_blocking(intent))

@@ -23,6 +23,7 @@ from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
+    CompetitionPaymentIntentActivateRequest,
 )
 from routers.config import get_pricing_config
 from services.emailer import send_email
@@ -242,6 +243,8 @@ def _payment_status_label(value: str | None) -> str:
         return "approved"
     if normalized in {"rejected", "failed", "voided", "void_rejected"}:
         return normalized
+    if normalized == "prepared":
+        return "prepared"
     if normalized in {"created", "processing", "pending"}:
         return normalized
     return "unknown"
@@ -258,10 +261,11 @@ def _is_payment_intent_blocking(intent) -> bool:
     - Sin intent → no bloquea.
     - Estado 'processing' o 'pending' → siempre bloquea (Bold tiene el pago activo).
     - Estado 'approved' → siempre bloquea (ya existe un pago aprobado).
+    - Estado 'prepared' → no bloquea (el checkout se preparó, pero aun no hay click real en Bold).
     - Estado 'created' → bloquea solo si fue actualizado hace menos de
       _CREATED_INTENT_TIMEOUT_MINUTES minutos. Si el usuario abandonó la
       pestaña, el intent queda en 'created' indefinidamente y expira por timeout.
-    - Cualquier otro estado (rejected, failed, unknown) → no bloquea.
+    - Cualquier otro estado (rejected, failed, prepared, unknown) → no bloquea.
     """
     if intent is None:
         return False
@@ -727,7 +731,7 @@ def create_bold_checkout(
         payment_provider="bold",
         payment_reference=order_id,
         payment_order_id=order_id,
-        payment_status="created",
+        payment_status="prepared",
         payment_transaction_id=None,
         payment_base_amount=breakdown["organizer_price"],
         payment_platform_fee=breakdown["platform_fee"],
@@ -766,6 +770,49 @@ def create_bold_checkout(
         "customer_data": customer_data,
         "pricing": breakdown,
     }
+
+
+@router.post("/api/competitions/{competition_id}/bold-intent/activate")
+def activate_bold_intent(
+    competition_id: int,
+    body: CompetitionPaymentIntentActivateRequest,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    participant_id = get_effective_participant_id(user)
+    if not is_end_user(user) or participant_id is None:
+        raise HTTPException(403, "Solo usuarios")
+
+    reference = str(body.reference or "").strip()
+    if not reference:
+        raise HTTPException(400, "Referencia de pago invalida")
+
+    intent = session.exec(
+        select(CompetitionPaymentIntent)
+        .where(CompetitionPaymentIntent.competition_id == competition_id)
+        .where(CompetitionPaymentIntent.participant_id == participant_id)
+        .where(CompetitionPaymentIntent.payment_reference == reference)
+        .order_by(CompetitionPaymentIntent.id.desc())
+    ).first()
+    if not intent:
+        raise HTTPException(404, "No existe un intento de pago para esa referencia")
+
+    status = _payment_status_label(intent.payment_status)
+    if status in {"approved", "processing", "pending", "rejected", "failed", "voided", "void_rejected"}:
+        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+    if status == "created":
+        intent.payment_updated_at = datetime.now(timezone.utc)
+        session.add(intent)
+        session.commit()
+        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+    if status != "prepared":
+        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+
+    intent.payment_status = "created"
+    intent.payment_updated_at = datetime.now(timezone.utc)
+    session.add(intent)
+    session.commit()
+    return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
 
 
 @router.post("/api/competitions/{competition_id}/payment-status/sync")

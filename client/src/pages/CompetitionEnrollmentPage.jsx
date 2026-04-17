@@ -89,12 +89,46 @@ function ensureBoldButtonLibrary({ reload = false } = {}) {
   })
 }
 
-function BoldPaymentButton({ config, onError }) {
+function BoldPaymentButton({ config, onError, onPaymentClick }) {
   const containerRef = useRef(null)
 
   useEffect(() => {
     if (!config || !containerRef.current) return undefined
+    const containerNode = containerRef.current
     let active = true
+    let observer = null
+    const boundNodes = new Set()
+    let clickReported = false
+    const handlePaymentClick = () => {
+      if (clickReported) return
+      clickReported = true
+      onPaymentClick?.(config.order_id)
+    }
+    const bindContainerInteractionHandler = () => {
+      if (!containerNode) return
+      containerNode.addEventListener('pointerdown', handlePaymentClick, true)
+      containerNode.addEventListener('mousedown', handlePaymentClick, true)
+      containerNode.addEventListener('click', handlePaymentClick, true)
+    }
+    const unbindContainerInteractionHandler = () => {
+      if (!containerNode) return
+      containerNode.removeEventListener('pointerdown', handlePaymentClick, true)
+      containerNode.removeEventListener('mousedown', handlePaymentClick, true)
+      containerNode.removeEventListener('click', handlePaymentClick, true)
+    }
+    const bindClickHandler = () => {
+      if (!containerRef.current) return false
+      const nodes = containerRef.current.querySelectorAll('button, a, [role="button"], iframe')
+      if (!nodes.length) return false
+      nodes.forEach((node) => {
+        if (boundNodes.has(node)) return
+        node.addEventListener('pointerdown', handlePaymentClick, { once: true })
+        node.addEventListener('mousedown', handlePaymentClick, { once: true })
+        node.addEventListener('click', handlePaymentClick, { once: true })
+        boundNodes.add(node)
+      })
+      return true
+    }
     const render = async () => {
       try {
         if (!active || !containerRef.current) return
@@ -115,16 +149,33 @@ function BoldPaymentButton({ config, onError }) {
         containerRef.current.appendChild(script)
         await new Promise((resolve) => window.requestAnimationFrame(resolve))
         await ensureBoldButtonLibrary({ reload: true })
+        if (bindClickHandler()) return
+        observer = new MutationObserver(() => {
+          if (bindClickHandler() && observer) {
+            observer.disconnect()
+            observer = null
+          }
+        })
+        observer.observe(containerRef.current, { childList: true, subtree: true })
       } catch (err) {
         onError?.(err)
       }
     }
+    bindContainerInteractionHandler()
     render()
     return () => {
       active = false
+      if (observer) observer.disconnect()
+      unbindContainerInteractionHandler()
+      boundNodes.forEach((node) => {
+        node.removeEventListener('pointerdown', handlePaymentClick)
+        node.removeEventListener('mousedown', handlePaymentClick)
+        node.removeEventListener('click', handlePaymentClick)
+      })
+      boundNodes.clear()
       if (containerRef.current) containerRef.current.innerHTML = ''
     }
-  }, [config, onError])
+  }, [config, onError, onPaymentClick])
 
   return <div ref={containerRef} />
 }
@@ -480,6 +531,17 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const markBoldIntentAsStarted = async (reference) => {
+    if (!competition?.id) return
+    const refValue = String(reference || '').trim()
+    if (!refValue) return
+    try {
+      await api.post(`/competitions/${competition.id}/bold-intent/activate`, { reference: refValue })
+    } catch {
+      // Ignorado: el webhook/sync sigue siendo la fuente final de estado.
+    }
+  }
+
   const handleNextStep = async () => {
     const validationError = validateStep(currentStep)
     if (validationError) {
@@ -720,6 +782,7 @@ export default function CompetitionEnrollmentPage() {
                         <div style={{ display: 'grid', gap: 10 }}>
                           <BoldPaymentButton
                             config={boldButtonConfig}
+                            onPaymentClick={markBoldIntentAsStarted}
                             onError={(err) => setMsg({ type: 'error', text: err.message || 'No se pudo cargar el boton de Bold.' })}
                           />
                           <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
@@ -733,9 +796,9 @@ export default function CompetitionEnrollmentPage() {
                           </button>
                         </div>
                       ) : (
-                        <button type="button" className="btn-secondary" onClick={prepareBoldCheckout} disabled={checkoutLoading || syncingPayment || pricing.totalPrice <= 0}>
-                          {checkoutLoading ? 'Preparando pago...' : 'Reintentar carga del pago'}
-                        </button>
+                        <div style={{ color: '#AAB2C0', fontSize: 13 }}>
+                          {checkoutLoading ? 'Cargando boton de Bold...' : 'Estamos preparando el checkout de Bold...'}
+                        </div>
                       )}
                     </div>
                   </div>

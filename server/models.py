@@ -1328,6 +1328,10 @@ class SpectatorPaymentStatusSyncRequest(SQLModel):
     reference: str
 
 
+class CompetitionPaymentIntentActivateRequest(SQLModel):
+    reference: str
+
+
 class SpectatorTicketScanRequest(SQLModel):
     token: str
     station: Optional[str] = None

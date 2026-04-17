@@ -11,7 +11,7 @@ const pageBg =
 function normalizeStatus(status) {
   const value = String(status || '').trim().toLowerCase()
   if (['approved', 'aprobado'].includes(value)) return 'approved'
-  if (['pending', 'created', 'processing', 'pago_pendiente'].includes(value)) return 'pending'
+  if (['pending', 'prepared', 'created', 'processing', 'pago_pendiente'].includes(value)) return 'pending'
   if (['rejected', 'failed', 'voided', 'void_rejected', 'rechazado'].includes(value)) return 'rejected'
   return 'unknown'
 }
