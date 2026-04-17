@@ -5,7 +5,7 @@ import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry 
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
 import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
-import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
@@ -546,6 +546,32 @@ function ImagePreviewModal({ item, onClose }) {
     </div>
   )
 }
+
+function CheckinStatusChip({ participant }) {
+  const done = Boolean(participant?.check_in_done)
+  const usedAt = participant?.check_in_used_at
+
+  if (done) {
+    return (
+      <div style={{ display: 'grid', gap: 4 }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, border: '1px solid rgba(34,197,94,0.34)', background: 'rgba(34,197,94,0.12)', color: '#86EFAC', fontSize: 12, fontWeight: 800, padding: '6px 10px', width: 'fit-content' }}>
+          <CheckCircle2 size={14} />
+          Check-in realizado
+        </div>
+        {usedAt ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{formatDate(usedAt)}</div> : null}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, border: '1px solid rgba(170,178,192,0.24)', background: 'rgba(170,178,192,0.08)', color: '#AAB2C0', fontSize: 12, fontWeight: 700, padding: '6px 10px' }}>
+      <Clock3 size={14} />
+      Pendiente
+    </div>
+  )
+}
+
+const SYSTEM_CHECKIN_PHASE_CODE = 'check_in'
 
 function EnrollmentAnswersBlock({ raw, compact = false, onPreviewImage = null }) {
   const answers = parseEnrollmentAnswers(raw)
@@ -3497,6 +3523,11 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
   const rafRef = useRef(null)
   const lastValueRef = useRef('')
   const lastTimeRef = useRef(0)
+  const systemPhase = phases.find((phase) => phase.code === SYSTEM_CHECKIN_PHASE_CODE) || null
+  const extraPhases = phases.filter((phase) => phase.code !== SYSTEM_CHECKIN_PHASE_CODE)
+  const scannerPhaseOptions = phases.filter((phase) => Number(phase.enabled || 0))
+  const scannerTargetPhase = phases.find((phase) => phase.code === scannerPhaseCode) || systemPhase || phases[0] || null
+  const editingSystemPhase = phaseModalMode === 'edit' && editingPhase?.code === SYSTEM_CHECKIN_PHASE_CODE
 
   const stopScanner = () => {
     if (rafRef.current) {
@@ -3812,61 +3843,90 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
         <div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#F5F7FA', fontWeight: 800, fontSize: 15 }}>
             <QrCode size={16} />
-            Check-in QR
+            Control de check-in
           </div>
           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-            Define usos del QR por fase. `check_in` es fase base y no se elimina.
+            Usa el QR que el atleta muestra en la app para registrar el ingreso oficial al evento.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn-secondary btn-sm" type="button" onClick={loadPhases} disabled={loading || saving}>
             {loading ? 'Cargando...' : 'Recargar'}
           </button>
-          <button className="btn-primary btn-sm" type="button" onClick={openCreatePhaseModal}>
+          <button className="btn-secondary btn-sm" type="button" onClick={openCreatePhaseModal}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Plus size={14} />
-              Nueva fase
+              Nueva etapa QR
             </span>
           </button>
         </div>
       </div>
 
       <div style={{ display: 'grid', gap: 8 }}>
-        {!phases.length && !loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay fases QR configuradas.</div> : null}
-        {phases.map((phase) => (
-          <div key={phase.id} style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.62)', padding: isMobile ? 10 : 12, display: 'grid', gap: 10 }}>
+        {!phases.length && !loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay etapas QR configuradas.</div> : null}
+        {systemPhase ? (
+          <div style={{ border: '1px solid #252A33', borderRadius: 16, background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', padding: isMobile ? 12 : 16, display: 'grid', gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ display: 'grid', gap: 4 }}>
-                <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>{phase.label || 'Fase'}</div>
-                <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                  code: <span style={{ color: '#D7DEE8' }}>{phase.code}</span>
-                  {phase.is_system ? <span style={{ marginLeft: 8, color: '#00C2A8' }}>sistema</span> : null}
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 16 }}>Check-in de acceso</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ borderRadius: 999, border: `1px solid ${Number(systemPhase.enabled || 0) ? 'rgba(34,197,94,0.35)' : 'rgba(107,114,128,0.35)'}`, background: Number(systemPhase.enabled || 0) ? 'rgba(34,197,94,0.12)' : 'rgba(107,114,128,0.12)', color: Number(systemPhase.enabled || 0) ? '#86EFAC' : '#AAB2C0', fontSize: 12, fontWeight: 800, padding: '6px 10px' }}>
+                    {Number(systemPhase.enabled || 0) ? 'Check-in habilitado' : 'Check-in pausado'}
+                  </span>
+                  <span style={{ borderRadius: 999, border: '1px solid rgba(255,107,0,0.28)', background: 'rgba(255,107,0,0.12)', color: '#FFD0AE', fontSize: 12, fontWeight: 800, padding: '6px 10px' }}>
+                    {`${Number(systemPhase.max_uses || 1)} ingreso por atleta`}
+                  </span>
+                </div>
+                <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                  {systemPhase.description || 'Marca la llegada oficial al evento.'}
                 </div>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                  orden #{Number(phase.order_index || 0)} · max usos {Number(phase.max_uses || 1)} · {Number(phase.enabled || 0) ? 'habilitada' : 'deshabilitada'}
+                  El atleta abre la app, muestra su QR y el staff registra la entrada desde el escáner.
                 </div>
-                {phase.description ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{phase.description}</div> : null}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPhaseModal(phase)} disabled={saving}>
-                  Editar
+                <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPhaseModal(systemPhase)} disabled={saving}>
+                  Ajustes
                 </button>
-                {!phase.is_system ? (
-                  <button className="btn-danger btn-sm" type="button" onClick={() => deletePhase(phase)} disabled={saving}>
-                    Eliminar
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>
-        ))}
+        ) : null}
+        {extraPhases.length ? (
+          <>
+            <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              Etapas QR adicionales
+            </div>
+            {extraPhases.map((phase) => (
+              <div key={phase.id} style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.62)', padding: isMobile ? 10 : 12, display: 'grid', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>{phase.label || 'Etapa QR'}</div>
+                    {phase.description ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{phase.description}</div> : null}
+                    <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                      {Number(phase.enabled || 0) ? 'Activa' : 'Pausada'} · {Number(phase.max_uses || 1)} uso{Number(phase.max_uses || 1) === 1 ? '' : 's'} por atleta
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn-secondary btn-sm" type="button" onClick={() => openEditPhaseModal(phase)} disabled={saving}>
+                      Editar
+                    </button>
+                    <button className="btn-danger btn-sm" type="button" onClick={() => deletePhase(phase)} disabled={saving}>
+                      Eliminar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        ) : null}
       </div>
 
       <div style={{ border: '1px solid #252A33', borderRadius: 14, padding: isMobile ? 10 : 12, background: 'rgba(13,15,18,0.62)', display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Escaner QR</div>
-            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Scanner en modal para no incrustar camara en la pagina.</div>
+            <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Escaner de acceso</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Escanea el QR directamente desde el celular del atleta.</div>
           </div>
           <button
             className="btn-primary btn-sm"
@@ -3898,55 +3958,91 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
       </div>
 
       {phaseModalOpen ? (
-        <Modal title={phaseModalMode === 'create' ? 'Nueva fase QR' : `Editar fase ${editingPhase?.code || ''}`} onClose={closePhaseModal} width={560}>
+        <Modal title={phaseModalMode === 'create' ? 'Nueva etapa QR' : editingSystemPhase ? 'Ajustes de check-in' : `Editar etapa ${editingPhase?.label || editingPhase?.code || ''}`} onClose={closePhaseModal} width={560}>
           <div style={{ display: 'grid', gap: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-              <input
-                placeholder="code (ej: kit)"
-                value={phaseForm.code}
-                onChange={(e) => setPhaseForm(prev => ({ ...prev, code: e.target.value }))}
-                disabled={phaseModalMode === 'edit'}
-              />
+            {phaseModalMode === 'create' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+                <input
+                  placeholder="codigo interno (ej: kit)"
+                  value={phaseForm.code}
+                  onChange={(e) => setPhaseForm(prev => ({ ...prev, code: e.target.value }))}
+                />
+                <input
+                  placeholder="nombre visible"
+                  value={phaseForm.label}
+                  onChange={(e) => setPhaseForm(prev => ({ ...prev, label: e.target.value }))}
+                />
+              </div>
+            ) : (
               <input
                 placeholder="nombre visible"
                 value={phaseForm.label}
                 onChange={(e) => setPhaseForm(prev => ({ ...prev, label: e.target.value }))}
               />
-            </div>
+            )}
             <input
-              placeholder="descripcion (opcional)"
+              placeholder={editingSystemPhase ? 'Describe cuándo se usa este check-in' : 'descripcion (opcional)'}
               value={phaseForm.description}
               onChange={(e) => setPhaseForm(prev => ({ ...prev, description: e.target.value }))}
             />
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
-              <input
-                type="number"
-                min="0"
-                value={phaseForm.order_index}
-                onChange={(e) => setPhaseForm(prev => ({ ...prev, order_index: Number(e.target.value || 0) }))}
-              />
-              <input
-                type="number"
-                min="1"
-                max="20"
-                value={phaseForm.max_uses}
-                disabled={phaseModalMode === 'edit' && editingPhase?.code === 'check_in'}
-                onChange={(e) => setPhaseForm(prev => ({ ...prev, max_uses: Number(e.target.value || 1) }))}
-              />
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0, border: '1px solid #252A33', borderRadius: 6, padding: '8px 10px', background: '#171B21' }}>
+            {editingSystemPhase ? (
+              <>
+                <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.68)', padding: '10px 12px', display: 'grid', gap: 4 }}>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Regla fija</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Cada atleta puede registrar su ingreso una sola vez.</div>
+                </div>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0, border: '1px solid #252A33', borderRadius: 6, padding: '10px 12px', background: '#171B21' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!phaseForm.enabled}
+                    onChange={(e) => setPhaseForm(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
+                    style={{ width: 'auto' }}
+                  />
+                  Permitir escaneos para el check-in
+                </label>
+              </>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 8 }}>
                 <input
-                  type="checkbox"
-                  checked={!!phaseForm.enabled}
-                  onChange={(e) => setPhaseForm(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
-                  style={{ width: 'auto' }}
+                  type="number"
+                  min="0"
+                  value={phaseForm.order_index}
+                  onChange={(e) => setPhaseForm(prev => ({ ...prev, order_index: Number(e.target.value || 0) }))}
+                  placeholder="orden"
                 />
-                Habilitada
-              </label>
-            </div>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={phaseForm.max_uses}
+                  onChange={(e) => setPhaseForm(prev => ({ ...prev, max_uses: Number(e.target.value || 1) }))}
+                  placeholder="usos permitidos"
+                />
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: 0, border: '1px solid #252A33', borderRadius: 6, padding: '8px 10px', background: '#171B21' }}>
+                  <input
+                    type="checkbox"
+                    checked={!!phaseForm.enabled}
+                    onChange={(e) => setPhaseForm(prev => ({ ...prev, enabled: e.target.checked ? 1 : 0 }))}
+                    style={{ width: 'auto' }}
+                  />
+                  Habilitada
+                </label>
+              </div>
+            )}
+            {!editingSystemPhase && phaseModalMode !== 'create' ? (
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                Codigo interno: <span style={{ color: '#F5F7FA' }}>{editingPhase?.code}</span>
+              </div>
+            ) : null}
+            {phaseModalMode === 'create' ? (
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                Usa etapas adicionales solo si necesitas registrar otro punto del evento además del ingreso principal.
+              </div>
+            ) : null}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn-secondary btn-sm" type="button" onClick={closePhaseModal}>Cancelar</button>
               <button className="btn-primary btn-sm" type="button" onClick={submitPhaseModal} disabled={saving}>
-                {saving ? 'Guardando...' : phaseModalMode === 'create' ? 'Crear fase' : 'Guardar cambios'}
+                {saving ? 'Guardando...' : editingSystemPhase ? 'Guardar ajustes' : phaseModalMode === 'create' ? 'Crear etapa' : 'Guardar cambios'}
               </button>
             </div>
           </div>
@@ -3957,18 +4053,27 @@ function CheckinQrConfigPanel({ competition, isMobile = false }) {
         <Modal title="Escaner QR" onClose={closeScannerModal} width={760}>
           <div style={{ display: 'grid', gap: 10 }}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-              <select value={scannerPhaseCode} onChange={(e) => setScannerPhaseCode(e.target.value)}>
-                {phases.map((phase) => (
-                  <option key={phase.id} value={phase.code}>
-                    {phase.label} ({phase.code})
-                  </option>
-                ))}
-              </select>
+              {scannerPhaseOptions.length > 1 ? (
+                <select value={scannerPhaseCode} onChange={(e) => setScannerPhaseCode(e.target.value)}>
+                  {scannerPhaseOptions.map((phase) => (
+                    <option key={phase.id} value={phase.code}>
+                      {phase.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '10px 12px', background: 'rgba(13,15,18,0.72)', color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>
+                  {scannerTargetPhase?.label || 'Check-in'}
+                </div>
+              )}
               <input
                 value={scannerStation}
                 onChange={(e) => setScannerStation(e.target.value)}
-                placeholder="Punto de control (ej: entrada principal)"
+                placeholder="Punto o puerta (opcional)"
               />
+            </div>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+              {scannerTargetPhase?.description || 'Escanea el QR mostrado en la app para registrar la llegada del atleta.'}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto auto', gap: 8, alignItems: 'center' }}>
               <select value={selectedCameraId} onChange={(e) => setSelectedCameraId(e.target.value)}>
@@ -9443,6 +9548,10 @@ function CompetitionsTab() {
     { id: 'schedule', label: 'Cronograma' },
     ...(selectedCompetition?.team_enabled ? [{ id: 'teams', label: 'Equipos' }] : []),
   ]
+  const enrollmentsSubSections = [
+    { id: 'enrollment_list', label: 'Inscripciones' },
+    { id: 'checkin_ops', label: 'Check-in' },
+  ]
   const liveSubSections = [
     { id: 'results', label: 'Resultados' },
     { id: 'timer', label: 'Cronometro' },
@@ -9619,6 +9728,7 @@ function CompetitionsTab() {
                     type="button"
                     onClick={() => {
                       setSelectedTab(section.id)
+                      if (section.id === 'enrollments' && !['enrollment_list', 'checkin_ops'].includes(competitionTab)) setCompetitionTab('enrollment_list')
                       if (section.id === 'prep' && !['schedule', 'teams'].includes(competitionTab)) setCompetitionTab('schedule')
                       if (section.id === 'live' && !['results', 'timer'].includes(competitionTab)) setCompetitionTab('results')
                     }}
@@ -9859,59 +9969,96 @@ function CompetitionsTab() {
           )}
 
           {selectedTab === 'enrollments' && (
-            <div className="card">
-              <CheckinQrConfigPanel competition={selectedCompetition} isMobile={isMobile} />
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0' }} />
-              <SpectatorTicketingOpsPanel competition={selectedCompetition} />
-              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <div>
-                  <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div className="card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
+                  </div>
+                  <div style={mobileSubSectionTabsStyle}>
+                    {enrollmentsSubSections.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setCompetitionTab(item.id)}
+                        style={{ ...subSectionBtnStyle(competitionTab === item.id), flex: isMobile ? '0 0 auto' : undefined }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(selectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
-                    Descargar Excel
-                  </button>
-                  <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
-                    Gestionar inscripciones
-                  </button>
-                </div>
-              </div>
-              {isMobile ? (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {!selectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</p>}
-                  {selectedParticipants.map(p => (
-                    <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 12, padding: '12px 14px', background: 'rgba(13,15,18,0.72)', display: 'grid', gap: 8 }}>
-                      <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{p.nombre} {p.apellido}</div>
-                      <div style={{ fontSize: 12, color: '#AAB2C0', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                        <span>Categoria: {p.categoria_competencia || '-'}</span>
-                        <span>{p.estado || '-'}</span>
+
+                {competitionTab === 'checkin_ops' ? (
+                  <div style={{ display: 'grid', gap: 14 }}>
+                    <CheckinQrConfigPanel competition={selectedCompetition} isMobile={isMobile} />
+                    <SpectatorTicketingOpsPanel competition={selectedCompetition} />
+                    <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 16, display: 'grid', gap: 8 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#F5F7FA' }}>Resumen de check-in</div>
+                      <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                        Usa esta vista durante el ingreso. El atleta muestra el QR desde la app y aquí confirmas quién ya registró su entrada.
                       </div>
-                      <div>
-                        <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 13 }}>
+                        <span style={{ color: '#86EFAC' }}>{selectedParticipants.filter(item => item.check_in_done).length} realizados</span>
+                        <span style={{ color: '#AAB2C0' }}>{selectedParticipants.filter(item => !item.check_in_done).length} pendientes</span>
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <table>
-                  <thead><tr><th>Participante</th><th>Categoria</th><th>Accion</th></tr></thead>
-                  <tbody>
-                    {selectedParticipants.map(p => (
-                      <tr key={p.id}>
-                        <td>{p.nombre} {p.apellido}</td>
-                        <td>{p.categoria_competencia || '-'}</td>
-                        <td>
-                          <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
-                        </td>
-                      </tr>
-                    ))}
-                    {!selectedParticipants.length && <tr><td colSpan={3} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
-                  </tbody>
-                </table>
-                </div>
-              )}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <div>
+                        <h4 style={{ margin: 0, fontSize: 16 }}>Listado de inscritos</h4>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(selectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
+                          Descargar Excel
+                        </button>
+                        <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
+                          Gestionar inscripciones
+                        </button>
+                      </div>
+                    </div>
+                    {isMobile ? (
+                      <div style={{ display: 'grid', gap: 8 }}>
+                        {!selectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</p>}
+                        {selectedParticipants.map(p => (
+                          <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 12, padding: '12px 14px', background: 'rgba(13,15,18,0.72)', display: 'grid', gap: 8 }}>
+                            <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{p.nombre} {p.apellido}</div>
+                            <div style={{ fontSize: 12, color: '#AAB2C0', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                              <span>Categoria: {p.categoria_competencia || '-'}</span>
+                              <span>{p.estado || '-'}</span>
+                            </div>
+                            <CheckinStatusChip participant={p} />
+                            <div>
+                              <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      <table>
+                        <thead><tr><th>Participante</th><th>Categoria</th><th>Check-in</th><th>Accion</th></tr></thead>
+                        <tbody>
+                          {selectedParticipants.map(p => (
+                            <tr key={p.id}>
+                              <td>{p.nombre} {p.apellido}</td>
+                              <td>{p.categoria_competencia || '-'}</td>
+                              <td><CheckinStatusChip participant={p} /></td>
+                              <td>
+                                <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                              </td>
+                            </tr>
+                          ))}
+                          {!selectedParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
+                        </tbody>
+                      </table>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
 
