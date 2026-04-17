@@ -326,7 +326,7 @@ export default function CompetitionEnrollmentPage() {
   const selectedCategoryData = useMemo(() => categories.find(category => category.nombre === selectedCategory) || null, [categories, selectedCategory])
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
-  const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
+  const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
   const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee), [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee])
   const userCanSubmit = !!session && isAthlete

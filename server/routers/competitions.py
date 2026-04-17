@@ -21,6 +21,7 @@ from competition_rules import filter_visible_phases, normalize_phase_measurement
 from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 from phase_status import compute_phase_status_map
+from routers.config import get_pricing_config
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -717,7 +718,8 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
         payload["general_info_text"] = str(payload.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in payload:
         payload["enrollment_terms_text"] = str(payload.get("enrollment_terms_text") or "").strip() or None
-    payload["platform_fee_rate"] = _normalize_platform_fee_rate(payload.get("platform_fee_rate"))
+    pricing_cfg = get_pricing_config(session)
+    payload["platform_fee_rate"] = _normalize_platform_fee_rate(pricing_cfg["default_platform_fee_rate"])
     payload["require_payment_receipt"] = 0
     payload["enrollment_payment_methods"] = None
     _normalize_competition_theme(payload)
@@ -769,8 +771,8 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         data["general_info_text"] = str(data.get("general_info_text") or "").strip() or None
     if "enrollment_terms_text" in data:
         data["enrollment_terms_text"] = str(data.get("enrollment_terms_text") or "").strip() or None
-    if "platform_fee_rate" in data:
-        data["platform_fee_rate"] = _normalize_platform_fee_rate(data.get("platform_fee_rate"))
+    pricing_cfg = get_pricing_config(session)
+    data["platform_fee_rate"] = _normalize_platform_fee_rate(pricing_cfg["default_platform_fee_rate"])
     data["require_payment_receipt"] = 0
     data["enrollment_payment_methods"] = None
     _normalize_competition_theme(data)

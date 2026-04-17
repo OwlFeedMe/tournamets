@@ -625,7 +625,7 @@ def create_bold_checkout(
     serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
 
     pricing_cfg = get_pricing_config(session)
-    fee_rate = _normalize_platform_fee_rate(getattr(comp, "platform_fee_rate", pricing_cfg["default_platform_fee_rate"]))
+    fee_rate = _normalize_platform_fee_rate(pricing_cfg["default_platform_fee_rate"])
     breakdown = _price_breakdown(
         getattr(category, "enrollment_price", 0),
         fee_rate,

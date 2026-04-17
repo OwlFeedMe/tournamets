@@ -1021,7 +1021,7 @@ def spectator_checkout(
         raise HTTPException(400, "La boleteria no tiene precio valido")
 
     pricing_cfg = get_pricing_config(session)
-    fee_rate = float(getattr(competition, "platform_fee_rate", pricing_cfg["default_platform_fee_rate"]))
+    fee_rate = float(pricing_cfg["default_platform_fee_rate"])
     fee_rate = max(0.0, min(round(fee_rate, 4), 1.0))
     breakdown = _price_breakdown(
         base_price=unit_price * quantity,
