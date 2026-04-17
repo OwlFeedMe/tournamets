@@ -644,17 +644,28 @@ def create_bold_checkout(
     participant = session.get(Participant, participant_id)
     order_id = f"FR-C{competition_id}-P{participant_id}-{int(datetime.now(timezone.utc).timestamp())}"
     existing = session.get(CompetitionParticipant, (competition_id, participant_id))
-    if existing and existing.estado in ("confirmado", "pendiente"):
+    if existing and existing.estado in ("confirmado", "pendiente", PAYMENT_PENDING_STATE):
         raise HTTPException(409, f"Ya tienes una inscripcion con estado: {existing.estado}")
-    now = datetime.now(timezone.utc)
-    previous_intents = session.exec(
+
+    latest_intent = session.exec(
         select(CompetitionPaymentIntent)
         .where(CompetitionPaymentIntent.competition_id == competition_id)
         .where(CompetitionPaymentIntent.participant_id == participant_id)
-    ).all()
-    for item in previous_intents:
-        session.delete(item)
-    session.flush()
+        .order_by(CompetitionPaymentIntent.payment_updated_at.desc(), CompetitionPaymentIntent.id.desc())
+    ).first()
+    latest_payment_state = _payment_status_label(latest_intent.payment_status if latest_intent else None)
+    if latest_payment_state in {"created", "processing", "pending"}:
+        raise HTTPException(
+            409,
+            "Ya tienes un pago en progreso. Espera la confirmacion de Bold antes de intentar de nuevo.",
+        )
+    if latest_payment_state == "approved":
+        raise HTTPException(
+            409,
+            "Tu ultimo pago ya aparece aprobado. Espera unos segundos y vuelve a consultar el estado.",
+        )
+
+    now = datetime.now(timezone.utc)
     session.add(CompetitionPaymentIntent(
         competition_id=competition_id,
         participant_id=participant_id,
