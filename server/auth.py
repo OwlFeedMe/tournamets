@@ -1,21 +1,21 @@
-import os
 import base64
 import hashlib
 import hmac
+import os
 import secrets
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlmodel import Session
 
 from cache import Cache, Keys
 from constants import Role
-from models import AppUser
+from models import User
 
 ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
 load_dotenv(ROOT_ENV_PATH)
@@ -25,16 +25,11 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
 PASSWORD_HASH_ITERATIONS = int(os.getenv("PASSWORD_HASH_ITERATIONS", "260000"))
-
-ADMIN_ID = os.getenv("ADMIN_ID", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
-
-APP_USER_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL", "60"))
+USER_CACHE_TTL = int(os.getenv("AUTH_CACHE_TTL", "60"))
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
-
-_APP_USER_CACHE_FIELDS = (
+_USER_CACHE_FIELDS = (
     "id",
     "username",
     "display_name",
@@ -42,64 +37,57 @@ _APP_USER_CACHE_FIELDS = (
     "organizer_enabled",
     "judge_enabled",
     "admin_enabled",
-    "participant_id",
     "is_active",
 )
 
 
-def _serialize_app_user(app_user: AppUser) -> dict:
-    return {field: getattr(app_user, field, None) for field in _APP_USER_CACHE_FIELDS}
+def _serialize_user(user: User) -> dict:
+    return {field: getattr(user, field, None) for field in _USER_CACHE_FIELDS}
 
 
-def _deserialize_app_user(data: dict) -> AppUser:
-    # Instancia desanclada del ORM. Solo para checks de permisos, NO hace falta
-    # que SQLAlchemy la tracke. password_hash omitido a proposito (seguridad).
-    return AppUser(
+def _deserialize_user(data: dict) -> User:
+    return User(
         id=data.get("id"),
-        username=data.get("username") or "",
+        cedula=f"cached:{data.get('id')}",
+        nombre=data.get("display_name") or "",
+        apellido="",
+        username=data.get("username"),
         display_name=data.get("display_name"),
         role=data.get("role") or Role.USER,
-        password_hash="",
+        password_hash=None,
         organizer_enabled=int(data.get("organizer_enabled") or 0),
         judge_enabled=int(data.get("judge_enabled") or 0),
         admin_enabled=int(data.get("admin_enabled") or 0),
-        participant_id=data.get("participant_id"),
         is_active=int(data.get("is_active") or 0),
     )
 
 
-def load_app_user_cached(session: Session, app_user_id: int) -> AppUser | None:
-    """Resuelve AppUser via cache Redis con fallback a DB.
-
-    Los hits NO tocan SQLAlchemy identity map. La instancia retornada es detached
-    y solo debe usarse para lectura de flags/roles/username/display_name.
-    Para mutaciones, siempre usar session.get(AppUser, id) directamente.
-    """
-    key = Keys.APP_USER.format(user_id=app_user_id)
+def load_user_cached(session: Session, user_id: int) -> User | None:
+    key = Keys.APP_USER.format(user_id=user_id)
     cached = Cache.get(key)
     if isinstance(cached, dict):
         try:
-            return _deserialize_app_user(cached)
-        except Exception:  # payload corrupto, re-leer de DB
+            return _deserialize_user(cached)
+        except Exception:
             Cache.delete(key)
 
-    app_user = session.get(AppUser, app_user_id)
-    if app_user is None:
+    user = session.get(User, user_id)
+    if user is None:
         return None
     try:
-        Cache.set(key, _serialize_app_user(app_user), ttl=APP_USER_CACHE_TTL)
+        Cache.set(key, _serialize_user(user), ttl=USER_CACHE_TTL)
     except Exception:
         pass
-    return app_user
+    return user
 
 
-def invalidate_app_user(app_user_id: int | None) -> None:
-    if app_user_id is None:
+def invalidate_app_user(user_id: int | None) -> None:
+    if user_id is None:
         return
     try:
         Cache.delete(
-            Keys.APP_USER.format(user_id=int(app_user_id)),
-            Keys.OWNED_COMPS.format(user_id=int(app_user_id)),
+            Keys.APP_USER.format(user_id=int(user_id)),
+            Keys.OWNED_COMPS.format(user_id=int(user_id)),
         )
     except (TypeError, ValueError):
         return
@@ -131,7 +119,9 @@ def hash_password(password: str) -> str:
     return f"{PASSWORD_HASH_ALGORITHM}${PASSWORD_HASH_ITERATIONS}${salt_b64}${digest_b64}"
 
 
-def verify_password(password: str, stored_hash: str) -> bool:
+def verify_password(password: str, stored_hash: str | None) -> bool:
+    if not stored_hash:
+        return False
     try:
         algorithm, iterations_raw, salt_b64, digest_b64 = stored_hash.split("$", 3)
         if algorithm != PASSWORD_HASH_ALGORITHM:
@@ -157,53 +147,59 @@ def decode_token(token: str) -> dict:
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido o expirado",
+            detail="Token invalido o expirado",
         )
 
 
-def _effective_role(base_role: str, app_user: AppUser) -> str:
-    if int(app_user.admin_enabled or 0):
+def _effective_role(base_role: str, user: User) -> str:
+    if int(user.admin_enabled or 0):
         return Role.ADMIN
-    if int(app_user.organizer_enabled or 0):
+    if int(user.organizer_enabled or 0):
         return Role.ORGANIZER
-    if int(app_user.judge_enabled or 0):
+    if int(user.judge_enabled or 0):
         return Role.JUDGE
     return base_role
 
 
 def _refresh_user_access(payload: dict, session: Session) -> dict:
     refreshed = dict(payload)
-    app_user_id = refreshed.get("app_user_id")
-    if app_user_id is None and isinstance(refreshed.get("sub"), str) and refreshed["sub"].startswith("app:"):
-        try:
-            app_user_id = int(refreshed["sub"].split(":", 1)[1])
-        except (TypeError, ValueError, IndexError):
-            app_user_id = None
-    if app_user_id is None:
-        return refreshed
+    raw_user_id = refreshed.get("user_id")
+    if raw_user_id is None:
+        raw_user_id = refreshed.get("app_user_id")
+    if raw_user_id is None:
+        raw_user_id = refreshed.get("participant_id")
+    if raw_user_id is None and refreshed.get("sub") is not None:
+        raw_user_id = refreshed.get("sub")
 
-    app_user = load_app_user_cached(session, int(app_user_id))
-    if not app_user or int(app_user.is_active or 0) != 1:
+    try:
+        user_id = int(raw_user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesion invalida")
+
+    user = load_user_cached(session, user_id)
+    if not user or int(user.is_active or 0) != 1:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesion invalida")
 
     extra_roles: list[str] = []
-    if int(app_user.organizer_enabled or 0):
+    if int(user.organizer_enabled or 0):
         extra_roles.append(Role.ORGANIZER)
-    if int(app_user.judge_enabled or 0):
+    if int(user.judge_enabled or 0):
         extra_roles.append(Role.JUDGE)
-    if int(app_user.admin_enabled or 0):
+    if int(user.admin_enabled or 0):
         extra_roles.append(Role.ADMIN)
 
-    refreshed["app_user_id"] = app_user.id
-    refreshed["username"] = app_user.username
-    refreshed["display_name"] = app_user.display_name
-    refreshed["base_role"] = app_user.role
+    refreshed["sub"] = str(user.id)
+    refreshed["user_id"] = user.id
+    refreshed["app_user_id"] = user.id
+    refreshed["participant_id"] = user.id
+    refreshed["username"] = user.username or user.email or user.cedula
+    refreshed["display_name"] = user.display_name or f"{(user.nombre or '').strip()} {(user.apellido or '').strip()}".strip()
+    refreshed["base_role"] = user.role
     refreshed["extra_roles"] = extra_roles
-    refreshed["role"] = _effective_role(app_user.role, app_user)
-    refreshed["participant_id"] = app_user.participant_id
-    refreshed["organizer_enabled"] = bool(app_user.organizer_enabled)
-    refreshed["judge_enabled"] = bool(app_user.judge_enabled)
-    refreshed["admin_enabled"] = bool(app_user.admin_enabled)
+    refreshed["role"] = _effective_role(user.role, user)
+    refreshed["organizer_enabled"] = bool(user.organizer_enabled)
+    refreshed["judge_enabled"] = bool(user.judge_enabled)
+    refreshed["admin_enabled"] = bool(user.admin_enabled)
     return refreshed
 
 
@@ -217,14 +213,7 @@ def _get_current_user_from_credentials(
         if optional:
             return None
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autenticado")
-
-    payload = _refresh_user_access(decode_token(credentials.credentials), session)
-    if payload.get("role") == Role.PARTICIPANT and payload.get("participant_id") is None:
-        try:
-            payload["participant_id"] = int(payload.get("sub"))
-        except (TypeError, ValueError):
-            payload["participant_id"] = None
-    return payload
+    return _refresh_user_access(decode_token(credentials.credentials), session)
 
 
 def get_current_user(
@@ -297,9 +286,10 @@ def get_effective_participant_id(user: dict) -> Optional[int]:
             return int(participant_id)
         except (TypeError, ValueError):
             return None
-    if user.get("role") == Role.PARTICIPANT:
+    user_id = user.get("user_id") or user.get("app_user_id")
+    if user_id is not None:
         try:
-            return int(user.get("sub"))
+            return int(user_id)
         except (TypeError, ValueError):
             return None
     return None

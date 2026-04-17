@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from database import init_db, run_db_migrations
+from database import run_db_migrations
 from routers import (
     auth,
     participants,
@@ -22,6 +22,7 @@ from routers import (
     system_status,
     interest_notifications,
     checkin_qr,
+    judges,
     judge_cards,
     ticketing,
 )
@@ -59,6 +60,7 @@ app.include_router(config.router)
 app.include_router(system_status.router)
 app.include_router(interest_notifications.router)
 app.include_router(checkin_qr.router)
+app.include_router(judges.router)
 app.include_router(judge_cards.router)
 app.include_router(ticketing.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
@@ -68,7 +70,6 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 def startup():
     def _bootstrap_db() -> None:
         run_db_migrations()
-        init_db()
 
     threading.Thread(target=_bootstrap_db, daemon=True).start()
 

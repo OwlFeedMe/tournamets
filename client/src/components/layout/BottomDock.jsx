@@ -1,31 +1,44 @@
-import { CalendarDays, House, LogIn, UserCircle2 } from 'lucide-react'
+import { CalendarDays, Gavel, House, LogIn, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-const DOCKS = {
-  public: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Ingresar', icon: LogIn, to: '/login' },
-  ],
-  user: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Perfil', icon: UserCircle2, to: '/profile' },
-  ],
-  organizer: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Perfil', icon: UserCircle2, to: '/organizer' },
-  ],
-  admin: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Perfil', icon: UserCircle2, to: '/profile' },
-    { label: 'Admin', icon: UserCircle2, to: '/admin' },
-  ],
+const PUBLIC_ITEMS = [
+  { label: 'Inicio', icon: House, to: '/' },
+  { label: 'Eventos', icon: CalendarDays, to: '/events' },
+  { label: 'Ingresar', icon: LogIn, to: '/login' },
+]
+
+function buildDockItems(session) {
+  if (!session) return PUBLIC_ITEMS
+
+  if (session.role === 'admin') {
+    return [
+      { label: 'Inicio', icon: House, to: '/' },
+      { label: 'Eventos', icon: CalendarDays, to: '/events' },
+      { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
+      { label: 'Perfil', icon: UserCircle2, to: '/profile' },
+      { label: 'Admin', icon: ShieldCheck, to: '/admin' },
+    ]
+  }
+
+  const hasExtra = !!(session.organizerEnabled || session.judgeEnabled)
+  const items = [{ label: 'Inicio', icon: House, to: '/' }]
+  if (!hasExtra) {
+    items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })
+  }
+  if (session.participantId) {
+    items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
+  } else if (hasExtra) {
+    items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })
+  }
+  if (session.organizerEnabled) {
+    items.push({ label: 'Panel', icon: UserCircle2, to: '/organizer' })
+  }
+  if (session.judgeEnabled) {
+    items.push({ label: 'Juez', icon: Gavel, to: '/judge' })
+  }
+  items.push({ label: 'Perfil', icon: UserCircle2, to: '/profile' })
+  return items
 }
 
 function isActivePath(pathname, target) {
@@ -34,6 +47,7 @@ function isActivePath(pathname, target) {
   if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')
+  if (target === '/judge') return pathname.startsWith('/judge')
   if (target === '/profile') return pathname.startsWith('/profile')
   return pathname === target || pathname.startsWith(`${target}?`)
 }
@@ -43,18 +57,7 @@ export function BottomDock() {
   const location = useLocation()
   const { session } = useAuth()
 
-  const items = (() => {
-    if (!session) return DOCKS.public
-    if (session.participantId && session.organizerEnabled && session.role !== 'admin') {
-      return [
-        { label: 'Inicio', icon: House, to: '/' },
-        { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-        { label: 'Panel', icon: UserCircle2, to: '/organizer' },
-        { label: 'Perfil', icon: UserCircle2, to: '/profile' },
-      ]
-    }
-    return DOCKS[session.role] || DOCKS.user
-  })()
+  const items = buildDockItems(session)
 
   return (
     <nav

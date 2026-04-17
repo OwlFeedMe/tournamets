@@ -12,11 +12,15 @@ from constants import (
 
 # ── Table Models (DB) ─────────────────────────────────────────────────────────
 
-class Participant(SQLModel, table=True):
+class User(SQLModel, table=True):
     __tablename__ = "participants"
+    __table_args__ = (
+        UniqueConstraint("cedula"),
+        UniqueConstraint("username"),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    cedula: str = Field(unique=True, index=True)
+    cedula: str = Field(index=True)
     nombre: str
     apellido: str
     email: Optional[str] = None
@@ -33,31 +37,13 @@ class Participant(SQLModel, table=True):
     )
     ciudad_pais: Optional[str] = None
     estado: str = Field(default=EstadoParticipante.ACTIVO)
-    created_at: Optional[datetime] = Field(
-        default=None,
-        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
-    )
-
-
-class AppUser(SQLModel, table=True):
-    __tablename__ = "app_users"
-    __table_args__ = (
-        UniqueConstraint("username"),
-        UniqueConstraint("participant_id"),
-    )
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    username: str = Field(index=True)
-    display_name: str
-    role: str = Field(default=Role.USER, index=True)  # base role: user, legacy admin fallback
-    password_hash: str
+    username: Optional[str] = Field(default=None, index=True)
+    display_name: Optional[str] = None
+    role: str = Field(default=Role.USER, index=True)
+    password_hash: Optional[str] = None
     organizer_enabled: int = Field(default=0)
     judge_enabled: int = Field(default=0)
     admin_enabled: int = Field(default=0)
-    participant_id: Optional[int] = Field(
-        default=None,
-        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
-    )
     is_active: int = Field(default=1)
     created_at: Optional[datetime] = Field(
         default=None,
@@ -65,12 +51,16 @@ class AppUser(SQLModel, table=True):
     )
 
 
+Participant = User
+AppUser = User
+
+
 class OrganizerApplication(SQLModel, table=True):
     __tablename__ = "organizer_applications"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     app_user_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False, index=True)
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     participant_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -90,7 +80,7 @@ class OrganizerApplication(SQLModel, table=True):
     review_note: Optional[str] = None
     reviewed_by_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     reviewed_at: Optional[datetime] = Field(
         default=None,
@@ -180,7 +170,7 @@ class Competition(SQLModel, table=True):
     rm_unit: str = Field(default=UnidadRM.KG)
     organizer_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     slug: Optional[str] = Field(default=None, sa_column=Column(String, unique=True, index=True, nullable=True))
     created_at: Optional[datetime] = Field(
@@ -336,7 +326,7 @@ class SpectatorTicketCheckinAudit(SQLModel, table=True):
     device_id: Optional[str] = None
     actor_app_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     created_at: Optional[datetime] = Field(
         default=None,
@@ -588,6 +578,82 @@ class CompetitionParticipant(SQLModel, table=True):
     )
 
 
+class CompetitionJudgeAssignment(SQLModel, table=True):
+    __tablename__ = "competition_judge_assignments"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "app_user_id", name="uq_comp_judge_assignment_user"),
+        UniqueConstraint("competition_id", "invited_email", name="uq_comp_judge_assignment_email"),
+        Index("ix_comp_judge_assignment_competition", "competition_id"),
+        Index("ix_comp_judge_assignment_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    invited_email: str = Field(index=True)
+    status: str = Field(default="pending", index=True)  # pending | active | rejected | revoked
+    invited_by_app_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    accepted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    rejected_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionJudgeActionAudit(SQLModel, table=True):
+    __tablename__ = "competition_judge_action_audit"
+    __table_args__ = (
+        Index("ix_comp_judge_audit_competition", "competition_id"),
+        Index("ix_comp_judge_audit_assignment", "judge_assignment_id"),
+        Index("ix_comp_judge_audit_actor", "actor_app_user_id"),
+        Index("ix_comp_judge_audit_action", "action"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    judge_assignment_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_judge_assignments.id", ondelete="SET NULL"), nullable=True),
+    )
+    actor_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    action: str = Field(default="unknown")
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    result: str = Field(default="accepted")
+    meta_json: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class CompetitionPaymentIntent(SQLModel, table=True):
     __tablename__ = "competition_payment_intents"
 
@@ -670,11 +736,11 @@ class CompetitionQrIdentity(SQLModel, table=True):
     revoked_reason: Optional[str] = None
     created_by_app_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     revoked_by_app_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     updated_at: Optional[datetime] = Field(
         default=None,
@@ -738,7 +804,7 @@ class CompetitionCheckinUsage(SQLModel, table=True):
     device_id: Optional[str] = None
     used_by_app_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     used_at: Optional[datetime] = Field(
         default=None,
@@ -779,7 +845,7 @@ class CompetitionCheckinAudit(SQLModel, table=True):
     idempotency_key: Optional[str] = None
     actor_app_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     meta_json: Optional[str] = None
     created_at: Optional[datetime] = Field(
@@ -796,11 +862,11 @@ class CompetitionWithdrawalRequest(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     requested_by_user_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="RESTRICT"), nullable=False)
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
     )
     reviewed_by_user_id: Optional[int] = Field(
         default=None,
-        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     amount: int = Field(default=0)
     status: str = Field(default="pending")  # pending | approved | rejected | paid

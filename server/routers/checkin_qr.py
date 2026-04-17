@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlmodel import Session, SQLModel, select
 
-from access import require_competition_access
+from access import require_competition_access, require_competition_operator_access
 from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
 from database import get_session
 from models import (
@@ -24,6 +24,7 @@ from models import (
     CompetitionQrIdentity,
     Participant,
 )
+from routers.judges import append_judge_action_audit
 
 router = APIRouter(tags=["checkin_qr"])
 
@@ -301,9 +302,9 @@ def my_checkin_qr(
 def list_checkin_phases(
     competition_id: int,
     session: Session = Depends(get_session),
-    user=Depends(require_staff),
+    user=Depends(require_auth),
 ):
-    require_competition_access(session, competition_id, user)
+    require_competition_operator_access(session, competition_id, user)
     _ensure_system_phase(session, competition_id)
     rows = session.exec(
         select(CompetitionCheckinPhase)
@@ -504,9 +505,9 @@ def scan_checkin_qr(
     competition_id: int,
     body: CheckinScanBody,
     session: Session = Depends(get_session),
-    user=Depends(require_staff),
+    user=Depends(require_auth),
 ):
-    require_competition_access(session, competition_id, user)
+    require_competition_operator_access(session, competition_id, user)
     phase_code = _sanitize_phase_code(body.phase_code or SYSTEM_PHASE_CODE)
     _ensure_system_phase(session, competition_id)
     phase = session.exec(
@@ -517,6 +518,16 @@ def scan_checkin_qr(
     if not phase:
         raise HTTPException(404, "Fase de check-in no encontrada")
     if not int(phase.enabled or 0):
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="phase_disabled",
+            target_type="checkin_phase",
+            target_id=str(phase.id),
+            meta={"phase_code": phase_code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -534,6 +545,16 @@ def scan_checkin_qr(
 
     payload = _parse_qr_token(body.token)
     if not payload:
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="invalid_token",
+            target_type="checkin_phase",
+            target_id=str(phase.id),
+            meta={"phase_code": phase_code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -549,6 +570,16 @@ def scan_checkin_qr(
         session.commit()
         return {"ok": False, "status": "invalid_token", "phase_code": phase_code}
     if int(payload.get("c")) != competition_id:
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="competition_mismatch",
+            target_type="checkin_phase",
+            target_id=str(phase.id),
+            meta={"phase_code": phase_code},
+        )
         return {"ok": False, "status": "competition_mismatch", "phase_code": phase_code}
 
     identity = session.exec(
@@ -558,6 +589,16 @@ def scan_checkin_qr(
         .with_for_update()
     ).first()
     if not identity:
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="identity_not_found",
+            target_type="checkin_phase",
+            target_id=str(phase.id),
+            meta={"phase_code": phase_code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -574,6 +615,16 @@ def scan_checkin_qr(
         return {"ok": False, "status": "invalid_qr", "phase_code": phase_code}
 
     if int(identity.version or 1) != int(payload.get("v")):
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="stale_token",
+            target_type="participant",
+            target_id=str(identity.participant_id),
+            meta={"phase_code": phase.code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -591,6 +642,16 @@ def scan_checkin_qr(
         session.commit()
         return {"ok": False, "status": "stale_token", "phase_code": phase_code}
     if identity.status != QR_STATUS_ACTIVE:
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="revoked",
+            target_type="participant",
+            target_id=str(identity.participant_id),
+            meta={"phase_code": phase.code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -610,6 +671,16 @@ def scan_checkin_qr(
 
     cp = session.get(CompetitionParticipant, (competition_id, identity.participant_id))
     if not cp or cp.estado != "confirmado":
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="not_confirmed",
+            target_type="participant",
+            target_id=str(identity.participant_id),
+            meta={"phase_code": phase.code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -659,6 +730,16 @@ def scan_checkin_qr(
             .where(CompetitionCheckinUsage.phase_id == phase.id)
             .order_by(CompetitionCheckinUsage.used_at.asc())
         ).first()
+        append_judge_action_audit(
+            session,
+            competition_id=competition_id,
+            user=user,
+            action="qr_scan",
+            result="already_used",
+            target_type="participant",
+            target_id=str(identity.participant_id),
+            meta={"phase_code": phase.code},
+        )
         _append_audit(
             session,
             competition_id=competition_id,
@@ -701,6 +782,16 @@ def scan_checkin_qr(
         used_by_app_user_id=user.get("app_user_id"),
     )
     session.add(usage)
+    append_judge_action_audit(
+        session,
+        competition_id=competition_id,
+        user=user,
+        action="qr_scan",
+        result="accepted",
+        target_type="participant",
+        target_id=str(identity.participant_id),
+        meta={"phase_code": phase.code},
+    )
     _append_audit(
         session,
         competition_id=competition_id,

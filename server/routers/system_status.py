@@ -6,16 +6,15 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
-from sqlmodel import Session
-
 from auth import require_admin
 from cache import Cache
-from database import engine, get_session
+from database import engine
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 APP_STARTED_AT = datetime.now(timezone.utc)
 APP_STARTED_MONOTONIC = time.monotonic()
+SYSTEM_STATUS_DB_TIMEOUT_MS = max(250, int(os.getenv("SYSTEM_STATUS_DB_TIMEOUT_MS", "2500")))
 
 
 def _safe_database_target() -> dict:
@@ -71,10 +70,7 @@ def _pool_snapshot() -> dict:
 
 
 @router.get("/status")
-def read_system_status(
-    session: Session = Depends(get_session),
-    user=Depends(require_admin),
-):
+def read_system_status(user=Depends(require_admin)):
     del user
 
     now = datetime.now(timezone.utc)
@@ -102,50 +98,53 @@ def read_system_status(
 
     try:
         started = time.perf_counter()
-        database["current_database"] = session.execute(text("select current_database()")).scalar_one()
-        database["current_user"] = session.execute(text("select current_user")).scalar_one()
-        database["server_version"] = session.execute(text("show server_version")).scalar_one()
-        database["max_connections"] = int(session.execute(text("show max_connections")).scalar_one())
-        database["superuser_reserved_connections"] = int(
-            session.execute(text("show superuser_reserved_connections")).scalar_one()
-        )
-        database["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+        with engine.begin() as conn:
+            # Keep timeout scoped to this transaction only; never leak it back into pooled connections.
+            conn.execute(text(f"SET LOCAL statement_timeout = {SYSTEM_STATUS_DB_TIMEOUT_MS}"))
+            database["current_database"] = conn.execute(text("select current_database()")).scalar_one()
+            database["current_user"] = conn.execute(text("select current_user")).scalar_one()
+            database["server_version"] = conn.execute(text("show server_version")).scalar_one()
+            database["max_connections"] = int(conn.execute(text("show max_connections")).scalar_one())
+            database["superuser_reserved_connections"] = int(
+                conn.execute(text("show superuser_reserved_connections")).scalar_one()
+            )
+            database["latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
 
-        totals = session.execute(text("""
-            select
-                count(*)::int as total,
-                count(*) filter (where state = 'active')::int as active,
-                count(*) filter (where state = 'idle')::int as idle,
-                count(*) filter (where state = 'idle in transaction')::int as idle_in_transaction
-            from pg_stat_activity
-            where datname = current_database()
-        """)).mappings().one()
-        database["activity_totals"] = {
-            "total": int(totals["total"] or 0),
-            "active": int(totals["active"] or 0),
-            "idle": int(totals["idle"] or 0),
-            "idle_in_transaction": int(totals["idle_in_transaction"] or 0),
-        }
-
-        summary_rows = session.execute(text("""
-            select
-                coalesce(nullif(application_name, ''), '(sin nombre)') as application_name,
-                coalesce(state, 'unknown') as state,
-                count(*)::int as total
-            from pg_stat_activity
-            where datname = current_database()
-            group by application_name, state
-            order by total desc, application_name asc, state asc
-            limit 12
-        """)).mappings().all()
-        database["activity_summary"] = [
-            {
-                "application_name": row["application_name"],
-                "state": row["state"],
-                "total": int(row["total"] or 0),
+            totals = conn.execute(text("""
+                select
+                    count(*)::int as total,
+                    count(*) filter (where state = 'active')::int as active,
+                    count(*) filter (where state = 'idle')::int as idle,
+                    count(*) filter (where state = 'idle in transaction')::int as idle_in_transaction
+                from pg_stat_activity
+                where datname = current_database()
+            """)).mappings().one()
+            database["activity_totals"] = {
+                "total": int(totals["total"] or 0),
+                "active": int(totals["active"] or 0),
+                "idle": int(totals["idle"] or 0),
+                "idle_in_transaction": int(totals["idle_in_transaction"] or 0),
             }
-            for row in summary_rows
-        ]
+
+            summary_rows = conn.execute(text("""
+                select
+                    coalesce(nullif(application_name, ''), '(sin nombre)') as application_name,
+                    coalesce(state, 'unknown') as state,
+                    count(*)::int as total
+                from pg_stat_activity
+                where datname = current_database()
+                group by application_name, state
+                order by total desc, application_name asc, state asc
+                limit 12
+            """)).mappings().all()
+            database["activity_summary"] = [
+                {
+                    "application_name": row["application_name"],
+                    "state": row["state"],
+                    "total": int(row["total"] or 0),
+                }
+                for row in summary_rows
+            ]
     except Exception as exc:
         database["ok"] = False
         database["error"] = str(exc)

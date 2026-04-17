@@ -6,7 +6,7 @@ import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api/axios'
 
-function NotificationSheet({ open, onClose, session, displayName, items = [] }) {
+function NotificationSheet({ open, onClose, session, displayName, items = [], busyActionId = '', onAction = null }) {
   const fallbackItems = useMemo(() => {
     if (session) {
       return [
@@ -117,6 +117,29 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
               >
                 <div style={{ color: 'var(--oa-text)', fontWeight: 700 }}>{item.title}</div>
                 <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>{item.text}</div>
+                {Array.isArray(item.actions) && item.actions.length ? (
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                    {item.actions.map((action) => (
+                      <button
+                        key={action.id}
+                        type="button"
+                        disabled={busyActionId === action.id}
+                        onClick={() => onAction && onAction(action)}
+                        style={{
+                          borderRadius: 999,
+                          border: `1px solid ${action.tone === 'danger' ? 'rgba(239,68,68,0.28)' : action.tone === 'secondary' ? 'var(--oa-border)' : 'rgba(255,107,0,0.32)'}`,
+                          background: action.tone === 'danger' ? 'rgba(239,68,68,0.12)' : action.tone === 'secondary' ? 'rgba(13,15,18,0.64)' : 'rgba(255,107,0,0.16)',
+                          color: 'var(--oa-text)',
+                          padding: '8px 12px',
+                          fontWeight: 800,
+                          fontSize: 12,
+                        }}
+                      >
+                        {busyActionId === action.id ? 'Procesando...' : action.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -149,12 +172,13 @@ function NotificationSheet({ open, onClose, session, displayName, items = [] }) 
 export function AuthenticatedShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, displayName, signOut, participantId, role, isAthlete } = useAuth()
+  const { session, displayName, signOut, participantId, role, isAthlete, persistSession: persistAuthSession } = useAuth()
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
   const [notificationItems, setNotificationItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationActionBusyId, setNotificationActionBusyId] = useState('')
   const isLoginRoute = location.pathname === '/login'
   const topInset = isMobile
     ? 'calc(68px + env(safe-area-inset-top, 0px))'
@@ -193,21 +217,36 @@ export function AuthenticatedShell() {
   }, [notificationsOpen])
 
   useEffect(() => {
-    if (!session || !isAthlete || !participantId) {
+    if (!session) {
       setNotificationItems([])
       setUnreadCount(0)
       return
     }
     let active = true
     const storageKey = `finalrep:enrollment-status:${participantId}`
+    const requests = []
+    if (isAthlete && participantId) {
+      requests.push(
+        api.get(`/participants/${participantId}/competitions`)
+          .then(({ data }) => ({ kind: 'athlete', data }))
+          .catch(() => ({ kind: 'athlete', data: [] }))
+      )
+    }
+    requests.push(
+      api.get('/me/judge-assignments')
+        .then(({ data }) => ({ kind: 'judge', data }))
+        .catch(() => ({ kind: 'judge', data: [] }))
+    )
 
-    api.get(`/participants/${participantId}/competitions`)
-      .then(({ data }) => {
-        if (!active) return
-        const list = Array.isArray(data) ? data : []
+    Promise.all(requests).then((results) => {
+      if (!active) return
+      const dynamicItems = []
+      let unread = 0
+
+      const athleteResult = results.find((item) => item.kind === 'athlete')
+      if (athleteResult) {
+        const list = Array.isArray(athleteResult.data) ? athleteResult.data : []
         const currentMap = {}
-        const dynamicItems = []
-        let unread = 0
         let previousMap = {}
         try {
           previousMap = JSON.parse(window.localStorage.getItem(storageKey) || '{}')
@@ -238,17 +277,31 @@ export function AuthenticatedShell() {
             unread += 1
           }
         }
-        setNotificationItems(dynamicItems)
-        setUnreadCount(unread)
-        if (!window.localStorage.getItem(storageKey)) {
+        if (participantId && !window.localStorage.getItem(storageKey)) {
           window.localStorage.setItem(storageKey, JSON.stringify(currentMap))
         }
-      })
-      .catch(() => {
-        if (!active) return
-        setNotificationItems([])
-        setUnreadCount(0)
-      })
+      }
+
+      const judgeResult = results.find((item) => item.kind === 'judge')
+      if (judgeResult) {
+        const pendingInvites = (Array.isArray(judgeResult.data) ? judgeResult.data : []).filter((item) => item.status === 'pending')
+        for (const invite of pendingInvites) {
+          dynamicItems.unshift({
+            title: `Invitacion de juez: ${invite.competition_name}`,
+            text: 'Te invitaron a operar esta competencia como juez. Puedes aceptar o rechazar ahora.',
+            tone: 'neutral',
+            actions: [
+              { id: `accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'accept' },
+              { id: `reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'reject' },
+            ],
+          })
+        }
+        unread += pendingInvites.length
+      }
+
+      setNotificationItems(dynamicItems)
+      setUnreadCount(unread)
+    })
 
     return () => {
       active = false
@@ -269,6 +322,27 @@ export function AuthenticatedShell() {
       })
       .catch(() => {})
   }, [isAthlete, notificationsOpen, participantId, role, session])
+
+  const handleNotificationAction = async (action) => {
+    if (!action?.assignmentId || !action?.actionType) return
+    setNotificationActionBusyId(action.id)
+    try {
+      if (action.actionType === 'accept') {
+        await api.post(`/judge-assignments/${action.assignmentId}/accept`)
+      } else if (action.actionType === 'reject') {
+        await api.post(`/judge-assignments/${action.assignmentId}/reject`)
+      }
+      const me = await api.get('/auth/me')
+      persistAuthSession({ ...me.data, access_token: session?.token })
+      const judgeAssignments = await api.get('/me/judge-assignments')
+      const pendingInvites = (Array.isArray(judgeAssignments.data) ? judgeAssignments.data : []).filter((item) => item.status === 'pending')
+      setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+      setUnreadCount((current) => Math.max(0, current - (pendingInvites.length >= 0 ? 1 : 0)))
+    } catch {
+    } finally {
+      setNotificationActionBusyId('')
+    }
+  }
 
   const modalVisible = notificationsOpen || overlayOpen
 
@@ -395,6 +469,8 @@ export function AuthenticatedShell() {
         session={session}
         displayName={displayName}
         items={notificationItems}
+        busyActionId={notificationActionBusyId}
+        onAction={handleNotificationAction}
       />
 
       {isMobile && !modalVisible && (

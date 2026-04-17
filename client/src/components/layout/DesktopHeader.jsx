@@ -1,31 +1,41 @@
-import { Bell, CalendarDays, House, LogIn, LogOut, UserCircle2 } from 'lucide-react'
+import { Bell, CalendarDays, Gavel, House, LogIn, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
 
-const NAV_ITEMS = {
-  public: [
+const PUBLIC_NAV = [
+  { label: 'Inicio', icon: House, to: '/' },
+  { label: 'Eventos', icon: CalendarDays, to: '/events' },
+]
+
+function buildNavItems(session) {
+  if (!session) return PUBLIC_NAV
+
+  if (session.role === 'admin') {
+    return [
+      { label: 'Inicio', icon: House, to: '/' },
+      { label: 'Eventos', icon: CalendarDays, to: '/events' },
+      { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
+      { label: 'Perfil', icon: UserCircle2, to: '/profile' },
+      { label: 'Admin', icon: ShieldCheck, to: '/admin' },
+    ]
+  }
+
+  const items = [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
-  ],
-  user: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Perfil', icon: UserCircle2, to: '/profile' },
-  ],
-  organizer: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Panel', icon: UserCircle2, to: '/organizer' },
-  ],
-  admin: [
-    { label: 'Inicio', icon: House, to: '/' },
-    { label: 'Eventos', icon: CalendarDays, to: '/events' },
-    { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
-    { label: 'Perfil', icon: UserCircle2, to: '/profile' },
-    { label: 'Admin', icon: UserCircle2, to: '/admin' },
-  ],
+  ]
+  if (session.participantId) {
+    items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
+  }
+  if (session.organizerEnabled) {
+    items.push({ label: 'Panel', icon: UserCircle2, to: '/organizer' })
+  }
+  if (session.judgeEnabled) {
+    items.push({ label: 'Juez', icon: Gavel, to: '/judge' })
+  }
+  items.push({ label: 'Perfil', icon: UserCircle2, to: '/profile' })
+  return items
 }
 
 function isActivePath(pathname, target) {
@@ -35,6 +45,7 @@ function isActivePath(pathname, target) {
   if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')
+  if (target === '/judge') return pathname.startsWith('/judge')
   if (target === '/profile') return pathname.startsWith('/profile')
   return pathname === target || pathname.startsWith(`${target}?`)
 }
@@ -44,17 +55,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
   const location = useLocation()
   const { session, signOut } = useAuth()
 
-  const items = (() => {
-    if (!session) return NAV_ITEMS.public
-    if (session.participantId && session.organizerEnabled && session.role !== 'admin') {
-      return [
-        ...NAV_ITEMS.user.slice(0, 3),
-        { label: 'Panel', icon: UserCircle2, to: '/organizer' },
-        NAV_ITEMS.user[3],
-      ]
-    }
-    return NAV_ITEMS[session.role] || NAV_ITEMS.user
-  })()
+  const items = buildNavItems(session)
 
   const iconButtonStyle = {
     width: 42,

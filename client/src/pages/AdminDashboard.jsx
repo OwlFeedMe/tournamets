@@ -9271,6 +9271,153 @@ function CompetitionResultsPanel({ competition }) {
   )
 }
 
+function CompetitionJudgesPanel({ competition }) {
+  const [items, setItems] = useState([])
+  const [auditItems, setAuditItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const load = async () => {
+    if (!competition?.id) return
+    setLoading(true)
+    try {
+      const [judgesRes, auditRes] = await Promise.all([
+        api.get(`/competitions/${competition.id}/judges`),
+        api.get(`/competitions/${competition.id}/judge-audit`),
+      ])
+      setItems(Array.isArray(judgesRes.data) ? judgesRes.data : [])
+      setAuditItems(Array.isArray(auditRes.data) ? auditRes.data : [])
+      setMsg(null)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar jueces y auditoria.' })
+      setItems([])
+      setAuditItems([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [competition?.id])
+
+  const inviteJudge = async (event) => {
+    event.preventDefault()
+    if (!inviteEmail.trim()) return
+    setBusy(true)
+    try {
+      await api.post(`/competitions/${competition.id}/judges/invite`, { email: inviteEmail.trim() })
+      setInviteEmail('')
+      setMsg({ type: 'success', text: 'Invitacion enviada.' })
+      await load()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la invitacion.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const revokeJudge = async (item) => {
+    if (!window.confirm(`Eliminar acceso de juez para ${item.judge_display_name || item.invited_email}?`)) return
+    setBusy(true)
+    try {
+      await api.delete(`/competitions/${competition.id}/judges/${item.id}`)
+      setMsg({ type: 'success', text: 'Juez removido.' })
+      await load()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo remover el juez.' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const activeItems = items.filter((item) => item.status === 'active')
+  const pendingItems = items.filter((item) => item.status === 'pending')
+
+  return (
+    <div style={{ display: 'grid', gap: 16 }}>
+      <div className="card" style={{ display: 'grid', gap: 12 }}>
+        <div>
+          <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800 }}>Jueces de la competencia</div>
+          <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>Invita por correo, revisa el estado y mantén trazabilidad de sus acciones.</div>
+        </div>
+        <form onSubmit={inviteJudge} style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <input
+            value={inviteEmail}
+            onChange={(event) => setInviteEmail(event.target.value)}
+            placeholder="correo@finalrep.com"
+            style={{ flex: '1 1 280px', minWidth: 0 }}
+          />
+          <button className="btn-primary" type="submit" disabled={busy || !inviteEmail.trim()}>
+            {busy ? 'Enviando...' : 'Invitar juez'}
+          </button>
+        </form>
+        {msg ? <div className={`alert alert-${msg.type}`}>{msg.text}</div> : null}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+        <div className="card" style={{ display: 'grid', gap: 10 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 800 }}>Jueces activos</div>
+          <div style={{ color: '#AAB2C0', fontSize: 13 }}>{activeItems.length} activos</div>
+          {activeItems.length ? activeItems.map((item) => (
+            <div key={item.id} style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14, display: 'grid', gap: 8 }}>
+              <div style={{ fontWeight: 800, color: '#F5F7FA' }}>{item.judge_display_name || item.judge_participant_name || item.invited_email}</div>
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>{item.judge_username || item.invited_email}</div>
+              <div style={{ color: '#7AF0DE', fontSize: 12, fontWeight: 700 }}>Activo</div>
+              <button className="btn-danger btn-sm" onClick={() => revokeJudge(item)} disabled={busy}>
+                Remover
+              </button>
+            </div>
+          )) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>Aun no hay jueces activos.</div>}
+        </div>
+
+        <div className="card" style={{ display: 'grid', gap: 10 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 800 }}>Invitaciones pendientes</div>
+          <div style={{ color: '#AAB2C0', fontSize: 13 }}>{pendingItems.length} pendientes</div>
+          {pendingItems.length ? pendingItems.map((item) => (
+            <div key={item.id} style={{ borderRadius: 16, border: '1px solid rgba(245,158,11,0.24)', background: 'rgba(245,158,11,0.08)', padding: 14, display: 'grid', gap: 8 }}>
+              <div style={{ fontWeight: 800, color: '#F5F7FA' }}>{item.judge_display_name || item.invited_email}</div>
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>{item.invited_email}</div>
+              <div style={{ color: '#F8C56E', fontSize: 12, fontWeight: 700 }}>Pendiente de respuesta</div>
+              <button className="btn-secondary btn-sm" onClick={() => revokeJudge(item)} disabled={busy}>
+                Cancelar invitacion
+              </button>
+            </div>
+          )) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay invitaciones pendientes.</div>}
+        </div>
+      </div>
+
+      <div className="card" style={{ display: 'grid', gap: 10 }}>
+        <div style={{ color: '#F5F7FA', fontWeight: 800 }}>Auditoria de jueces</div>
+        {loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando auditoria...</div> : null}
+        {!loading && !auditItems.length ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Todavia no hay acciones registradas.</div> : null}
+        {!loading && auditItems.length ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {auditItems.slice(0, 30).map((item) => (
+              <div key={item.id} style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 12, display: 'grid', gap: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{item.action}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>{formatDate(item.created_at)}</div>
+                </div>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                  {item.actor_display_name || item.judge_invited_email || 'Sistema'} · resultado: {item.result}
+                </div>
+                {item.target_type || item.target_id ? (
+                  <div style={{ color: '#6B7280', fontSize: 12 }}>
+                    {item.target_type || 'target'} {item.target_id ? `· ${item.target_id}` : ''}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function CompetitionsTab() {
   const { role, organizerEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
@@ -9555,6 +9702,7 @@ function CompetitionsTab() {
   const liveSubSections = [
     { id: 'results', label: 'Resultados' },
     { id: 'timer', label: 'Cronometro' },
+    { id: 'judges', label: 'Jueces' },
   ]
   const currentEnrollCount = selectedCompetition ? (enrollCounts[selectedCompetition.id] || 0) : 0
   const workspaceSections = COMPETITION_WORKSPACE_SECTIONS
@@ -10139,6 +10287,7 @@ function CompetitionsTab() {
 
               {competitionTab === 'results' && <CompetitionResultsPanel competition={selectedCompetition} />}
               {competitionTab === 'timer' && <CompetitionTimerPanel competition={selectedCompetition} />}
+              {competitionTab === 'judges' && <CompetitionJudgesPanel competition={selectedCompetition} />}
             </div>
           )}
 

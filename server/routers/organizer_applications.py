@@ -10,7 +10,6 @@ from auth import get_effective_participant_id, invalidate_app_user, require_admi
 from constants import Role
 from database import get_session
 from models import (
-    AppUser,
     OrganizerApplication,
     OrganizerApplicationCreate,
     OrganizerApplicationReview,
@@ -65,19 +64,19 @@ def _profile_snapshot(participant: Participant) -> dict:
     }
 
 
-def _can_request_organizer_access(app_user: AppUser | None) -> bool:
-    if not app_user:
+def _can_request_organizer_access(user: Participant | None) -> bool:
+    if not user:
         return False
-    if app_user.role != Role.USER:
+    if user.role != Role.USER:
         return False
-    if int(app_user.organizer_enabled or 0):
+    if int(user.organizer_enabled or 0):
         return False
-    if int(app_user.admin_enabled or 0):
+    if int(user.admin_enabled or 0):
         return False
     return True
 
 
-def _serialize_application(item: OrganizerApplication, *, app_user: AppUser | None = None, participant: Participant | None = None) -> dict:
+def _serialize_application(item: OrganizerApplication, *, app_user: Participant | None = None, participant: Participant | None = None) -> dict:
     payload = item.model_dump()
     try:
         payload["profile_snapshot"] = json.loads(item.profile_snapshot_json or "{}")
@@ -112,7 +111,7 @@ def get_my_organizer_application(
     if app_user_id is None or participant_id is None:
         raise HTTPException(403, "Solo usuarios finales")
 
-    app_user = session.get(AppUser, int(app_user_id))
+    app_user = session.get(Participant, int(app_user_id))
     if not _can_request_organizer_access(app_user):
         raise HTTPException(403, "La cuenta no puede solicitar este acceso")
 
@@ -141,7 +140,7 @@ def create_organizer_application(
     if app_user_id is None or participant_id is None:
         raise HTTPException(403, "Solo usuarios finales")
 
-    app_user = session.get(AppUser, int(app_user_id))
+    app_user = session.get(Participant, int(app_user_id))
     if not _can_request_organizer_access(app_user):
         raise HTTPException(403, "La cuenta no puede enviar esta solicitud")
 
@@ -227,7 +226,7 @@ def list_organizer_applications(
     participant_ids = {int(item.participant_id) for item in items}
     app_users = {
         item.id: item
-        for item in session.exec(select(AppUser).where(AppUser.id.in_(app_user_ids))).all()
+        for item in session.exec(select(Participant).where(Participant.id.in_(app_user_ids))).all()
     } if app_user_ids else {}
     participants = {
         item.id: item
@@ -259,7 +258,7 @@ def review_organizer_application(
     if next_status not in {"approved", "rejected"}:
         raise HTTPException(400, "Estado invalido")
 
-    app_user = session.get(AppUser, int(item.app_user_id))
+    app_user = session.get(Participant, int(item.app_user_id))
     if not app_user:
         raise HTTPException(404, "Usuario de la solicitud no encontrado")
 

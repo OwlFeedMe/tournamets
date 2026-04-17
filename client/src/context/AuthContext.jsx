@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
 const STORAGE_KEYS = {
@@ -88,6 +88,7 @@ export function getHomePath(role) {
   const normalized = normalizeRole(role)
   if (normalized === 'admin') return '/admin'
   if (normalized === 'organizer') return '/organizer'
+  if (normalized === 'judge') return '/judge'
   return '/profile'
 }
 
@@ -178,6 +179,7 @@ export function persistSession(payload) {
 export function AuthProvider({ children }) {
   const location = useLocation()
   const [session, setSession] = useState(() => readStoredSession())
+  const lastServerRefreshRef = useRef(0)
 
   useLayoutEffect(() => {
     setSession(readStoredSession())
@@ -193,56 +195,56 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  const refreshSession = useCallback(() => {
-    setSession(readStoredSession())
-  }, [])
-
   const persistAndRefreshSession = useCallback((payload) => {
     persistSession(payload)
     setSession(readStoredSession())
   }, [])
 
+  const refreshSession = useCallback(
+    async ({ force = false } = {}) => {
+      if (typeof window === 'undefined') return
+      const token = window.localStorage.getItem(STORAGE_KEYS.token)
+      if (!token) {
+        setSession(null)
+        return
+      }
+      const now = Date.now()
+      if (!force && now - lastServerRefreshRef.current < 8000) {
+        setSession(readStoredSession())
+        return
+      }
+      lastServerRefreshRef.current = now
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!response.ok) {
+          if (response.status === 401) {
+            Object.values(STORAGE_KEYS).forEach((key) => window.localStorage.removeItem(key))
+            setSession(null)
+            window.dispatchEvent(new Event(SESSION_EVENT))
+          }
+          return
+        }
+        const payload = await response.json()
+        storeSessionPayload(payload, token)
+        setSession(readStoredSession())
+      } catch {
+        setSession(readStoredSession())
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     if (!session?.token) return
+    refreshSession({ force: true })
+  }, [session?.token, refreshSession])
 
-    let cancelled = false
-    fetch('/api/auth/me', {
-      headers: {
-        Authorization: `Bearer ${session.token}`,
-      },
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Session ${response.status}`)
-        }
-        return response.json()
-      })
-      .then((payload) => {
-        if (cancelled) return
-        storeSessionPayload(payload, session.token)
-        setSession(readStoredSession())
-      })
-      .catch((err) => {
-        if (cancelled) return
-        if (err?.message?.includes('401')) {
-          window.localStorage.removeItem(STORAGE_KEYS.token)
-          window.localStorage.removeItem(STORAGE_KEYS.role)
-          window.localStorage.removeItem(STORAGE_KEYS.baseRole)
-          window.localStorage.removeItem(STORAGE_KEYS.extraRoles)
-          window.localStorage.removeItem(STORAGE_KEYS.nombre)
-          window.localStorage.removeItem(STORAGE_KEYS.participantId)
-          window.localStorage.removeItem(STORAGE_KEYS.organizerEnabled)
-          window.localStorage.removeItem(STORAGE_KEYS.judgeEnabled)
-          window.localStorage.removeItem(STORAGE_KEYS.adminEnabled)
-          setSession(null)
-          window.dispatchEvent(new Event(SESSION_EVENT))
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [session?.token])
+  useEffect(() => {
+    if (!session?.token) return
+    refreshSession()
+  }, [location.pathname, refreshSession, session?.token])
 
   const signOut = useCallback(() => {
     window.localStorage.removeItem(STORAGE_KEYS.token)
@@ -271,10 +273,11 @@ export function AuthProvider({ children }) {
       roleRank,
       displayName: session?.displayName || '',
       participantId: session?.participantId || null,
+      appUserId: session?.claims?.app_user_id || null,
       organizerEnabled: !!session?.organizerEnabled,
       judgeEnabled: !!session?.judgeEnabled,
       adminEnabled: !!session?.adminEnabled,
-      isAthlete: !!session?.participantId,
+      isAthlete: !!session?.participantId && (session?.role === 'user' || session?.baseRole === 'user'),
       refreshSession,
       persistSession: persistAndRefreshSession,
       signOut,

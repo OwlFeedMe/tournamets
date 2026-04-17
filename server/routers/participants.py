@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 
 from auth import get_effective_participant_id, invalidate_app_user, is_end_user, require_admin, require_auth
 from database import get_session
-from models import AppUser, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
+from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
 
 
 def _normalize(s: str) -> str:
@@ -93,21 +93,14 @@ def _validate_participant_payload(data: dict) -> None:
         raise HTTPException(400, "Selecciona un genero valido")
 
 
-def _sync_app_user_username(session: Session, participant: Participant) -> int | None:
-    """Actualiza username del AppUser al email del participante.
-
-    Retorna el id del AppUser modificado (para invalidar cache post-commit),
-    o None si no hubo cambio.
-    """
+def _sync_account_fields(participant: Participant) -> int | None:
     normalized_email = (participant.email or "").strip().lower()
-    if not normalized_email:
-        return None
-    app_user = session.exec(select(AppUser).where(AppUser.participant_id == participant.id)).first()
-    if not app_user or app_user.username == normalized_email:
-        return None
-    app_user.username = normalized_email
-    session.add(app_user)
-    return int(app_user.id) if app_user.id is not None else None
+    if normalized_email:
+        participant.username = normalized_email
+    elif not participant.username:
+        participant.username = None
+    participant.display_name = f"{(participant.nombre or '').strip()} {(participant.apellido or '').strip()}".strip() or participant.cedula
+    return int(participant.id) if participant.id is not None else None
 
 
 def _parse_optional_date(value) -> Optional[date]:
@@ -187,7 +180,7 @@ def update_my_profile(
     for field, value in payload.items():
         setattr(p, field, value)
 
-    changed_app_user_id = _sync_app_user_username(session, p)
+    changed_app_user_id = _sync_account_fields(p)
 
     session.add(p)
     try:
@@ -232,36 +225,26 @@ def list_participants(session: Session = Depends(get_session), _=Depends(require
 
 @router.get("/admin-users")
 def list_admin_users(session: Session = Depends(get_session), _=Depends(require_admin)):
-    participants = session.exec(
-        select(Participant).order_by(Participant.apellido, Participant.nombre)
-    ).all()
-    app_users = {
-        item.participant_id: item
-        for item in session.exec(select(AppUser).where(AppUser.participant_id.is_not(None))).all()
-        if item.participant_id is not None
-    }
-
+    participants = session.exec(select(Participant).order_by(Participant.apellido, Participant.nombre)).all()
     items = []
     for participant in participants:
-        app_user = app_users.get(participant.id)
         extra_role = None
-        if app_user:
-            if int(app_user.admin_enabled or 0):
-                extra_role = "admin"
-            elif int(app_user.organizer_enabled or 0):
-                extra_role = "organizer"
-            elif int(app_user.judge_enabled or 0):
-                extra_role = "judge"
+        if int(participant.admin_enabled or 0):
+            extra_role = "admin"
+        elif int(participant.organizer_enabled or 0):
+            extra_role = "organizer"
+        elif int(participant.judge_enabled or 0):
+            extra_role = "judge"
 
         payload = participant.model_dump()
-        payload["app_user_id"] = app_user.id if app_user else None
-        payload["username"] = app_user.username if app_user else None
-        payload["display_name"] = app_user.display_name if app_user else None
-        payload["base_role"] = app_user.role if app_user else "user"
+        payload["app_user_id"] = participant.id
+        payload["username"] = participant.username
+        payload["display_name"] = participant.display_name
+        payload["base_role"] = participant.role or "user"
         payload["extra_role"] = extra_role
-        payload["organizer_enabled"] = bool(app_user and int(app_user.organizer_enabled or 0))
-        payload["judge_enabled"] = bool(app_user and int(app_user.judge_enabled or 0))
-        payload["admin_enabled"] = bool(app_user and int(app_user.admin_enabled or 0))
+        payload["organizer_enabled"] = bool(int(participant.organizer_enabled or 0))
+        payload["judge_enabled"] = bool(int(participant.judge_enabled or 0))
+        payload["admin_enabled"] = bool(int(participant.admin_enabled or 0))
         items.append(payload)
     return items
 
@@ -281,17 +264,13 @@ def update_participant_role(
     if extra_role not in {"", "user", "organizer", "judge", "admin"}:
         raise HTTPException(400, "Rol invalido")
 
-    app_user = session.exec(select(AppUser).where(AppUser.participant_id == participant_id)).first()
-    if not app_user:
-        raise HTTPException(404, "Cuenta de app no encontrada")
-
-    app_user.role = "user"
-    app_user.organizer_enabled = 1 if extra_role == "organizer" else 0
-    app_user.judge_enabled = 1 if extra_role == "judge" else 0
-    app_user.admin_enabled = 1 if extra_role == "admin" else 0
-    session.add(app_user)
+    participant.role = "user"
+    participant.organizer_enabled = 1 if extra_role == "organizer" else 0
+    participant.judge_enabled = 1 if extra_role == "judge" else 0
+    participant.admin_enabled = 1 if extra_role == "admin" else 0
+    session.add(participant)
     session.commit()
-    invalidate_app_user(app_user.id)
+    invalidate_app_user(participant.id)
 
     return {
         "ok": True,
@@ -312,6 +291,8 @@ def get_participant(participant_id: int, session: Session = Depends(get_session)
 def create_participant(body: ParticipantCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
     payload = _sync_genero_fields(body.model_dump())
     _validate_participant_payload(payload)
+    payload["display_name"] = f"{str(payload.get('nombre') or '').strip()} {str(payload.get('apellido') or '').strip()}".strip() or payload.get("cedula")
+    payload["username"] = str(payload.get("email") or "").strip().lower() or None
     participant = Participant.model_validate(payload)
     session.add(participant)
     try:
@@ -336,7 +317,7 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
     for field, value in payload.items():
         setattr(p, field, value)
 
-    changed_app_user_id = _sync_app_user_username(session, p)
+    changed_app_user_id = _sync_account_fields(p)
 
     session.add(p)
     try:

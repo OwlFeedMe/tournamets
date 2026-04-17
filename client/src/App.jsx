@@ -14,6 +14,7 @@ const CompetitionVariants = lazy(() => import('./pages/CompetitionVariants'))
 const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.EventsPage })))
 const HomeVariants = lazy(() => import('./pages/HomeVariants'))
 const Leaderboard = lazy(() => import('./pages/Leaderboard'))
+const JudgeHub = lazy(() => import('./pages/JudgeHub'))
 const Login = lazy(() => import('./pages/Login'))
 const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.MyEventsPage })))
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
@@ -122,6 +123,22 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['user', 'admin']}>
                       <MyEventsPage />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/judge"
+                  element={
+                    <RoleGate allowedRoles={['judge', 'admin']}>
+                      <JudgeHub />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/judge/*"
+                  element={
+                    <RoleGate allowedRoles={['judge', 'admin']}>
+                      <JudgeHub />
                     </RoleGate>
                   }
                 />
