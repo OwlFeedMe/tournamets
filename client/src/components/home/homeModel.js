@@ -1,11 +1,37 @@
 export const homePageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 24%), radial-gradient(circle at 82% 18%, rgba(94,234,212,0.10), transparent 20%), radial-gradient(circle at 20% 78%, rgba(205,170,107,0.08), transparent 18%), #0D0F12'
 
-function formatDate(value) {
+export function formatCompetitionDate(value, options = {}) {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
+  const { includeYear = true } = options
+  const formatter = new Intl.DateTimeFormat('es-CO', includeYear
+    ? { day: 'numeric', month: 'short', year: 'numeric' }
+    : { day: 'numeric', month: 'short' })
+  if (includeYear) return formatter.format(date)
+  const parts = formatter.formatToParts(date)
+  const day = parts.find((part) => part.type === 'day')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  if (!day || !month) return null
+  return `${day} de ${month}`
+}
+
+export function formatCompetitionDateRange(startValue, endValue, options = {}) {
+  const start = formatCompetitionDate(startValue, options)
+  const end = formatCompetitionDate(endValue, options)
+  if (start && end) return `${start} - ${end}`
+  if (start) return start
+  if (end) return end
+  return options.fallback || 'Por confirmar'
+}
+
+export function formatEnrollmentDateRange(competition, options = {}) {
+  return formatCompetitionDateRange(competition?.enrollment_start, competition?.enrollment_end, options)
+}
+
+export function formatCompetitionWindow(competition, options = {}) {
+  return formatCompetitionDateRange(competition?.competition_start, competition?.competition_end, options)
 }
 
 export function resolveCompetitionAsset(competition, asset) {
@@ -43,22 +69,22 @@ export function scheduleSummary(competition) {
   const items = parseScheduleItems(competition?.schedule_items)
   if (items.length) {
     const main = items.slice(0, 2).map(item => {
-      const start = formatDate(item.start_at)
-      const end = formatDate(item.end_at)
+      const start = formatCompetitionDate(item.start_at)
+      const end = formatCompetitionDate(item.end_at)
       if (start && end && start !== end) return `${item.label || 'Fecha'}: ${start} - ${end}`
       return `${item.label || 'Fecha'}: ${start || end || 'Por confirmar'}`
     })
     return main.join(' | ')
   }
-  const competitionStart = formatDate(competition?.competition_start)
-  const competitionEnd = formatDate(competition?.competition_end)
+  const competitionStart = formatCompetitionDate(competition?.competition_start)
+  const competitionEnd = formatCompetitionDate(competition?.competition_end)
   if (competitionStart || competitionEnd) {
     return competitionStart && competitionEnd
       ? `${competitionStart} - ${competitionEnd}`
       : (competitionStart || competitionEnd)
   }
-  const enrollmentStart = formatDate(competition?.enrollment_start)
-  const enrollmentEnd = formatDate(competition?.enrollment_end)
+  const enrollmentStart = formatCompetitionDate(competition?.enrollment_start)
+  const enrollmentEnd = formatCompetitionDate(competition?.enrollment_end)
   return enrollmentStart || enrollmentEnd
     ? `${enrollmentStart || 'Ahora'}${enrollmentEnd ? ` - ${enrollmentEnd}` : ''}`
     : 'Fechas por confirmar'
@@ -167,20 +193,9 @@ export function buildCommandItems(competitions) {
 export function mapCompetitionViewModel(competition, index) {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
-  const enrollmentStart = formatDate(competition.enrollment_start)
-  const enrollmentEnd = formatDate(competition.enrollment_end)
-  const enrollmentStartLabel = enrollmentStart || enrollmentEnd
-    ? (enrollmentStart && enrollmentEnd
-      ? `${enrollmentStart} - ${enrollmentEnd}`
-      : (enrollmentStart || enrollmentEnd))
-    : 'Por confirmar'
+  const enrollmentStartLabel = formatEnrollmentDateRange(competition, { fallback: 'Por confirmar' })
   const competitionDateLabel = competition.competition_start || competition.competition_end
-    ? scheduleSummary({
-      competition_start: competition.competition_start,
-      competition_end: competition.competition_end,
-      enrollment_start: null,
-      enrollment_end: null,
-    })
+    ? formatCompetitionWindow(competition, { fallback: 'Por confirmar' })
     : 'Por confirmar'
   return {
     id: competition.id,

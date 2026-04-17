@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
+import {
+  filterCompetitionsByQuery,
+  formatCompetitionDate,
+  formatCompetitionWindow,
+  resolveCompetitionAsset,
+  truncate,
+} from '../components/home/homeModel'
 import { useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
@@ -12,26 +19,6 @@ const pageStyle = {
   color: '#F5F7FA',
 }
 
-function formatDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  const parts = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).formatToParts(date)
-  const day = parts.find((part) => part.type === 'day')?.value
-  const month = parts.find((part) => part.type === 'month')?.value
-  if (!day || !month) return null
-  return `${day} de ${month}`
-}
-
-function formatCompetitionWindow(competition) {
-  const start = formatDate(competition?.competition_start)
-  const end = formatDate(competition?.competition_end)
-  if (start && end) return `${start} - ${end}`
-  if (start) return start
-  if (end) return end
-  return 'Fechas de competencia por confirmar'
-}
-
 function competitionMonogram(name) {
   const parts = String(name || '')
     .trim()
@@ -40,42 +27,6 @@ function competitionMonogram(name) {
     .slice(0, 2)
   if (!parts.length) return 'FR'
   return parts.map((part) => part[0]?.toUpperCase() || '').join('')
-}
-
-function truncate(text, max = 120) {
-  const value = (text || '').trim()
-  if (!value) return 'Consulta los detalles del evento y sigue su avance desde el leaderboard.'
-  return value.length > max ? `${value.slice(0, max - 1)}...` : value
-}
-
-function resolveCompetitionAsset(competition, asset) {
-  if (!competition) return ''
-  const profile = competition.profile_image_url || ''
-  const banner = competition.banner_image_url || ''
-  const desktop = competition.banner_desktop_url || ''
-  const mobile = competition.banner_mobile_url || ''
-  const legacy = competition.imagen_url || ''
-  if (asset === 'profile') return profile || legacy
-  if (asset === 'banner') return banner || desktop || mobile || legacy
-  return legacy
-}
-
-function competitionSearchText(competition) {
-  return [
-    competition?.nombre,
-    competition?.descripcion,
-    competition?.general_info_text,
-    competition?.lugar,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-}
-
-function filterCompetitionsByQuery(items, query) {
-  const value = String(query || '').trim().toLowerCase()
-  if (!value) return items
-  return (items || []).filter((competition) => competitionSearchText(competition).includes(value))
 }
 
 function SearchInput({ value, onChange, placeholder }) {
@@ -201,7 +152,7 @@ function CheckinQrModal({ open, onClose, loading, payload, error, competitionNam
                 <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.55)', padding: 14, display: 'grid', gap: 8 }}>
                   <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Codigo de respaldo: <span style={{ color: '#00C2A8' }}>{payload.short_code || '--'}</span></div>
                   <div style={{ color: '#AAB2C0', fontSize: 13 }}>Estado: {payload.check_in_used ? 'Check-in ya usado' : 'Disponible para check-in'}</div>
-                  {payload.check_in_used_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Uso registrado: {formatDate(payload.check_in_used_at)}</div> : null}
+                  {payload.check_in_used_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Uso registrado: {formatCompetitionDate(payload.check_in_used_at)}</div> : null}
                 </div>
               </>
             ) : null}
@@ -271,7 +222,7 @@ export function EventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="var(--oa-accent)" />
-                        {formatCompetitionWindow(competition)}
+                        {formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fechas de competencia por confirmar' })}
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <MapPin size={14} color="var(--oa-primary)" />
@@ -509,7 +460,7 @@ export function MyEventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="#5EEAD4" />
-                        {formatCompetitionWindow(competition)}
+                        {formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fechas de competencia por confirmar' })}
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <MapPin size={14} color="var(--oa-primary)" />
