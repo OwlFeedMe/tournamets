@@ -320,6 +320,36 @@ def render_password_reset_code(*, nombre: str, code: str) -> tuple[str, str, str
     return subject, text, html
 
 
+def render_spectator_tickets_approved(
+    *,
+    buyer_name: str,
+    competition_name: str,
+    quantity: int,
+    order_id: str,
+) -> tuple[str, str, str]:
+    subject = f"Tus boletas - {competition_name}"
+    text = (
+        f"Hola {buyer_name},\n\n"
+        f"Tu pago fue aprobado para {competition_name}.\n"
+        f"Cantidad de boletas: {quantity}\n"
+        f"Referencia: {order_id}\n\n"
+        "Adjuntamos las boletas en PDF. Presenta el QR de cada boleta en el ingreso.\n\n"
+        "Equipo FinalRep"
+    )
+    html = _html("Boletas confirmadas", f"""\
+      <p>Hola <strong>{buyer_name}</strong>,</p>
+      <p>Tu pago fue aprobado. <span class="badge badge-green">Aprobado</span></p>
+      <hr class="divider">
+      <p class="detail"><span>Competencia:</span> <strong>{competition_name}</strong></p>
+      <p class="detail"><span>Cantidad de boletas:</span> {quantity}</p>
+      <p class="detail"><span>Referencia:</span> {order_id}</p>
+      <hr class="divider">
+      <p>Adjuntamos las boletas en PDF. Cada boleta tiene un QR unico para escaneo en puerta.</p>
+      <p class="muted">Si tienes dudas, escribe a <a href="mailto:support@finalrep.co" style="color:#e63946;">support@finalrep.co</a></p>
+    """)
+    return subject, text, html
+
+
 def render_organizer_application_rejected(
     *,
     nombre: str,

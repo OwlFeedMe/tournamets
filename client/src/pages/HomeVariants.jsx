@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import api from '../api/axios'
 import {
@@ -35,19 +35,6 @@ const premium = {
   silverGradient: 'linear-gradient(135deg, #F1F4F8 0%, #C7CDD6 100%)',
 }
 
-function navLinkStyle(active) {
-  return {
-    textDecoration: 'none',
-    padding: '10px 12px',
-    borderRadius: 6,
-    border: `1px solid ${active ? 'rgba(94,234,212,0.34)' : premium.border}`,
-    background: active ? 'rgba(94,234,212,0.10)' : 'rgba(17,20,25,0.72)',
-    color: active ? premium.teal : premium.textSoft,
-    fontSize: 13,
-    fontWeight: 700,
-  }
-}
-
 function signalStyle() {
   return {
     borderTop: `1px solid ${premium.border}`,
@@ -59,33 +46,34 @@ function signalStyle() {
 
 function SharedTopMeta({ totalCompetitions, openCount, activeCount }) {
   return (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', color: premium.textSoft, fontSize: 13 }}>
-      <span>{totalCompetitions} eventos visibles</span>
-      <span>{openCount} abiertos</span>
-      <span>{activeCount} con ranking activo</span>
+    <div style={{ display: 'grid', gap: 10 }}>
+      <TopMetric value={totalCompetitions} label="eventos visibles" tone={premium.teal} />
+      <TopMetric value={openCount} label="eventos abiertos" tone={premium.silver} />
+      <TopMetric value={activeCount} label="ranking activo" tone={premium.gold} />
     </div>
   )
 }
 
-function HomeVariantTop({ variant, isMobile, totalCompetitions, openCount, activeCount, panelHref }) {
+function HomeVariantTop({ variant, isMobile, totalCompetitions, openCount, activeCount }) {
   if (variant === 1) {
     return (
       <section style={{ padding: isMobile ? '8px 0 20px' : '18px 0 30px', marginBottom: 6 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.3fr) minmax(280px, 0.7fr)', gap: 24 }}>
           <div>
             <h1 style={{ margin: 0, color: premium.text, fontSize: isMobile ? 'clamp(30px, 9vw, 40px)' : 'clamp(40px, 7vw, 82px)', lineHeight: isMobile ? 1.02 : 0.92, overflowWrap: 'anywhere' }}>
-              Donde la competencia se corre con precision, ritmo y autoridad.
+              FinalRep: competencia en tiempo real.
             </h1>
             <p style={{ margin: '14px 0 0', color: premium.textSoft, fontSize: isMobile ? 15 : 17, lineHeight: isMobile ? 1.65 : 1.8, maxWidth: 760 }}>
-              FinalRep reúne configuración completa, resultados en tiempo real y una clasificación que responde al instante cuando el evento entra en movimiento.
+              Configura, publica resultados y mueve el ranking sin perder ritmo.
             </p>
+            <div style={{ marginTop: 14, display: 'grid', gap: 6, color: premium.textSoft, fontSize: 14, lineHeight: 1.5, maxWidth: 760 }}>
+              <div><strong style={{ color: premium.text }}>Control total:</strong> formatos, categorias y flujo en un solo lugar.</div>
+              <div><strong style={{ color: premium.text }}>Ritmo en vivo:</strong> cada score impacta al instante.</div>
+              <div><strong style={{ color: premium.text }}>Lectura clara:</strong> ranking oficial, limpio y preciso.</div>
+            </div>
           </div>
           <div style={{ display: 'grid', alignContent: 'end', gap: 18 }}>
             <SharedTopMeta totalCompetitions={totalCompetitions} openCount={openCount} activeCount={activeCount} />
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, max-content)', gap: 10, justifyContent: 'start' }}>
-              <Link to="/leaderboard" style={{ ...navLinkStyle(false), background: premium.silverGradient, color: premium.bg, border: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Ver leaderboard</Link>
-              <Link to={panelHref} style={{ ...navLinkStyle(false), minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>Entrar a FinalRep</Link>
-            </div>
           </div>
         </div>
       </section>
@@ -243,6 +231,15 @@ function MetricRow({ label, value }) {
   )
 }
 
+function TopMetric({ value, label, tone }) {
+  return (
+    <div style={{ border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.5)', borderRadius: 6, padding: '12px 14px', display: 'grid', gap: 6 }}>
+      <div style={{ color: tone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.1 }}>{label}</div>
+      <div style={{ color: premium.text, fontSize: 26, fontWeight: 800, lineHeight: 0.95 }}>{String(value).padStart(2, '0')}</div>
+    </div>
+  )
+}
+
 function SignalColumn({ kicker, text }) {
   return (
     <div style={signalStyle()}>
@@ -385,7 +382,6 @@ export default function HomeVariants({ variant = 1 }) {
           totalCompetitions={featuredCompetitions.length}
           openCount={openCount}
           activeCount={activeCount}
-          panelHref={session ? getHomePath(session.role) : '/login'}
         />
 
         <CommandStrip items={commandItems} isMobile={isMobile} />
@@ -419,3 +415,4 @@ export default function HomeVariants({ variant = 1 }) {
     </div>
   )
 }
+

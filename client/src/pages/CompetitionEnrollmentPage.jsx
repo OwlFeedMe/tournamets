@@ -48,9 +48,10 @@ function normalizeEnrollmentPrice(value) {
   return Math.max(0, Math.round(parsed))
 }
 
-function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05, minPlatformFee = 5000) {
   const organizerPrice = normalizeEnrollmentPrice(basePrice)
-  const platformFee = Math.round(organizerPrice * feeRate)
+  let platformFee = Math.round(organizerPrice * feeRate)
+  if (organizerPrice > 0 && platformFee < minPlatformFee) platformFee = minPlatformFee
   return {
     organizerPrice,
     platformFee,
@@ -262,6 +263,7 @@ export default function CompetitionEnrollmentPage() {
   const [submitted, setSubmitted] = useState(false)
   const [currentStep, setCurrentStep] = useState(1)
   const [showTermsModal, setShowTermsModal] = useState(false)
+  const [pricingCfg, setPricingCfg] = useState(null)
   const [activeTermsModal, setActiveTermsModal] = useState('competition')
   const [competitionTermsScrolledToEnd, setCompetitionTermsScrolledToEnd] = useState(false)
   const [appTermsScrolledToEnd, setAppTermsScrolledToEnd] = useState(false)
@@ -274,6 +276,10 @@ export default function CompetitionEnrollmentPage() {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    api.get('/config/pricing').then(({ data }) => setPricingCfg(data)).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -321,7 +327,8 @@ export default function CompetitionEnrollmentPage() {
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
   const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
-  const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate), [selectedCategoryData?.enrollment_price, platformFeeRate])
+  const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
+  const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee), [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee])
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente'
@@ -589,7 +596,7 @@ export default function CompetitionEnrollmentPage() {
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(214,217,224,0.14)', color: '#FFB36F', fontSize: 11, fontWeight: 800 }}>
-                                  {formatCop(calculateEnrollmentPricing(category.enrollment_price, platformFeeRate).totalPrice)}
+                                  {formatCop(calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee).totalPrice)}
                                 </span>
                               </div>
                               <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>

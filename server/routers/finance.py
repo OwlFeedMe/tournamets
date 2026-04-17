@@ -51,9 +51,7 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
     ).all()
     withdrawals = list(participants)
 
-    payment_rows = session.execute(
-        text(
-            """
+    _REVENUE_SQL = """
         SELECT
             COALESCE(SUM(CASE WHEN payment_status = 'approved' THEN payment_amount_total ELSE 0 END), 0) AS total_collected,
             COALESCE(SUM(CASE WHEN payment_status = 'approved' THEN payment_base_amount ELSE 0 END), 0) AS organizer_revenue,
@@ -62,20 +60,31 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
             COALESCE(SUM(CASE WHEN payment_status = 'approved' THEN payment_platform_net ELSE 0 END), 0) AS platform_revenue_net,
             COALESCE(SUM(CASE WHEN payment_status = 'approved' THEN 1 ELSE 0 END), 0) AS approved_payments,
             COALESCE(SUM(CASE WHEN payment_status IN ('created', 'processing', 'pending') THEN 1 ELSE 0 END), 0) AS payments_in_progress
-        FROM competition_participants
+        FROM {table}
         WHERE competition_id = :competition_id
-        """
-        ),
-        {"competition_id": competition.id},
+    """
+    params = {"competition_id": competition.id}
+
+    enrollment_rows = session.execute(
+        text(_REVENUE_SQL.format(table="competition_participants")), params,
     ).mappings().first()
 
-    total_collected = _normalize_amount(payment_rows.get("total_collected") if payment_rows else 0)
-    organizer_revenue = _normalize_amount(payment_rows.get("organizer_revenue") if payment_rows else 0)
-    platform_revenue_gross = _normalize_amount(payment_rows.get("platform_revenue_gross") if payment_rows else 0)
-    processor_fees = _normalize_amount(payment_rows.get("processor_fees") if payment_rows else 0)
-    platform_revenue_net = _coerce_int(payment_rows.get("platform_revenue_net") if payment_rows else 0)
-    approved_payments = int((payment_rows.get("approved_payments") if payment_rows else 0) or 0)
-    payments_in_progress = int((payment_rows.get("payments_in_progress") if payment_rows else 0) or 0)
+    ticketing_rows = session.execute(
+        text(_REVENUE_SQL.format(table="spectator_ticket_orders")), params,
+    ).mappings().first()
+
+    def _sum_field(field: str) -> int:
+        a = (enrollment_rows.get(field) if enrollment_rows else 0) or 0
+        b = (ticketing_rows.get(field) if ticketing_rows else 0) or 0
+        return int(a) + int(b)
+
+    total_collected = _normalize_amount(_sum_field("total_collected"))
+    organizer_revenue = _normalize_amount(_sum_field("organizer_revenue"))
+    platform_revenue_gross = _normalize_amount(_sum_field("platform_revenue_gross"))
+    processor_fees = _normalize_amount(_sum_field("processor_fees"))
+    platform_revenue_net = _coerce_int(_sum_field("platform_revenue_net"))
+    approved_payments = _sum_field("approved_payments")
+    payments_in_progress = _sum_field("payments_in_progress")
 
     # Disbursement state: what happened with the organizer's payout
     paid_withdrawal = next((item for item in withdrawals if item.status == "paid"), None)

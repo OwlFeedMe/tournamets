@@ -219,6 +219,7 @@ _STATEMENTS: list[str] = [
     "INSERT INTO platform_config (key, value) VALUES ('default_platform_fee_rate', '0.05') ON CONFLICT (key) DO NOTHING",
     "INSERT INTO platform_config (key, value) VALUES ('bold_processor_rate', '0.0269') ON CONFLICT (key) DO NOTHING",
     "INSERT INTO platform_config (key, value) VALUES ('bold_processor_fixed_fee', '300') ON CONFLICT (key) DO NOTHING",
+    "INSERT INTO platform_config (key, value) VALUES ('min_platform_fee', '5000') ON CONFLICT (key) DO NOTHING",
 
     # ── Indexes ────────────────────────────────────────────────────────────
     "CREATE INDEX IF NOT EXISTS idx_competition_payment_intents_competition_id ON competition_payment_intents(competition_id)",

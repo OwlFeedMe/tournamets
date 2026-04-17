@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Users, Youtube } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -13,7 +13,9 @@ function buildPageBackground(theme) {
 
 function formatDate(value) {
   if (!value) return null
-  const date = new Date(value)
+  const [y, m, d] = String(value).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  const date = new Date(y, m - 1, d)
   if (Number.isNaN(date.getTime())) return null
   return new Intl.DateTimeFormat('es-CO', {
     day: 'numeric',
@@ -37,9 +39,10 @@ function normalizeEnrollmentPrice(value) {
   return Math.max(0, Math.round(parsed))
 }
 
-function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05, minPlatformFee = 5000) {
   const organizerPrice = normalizeEnrollmentPrice(basePrice)
-  const platformFee = Math.round(organizerPrice * feeRate)
+  let platformFee = Math.round(organizerPrice * feeRate)
+  if (organizerPrice > 0 && platformFee < minPlatformFee) platformFee = minPlatformFee
   return {
     organizerPrice,
     platformFee,
@@ -139,7 +142,9 @@ function resolveScheduleItemsWithPhases(items, phases) {
 
 function parseDateValue(value) {
   if (!value) return null
-  const date = new Date(value)
+  const [y, m, d] = String(value).slice(0, 10).split('-').map(Number)
+  if (!y || !m || !d) return null
+  const date = new Date(y, m - 1, d)
   return Number.isNaN(date.getTime()) ? null : date
 }
 
@@ -443,6 +448,8 @@ export default function CompetitionLanding() {
   const [interestModalOpen, setInterestModalOpen] = useState(false)
   const [interestEmail, setInterestEmail] = useState('')
   const [interestMsg, setInterestMsg] = useState(null)
+  const [pricingCfg, setPricingCfg] = useState(null)
+  const [spectatorTicketing, setSpectatorTicketing] = useState(null)
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -455,6 +462,10 @@ export default function CompetitionLanding() {
     document.body.classList.toggle('fr-modal-open', interestModalOpen)
     return () => document.body.classList.remove('fr-modal-open')
   }, [interestModalOpen])
+
+  useEffect(() => {
+    api.get('/config/pricing').then(({ data }) => setPricingCfg(data)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -476,6 +487,20 @@ export default function CompetitionLanding() {
     return () => {
       active = false
     }
+  }, [competitionId])
+
+  useEffect(() => {
+    let active = true
+    api.get(`/competitions/${competitionId}/ticketing-public`)
+      .then(({ data }) => {
+        if (!active) return
+        setSpectatorTicketing(data || null)
+      })
+      .catch(() => {
+        if (!active) return
+        setSpectatorTicketing(null)
+      })
+    return () => { active = false }
   }, [competitionId])
 
   useEffect(() => {
@@ -536,11 +561,12 @@ export default function CompetitionLanding() {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
+  const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
   const categoryPricingSummary = useMemo(() => {
     const valid = categories
       .map(category => ({
         category,
-        pricing: calculateEnrollmentPricing(category?.enrollment_price, platformFeeRate),
+        pricing: calculateEnrollmentPricing(category?.enrollment_price, platformFeeRate, minPlatformFee),
       }))
       .filter(item => item.pricing.organizerPrice > 0)
     if (!valid.length) return null
@@ -563,6 +589,7 @@ export default function CompetitionLanding() {
   const enrollmentButton = enrollmentButtonState(competition, isAthlete, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : isAthlete ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label
+  const ticketingActive = !!spectatorTicketing?.enabled || !!(Array.isArray(spectatorTicketing?.ticket_products) && spectatorTicketing.ticket_products.length)
   const engagementCta = competition?.enrollment_open
     ? { mode: 'enroll', label: secondaryCtaLabel }
     : isUpcomingCompetition
@@ -933,20 +960,19 @@ export default function CompetitionLanding() {
                         gap: 8,
                         padding: '12px 16px',
                         borderRadius: 6,
-                        cursor: enrollmentButton.disabled || ctaBusy ? 'not-allowed' : 'pointer',
+                        cursor: (enrollmentButton.disabled || ctaBusy) ? 'not-allowed' : 'pointer',
                         border: 'none',
                         background: 'linear-gradient(135deg, #F7E7AA 0%, #D4A537 100%)',
                         color: '#1A1407',
                         fontWeight: 800,
-                        pointerEvents: enrollmentButton.disabled || ctaBusy ? 'none' : 'auto',
+                        pointerEvents: (enrollmentButton.disabled || ctaBusy) ? 'none' : 'auto',
                         opacity: enrollmentButton.disabled ? 0.65 : 1,
                         appearance: 'none',
                         width: 'auto',
                         alignSelf: 'flex-start',
-                        justifySelf: 'start',
                       }}
                     >
-                      {ctaBusy ? 'Validando perfil...' : secondaryCtaLabel}
+                      {ctaBusy ? 'Validando...' : secondaryCtaLabel}
                     </button>
                   ) : (
                     <button
@@ -969,7 +995,6 @@ export default function CompetitionLanding() {
                         appearance: 'none',
                         width: 'auto',
                         alignSelf: 'flex-start',
-                        justifySelf: 'start',
                         opacity: interestBusy ? 0.72 : 1,
                       }}
                     >
@@ -1016,6 +1041,72 @@ export default function CompetitionLanding() {
                 </div>
               </div>
             </section>
+
+            {ticketingActive ? (
+              <section
+                className="fr-cut-card"
+                style={{
+                  border: '1px solid rgba(0,194,168,0.18)',
+                  background: `linear-gradient(135deg, rgba(0,194,168,0.10) 0%, rgba(0,194,168,0.04) 24%, ${hexToRgba(theme.surface, 0.98)} 56%, ${hexToRgba(theme.background, 0.98)} 100%)`,
+                  padding: isMobile ? 18 : 24,
+                  marginBottom: 18,
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+                  gap: 18,
+                  alignItems: 'center',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#8DF1DF', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2 }}>
+                    <Ticket size={14} /> Espectadores
+                  </div>
+                  <h3 style={{ margin: '8px 0 0', fontSize: isMobile ? 20 : 26, lineHeight: 1.05 }}>
+                    No compites? Compra tu entrada como espectador.
+                  </h3>
+                  {Array.isArray(spectatorTicketing?.ticket_products) && spectatorTicketing.ticket_products.length ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                      {spectatorTicketing.ticket_products.map((p, i) => (
+                        <div
+                          key={p.id || i}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 999,
+                            border: '1px solid rgba(0,194,168,0.22)',
+                            background: 'rgba(0,194,168,0.08)',
+                            color: '#AAB2C0',
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {p.label}{p.price_unit > 0 ? ` · ${formatCop(p.price_unit)}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <Link
+                  to={`/competitions/${competitionId}/tickets`}
+                  style={{
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: '14px 22px',
+                    borderRadius: 6,
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #00C2A8 0%, #23D7BF 100%)',
+                    color: '#0D0F12',
+                    fontWeight: 800,
+                    fontSize: 15,
+                    whiteSpace: 'nowrap',
+                    alignSelf: isMobile ? 'flex-start' : 'center',
+                  }}
+                >
+                  Comprar boletas
+                </Link>
+              </section>
+            ) : null}
 
             <section style={{ display: 'grid', gap: 18 }}>
               {scheduleItems.length ? (
@@ -1071,7 +1162,7 @@ export default function CompetitionLanding() {
                           {items.map((category) => {
                             const categoryKey = `${modality}-${category.id || category.nombre}`
                             const isExpanded = expandedCategoryKey === categoryKey
-                            const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate)
+                            const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee)
                             const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
                             const hasAnyDescription = !!(shortDescription || longDescription)
                             const hasPricing = pricing.totalPrice > 0

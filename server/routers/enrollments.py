@@ -31,6 +31,7 @@ from services.email_templates import (
     render_payment_rejected,
     render_enrollment_confirmed,
 )
+from routers.ticketing import apply_spectator_bold_notification
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +140,11 @@ def _normalize_platform_fee_rate(raw: object) -> float:
     return round(value, 4)
 
 
-def _price_breakdown(base_price: int, fee_rate: float, processor_rate: float = 0.0269, processor_fixed: int = 300) -> dict:
+def _price_breakdown(base_price: int, fee_rate: float, processor_rate: float = 0.0269, processor_fixed: int = 300, min_platform_fee: int = 5000) -> dict:
     organizer_price = max(0, int(base_price or 0))
     platform_fee = int(round(organizer_price * fee_rate))
+    if organizer_price > 0 and platform_fee < min_platform_fee:
+        platform_fee = min_platform_fee
     total_price = organizer_price + platform_fee
     processor_fee = _bold_processor_fee(total_price, processor_rate, processor_fixed)
     return {
@@ -628,6 +631,7 @@ def create_bold_checkout(
         fee_rate,
         pricing_cfg["bold_processor_rate"],
         pricing_cfg["bold_processor_fixed_fee"],
+        pricing_cfg["min_platform_fee"],
     )
     if breakdown["total_price"] <= 0:
         raise HTTPException(400, "Esta categoria no tiene un valor de inscripcion valido")
@@ -789,6 +793,8 @@ async def bold_webhook(
         raise HTTPException(400, "Payload de webhook invalido")
 
     result = _apply_bold_notification(session, payload)
+    if not result.get("matched"):
+        result = apply_spectator_bold_notification(session, payload)
     session.commit()
     return {"ok": True, "result": result}
 

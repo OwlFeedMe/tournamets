@@ -189,6 +189,161 @@ class Competition(SQLModel, table=True):
     )
 
 
+class CompetitionSpectatorTicketingConfig(SQLModel, table=True):
+    __tablename__ = "competition_spectator_ticketing_config"
+    __table_args__ = (
+        UniqueConstraint("competition_id", name="uq_comp_spectator_ticketing_competition"),
+        Index("ix_comp_spectator_ticketing_competition", "competition_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    status: str = Field(default="draft")  # draft | active
+    enabled: int = Field(default=0)       # irreversible once active
+    activated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    max_capacity: int = Field(default=0)
+    product_title: Optional[str] = None
+    product_description: Optional[str] = None
+    benefits_text: Optional[str] = None
+    access_text: Optional[str] = None
+    price_unit: int = Field(default=0)
+    ticket_products: Optional[str] = None
+    bulk_pricing_tiers: Optional[str] = None
+    limit_per_identity: int = Field(default=1)
+    max_tickets_per_person: Optional[int] = Field(default=None)
+    max_tickets_per_transaction: Optional[int] = Field(default=None)
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class SpectatorTicketOrder(SQLModel, table=True):
+    __tablename__ = "spectator_ticket_orders"
+    __table_args__ = (
+        UniqueConstraint("payment_reference", name="uq_spectator_ticket_order_payment_reference"),
+        Index("ix_spectator_ticket_orders_competition_id", "competition_id"),
+        Index("ix_spectator_ticket_orders_email", "buyer_email"),
+        Index("ix_spectator_ticket_orders_identity", "buyer_document"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    buyer_full_name: str
+    buyer_email: str
+    buyer_phone: str
+    buyer_document: str = Field(index=True)
+    product_id: Optional[str] = None
+    product_label: Optional[str] = None
+    access_days: Optional[str] = None
+    quantity: int = Field(default=1)
+    unit_price_applied: int = Field(default=0)
+    payment_provider: str = Field(default="bold")
+    payment_reference: str = Field(index=True)
+    payment_order_id: Optional[str] = None
+    payment_status: str = Field(default="created")
+    payment_transaction_id: Optional[str] = None
+    payment_base_amount: int = Field(default=0)
+    payment_platform_fee: int = Field(default=0)
+    payment_platform_fee_rate: float = Field(default=0.05)
+    payment_processor_fee: int = Field(default=0)
+    payment_platform_net: int = Field(default=0)
+    payment_amount_total: int = Field(default=0)
+    tickets_pdf_url: Optional[str] = None
+    tickets_email_sent_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    paid_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class SpectatorTicket(SQLModel, table=True):
+    __tablename__ = "spectator_tickets"
+    __table_args__ = (
+        UniqueConstraint("ticket_uid", name="uq_spectator_tickets_uid"),
+        UniqueConstraint("order_id", "ticket_number", name="uq_spectator_tickets_order_number"),
+        Index("ix_spectator_tickets_competition_id", "competition_id"),
+        Index("ix_spectator_tickets_order_id", "order_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    order_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("spectator_ticket_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    ticket_number: int = Field(default=1)
+    ticket_uid: str = Field(index=True)
+    status: str = Field(default="active")  # active | used | canceled | voided
+    scanned_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    scanned_station: Optional[str] = None
+    scanned_device_id: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class SpectatorTicketCheckinAudit(SQLModel, table=True):
+    __tablename__ = "spectator_ticket_checkin_audit"
+    __table_args__ = (
+        Index("ix_spectator_ticket_checkin_audit_competition_id", "competition_id"),
+        Index("ix_spectator_ticket_checkin_audit_ticket_id", "ticket_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    ticket_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("spectator_tickets.id", ondelete="SET NULL"), nullable=True, index=True),
+    )
+    order_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("spectator_ticket_orders.id", ondelete="SET NULL"), nullable=True),
+    )
+    action: str = Field(default="scan")
+    result: str = Field(default="invalid")
+    reason: Optional[str] = None
+    station: Optional[str] = None
+    device_id: Optional[str] = None
+    actor_app_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class PasswordResetCode(SQLModel, table=True):
     __tablename__ = "password_reset_codes"
 
@@ -1115,6 +1270,70 @@ class CompetitionSocialLinkItem(SQLModel):
     url: str
 
 
+class SpectatorTicketTierItem(SQLModel):
+    min_quantity: int
+    unit_price: int
+
+
+class SpectatorTicketProductItem(SQLModel):
+    id: Optional[str] = None
+    label: str
+    price_unit: int
+    access_days: List[str] = Field(default_factory=list)
+    is_all_days: int = 0
+
+
+class SpectatorTicketingConfigUpdate(SQLModel):
+    max_capacity: Optional[int] = None
+    product_title: Optional[str] = None
+    product_description: Optional[str] = None
+    benefits_text: Optional[str] = None
+    access_text: Optional[str] = None
+    price_unit: Optional[int] = None
+    ticket_products: Optional[List["SpectatorTicketProductItem"]] = None
+    bulk_pricing_tiers: Optional[List["SpectatorTicketTierItem"]] = None
+    limit_per_identity: Optional[int] = None
+    max_tickets_per_person: Optional[int] = None
+    max_tickets_per_transaction: Optional[int] = None
+
+
+class SpectatorTicketingConfigOut(SQLModel):
+    competition_id: int
+    status: str = "draft"
+    enabled: int = 0
+    activated_at: Optional[datetime] = None
+    max_capacity: int = 0
+    product_title: Optional[str] = None
+    product_description: Optional[str] = None
+    benefits_text: Optional[str] = None
+    access_text: Optional[str] = None
+    price_unit: int = 0
+    ticket_products: List["SpectatorTicketProductItem"] = Field(default_factory=list)
+    bulk_pricing_tiers: List["SpectatorTicketTierItem"] = Field(default_factory=list)
+    limit_per_identity: int = 1
+    max_tickets_per_person: Optional[int] = None
+    max_tickets_per_transaction: Optional[int] = None
+
+
+class SpectatorCheckoutRequest(SQLModel):
+    buyer_full_name: str
+    buyer_email: str
+    buyer_phone: str
+    buyer_document: str
+    product_id: Optional[str] = None
+    quantity: int = 1
+
+
+class SpectatorPaymentStatusSyncRequest(SQLModel):
+    reference: str
+
+
+class SpectatorTicketScanRequest(SQLModel):
+    token: str
+    station: Optional[str] = None
+    device_id: Optional[str] = None
+
+
 class EnrollmentAnswerItem(SQLModel):
     question_id: str
     question_label: Optional[str] = None
@@ -1138,3 +1357,4 @@ class PlatformConfigUpdate(SQLModel):
     default_platform_fee_rate: Optional[float] = None   # 0.0 – 1.0
     bold_processor_rate: Optional[float] = None          # e.g. 0.0269
     bold_processor_fixed_fee: Optional[int] = None       # e.g. 300 (COP)
+    min_platform_fee: Optional[int] = None               # e.g. 5000 (COP)

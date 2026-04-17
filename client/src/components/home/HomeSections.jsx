@@ -250,9 +250,9 @@ export function CompetitionSectionHeader({ totalVisible, query }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', flexWrap: 'wrap', marginBottom: 16 }}>
       <div>
-        <h2 style={sectionTitleStyle}>Competencias actuales</h2>
+        <h2 style={sectionTitleStyle}>Competiciones activas</h2>
         <p style={{ margin: '8px 0 0', color: premium.textSoft, fontSize: 14, lineHeight: 1.6 }}>
-          {query ? `${totalVisible} resultados para tu busqueda.` : 'Elige el evento, carga tus scores y sigue la clasificación sin perder ritmo.'}
+          {query ? `${totalVisible} resultados.` : 'Elige evento, registra resultados y sigue el avance en vivo.'}
         </p>
       </div>
       <div style={{ color: premium.textMuted, fontSize: 13, fontWeight: 700 }}>
@@ -493,7 +493,8 @@ export function HomeEmptyState({ hasCompetitions }) {
         color: premium.textSoft,
       }}
     >
-      {hasCompetitions ? 'No hay competencias que coincidan con tu busqueda.' : 'Todavia no hay competencias visibles en este momento.'}
+      {hasCompetitions ? 'No hay resultados para esa busqueda.' : 'Aun no hay competencias visibles. Vuelve pronto para nuevas aperturas y rankings.'}
     </div>
   )
 }
+

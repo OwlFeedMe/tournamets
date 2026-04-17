@@ -11,6 +11,7 @@ _DEFAULTS = {
     "default_platform_fee_rate": "0.05",
     "bold_processor_rate": "0.0269",
     "bold_processor_fixed_fee": "300",
+    "min_platform_fee": "5000",
 }
 
 
@@ -38,10 +39,17 @@ def get_pricing_config(session: Session) -> dict:
         proc_fixed = int(cfg["bold_processor_fixed_fee"])
     except Exception:
         proc_fixed = 300
+    try:
+        min_fee = int(cfg["min_platform_fee"])
+    except Exception:
+        min_fee = 5000
+    if min_fee < 0:
+        min_fee = 0
     return {
         "default_platform_fee_rate": round(fee_rate, 4),
         "bold_processor_rate": round(proc_rate, 6),
         "bold_processor_fixed_fee": proc_fixed,
+        "min_platform_fee": min_fee,
     }
 
 
@@ -73,6 +81,11 @@ def update_pricing_config(
         if pf < 0:
             raise HTTPException(400, "bold_processor_fixed_fee no puede ser negativo")
         updates["bold_processor_fixed_fee"] = str(pf)
+    if body.min_platform_fee is not None:
+        mf = int(body.min_platform_fee)
+        if mf < 0:
+            raise HTTPException(400, "min_platform_fee no puede ser negativo")
+        updates["min_platform_fee"] = str(mf)
 
     for key, value in updates.items():
         row = session.get(PlatformConfig, key)

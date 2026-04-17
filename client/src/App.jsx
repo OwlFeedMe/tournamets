@@ -7,6 +7,8 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
 const CompetitionPaymentResultPage = lazy(() => import('./pages/CompetitionPaymentResultPage'))
+const CompetitionTicketsPage = lazy(() => import('./pages/CompetitionTicketsPage'))
+const CompetitionTicketsPaymentResultPage = lazy(() => import('./pages/CompetitionTicketsPaymentResultPage'))
 const CompetitionSchedule = lazy(() => import('./pages/CompetitionSchedule'))
 const CompetitionVariants = lazy(() => import('./pages/CompetitionVariants'))
 const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.EventsPage })))
@@ -81,6 +83,8 @@ export default function App() {
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />
+              <Route path="/competitions/:competitionId/tickets" element={<CompetitionTicketsPage />} />
+              <Route path="/competitions/:competitionId/tickets/payment-result" element={<CompetitionTicketsPaymentResultPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/leaderboard/:competitionId" element={<Leaderboard />} />

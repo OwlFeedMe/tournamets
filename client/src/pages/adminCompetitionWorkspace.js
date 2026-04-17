@@ -24,6 +24,14 @@ export const COMPETITION_WORKSPACE_SECTIONS = [
     primaryAction: 'Gestionar inscripciones',
   },
   {
+    id: 'ticketing',
+    label: 'Boleteria',
+    shortLabel: 'Boleteria',
+    group: 'operacion',
+    description: 'Boletas, ordenes y escaneo de ingreso.',
+    primaryAction: 'Gestionar boleteria',
+  },
+  {
     id: 'prep',
     label: 'Preparación',
     shortLabel: 'Preparación',

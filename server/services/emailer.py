@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import base64
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -16,7 +17,14 @@ def email_is_configured() -> bool:
     return bool(api_key)
 
 
-def send_email(*, to_email: str, subject: str, body: str, html_body: str | None = None) -> bool:
+def send_email(
+    *,
+    to_email: str,
+    subject: str,
+    body: str,
+    html_body: str | None = None,
+    attachments: list[dict] | None = None,
+) -> bool:
     target = to_email.strip()
     if not target or not email_is_configured():
         return False
@@ -47,6 +55,22 @@ def send_email(*, to_email: str, subject: str, body: str, html_body: str | None 
     html = (html_body or "").strip()
     if html:
         payload["htmlContent"] = html
+    normalized_attachments = []
+    for item in attachments or []:
+        if not isinstance(item, dict):
+            continue
+        filename = str(item.get("filename") or "").strip()
+        content = item.get("content")
+        mime_type = str(item.get("mime_type") or "application/octet-stream").strip() or "application/octet-stream"
+        if not filename or not isinstance(content, (bytes, bytearray)) or len(content) == 0:
+            continue
+        normalized_attachments.append({
+            "name": filename,
+            "content": base64.b64encode(bytes(content)).decode("ascii"),
+            "contentType": mime_type,
+        })
+    if normalized_attachments:
+        payload["attachment"] = normalized_attachments
 
     req = urlrequest.Request(
         endpoint,

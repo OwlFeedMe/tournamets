@@ -96,9 +96,12 @@ function normalizeEnrollmentPrice(value) {
   return Math.max(0, Math.round(parsed))
 }
 
-function calculateEnrollmentPricing(basePrice, feeRate = 0.05) {
+function calculateEnrollmentPricing(basePrice, feeRate = 0.05, minPlatformFee = 5000) {
   const organizerPrice = normalizeEnrollmentPrice(basePrice)
-  const platformFee = Math.round(organizerPrice * feeRate)
+  let platformFee = Math.round(organizerPrice * feeRate)
+  if (organizerPrice > 0 && platformFee < minPlatformFee) {
+    platformFee = minPlatformFee
+  }
   return {
     organizerPrice,
     platformFee,
@@ -112,6 +115,33 @@ function formatCop(value) {
     currency: 'COP',
     maximumFractionDigits: 0,
   }).format(Number(value || 0))
+}
+
+function parseTicketingTiers(raw) {
+  if (!raw) return []
+  const parsed = Array.isArray(raw) ? raw : []
+  return parsed
+    .map((item) => ({
+      min_quantity: Number(item?.min_quantity || 0),
+      unit_price: Number(item?.unit_price || 0),
+    }))
+    .filter(item => item.min_quantity > 0 && item.unit_price > 0)
+}
+
+function parseTicketingProducts(raw) {
+  if (!raw) return []
+  const parsed = Array.isArray(raw) ? raw : []
+  return parsed
+    .map((item, index) => ({
+      id: String(item?.id || `product_${index + 1}`).trim(),
+      label: String(item?.label || '').trim(),
+      price_unit: Number(item?.price_unit || 0),
+      access_days: Array.isArray(item?.access_days)
+        ? item.access_days.map(day => String(day || '').trim()).filter(Boolean)
+        : [],
+      is_all_days: Number(item?.is_all_days || 0) ? 1 : 0,
+    }))
+    .filter(item => item.label && item.price_unit > 0)
 }
 
 function formatDate(value) {
@@ -588,6 +618,1081 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
 
   if (typeof document === 'undefined') return modalNode
   return createPortal(modalNode, document.body)
+}
+
+function TicketingLaunchModalLegacy({ competition, onClose, onSaved, inline = false }) {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [activating, setActivating] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [form, setForm] = useState({
+    status: 'draft',
+    enabled: 0,
+    max_capacity: '',
+    product_title: '',
+    product_description: '',
+    benefits_text: '',
+    access_text: '',
+    price_unit: '',
+    limit_per_identity: 1,
+    max_tickets_per_person: '',
+    max_tickets_per_transaction: '',
+    ticket_products: [],
+    bulk_pricing_tiers: [],
+  })
+
+  const competitionDays = useMemo(() => {
+    const startRaw = competition?.competition_start
+    const endRaw = competition?.competition_end
+    if (!startRaw || !endRaw) return []
+    const start = new Date(`${String(startRaw).slice(0, 10)}T00:00:00`)
+    const end = new Date(`${String(endRaw).slice(0, 10)}T00:00:00`)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return []
+    const out = []
+    const cursor = new Date(start)
+    let dayIndex = 1
+    while (cursor <= end && out.length < 31) {
+      const iso = cursor.toISOString().slice(0, 10)
+      out.push({
+        id: `day_${dayIndex}`,
+        value: iso,
+        label: `Dia ${dayIndex} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+      })
+      cursor.setDate(cursor.getDate() + 1)
+      dayIndex += 1
+    }
+    return out
+  }, [competition?.competition_start, competition?.competition_end])
+
+  const baseUnitPrice = Math.max(0, Number(form.price_unit || 0))
+  const sortedVolumeRules = [...(form.bulk_pricing_tiers || [])]
+    .map((item) => ({
+      min_quantity: Math.max(0, Number(item?.min_quantity || 0)),
+      unit_price: Math.max(0, Number(item?.unit_price || 0)),
+    }))
+    .filter((item) => item.min_quantity > 0 && item.unit_price > 0)
+    .sort((a, b) => a.min_quantity - b.min_quantity)
+
+  const unitPriceForQuantity = (quantity) => {
+    let selected = baseUnitPrice
+    sortedVolumeRules.forEach((rule) => {
+      if (Number(quantity) >= Number(rule.min_quantity)) selected = Number(rule.unit_price)
+    })
+    return Math.max(0, selected)
+  }
+
+  const volumeExampleQuantities = [1, 2, 4, 8]
+  const [wizardStep, setWizardStep] = useState(0)
+  const wizardSteps = [
+    { id: 'info', title: 'Informacion base', hint: 'Contexto y aforo' },
+    { id: 'products', title: 'Productos y precios', hint: 'Entradas y volumen' },
+    { id: 'limits', title: 'Reglas y limites', hint: 'Documento y compra' },
+    { id: 'review', title: 'Revision y activacion', hint: 'Guardar y lanzar' },
+  ]
+
+  const loadConfig = async () => {
+    setLoading(true)
+    setMsg(null)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/ticketing-config`)
+      setForm({
+        status: data?.status || 'draft',
+        enabled: Number(data?.enabled || 0),
+        max_capacity: Number(data?.max_capacity || 0) > 0 ? String(data.max_capacity) : '',
+        product_title: data?.product_title || '',
+        product_description: data?.product_description || '',
+        benefits_text: data?.benefits_text || '',
+        access_text: data?.access_text || '',
+        price_unit: Number(data?.price_unit || 0) > 0 ? String(data.price_unit) : '',
+        limit_per_identity: Number(data?.limit_per_identity == null ? 1 : data.limit_per_identity),
+        max_tickets_per_person: data?.max_tickets_per_person == null ? '' : String(data.max_tickets_per_person),
+        max_tickets_per_transaction: data?.max_tickets_per_transaction == null ? '' : String(data.max_tickets_per_transaction),
+        ticket_products: parseTicketingProducts(data?.ticket_products).map((item, idx) => ({
+          id: item.id || `product_${idx + 1}`,
+          label: item.label || '',
+          price_unit: item.price_unit > 0 ? String(item.price_unit) : '',
+          access_days: Array.isArray(item.access_days) ? item.access_days : [],
+          is_all_days: Number(item?.is_all_days || 0) ? 1 : 0,
+        })),
+        bulk_pricing_tiers: parseTicketingTiers(data?.bulk_pricing_tiers).map(item => ({
+          min_quantity: item.min_quantity > 0 ? String(item.min_quantity) : '',
+          unit_price: item.unit_price > 0 ? String(item.unit_price) : '',
+        })),
+      })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la configuracion de boleteria.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    setWizardStep(0)
+    loadConfig()
+  }, [competition.id])
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const addTier = () => {
+    setForm(prev => ({ ...prev, bulk_pricing_tiers: [...prev.bulk_pricing_tiers, { min_quantity: '', unit_price: '' }] }))
+  }
+
+  const updateTier = (idx, key, value) => {
+    setForm(prev => ({
+      ...prev,
+      bulk_pricing_tiers: prev.bulk_pricing_tiers.map((tier, i) => (i === idx ? { ...tier, [key]: value } : tier)),
+    }))
+  }
+
+  const removeTier = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      bulk_pricing_tiers: prev.bulk_pricing_tiers.filter((_, i) => i !== idx),
+    }))
+  }
+
+  const addProduct = () => {
+    setForm(prev => ({
+      ...prev,
+      ticket_products: [
+        ...prev.ticket_products,
+        {
+          id: `product_${prev.ticket_products.length + 1}`,
+          label: '',
+          price_unit: '',
+          access_days: [],
+          is_all_days: 0,
+        },
+      ],
+    }))
+  }
+
+  const updateProduct = (idx, key, value) => {
+    setForm(prev => ({
+      ...prev,
+      ticket_products: prev.ticket_products.map((product, i) => (i === idx ? { ...product, [key]: value } : product)),
+    }))
+  }
+
+  const removeProduct = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      ticket_products: prev.ticket_products.filter((_, i) => i !== idx),
+    }))
+  }
+
+  const toggleProductAllDays = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      ticket_products: prev.ticket_products.map((product, i) => {
+        if (i !== idx) return product
+        const nextAllDays = product.is_all_days ? 0 : 1
+        return {
+          ...product,
+          is_all_days: nextAllDays,
+          access_days: nextAllDays ? [] : product.access_days,
+        }
+      }),
+    }))
+  }
+
+  const toggleProductDay = (idx, label) => {
+    setForm(prev => ({
+      ...prev,
+      ticket_products: prev.ticket_products.map((product, i) => {
+        if (i !== idx) return product
+        const exists = Array.isArray(product.access_days) && product.access_days.includes(label)
+        return {
+          ...product,
+          access_days: exists
+            ? product.access_days.filter(day => day !== label)
+            : [...(product.access_days || []), label],
+        }
+      }),
+    }))
+  }
+
+  const autogenerateProductsByDays = () => {
+    if (!competitionDays.length) {
+      setMsg({ type: 'error', text: 'Define inicio y fin de competencia para autogenerar boletas por dia.' })
+      return
+    }
+    setForm(prev => {
+      const previousById = new Map((prev.ticket_products || []).map(item => [String(item.id || ''), item]))
+      const dayProducts = competitionDays.map((day, idx) => {
+        const existing = previousById.get(day.id)
+        return {
+          id: day.id,
+          label: existing?.label || `Boleta Dia ${idx + 1}`,
+          price_unit: existing?.price_unit || '',
+          access_days: [day.label],
+          is_all_days: 0,
+        }
+      })
+      const existingAll = previousById.get('all_days')
+      const allDaysProduct = {
+        id: 'all_days',
+        label: existingAll?.label || 'Pase completo',
+        price_unit: existingAll?.price_unit || '',
+        access_days: competitionDays.map(day => day.label),
+        is_all_days: 1,
+      }
+      return {
+        ...prev,
+        ticket_products: [...dayProducts, allDaysProduct],
+      }
+    })
+    setMsg({ type: 'success', text: 'Productos por dias generados. Ahora define el precio de cada uno.' })
+  }
+
+  const buildNormalizedProducts = () => (
+    (form.ticket_products || [])
+      .map((product, idx) => ({
+        id: String(product?.id || `product_${idx + 1}`).trim(),
+        label: String(product?.label || '').trim(),
+        price_unit: Number(product?.price_unit || 0),
+        access_days: Number(product?.is_all_days || 0)
+          ? []
+          : (Array.isArray(product?.access_days) ? product.access_days.filter(Boolean) : []),
+        is_all_days: Number(product?.is_all_days || 0) ? 1 : 0,
+      }))
+      .filter(product => product.label && product.price_unit > 0)
+  )
+
+  const validateWizardStep = (step) => {
+    if (step === 0) {
+      if (Number(form.max_capacity || 0) <= 0) return 'Define un aforo maximo mayor a 0.'
+      if (!String(form.product_description || '').trim()) return 'Agrega una descripcion general de la boleteria.'
+      return ''
+    }
+    if (step === 1) {
+      const normalizedProducts = buildNormalizedProducts()
+      if (Number(form.price_unit || 0) <= 0 && !normalizedProducts.length) {
+        return 'Define precio base o al menos un producto con precio.'
+      }
+      return ''
+    }
+    if (step === 2) {
+      if (form.limit_per_identity && Number(form.max_tickets_per_person || 0) <= 0) {
+        return 'Si activas limite por documento, define maximo por persona.'
+      }
+      if (String(form.max_tickets_per_transaction || '').trim() !== '' && Number(form.max_tickets_per_transaction || 0) <= 0) {
+        return 'El maximo por transaccion debe ser mayor a 0.'
+      }
+      return ''
+    }
+    return ''
+  }
+
+  const goNextStep = () => {
+    const validationError = validateWizardStep(wizardStep)
+    if (validationError) {
+      setMsg({ type: 'error', text: validationError })
+      return
+    }
+    setMsg(null)
+    setWizardStep(prev => Math.min(prev + 1, wizardSteps.length - 1))
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setMsg(null)
+    try {
+      const normalizedProducts = buildNormalizedProducts()
+
+      const payload = {
+        max_capacity: Number(form.max_capacity || 0),
+        product_title: form.product_title || null,
+        product_description: form.product_description || null,
+        benefits_text: form.benefits_text || null,
+        access_text: form.access_text || null,
+        price_unit: Number(form.price_unit || 0),
+        ticket_products: normalizedProducts,
+        limit_per_identity: form.limit_per_identity ? 1 : 0,
+        max_tickets_per_person: form.max_tickets_per_person === '' ? null : Number(form.max_tickets_per_person),
+        max_tickets_per_transaction: form.max_tickets_per_transaction === '' ? null : Number(form.max_tickets_per_transaction),
+        bulk_pricing_tiers: parseTicketingTiers(form.bulk_pricing_tiers),
+      }
+      const { data } = await api.put(`/competitions/${competition.id}/ticketing-config`, payload)
+      setMsg({ type: 'success', text: 'Configuracion de boleteria guardada.' })
+      setForm(prev => ({ ...prev, status: data?.status || prev.status, enabled: Number(data?.enabled || 0) }))
+      onSaved?.()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo guardar la boleteria.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const activate = async () => {
+    setActivating(true)
+    setMsg(null)
+    try {
+      await api.post(`/competitions/${competition.id}/ticketing-activate`)
+      setMsg({ type: 'success', text: 'Boleteria activada. Este estado no se puede revertir.' })
+      await loadConfig()
+      onSaved?.()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo activar la boleteria.' })
+    } finally {
+      setActivating(false)
+    }
+  }
+
+  const content = loading ? <div style={{ color: '#AAB2C0' }}>Cargando configuracion...</div> : (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ borderRadius: 12, border: '1px solid #252A33', background: form.enabled ? 'rgba(0,194,168,0.08)' : 'rgba(255,107,0,0.08)', padding: 12, color: '#F5F7FA', fontSize: 13 }}>
+        Estado: <b>{form.enabled ? 'Activa (irreversible)' : 'Borrador'}</b>
+      </div>
+
+      <div style={{ border: '1px solid #252A33', borderRadius: 18, padding: isMobile ? 14 : 18, background: 'linear-gradient(135deg, rgba(214,217,224,0.16), rgba(23,27,33,0.98) 42%, rgba(9,11,14,0.98) 100%)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#F5F7FA' }}>Configuracion guiada</h4>
+          </div>
+          <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 800 }}>{`Paso ${wizardStep + 1} de ${wizardSteps.length}`}</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${wizardSteps.length}, minmax(0, 1fr))`, gap: 8, marginTop: 14 }}>
+          {wizardSteps.map((step, idx) => (
+            <button
+              key={step.id}
+              type="button"
+              onClick={() => setWizardStep(idx)}
+              style={{
+                borderRadius: 14,
+                border: idx === wizardStep ? '1px solid rgba(214,217,224,0.45)' : '1px solid #252A33',
+                background: idx === wizardStep ? 'rgba(214,217,224,0.16)' : 'rgba(13,15,18,0.72)',
+                padding: '12px 14px',
+                textAlign: 'left',
+                color: '#F5F7FA',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 800, color: idx === wizardStep ? '#FFB36F' : '#AAB2C0' }}>{`0${idx + 1}`.slice(-2)}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, marginTop: 4 }}>{step.title}</div>
+              <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 4, lineHeight: 1.45 }}>{step.hint}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {wizardStep === 0 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Titulo general de la boleteria</label>
+            <input value={form.product_title} onChange={(e) => setForm(prev => ({ ...prev, product_title: e.target.value }))} placeholder="Entradas FinalRep 2026" />
+            <div style={{ color: '#AAB2C0', fontSize: 11 }}>
+              Este titulo es la cabecera comercial general. Los nombres de cada entrada se definen en el paso de productos.
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Descripcion general de la boleteria</label>
+            <textarea rows={4} value={form.product_description} onChange={(e) => setForm(prev => ({ ...prev, product_description: e.target.value }))} placeholder="Explica brevemente que incluye la boleteria del evento..." />
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Beneficios para espectador</label>
+            <textarea rows={3} value={form.benefits_text} onChange={(e) => setForm(prev => ({ ...prev, benefits_text: e.target.value }))} placeholder="Describe beneficios clave." />
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Acceso (dias/horarios)</label>
+            <textarea rows={2} value={form.access_text} onChange={(e) => setForm(prev => ({ ...prev, access_text: e.target.value }))} placeholder="Ej: Ingreso desde 7:00 a.m." />
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Aforo maximo</label>
+            <input type="number" min="0" value={form.max_capacity} onChange={(e) => setForm(prev => ({ ...prev, max_capacity: e.target.value }))} placeholder="Ej: 500" />
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 1 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Precio unitario base (COP)</label>
+            <input type="number" min="0" value={form.price_unit} onChange={(e) => setForm(prev => ({ ...prev, price_unit: e.target.value }))} placeholder="Opcional si usas productos por dia" />
+            <div style={{ color: '#AAB2C0', fontSize: 11 }}>Se usa cuando no eliges productos por dia.</div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: 700, color: '#F5F7FA' }}>Productos de boleteria</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={addProduct}>+ Agregar producto</button>
+                <button type="button" className="btn-secondary btn-sm" onClick={autogenerateProductsByDays}>Autogenerar por dias</button>
+              </div>
+            </div>
+            <div style={{ borderRadius: 12, border: '1px solid rgba(0,194,168,0.30)', background: 'rgba(0,194,168,0.08)', padding: 10, color: '#D7DEE8', fontSize: 12, lineHeight: 1.55 }}>
+              Puedes vender boleta por dia, pase completo o productos adicionales (charlas, bonos, etc).
+            </div>
+            {!form.ticket_products.length ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Aun no hay productos creados.</div> : null}
+            {form.ticket_products.map((product, idx) => (
+              <div key={`product-${idx}`} style={{ display: 'grid', gap: 8, border: '1px solid #252A33', borderRadius: 10, background: 'rgba(13,15,18,0.55)', padding: 10 }}>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>Producto {idx + 1}</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr auto', gap: 8 }}>
+                  <input value={product.label} onChange={(e) => updateProduct(idx, 'label', e.target.value)} placeholder="Nombre del producto" />
+                  <input type="number" min="1" value={product.price_unit} onChange={(e) => updateProduct(idx, 'price_unit', e.target.value)} placeholder="Precio unitario" />
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => removeProduct(idx)}>Quitar</button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => toggleProductAllDays(idx)}>
+                    {product.is_all_days ? 'Pase completo' : 'Solo dias seleccionados'}
+                  </button>
+                </div>
+                {!product.is_all_days ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {competitionDays.length ? competitionDays.map(day => {
+                      const selected = Array.isArray(product.access_days) && product.access_days.includes(day.label)
+                      return (
+                        <button
+                          key={`${product.id}-${day.id}`}
+                          type="button"
+                          onClick={() => toggleProductDay(idx, day.label)}
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 999,
+                            border: selected ? '1px solid rgba(0,194,168,0.45)' : '1px solid #252A33',
+                            background: selected ? 'rgba(0,194,168,0.14)' : 'rgba(9,11,14,0.62)',
+                            color: selected ? '#8DF1DF' : '#AAB2C0',
+                            fontSize: 11,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {day.label}
+                        </button>
+                      )
+                    }) : <div style={{ color: '#AAB2C0', fontSize: 12 }}>Define fechas de competencia para seleccionar dias.</div>}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gap: 8, borderTop: '1px solid #252A33', paddingTop: 10 }}>
+            <div style={{ fontWeight: 700, color: '#F5F7FA' }}>Precio por volumen</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Opcional: aplica descuentos por cantidad.</div>
+            {form.bulk_pricing_tiers.map((tier, idx) => (
+              <div key={`tier-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8 }}>
+                <input type="number" min="2" value={tier.min_quantity} onChange={(e) => updateTier(idx, 'min_quantity', e.target.value)} placeholder="Cantidad minima" />
+                <input type="number" min="1" value={tier.unit_price} onChange={(e) => updateTier(idx, 'unit_price', e.target.value)} placeholder="Precio unitario" />
+                <button type="button" className="btn-secondary btn-sm" onClick={() => removeTier(idx)}>Quitar</button>
+              </div>
+            ))}
+            <button type="button" className="btn-secondary btn-sm" onClick={addTier}>+ Agregar regla por volumen</button>
+            {!!sortedVolumeRules.length ? (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {volumeExampleQuantities.map((qty) => (
+                  <span key={`qty-preview-${qty}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 999, border: '1px solid #252A33', background: 'rgba(9,11,14,0.62)', color: '#D7DEE8', fontSize: 11 }}>
+                    x{qty}: <b style={{ color: '#F5F7FA' }}>{formatCop(unitPriceForQuantity(qty))}</b>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 2 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: '10px 12px', display: 'grid', gap: 10 }}>
+            <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Limite por documento de identidad</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Controla cuantas boletas puede comprar un mismo documento.</div>
+            <div style={{ display: 'inline-flex', border: '1px solid #252A33', borderRadius: 999, overflow: 'hidden', width: 'fit-content' }}>
+              <button type="button" onClick={() => setForm(prev => ({ ...prev, limit_per_identity: 1 }))} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: form.limit_per_identity ? '#F5F7FA' : '#AAB2C0', background: form.limit_per_identity ? 'linear-gradient(135deg, #00C2A8 0%, #23D7BF 100%)' : '#171B21', cursor: 'pointer' }}>Activado</button>
+              <button type="button" onClick={() => setForm(prev => ({ ...prev, limit_per_identity: 0 }))} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: !form.limit_per_identity ? '#F5F7FA' : '#AAB2C0', background: !form.limit_per_identity ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#171B21', cursor: 'pointer' }}>Desactivado</button>
+            </div>
+          </div>
+          {form.limit_per_identity ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label>Maximo por documento</label>
+              <input type="number" min="1" value={form.max_tickets_per_person} onChange={(e) => setForm(prev => ({ ...prev, max_tickets_per_person: e.target.value }))} placeholder="Ej: 4 boletas por documento" />
+            </div>
+          ) : null}
+          <div style={{ display: 'grid', gap: 8 }}>
+            <label>Maximo por transaccion</label>
+            <input type="number" min="1" value={form.max_tickets_per_transaction} onChange={(e) => setForm(prev => ({ ...prev, max_tickets_per_transaction: e.target.value }))} placeholder="Sin limite" />
+          </div>
+        </div>
+      )}
+
+      {wizardStep === 3 && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 12, color: '#D7DEE8', fontSize: 13, lineHeight: 1.6 }}>
+            <div><b style={{ color: '#F5F7FA' }}>Aforo:</b> {form.max_capacity || '-'}</div>
+            <div><b style={{ color: '#F5F7FA' }}>Productos creados:</b> {buildNormalizedProducts().length}</div>
+            <div><b style={{ color: '#F5F7FA' }}>Precio base:</b> {Number(form.price_unit || 0) > 0 ? formatCop(form.price_unit) : 'No definido'}</div>
+            <div><b style={{ color: '#F5F7FA' }}>Limite por documento:</b> {form.limit_per_identity ? `Si (${form.max_tickets_per_person || '-'})` : 'No'}</div>
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+            Guarda primero la configuracion. Cuando todo este correcto, activa la boleteria (irreversible).
+          </div>
+        </div>
+      )}
+
+      {msg ? (
+        <div style={{ borderRadius: 12, border: `1px solid ${msg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`, background: msg.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', color: '#F5F7FA', fontSize: 13, padding: 10 }}>
+          {msg.text}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setWizardStep(prev => Math.max(0, prev - 1))} disabled={wizardStep === 0 || saving || activating}>Anterior</button>
+          <button type="button" className="btn-secondary btn-sm" onClick={goNextStep} disabled={wizardStep >= wizardSteps.length - 1 || saving || activating}>Siguiente</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={save} disabled={saving || activating}>{saving ? 'Guardando...' : 'Guardar borrador'}</button>
+          <button type="button" className="btn-primary btn-sm" onClick={activate} disabled={form.enabled || saving || activating || wizardStep !== wizardSteps.length - 1}>
+            {activating ? 'Activando...' : (form.enabled ? 'Boleteria activa' : 'Activar boleteria')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  if (inline) return content
+  return (
+    <Modal title="Boleteria para espectadores" onClose={onClose} width={760}>
+      {content}
+    </Modal>
+  )
+}
+
+function TicketingLaunchModal({ competition, onClose, onSaved, inline = false }) {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [wizardStep, setWizardStep] = useState(0)
+  const [status, setStatus] = useState('draft')
+  const [enabled, setEnabled] = useState(0)
+  const [aforoEnabled, setAforoEnabled] = useState(1)
+  const [aforoMax, setAforoMax] = useState('')
+  const [products, setProducts] = useState([])
+  const [orders, setOrders] = useState([])
+  const [draft, setDraft] = useState({ label: '', by_day: 0, access_days: [], price_unit: '' })
+
+  const NO_CAPACITY_LIMIT = 999999
+  const wizardSteps = [
+    { id: 'create', title: 'Crear boleteria', hint: 'Que es, dias y precio' },
+    { id: 'capacity', title: 'Aforo', hint: 'Aplica o no aplica' },
+    { id: 'review', title: 'Revision', hint: 'Guardar' },
+  ]
+
+  const competitionDays = useMemo(() => {
+    const startRaw = competition?.competition_start
+    const endRaw = competition?.competition_end
+    if (!startRaw || !endRaw) return []
+    const start = new Date(`${String(startRaw).slice(0, 10)}T00:00:00`)
+    const end = new Date(`${String(endRaw).slice(0, 10)}T00:00:00`)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) return []
+    const out = []
+    const cursor = new Date(start)
+    let dayIndex = 1
+    while (cursor <= end && out.length < 31) {
+      out.push({
+        id: `day_${dayIndex}`,
+        label: `Dia ${dayIndex} - ${cursor.toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })}`,
+      })
+      cursor.setDate(cursor.getDate() + 1)
+      dayIndex += 1
+    }
+    return out
+  }, [competition?.competition_start, competition?.competition_end])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  const loadConfig = async () => {
+    setLoading(true)
+    setMsg(null)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/ticketing-config`)
+      setStatus(data?.status || 'draft')
+      setEnabled(Number(data?.enabled || 0))
+      const maxCapacity = Number(data?.max_capacity || 0)
+      const hasAforo = maxCapacity > 0 && maxCapacity < NO_CAPACITY_LIMIT
+      setAforoEnabled(hasAforo ? 1 : 0)
+      setAforoMax(hasAforo ? String(maxCapacity) : '')
+      const parsedProducts = parseTicketingProducts(data?.ticket_products).map((item, idx) => ({
+        id: item.id || `product_${idx + 1}`,
+        label: item.label || '',
+        by_day: item.is_all_days ? 0 : (Array.isArray(item.access_days) && item.access_days.length ? 1 : 0),
+        access_days: item.is_all_days ? [] : (Array.isArray(item.access_days) ? item.access_days : []),
+        price_unit: item.price_unit > 0 ? String(item.price_unit) : '',
+      }))
+      setProducts(parsedProducts)
+      setDraft({ label: '', by_day: 0, access_days: [], price_unit: '' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la configuracion de boleteria.' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadOrders = async () => {
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/ticketing-orders`)
+      setOrders(Array.isArray(data) ? data : [])
+    } catch {
+      setOrders([])
+    }
+  }
+
+  useEffect(() => {
+    setWizardStep(0)
+    Promise.all([loadConfig(), loadOrders()])
+  }, [competition.id])
+
+  const toggleDraftDay = (dayLabel) => {
+    setDraft(prev => {
+      const exists = prev.access_days.includes(dayLabel)
+      return {
+        ...prev,
+        access_days: exists ? prev.access_days.filter(day => day !== dayLabel) : [...prev.access_days, dayLabel],
+      }
+    })
+  }
+
+  const buildDraftProduct = () => {
+    const label = String(draft.label || '').trim()
+    const hasAnyInput = Boolean(label || String(draft.price_unit || '').trim() || draft.by_day || (draft.access_days || []).length)
+    if (!hasAnyInput) return { product: null, hasAnyInput: false, error: '' }
+    const priceUnit = Number(draft.price_unit || 0)
+    if (!label) return { product: null, hasAnyInput: true, error: 'Indica que es la boleteria.' }
+    if (priceUnit <= 0) return { product: null, hasAnyInput: true, error: 'El precio debe ser mayor a 0.' }
+    if (draft.by_day && !draft.access_days.length) return { product: null, hasAnyInput: true, error: 'Selecciona al menos un dia si aplica por dia.' }
+    return {
+      hasAnyInput: true,
+      error: '',
+      product: {
+        id: `product_${Date.now()}`,
+        label,
+        by_day: draft.by_day ? 1 : 0,
+        access_days: draft.by_day ? [...draft.access_days] : [],
+        price_unit: String(priceUnit),
+      },
+    }
+  }
+
+  const removeProduct = (id) => {
+    setProducts(prev => prev.filter(product => String(product.id) !== String(id)))
+  }
+
+  const buildNormalizedProducts = () => (
+    products
+      .map((product, idx) => ({
+        id: String(product?.id || `product_${idx + 1}`).trim(),
+        label: String(product?.label || '').trim(),
+        price_unit: Number(product?.price_unit || 0),
+        access_days: product?.by_day ? (Array.isArray(product?.access_days) ? product.access_days.filter(Boolean) : []) : [],
+        is_all_days: product?.by_day ? 0 : 1,
+      }))
+      .filter(product => product.label && product.price_unit > 0)
+  )
+
+  const orderStatsByProduct = useMemo(() => {
+    const approvedStatuses = new Set(['approved'])
+    const pendingStatuses = new Set(['created', 'processing', 'pending', 'unknown'])
+    const stats = {}
+    for (const product of products) {
+      const key = String(product.id || '')
+      stats[key] = { sold: 0, pending: 0 }
+    }
+    for (const order of orders) {
+      const productKey = String(order?.product_id || '')
+      if (!stats[productKey]) continue
+      const qty = Number(order?.quantity || 0)
+      const orderStatus = String(order?.payment_status || '').toLowerCase()
+      if (approvedStatuses.has(orderStatus)) stats[productKey].sold += qty
+      else if (pendingStatuses.has(orderStatus)) stats[productKey].pending += qty
+    }
+    return stats
+  }, [orders, products])
+
+  const soldTotal = useMemo(
+    () => Object.values(orderStatsByProduct).reduce((acc, item) => acc + Number(item?.sold || 0), 0),
+    [orderStatsByProduct],
+  )
+  const remainingCapacity = aforoEnabled ? Math.max(0, Number(aforoMax || 0) - soldTotal) : null
+
+  const validateStep = (step) => {
+    if (step === 0) {
+      const draftCheck = buildDraftProduct()
+      if (draftCheck.error) return draftCheck.error
+      if (!buildNormalizedProducts().length && !draftCheck.product) return 'Crea al menos una boleteria para continuar.'
+    }
+    if (step === 1 && aforoEnabled && Number(aforoMax || 0) <= 0) return 'Si aplica aforo, define un maximo mayor a 0.'
+    return ''
+  }
+
+  const goNext = () => {
+    const errorText = validateStep(wizardStep)
+    if (errorText) {
+      setMsg({ type: 'error', text: errorText })
+      return
+    }
+    setMsg(null)
+    setWizardStep(prev => Math.min(prev + 1, wizardSteps.length - 1))
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setMsg(null)
+    try {
+      const draftCheck = buildDraftProduct()
+      if (draftCheck.error) {
+        setMsg({ type: 'error', text: draftCheck.error })
+        setSaving(false)
+        return
+      }
+      const combinedProducts = draftCheck.product ? [...products, draftCheck.product] : [...products]
+      const normalizedProducts = combinedProducts
+        .map((product, idx) => ({
+          id: String(product?.id || `product_${idx + 1}`).trim(),
+          label: String(product?.label || '').trim(),
+          price_unit: Number(product?.price_unit || 0),
+          access_days: product?.by_day ? (Array.isArray(product?.access_days) ? product.access_days.filter(Boolean) : []) : [],
+          is_all_days: product?.by_day ? 0 : 1,
+        }))
+        .filter(product => product.label && product.price_unit > 0)
+      if (!normalizedProducts.length) {
+        setMsg({ type: 'error', text: 'Debes crear al menos una boleteria.' })
+        setSaving(false)
+        return
+      }
+      const maxCapacity = aforoEnabled ? Number(aforoMax || 0) : NO_CAPACITY_LIMIT
+      const payload = {
+        max_capacity: maxCapacity,
+        product_title: `Boleteria ${competition?.nombre || ''}`.trim(),
+        product_description: `Productos activos: ${normalizedProducts.map(item => item.label).join(', ')}`,
+        benefits_text: null,
+        access_text: null,
+        price_unit: 0,
+        ticket_products: normalizedProducts,
+        limit_per_identity: 0,
+        max_tickets_per_person: null,
+        max_tickets_per_transaction: null,
+        bulk_pricing_tiers: [],
+      }
+      const { data } = await api.put(`/competitions/${competition.id}/ticketing-config`, payload)
+      setStatus(data?.status || status)
+      setEnabled(Number(data?.enabled || 0))
+      if (draftCheck.product) setDraft({ label: '', by_day: 0, access_days: [], price_unit: '' })
+      await loadConfig()
+      await loadOrders()
+      setMsg({ type: 'success', text: 'Boleteria guardada correctamente.' })
+      onSaved?.()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo guardar la boleteria.' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const content = loading ? <div style={{ color: '#AAB2C0' }}>Cargando configuracion...</div> : (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ border: '1px solid #252A33', borderRadius: 18, padding: isMobile ? 14 : 18, background: 'linear-gradient(135deg, rgba(214,217,224,0.16), rgba(23,27,33,0.98) 42%, rgba(9,11,14,0.98) 100%)' }}>
+        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#F5F7FA' }}>Agregar boleteria</h4>
+        <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 6 }}>
+          Completa todas las preguntas en este modal y al final presiona Guardar.
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
+            <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Producto en preparacion</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>Se creara al guardar este formulario.</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label>Que es</label>
+              <input value={draft.label} onChange={(e) => setDraft(prev => ({ ...prev, label: e.target.value }))} placeholder="Ej: Dia 1, Pase completo, Charla tecnica" />
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label>Aplica por dia</label>
+              <div style={{ display: 'inline-flex', border: '1px solid #252A33', borderRadius: 999, overflow: 'hidden', width: 'fit-content' }}>
+                <button type="button" onClick={() => setDraft(prev => ({ ...prev, by_day: 1 }))} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: draft.by_day ? '#F5F7FA' : '#AAB2C0', background: draft.by_day ? 'linear-gradient(135deg, #00C2A8 0%, #23D7BF 100%)' : '#171B21', cursor: 'pointer' }}>Si</button>
+                <button type="button" onClick={() => setDraft(prev => ({ ...prev, by_day: 0, access_days: [] }))} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: !draft.by_day ? '#F5F7FA' : '#AAB2C0', background: !draft.by_day ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#171B21', cursor: 'pointer' }}>No</button>
+              </div>
+            </div>
+            {draft.by_day ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label>Selecciona uno o varios dias</label>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {competitionDays.length ? competitionDays.map(day => {
+                    const selected = draft.access_days.includes(day.label)
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        onClick={() => toggleDraftDay(day.label)}
+                        style={{
+                          padding: '6px 10px',
+                          borderRadius: 999,
+                          border: selected ? '1px solid rgba(0,194,168,0.45)' : '1px solid #252A33',
+                          background: selected ? 'rgba(0,194,168,0.14)' : 'rgba(9,11,14,0.62)',
+                          color: selected ? '#8DF1DF' : '#AAB2C0',
+                          fontSize: 11,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {day.label}
+                      </button>
+                    )
+                  }) : <div style={{ color: '#AAB2C0', fontSize: 12 }}>No hay dias detectados en el evento.</div>}
+                </div>
+              </div>
+            ) : null}
+            <div style={{ display: 'grid', gap: 8 }}>
+              <label>Precio (COP)</label>
+              <input type="number" min="1" value={draft.price_unit} onChange={(e) => setDraft(prev => ({ ...prev, price_unit: e.target.value }))} placeholder="Ej: 45000" />
+            </div>
+          </div>
+
+        </div>
+
+      <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
+            <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Aplica aforo</div>
+            <div style={{ display: 'inline-flex', border: '1px solid #252A33', borderRadius: 999, overflow: 'hidden', width: 'fit-content' }}>
+              <button type="button" onClick={() => setAforoEnabled(1)} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: aforoEnabled ? '#F5F7FA' : '#AAB2C0', background: aforoEnabled ? 'linear-gradient(135deg, #00C2A8 0%, #23D7BF 100%)' : '#171B21', cursor: 'pointer' }}>Si</button>
+              <button type="button" onClick={() => setAforoEnabled(0)} style={{ border: 'none', padding: '7px 12px', fontSize: 12, fontWeight: 700, color: !aforoEnabled ? '#F5F7FA' : '#AAB2C0', background: !aforoEnabled ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' : '#171B21', cursor: 'pointer' }}>No</button>
+            </div>
+            {aforoEnabled ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <label>Cantidad maxima</label>
+                <input type="number" min="1" value={aforoMax} onChange={(e) => setAforoMax(e.target.value)} placeholder="Ej: 500" />
+              </div>
+            ) : (
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>Sin aforo: no se aplicara limite de capacidad.</div>
+            )}
+          </div>
+        </div>
+
+      <div style={{ display: 'grid', gap: 10 }}>
+          <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.62)', padding: 12, color: '#D7DEE8', fontSize: 13, lineHeight: 1.6 }}>
+            <div><b style={{ color: '#F5F7FA' }}>Boleterias creadas:</b> {products.length}</div>
+            <div><b style={{ color: '#F5F7FA' }}>Aforo:</b> {aforoEnabled ? `${aforoMax || '-'} cupos` : 'No aplica'}</div>
+            <div><b style={{ color: '#F5F7FA' }}>Vendidas total:</b> {soldTotal}</div>
+            {aforoEnabled ? <div><b style={{ color: '#F5F7FA' }}>Aforo restante:</b> {remainingCapacity}</div> : null}
+            <div><b style={{ color: '#F5F7FA' }}>Resumen:</b> {buildNormalizedProducts().map(item => `${item.label} (${formatCop(item.price_unit)})`).join(' · ') || '-'}</div>
+          </div>
+        </div>
+
+      {msg ? (
+        <div style={{ borderRadius: 12, border: `1px solid ${msg.type === 'error' ? 'rgba(239,68,68,0.3)' : 'rgba(34,197,94,0.3)'}`, background: msg.type === 'error' ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', color: '#F5F7FA', fontSize: 13, padding: 10 }}>
+          {msg.text}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" className="btn-primary btn-sm" onClick={save} disabled={saving}>
+          {saving ? 'Guardando...' : 'Guardar'}
+        </button>
+      </div>
+    </div>
+  )
+
+  if (inline) return content
+  return (
+    <Modal title="Boleteria para espectadores" onClose={onClose} width={760}>
+      {content}
+    </Modal>
+  )
+}
+
+function TicketingProductsPanel({ competition, refreshKey }) {
+  const [products, setProducts] = useState([])
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [aforoEnabled, setAforoEnabled] = useState(false)
+  const [aforoMax, setAforoMax] = useState(0)
+
+  const NO_CAPACITY_LIMIT = 999999
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [configRes, ordersRes] = await Promise.all([
+        api.get(`/competitions/${competition.id}/ticketing-config`),
+        api.get(`/competitions/${competition.id}/ticketing-orders`).catch(() => ({ data: [] })),
+      ])
+      const data = configRes.data
+      const maxCapacity = Number(data?.max_capacity || 0)
+      const hasAforo = maxCapacity > 0 && maxCapacity < NO_CAPACITY_LIMIT
+      setAforoEnabled(hasAforo)
+      setAforoMax(hasAforo ? maxCapacity : 0)
+      setProducts(parseTicketingProducts(data?.ticket_products).map((item, idx) => ({
+        id: item.id || `product_${idx + 1}`,
+        label: item.label || '',
+        by_day: item.is_all_days ? 0 : (Array.isArray(item.access_days) && item.access_days.length ? 1 : 0),
+        access_days: item.is_all_days ? [] : (Array.isArray(item.access_days) ? item.access_days : []),
+        price_unit: item.price_unit > 0 ? String(item.price_unit) : '',
+      })))
+      setOrders(Array.isArray(ordersRes.data) ? ordersRes.data : [])
+    } catch {
+      setProducts([])
+      setOrders([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadData() }, [competition.id, refreshKey])
+
+  const orderStatsByProduct = useMemo(() => {
+    const approvedStatuses = new Set(['approved'])
+    const pendingStatuses = new Set(['created', 'processing', 'pending', 'unknown'])
+    const stats = {}
+    for (const product of products) {
+      const key = String(product.id || '')
+      stats[key] = { sold: 0, pending: 0 }
+    }
+    for (const order of orders) {
+      const productKey = String(order?.product_id || '')
+      if (!stats[productKey]) continue
+      const qty = Number(order?.quantity || 0)
+      const orderStatus = String(order?.payment_status || '').toLowerCase()
+      if (approvedStatuses.has(orderStatus)) stats[productKey].sold += qty
+      else if (pendingStatuses.has(orderStatus)) stats[productKey].pending += qty
+    }
+    return stats
+  }, [orders, products])
+
+  const soldTotal = useMemo(
+    () => Object.values(orderStatsByProduct).reduce((acc, item) => acc + Number(item?.sold || 0), 0),
+    [orderStatsByProduct],
+  )
+  const remainingCapacity = aforoEnabled ? Math.max(0, aforoMax - soldTotal) : null
+
+  if (loading) return <div style={{ color: '#AAB2C0', fontSize: 12 }}>Cargando boleterias...</div>
+
+  return (
+    <div style={{ display: 'grid', gap: 8 }}>
+      <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Miscelanea de boleteria</div>
+      {!products.length ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Aun no has creado boleterias.</div> : null}
+      {products.map((product, idx) => (
+        <div key={`${product.id}-${idx}`} style={{ border: '1px solid #252A33', borderRadius: 12, background: 'rgba(13,15,18,0.62)', padding: 10, display: 'grid', gap: 8 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{product.label}</div>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+            {product.by_day
+              ? `Dias: ${(product.access_days || []).join(', ')}`
+              : 'Dias: No aplica (general)'}
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+            Precio: <b style={{ color: '#F5F7FA' }}>{formatCop(product.price_unit)}</b>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ padding: '4px 8px', borderRadius: 999, fontSize: 11, border: '1px solid #252A33', background: 'rgba(0,194,168,0.10)', color: '#8DF1DF' }}>
+              Vendidas: {orderStatsByProduct[String(product.id)]?.sold || 0}
+            </span>
+            <span style={{ padding: '4px 8px', borderRadius: 999, fontSize: 11, border: '1px solid #252A33', background: 'rgba(245,158,11,0.10)', color: '#FCD34D' }}>
+              Pendientes: {orderStatsByProduct[String(product.id)]?.pending || 0}
+            </span>
+            {aforoEnabled ? (
+              <span style={{ padding: '4px 8px', borderRadius: 999, fontSize: 11, border: '1px solid #252A33', background: 'rgba(148,163,184,0.10)', color: '#CBD5E1' }}>
+                Aforo restante global: {remainingCapacity}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SpectatorTicketingOpsPanel({ competition }) {
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [scanToken, setScanToken] = useState('')
+  const [scanBusy, setScanBusy] = useState(false)
+  const [scanResult, setScanResult] = useState(null)
+
+  const loadOrders = async () => {
+    setLoading(true)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/ticketing-orders`)
+      setOrders(Array.isArray(data) ? data : [])
+    } catch {
+      setOrders([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadOrders() }, [competition.id])
+
+  const scan = async () => {
+    const token = String(scanToken || '').trim()
+    if (!token) return
+    setScanBusy(true)
+    try {
+      const { data } = await api.post(`/competitions/${competition.id}/ticketing/scan`, { token })
+      setScanResult(data || null)
+      setScanToken('')
+      loadOrders()
+    } catch (err) {
+      setScanResult({
+        status: 'invalid',
+        label: 'Error en escaneo',
+        message: err.response?.data?.detail || 'No se pudo validar la boleta.',
+      })
+    } finally {
+      setScanBusy(false)
+    }
+  }
+
+  const resultTone = scanResult?.status === 'valid'
+    ? { border: 'rgba(34,197,94,0.35)', bg: 'rgba(34,197,94,0.12)', text: '#86EFAC' }
+    : scanResult?.status === 'used'
+      ? { border: 'rgba(245,158,11,0.35)', bg: 'rgba(245,158,11,0.12)', text: '#FCD34D' }
+      : scanResult?.status === 'null'
+        ? { border: 'rgba(148,163,184,0.35)', bg: 'rgba(148,163,184,0.12)', text: '#CBD5E1' }
+        : { border: 'rgba(239,68,68,0.35)', bg: 'rgba(239,68,68,0.12)', text: '#FCA5A5' }
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#F5F7FA' }}>Scanner de boletas</div>
+        <div style={{ color: '#AAB2C0', fontSize: 12 }}>Valida una boleta a la vez. Estados: valida, nula, ya usada o invalida.</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input value={scanToken} onChange={(e) => setScanToken(e.target.value)} placeholder="Pegar token del QR (fallback manual)" />
+          <button type="button" className="btn-primary btn-sm" onClick={scan} disabled={scanBusy || !String(scanToken || '').trim()}>
+            {scanBusy ? 'Validando...' : 'Validar'}
+          </button>
+        </div>
+        {scanResult ? (
+          <div style={{ border: `1px solid ${resultTone.border}`, background: resultTone.bg, borderRadius: 12, padding: 10, color: '#F5F7FA' }}>
+            <div style={{ color: resultTone.text, fontWeight: 800, fontSize: 14 }}>{scanResult.label || 'Resultado'}</div>
+            <div style={{ marginTop: 4, fontSize: 13 }}>{scanResult.message || ''}</div>
+            {scanResult.buyer_full_name ? <div style={{ marginTop: 4, fontSize: 12, color: '#D7DEE8' }}>{scanResult.buyer_full_name} · {scanResult.buyer_document || '-'}</div> : null}
+          </div>
+        ) : null}
+      </div>
+      <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>Ordenes de boleteria</div>
+          <button type="button" className="btn-secondary btn-sm" onClick={loadOrders} disabled={loading}>{loading ? 'Cargando...' : 'Actualizar'}</button>
+        </div>
+        <div style={{ display: 'grid', gap: 8 }}>
+          {!orders.length ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Sin ordenes de boleteria por ahora.</div> : null}
+          {orders.slice(0, 20).map((order) => (
+            <div key={`ticket-order-${order.id}`} style={{ border: '1px solid #252A33', borderRadius: 10, background: 'rgba(23,27,33,0.78)', padding: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 13 }}>{order.buyer_full_name}</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12 }}>{order.payment_status}</div>
+              </div>
+              <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 12 }}>{order.buyer_document} · {order.quantity} boleta(s)</div>
+              <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 12 }}>Usadas: {order.tickets_used}/{order.tickets_total}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function CompetitionThemeMiniPreview({ theme }) {
@@ -8069,6 +9174,8 @@ function CompetitionsTab() {
   const [competitionMeta, setCompetitionMeta] = useState({})
   const [selectedCompetition, setSelectedCompetition] = useState(null)
   const [selectedTab, setSelectedTab] = useState('setup')
+  const [ticketingModalOpen, setTicketingModalOpen] = useState(false)
+  const [ticketingRefreshKey, setTicketingRefreshKey] = useState(0)
   const [linkCopied, setLinkCopied] = useState(false)
   const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
@@ -8750,6 +9857,8 @@ function CompetitionsTab() {
             <div className="card">
               <CheckinQrConfigPanel competition={selectedCompetition} isMobile={isMobile} />
               <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0' }} />
+              <SpectatorTicketingOpsPanel competition={selectedCompetition} />
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '14px 0' }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                 <div>
                   <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
@@ -8798,6 +9907,32 @@ function CompetitionsTab() {
                 </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {selectedTab === 'ticketing' && (
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div className="card">
+                <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                  <h4 style={{ margin: 0, fontSize: 16 }}>Boleteria</h4>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+                    Configura en modal y revisa el estado de ventas por producto.
+                  </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-primary btn-sm"
+                    onClick={() => setTicketingModalOpen(true)}
+                  >
+                    Agregar boleteria
+                  </button>
+                </div>
+                <TicketingProductsPanel competition={selectedCompetition} refreshKey={ticketingRefreshKey} />
+              </div>
+              <div className="card">
+                <SpectatorTicketingOpsPanel competition={selectedCompetition} />
+              </div>
             </div>
           )}
 
@@ -8905,6 +10040,17 @@ function CompetitionsTab() {
           }}
         />
       )}
+      {ticketingModalOpen && selectedCompetition ? (
+        <TicketingLaunchModal
+          competition={selectedCompetition}
+          onClose={() => setTicketingModalOpen(false)}
+          onSaved={() => {
+            load()
+            setTicketingRefreshKey(prev => prev + 1)
+            refreshSelectedCompetitionMeta(selectedCompetition.id).catch(() => {})
+          }}
+        />
+      ) : null}
       {successToast && <SuccessToast text={successToast} onDone={() => setSuccessToast(null)} />}
     </div>
   )
@@ -9526,7 +10672,7 @@ function FinanceTab() {
   // Platform config (admin only: fee rate editor)
   const [pricingConfig, setPricingConfig] = useState(null)
   const [editingConfig, setEditingConfig] = useState(false)
-  const [configForm, setConfigForm] = useState({ default_platform_fee_rate: '', bold_processor_rate: '', bold_processor_fixed_fee: '' })
+  const [configForm, setConfigForm] = useState({ default_platform_fee_rate: '', bold_processor_rate: '', bold_processor_fixed_fee: '', min_platform_fee: '' })
   const [savingConfig, setSavingConfig] = useState(false)
   const [configMsg, setConfigMsg] = useState(null)
 
@@ -9537,6 +10683,7 @@ function FinanceTab() {
         default_platform_fee_rate: String(Math.round((data.default_platform_fee_rate || 0.05) * 1000) / 10),
         bold_processor_rate: String(data.bold_processor_rate ?? 0.0269),
         bold_processor_fixed_fee: String(data.bold_processor_fixed_fee ?? 300),
+        min_platform_fee: String(data.min_platform_fee ?? 5000),
       })
     }).catch(() => {})
   }, [])
@@ -9548,13 +10695,16 @@ function FinanceTab() {
       const rate = parseFloat(configForm.default_platform_fee_rate) / 100
       const procRate = parseFloat(configForm.bold_processor_rate)
       const procFixed = parseInt(configForm.bold_processor_fixed_fee, 10)
+      const minFee = parseInt(configForm.min_platform_fee, 10)
       if (!Number.isFinite(rate) || rate < 0 || rate > 1) { setConfigMsg({ type: 'error', text: 'Tasa invalida (0-100%)' }); return }
       if (!Number.isFinite(procRate) || procRate < 0) { setConfigMsg({ type: 'error', text: 'Tasa procesador invalida' }); return }
       if (!Number.isFinite(procFixed) || procFixed < 0) { setConfigMsg({ type: 'error', text: 'Fee fijo invalido' }); return }
+      if (!Number.isFinite(minFee) || minFee < 0) { setConfigMsg({ type: 'error', text: 'Comision minima invalida' }); return }
       const { data } = await api.put('/config/pricing', {
         default_platform_fee_rate: rate,
         bold_processor_rate: procRate,
         bold_processor_fixed_fee: procFixed,
+        min_platform_fee: minFee,
       })
       setPricingConfig(data.config)
       setEditingConfig(false)
@@ -9733,6 +10883,10 @@ function FinanceTab() {
                 <div style={{ color: '#AAB2C0', fontSize: 11 }}>Fee fijo Bold</div>
                 <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{formatCop(pricingConfig.bold_processor_fixed_fee)}</div>
               </div>
+              <div style={{ borderRadius: 12, border: '1px solid #252A33', background: '#0D0F12', padding: '10px 12px' }}>
+                <div style={{ color: '#AAB2C0', fontSize: 11 }}>Comision minima FinalRep</div>
+                <div style={{ color: '#FFB36F', fontSize: 20, fontWeight: 800, marginTop: 4 }}>{formatCop(pricingConfig.min_platform_fee)}</div>
+              </div>
             </div>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
@@ -9748,6 +10902,10 @@ function FinanceTab() {
                 <div>
                   <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Fee fijo Bold (COP)</div>
                   <input type="number" min="0" step="1" value={configForm.bold_processor_fixed_fee} onChange={e => setConfigForm(p => ({ ...p, bold_processor_fixed_fee: e.target.value }))} placeholder="300" />
+                </div>
+                <div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginBottom: 4 }}>Comision minima FinalRep (COP)</div>
+                  <input type="number" min="0" step="100" value={configForm.min_platform_fee} onChange={e => setConfigForm(p => ({ ...p, min_platform_fee: e.target.value }))} placeholder="5000" />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
