@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, ChevronRight, LogOut } from 'lucide-react'
+import { Bell, ChevronRight, LogOut, Mail, Phone } from 'lucide-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BottomDock } from './BottomDock'
 import { DesktopHeader } from './DesktopHeader'
@@ -397,6 +397,43 @@ export function AuthenticatedShell() {
         items={notificationItems}
       />
 
+      {!isMobile && !isLoginRoute && (
+        <footer
+          style={{
+            borderTop: '1px solid var(--oa-border)',
+            padding: '18px 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <small style={{ color: '#AAB2C0', fontSize: 12 }}>
+            © {new Date().getFullYear()} FinalRep. All Rights Reserved.
+          </small>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <small style={{ fontSize: 12 }}>
+              <a
+                href="mailto:support@finalrep.co"
+                style={{ color: '#AAB2C0', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              >
+                <Mail size={13} />
+                support@finalrep.co
+              </a>
+            </small>
+            <small style={{ fontSize: 12 }}>
+              <a
+                href="tel:+573185781385"
+                style={{ color: '#AAB2C0', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+              >
+                <Phone size={13} />
+                +57 318 5781385
+              </a>
+            </small>
+          </div>
+        </footer>
+      )}
       {isMobile && !modalVisible && (
         <div
           aria-hidden="true"
