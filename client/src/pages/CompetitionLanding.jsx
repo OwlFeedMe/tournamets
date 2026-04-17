@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Globe, 
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
+import { formatCalendarDateRange } from '../utils/calendarDate'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
 import { getMissingParticipantProfileFields } from '../utils/participantProfile'
@@ -11,26 +12,8 @@ function buildPageBackground(theme) {
   return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.18)}, transparent 28%), radial-gradient(circle at 85% 20%, ${hexToRgba(theme.accent, 0.12)}, transparent 24%), ${theme.background}`
 }
 
-function formatDate(value) {
-  if (!value) return null
-  const [y, m, d] = String(value).slice(0, 10).split('-').map(Number)
-  if (!y || !m || !d) return null
-  const date = new Date(y, m - 1, d)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
-}
-
 function formatDateRange(start, end) {
-  const startLabel = formatDate(start)
-  const endLabel = formatDate(end)
-  if (!startLabel && !endLabel) return 'Fechas por confirmar'
-  if (!startLabel) return `Hasta ${endLabel}`
-  if (!endLabel) return `Desde ${startLabel}`
-  return `${startLabel} - ${endLabel}`
+  return formatCalendarDateRange(start, end)
 }
 
 function normalizeEnrollmentPrice(value) {

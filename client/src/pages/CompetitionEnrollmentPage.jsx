@@ -4,25 +4,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
+import { formatCalendarDateRange } from '../utils/calendarDate'
 import { formatMissingParticipantProfileFields, getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
 
-function formatDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
-}
-
 function formatDateRange(start, end) {
-  const startLabel = formatDate(start)
-  const endLabel = formatDate(end)
-  if (!startLabel && !endLabel) return 'Fechas por confirmar'
-  if (!startLabel) return `Hasta ${endLabel}`
-  if (!endLabel) return `Desde ${startLabel}`
-  return `${startLabel} - ${endLabel}`
+  return formatCalendarDateRange(start, end)
 }
 
 function parseEnrollmentQuestions(raw) {

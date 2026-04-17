@@ -2,29 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowRight, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
+import { formatCalendarDateRange } from '../utils/calendarDate'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { FINALREP_COMPETITION_THEME, getReadableTextColor } from '../utils/competitionTheme'
 
 const TARGET_COMPETITION = 'unbroken games'
 
-function formatDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(date)
-}
-
 function formatDateRange(start, end) {
-  const startLabel = formatDate(start)
-  const endLabel = formatDate(end)
-  if (!startLabel && !endLabel) return 'Fechas por confirmar'
-  if (!startLabel) return `Hasta ${endLabel}`
-  if (!endLabel) return `Desde ${startLabel}`
-  return `${startLabel} - ${endLabel}`
+  return formatCalendarDateRange(start, end)
 }
 
 function parseLandingSections(raw) {

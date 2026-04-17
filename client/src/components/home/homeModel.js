@@ -1,20 +1,13 @@
+import { formatCalendarDate } from '../../utils/calendarDate'
+
 export const homePageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 24%), radial-gradient(circle at 82% 18%, rgba(94,234,212,0.10), transparent 20%), radial-gradient(circle at 20% 78%, rgba(205,170,107,0.08), transparent 18%), #0D0F12'
 
 export function formatCompetitionDate(value, options = {}) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
   const { includeYear = true } = options
-  const formatter = new Intl.DateTimeFormat('es-CO', includeYear
+  return formatCalendarDate(value, 'es-CO', includeYear
     ? { day: 'numeric', month: 'short', year: 'numeric' }
     : { day: 'numeric', month: 'short' })
-  if (includeYear) return formatter.format(date)
-  const parts = formatter.formatToParts(date)
-  const day = parts.find((part) => part.type === 'day')?.value
-  const month = parts.find((part) => part.type === 'month')?.value
-  if (!day || !month) return null
-  return `${day} de ${month}`
 }
 
 export function formatCompetitionDateRange(startValue, endValue, options = {}) {
