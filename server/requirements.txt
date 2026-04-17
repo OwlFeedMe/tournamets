@@ -9,5 +9,6 @@ sqlmodel
 psycopg2-binary
 qrcode[pil]
 Pillow
+python-docx
 redis>=5.0
 alembic>=1.13

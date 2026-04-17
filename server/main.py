@@ -22,6 +22,7 @@ from routers import (
     system_status,
     interest_notifications,
     checkin_qr,
+    judge_cards,
 )
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
@@ -57,6 +58,7 @@ app.include_router(config.router)
 app.include_router(system_status.router)
 app.include_router(interest_notifications.router)
 app.include_router(checkin_qr.router)
+app.include_router(judge_cards.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
