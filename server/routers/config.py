@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
 from sqlmodel import Session, select
 
 from auth import require_admin
 from database import get_session
-from models import PlatformConfig, PlatformConfigUpdate
+from models import Competition, PlatformConfig, PlatformConfigUpdate
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
@@ -98,9 +97,10 @@ def update_pricing_config(
 
     # Keep legacy per-competition column aligned with the global pricing rule.
     if "default_platform_fee_rate" in updates:
-        session.exec(
-            text("UPDATE competitions SET platform_fee_rate = :rate"),
-            {"rate": float(updates["default_platform_fee_rate"])},
-        )
+        target_rate = float(updates["default_platform_fee_rate"])
+        competitions = session.exec(select(Competition)).all()
+        for competition in competitions:
+            competition.platform_fee_rate = target_rate
+            session.add(competition)
     session.commit()
     return {"ok": True, "config": get_pricing_config(session)}
