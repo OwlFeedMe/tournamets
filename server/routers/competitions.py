@@ -266,6 +266,11 @@ def _normalize_platform_fee_rate(raw: object) -> float:
     return round(value, 4)
 
 
+def _current_global_platform_fee_rate(session: Session) -> float:
+    pricing_cfg = get_pricing_config(session)
+    return _normalize_platform_fee_rate(pricing_cfg.get("default_platform_fee_rate"))
+
+
 def _normalize_competition_dates(payload: dict):
     if "enrollment_start" in payload:
         payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False)
@@ -503,9 +508,13 @@ def list_competitions(
     user=Depends(get_current_user_optional),
 ):
     query = select(Competition).order_by(Competition.created_at.desc())
+    global_fee_rate = _current_global_platform_fee_rate(session)
     if scope == "public":
         query = query.where(Competition.activa == 1)
-        return session.exec(query).all()
+        items = session.exec(query).all()
+        for item in items:
+            item.platform_fee_rate = global_fee_rate
+        return items
     scoped_user = user
     if scope == "owned" and user and user.get("role") != "admin" and has_organizer_access(user):
         scoped_user = {**user, "staff_mode": "organizer"}
@@ -514,7 +523,10 @@ def list_competitions(
         query = query.where(Competition.id.in_(owned_ids))
     elif not (user and user.get("role") == "admin"):
         query = query.where(Competition.activa == 1)
-    return session.exec(query).all()
+    items = session.exec(query).all()
+    for item in items:
+        item.platform_fee_rate = global_fee_rate
+    return items
 
 
 @router.get("/{competition_id}", response_model=Competition)
@@ -523,7 +535,9 @@ def get_competition(
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
-    return require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
+    competition.platform_fee_rate = _current_global_platform_fee_rate(session)
+    return competition
 
 
 @router.get("/{competition_id}/public")
@@ -659,6 +673,7 @@ def get_public_competition_detail(
     ).mappings().first() or {}
 
     competition_payload = competition.model_dump()
+    competition_payload["platform_fee_rate"] = _current_global_platform_fee_rate(session)
     competition_payload["rm_unit"] = normalize_rm_unit(competition_payload.get("rm_unit"))
 
     return {

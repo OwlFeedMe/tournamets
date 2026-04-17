@@ -4188,6 +4188,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [editingSocialId, setEditingSocialId] = useState(null)
   const [socialDraft, setSocialDraft] = useState({ platform: 'instagram', custom_label: '', url: '' })
   const [newPhaseCatOverrides, setNewPhaseCatOverrides] = useState({})
+  const [globalPricingConfig, setGlobalPricingConfig] = useState(null)
+  const effectivePlatformFeeRate = Number(globalPricingConfig?.default_platform_fee_rate || form.platform_fee_rate || 0.05)
 
   useEffect(() => {
     if (!isEdit || !competition) return
@@ -4290,6 +4292,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       setMsg({ type: 'error', text: 'No se pudo cargar la configuracion actual' })
     })
   }, [isEdit, competition?.id])
+
+  useEffect(() => {
+    api.get('/config/pricing').then(({ data }) => setGlobalPricingConfig(data)).catch(() => {})
+  }, [])
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
@@ -4540,7 +4546,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         },
       },
       enrollment_terms_text: form.enrollment_terms_text.trim() || null,
-      platform_fee_rate: Number(form.platform_fee_rate || 0.05),
       rm_unit: form.rm_unit === 'lb' ? 'lb' : 'kg',
       enrollment_questions: questions
         .map((question, idx) => ({
@@ -5611,15 +5616,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                     <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tu precio</div>
-                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).organizerPrice)}</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, effectivePlatformFeeRate).organizerPrice)}</div>
                     </div>
                     <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
-                      <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).platformFee)}</div>
+                      <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, effectivePlatformFeeRate).platformFee)}</div>
                     </div>
                     <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
                       <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Paga el atleta</div>
-                      <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, form.platform_fee_rate).totalPrice)}</div>
+                      <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(cat.enrollment_price, effectivePlatformFeeRate).totalPrice)}</div>
                     </div>
                   </div>
                   <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
@@ -6562,15 +6567,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
           <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
             <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Tu precio</div>
-            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).organizerPrice)}</div>
+            <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, effectivePlatformFeeRate).organizerPrice)}</div>
           </div>
           <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
             <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
-            <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).platformFee)}</div>
+            <div style={{ color: '#FFB36F', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, effectivePlatformFeeRate).platformFee)}</div>
           </div>
           <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
             <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Paga el atleta</div>
-            <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, form.platform_fee_rate).totalPrice)}</div>
+            <div style={{ color: '#8DF1E4', fontSize: 14, fontWeight: 800 }}>{formatCop(calculateEnrollmentPricing(editingCategory.enrollment_price, effectivePlatformFeeRate).totalPrice)}</div>
           </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>

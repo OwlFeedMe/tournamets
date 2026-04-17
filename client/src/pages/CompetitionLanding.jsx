@@ -560,7 +560,7 @@ export default function CompetitionLanding() {
   const hasContactInfo = !!(competition?.contact_phone || competition?.website_url || socialLinks.length)
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
-  const platformFeeRate = Number(competition?.platform_fee_rate || 0.05)
+  const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
   const categoryPricingSummary = useMemo(() => {
     const valid = categories
