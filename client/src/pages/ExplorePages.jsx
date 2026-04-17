@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, QrCode, Trophy, X } from 'lucide-react'
+import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -16,7 +16,30 @@ function formatDate(value) {
   if (!value) return null
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(date)
+  const parts = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).formatToParts(date)
+  const day = parts.find((part) => part.type === 'day')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  if (!day || !month) return null
+  return `${day} de ${month}`
+}
+
+function formatCompetitionWindow(competition) {
+  const start = formatDate(competition?.competition_start)
+  const end = formatDate(competition?.competition_end)
+  if (start && end) return `${start} - ${end}`
+  if (start) return start
+  if (end) return end
+  return 'Fechas de competencia por confirmar'
+}
+
+function competitionMonogram(name) {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+  if (!parts.length) return 'FR'
+  return parts.map((part) => part[0]?.toUpperCase() || '').join('')
 }
 
 function truncate(text, max = 120) {
@@ -230,7 +253,7 @@ export function EventsPage() {
                       placeItems: 'center',
                     }}
                   >
-                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                    {!profileImageUrl ? <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>{competitionMonogram(competition.nombre)}</span> : null}
                   </div>
 
                   <div style={{ flex: '1 1 320px', minWidth: 0 }}>
@@ -248,11 +271,11 @@ export function EventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="var(--oa-accent)" />
-                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}{competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                        {formatCompetitionWindow(competition)}
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Trophy size={14} color="var(--oa-gold)" />
-                        Pagina publica
+                        <MapPin size={14} color="var(--oa-primary)" />
+                        {competition.lugar || 'Lugar por confirmar'}
                       </span>
                     </div>
 
@@ -455,7 +478,7 @@ export function MyEventsPage() {
                       placeItems: 'center',
                     }}
                   >
-                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                    {!profileImageUrl ? <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>{competitionMonogram(competition.nombre)}</span> : null}
                   </div>
 
                   <div style={{ flex: '1 1 320px', minWidth: 0 }}>
@@ -486,15 +509,12 @@ export function MyEventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="#5EEAD4" />
-                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}
-                        {competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                        {formatCompetitionWindow(competition)}
                       </span>
-                      {competition.enrollment_categoria ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <Trophy size={14} color="#D4A537" />
-                          Categoria: {competition.enrollment_categoria}
-                        </span>
-                      ) : null}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <MapPin size={14} color="var(--oa-primary)" />
+                        {competition.lugar || 'Lugar por confirmar'}
+                      </span>
                     </div>
 
                     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14 }}>

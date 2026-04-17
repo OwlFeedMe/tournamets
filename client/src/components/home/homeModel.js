@@ -167,7 +167,13 @@ export function buildCommandItems(competitions) {
 export function mapCompetitionViewModel(competition, index) {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
-  const enrollmentStartLabel = formatDate(competition.enrollment_start) || 'Por confirmar'
+  const enrollmentStart = formatDate(competition.enrollment_start)
+  const enrollmentEnd = formatDate(competition.enrollment_end)
+  const enrollmentStartLabel = enrollmentStart || enrollmentEnd
+    ? (enrollmentStart && enrollmentEnd
+      ? `${enrollmentStart} - ${enrollmentEnd}`
+      : (enrollmentStart || enrollmentEnd))
+    : 'Por confirmar'
   const competitionDateLabel = competition.competition_start || competition.competition_end
     ? scheduleSummary({
       competition_start: competition.competition_start,
