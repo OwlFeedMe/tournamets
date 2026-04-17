@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from access import require_competition_access
 from auth import get_current_user_optional, get_effective_user_id, is_end_user, require_auth, require_staff
+from competition_rules import normalize_phase_visibility
 from database import get_session
 from models import (
     Competition,
@@ -270,6 +271,19 @@ def _schedule_payload(
         .where(CompetitionPhase.competition_id == competition.id)
         .order_by(CompetitionPhase.block_order, CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
+    if published_only:
+        visible_phase_ids = {
+            int(phase.id)
+            for phase in phases
+            if phase.id is not None and normalize_phase_visibility(getattr(phase, "is_visible", 1))
+        }
+        phases = [phase for phase in phases if phase.id is not None and int(phase.id) in visible_phase_ids]
+    else:
+        visible_phase_ids = {
+            int(phase.id)
+            for phase in phases
+            if phase.id is not None
+        }
     phase_name_map = {int(phase.id): phase.nombre for phase in phases if phase.id is not None}
     phase_payload = [
         {
@@ -288,6 +302,7 @@ def _schedule_payload(
     query = select(CompetitionHeat).where(CompetitionHeat.competition_id == competition.id)
     if published_only:
         query = query.where(CompetitionHeat.is_published == 1)
+        query = query.where(CompetitionHeat.phase_id.in_(visible_phase_ids))
     heats = session.exec(query.order_by(CompetitionHeat.phase_id, CompetitionHeat.heat_number, CompetitionHeat.id)).all()
     heat_ids = [int(heat.id) for heat in heats if heat.id is not None]
     assignments_by_heat: dict[int, list[dict]] = {}
