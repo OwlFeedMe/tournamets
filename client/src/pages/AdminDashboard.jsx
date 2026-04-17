@@ -246,6 +246,19 @@ function toDateInput(value) {
   return value ? String(value).slice(0, 10) : ''
 }
 
+function parseCalendarDate(value) {
+  if (!value) return null
+  const raw = String(value).trim()
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) {
+    const [, year, month, day] = match
+    const date = new Date(Number(year), Number(month) - 1, Number(day))
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+  const date = new Date(raw)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 function dateInputToStartOfDay(value) {
   return value ? `${value}T00:00:00` : null
 }
@@ -2506,8 +2519,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
           </div>
 
           {createStep === 0 && (() => {
-            const compStart = competition.competition_start ? new Date(competition.competition_start) : null
-            const compEnd = competition.competition_end ? new Date(competition.competition_end) : null
+            const compStart = parseCalendarDate(competition.competition_start)
+            const compEnd = parseCalendarDate(competition.competition_end)
             const competitionDays = []
             if (compStart && compEnd) {
               const cursor = new Date(compStart)
@@ -2906,8 +2919,8 @@ function PhasesModal({ competition, onClose, inline = false }) {
         const ph = selectedPh
 
         // Calcular competitionDays una vez
-        const compStart = competition.competition_start ? new Date(competition.competition_start) : null
-        const compEnd = competition.competition_end ? new Date(competition.competition_end) : null
+        const compStart = parseCalendarDate(competition.competition_start)
+        const compEnd = parseCalendarDate(competition.competition_end)
         const competitionDays = []
         if (compStart && compEnd) {
           const cursor = new Date(compStart); cursor.setHours(0,0,0,0)
@@ -6057,8 +6070,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           ) : null}
           {(() => {
-            const compStart = form.competition_start ? new Date(form.competition_start) : null
-            const compEnd = form.competition_end ? new Date(form.competition_end) : null
+            const compStart = parseCalendarDate(form.competition_start)
+            const compEnd = parseCalendarDate(form.competition_end)
             const competitionDays = []
             if (compStart && compEnd) {
               const cursor = new Date(compStart)
@@ -6812,8 +6825,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             </div>
           ) : null}
           {(() => {
-            const compStart = form.competition_start ? new Date(form.competition_start) : null
-            const compEnd = form.competition_end ? new Date(form.competition_end) : null
+            const compStart = parseCalendarDate(form.competition_start)
+            const compEnd = parseCalendarDate(form.competition_end)
             const competitionDays = []
             if (compStart && compEnd) {
               const cursor = new Date(compStart)
