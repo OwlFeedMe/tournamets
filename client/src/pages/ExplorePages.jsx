@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, QrCode, Trophy, X } from 'lucide-react'
+import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
+import {
+  filterCompetitionsByQuery,
+  formatCompetitionDate,
+  formatCompetitionWindow,
+  resolveCompetitionAsset,
+  truncate,
+} from '../components/home/homeModel'
 import { useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
@@ -12,47 +19,14 @@ const pageStyle = {
   color: '#F5F7FA',
 }
 
-function formatDate(value) {
-  if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short' }).format(date)
-}
-
-function truncate(text, max = 120) {
-  const value = (text || '').trim()
-  if (!value) return 'Consulta los detalles del evento y sigue su avance desde el leaderboard.'
-  return value.length > max ? `${value.slice(0, max - 1)}...` : value
-}
-
-function resolveCompetitionAsset(competition, asset) {
-  if (!competition) return ''
-  const profile = competition.profile_image_url || ''
-  const banner = competition.banner_image_url || ''
-  const desktop = competition.banner_desktop_url || ''
-  const mobile = competition.banner_mobile_url || ''
-  const legacy = competition.imagen_url || ''
-  if (asset === 'profile') return profile || legacy
-  if (asset === 'banner') return banner || desktop || mobile || legacy
-  return legacy
-}
-
-function competitionSearchText(competition) {
-  return [
-    competition?.nombre,
-    competition?.descripcion,
-    competition?.general_info_text,
-    competition?.lugar,
-  ]
+function competitionMonogram(name) {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
     .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-}
-
-function filterCompetitionsByQuery(items, query) {
-  const value = String(query || '').trim().toLowerCase()
-  if (!value) return items
-  return (items || []).filter((competition) => competitionSearchText(competition).includes(value))
+    .slice(0, 2)
+  if (!parts.length) return 'FR'
+  return parts.map((part) => part[0]?.toUpperCase() || '').join('')
 }
 
 function SearchInput({ value, onChange, placeholder }) {
@@ -178,7 +152,7 @@ function CheckinQrModal({ open, onClose, loading, payload, error, competitionNam
                 <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(13,15,18,0.55)', padding: 14, display: 'grid', gap: 8 }}>
                   <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Codigo de respaldo: <span style={{ color: '#00C2A8' }}>{payload.short_code || '--'}</span></div>
                   <div style={{ color: '#AAB2C0', fontSize: 13 }}>Estado: {payload.check_in_used ? 'Check-in ya usado' : 'Disponible para check-in'}</div>
-                  {payload.check_in_used_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Uso registrado: {formatDate(payload.check_in_used_at)}</div> : null}
+                  {payload.check_in_used_at ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Uso registrado: {formatCompetitionDate(payload.check_in_used_at)}</div> : null}
                 </div>
               </>
             ) : null}
@@ -230,7 +204,7 @@ export function EventsPage() {
                       placeItems: 'center',
                     }}
                   >
-                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                    {!profileImageUrl ? <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>{competitionMonogram(competition.nombre)}</span> : null}
                   </div>
 
                   <div style={{ flex: '1 1 320px', minWidth: 0 }}>
@@ -248,11 +222,11 @@ export function EventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="var(--oa-accent)" />
-                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}{competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                        {formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fechas de competencia por confirmar' })}
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Trophy size={14} color="var(--oa-gold)" />
-                        Pagina publica
+                        <MapPin size={14} color="var(--oa-primary)" />
+                        {competition.lugar || 'Lugar por confirmar'}
                       </span>
                     </div>
 
@@ -455,7 +429,7 @@ export function MyEventsPage() {
                       placeItems: 'center',
                     }}
                   >
-                    {!profileImageUrl ? <Trophy size={26} color="#F5F7FA" /> : null}
+                    {!profileImageUrl ? <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: 1 }}>{competitionMonogram(competition.nombre)}</span> : null}
                   </div>
 
                   <div style={{ flex: '1 1 320px', minWidth: 0 }}>
@@ -486,15 +460,12 @@ export function MyEventsPage() {
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 14, color: '#AAB2C0', fontSize: 13 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <CalendarDays size={14} color="#5EEAD4" />
-                        {formatDate(competition.enrollment_start) || 'Sin fecha de inicio'}
-                        {competition.enrollment_end ? ` - ${formatDate(competition.enrollment_end)}` : ''}
+                        {formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fechas de competencia por confirmar' })}
                       </span>
-                      {competition.enrollment_categoria ? (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <Trophy size={14} color="#D4A537" />
-                          Categoria: {competition.enrollment_categoria}
-                        </span>
-                      ) : null}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <MapPin size={14} color="var(--oa-primary)" />
+                        {competition.lugar || 'Lugar por confirmar'}
+                      </span>
                     </div>
 
                     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 14 }}>

@@ -1,4 +1,15 @@
 export const PENDING_CEDULA_PREFIX = 'pending:'
+const PARTICIPANT_PROFILE_FIELD_LABELS = {
+  perfil: 'perfil',
+  cedula: 'cédula',
+  nombre: 'nombre',
+  apellido: 'apellido',
+  email: 'email',
+  celular: 'celular',
+  genero: 'género',
+  fecha_nacimiento: 'fecha nacimiento',
+  ciudad_pais: 'ciudad / país',
+}
 
 export function isPendingCedula(value) {
   const normalized = String(value || '').trim().toLowerCase()
@@ -40,5 +51,8 @@ export function getMissingParticipantProfileFields(profile) {
 
 export function formatMissingParticipantProfileFields(fields) {
   if (!Array.isArray(fields) || !fields.length) return ''
-  return fields.join(', ')
+  return fields
+    .map((field) => PARTICIPANT_PROFILE_FIELD_LABELS[field] || String(field || '').replaceAll('_', ' '))
+    .filter(Boolean)
+    .join(', ')
 }
