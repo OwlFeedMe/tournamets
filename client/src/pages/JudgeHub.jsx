@@ -1112,7 +1112,7 @@ export default function JudgeHub() {
         isMobile={isMobile}
         competitionName={selectedAssignment?.competition_name}
         operationMode={operationMode}
-        modalEntryMode={scoreContext?.token ? 'qr' : 'manual'}
+        modalEntryMode={operationMode === 'checkin' ? 'qr' : scoreEntryMode}
         cameraOpen={cameraOpen}
         startCamera={startCamera}
         stopCameraAndClose={closeScannerModal}
