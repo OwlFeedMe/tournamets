@@ -5,7 +5,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import require_admin, require_staff
+from auth import get_current_user_id, require_admin, require_staff
 from database import get_session
 from models import Competition, CompetitionWithdrawalRequest, WithdrawalRequestCreate, WithdrawalRequestReview
 
@@ -240,7 +240,7 @@ def create_withdrawal_request(
 
     request = CompetitionWithdrawalRequest(
         competition_id=competition_id,
-        requested_by_user_id=int(user.get("app_user_id") or 0),
+        requested_by_user_id=int(get_current_user_id(user) or 0),
         amount=amount,
         status="pending",
         destination_note=str(body.destination_note or "").strip() or None,
@@ -303,7 +303,7 @@ def review_withdrawal_request(
     request.status = next_status
     request.review_note = str(body.review_note or "").strip() or None
     request.payout_reference = str(body.payout_reference or "").strip() or request.payout_reference
-    request.reviewed_by_user_id = int(user.get("app_user_id") or 0)
+    request.reviewed_by_user_id = int(get_current_user_id(user) or 0)
     request.reviewed_at = datetime.now(timezone.utc)
     request.paid_at = datetime.now(timezone.utc) if next_status == "paid" else None
     session.add(request)

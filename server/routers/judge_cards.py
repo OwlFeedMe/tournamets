@@ -4,6 +4,7 @@ import hmac
 import io
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urljoin
 
@@ -17,6 +18,10 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import A4, LETTER
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
 from sqlmodel import SQLModel, Session, select
 
 from access import require_competition_access
@@ -32,6 +37,14 @@ from models import (
 
 router = APIRouter(prefix="/api/judge-cards", tags=["judge_cards"])
 
+CARD_INNER_PADDING = 6
+CARD_QR_FIXED_SIZE_INCHES = 0.72
+CARD_QR_FIXED_SIZE_PT = CARD_QR_FIXED_SIZE_INCHES * 72
+CARD_QR_SAFE_ZONE_PT = 8
+CARD_TITLE_BAND_PT = 20
+CARD_LEFT_COLUMN_MIN_WIDTH_PT = 92
+CARD_COLUMN_GAP_PT = 12
+
 
 class JudgeCardsExportBody(SQLModel):
     competition_id: int
@@ -40,7 +53,7 @@ class JudgeCardsExportBody(SQLModel):
     only_confirmed: int = 1
     include_unassigned: int = 1
     sort_mode: str = "phase_heat_lane_name"
-    layout: str = "2x4"
+    layout: str = "auto"
     include_score_field: int = 1
     include_signature_field: int = 1
     include_notes_field: int = 0
@@ -50,6 +63,10 @@ class JudgeCardsExportBody(SQLModel):
     judge_portal_base_url: str | None = None
     judge_portal_path: str = "judge/score"
     qr_expiration_days: int = 30
+    page_size: str = "letter"
+    font_scale: float = 1.0
+    line_spacing: float = 1.0
+    writing_space_chars: int = 30
 
 
 def _utcnow() -> datetime:
@@ -70,7 +87,7 @@ def _qr_secret() -> str:
 def _make_judge_token(
     *,
     competition_id: int,
-    participant_id: int,
+    user_id: int,
     phase_id: int,
     heat_id: int | None,
     expires_days: int,
@@ -80,7 +97,7 @@ def _make_judge_token(
     payload = {
         "scope": "judge_score",
         "c": int(competition_id),
-        "p": int(participant_id),
+        "p": int(user_id),
         "ph": int(phase_id),
         "h": int(heat_id) if heat_id else None,
         "iat": int(now.timestamp()),
@@ -92,7 +109,7 @@ def _make_judge_token(
 
 
 def _qr_image_bytes(url: str) -> io.BytesIO:
-    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=6, border=2)
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=5, border=1)
     qr.add_data(url)
     qr.make(fit=True)
     image = qr.make_image(fill_color="#0D0F12", back_color="#F5F7FA")
@@ -102,11 +119,93 @@ def _qr_image_bytes(url: str) -> io.BytesIO:
     return buf
 
 
+def _visible_card_line_budget(
+    *,
+    include_score_field: bool,
+    include_signature_field: bool,
+    include_notes_field: bool,
+    include_qr: bool,
+    extra_fields: set[str],
+) -> int:
+    lines = 2  # name + base metadata
+    if "cedula" in extra_fields:
+        lines += 1
+    if include_score_field:
+        lines += 1
+    if include_signature_field:
+        lines += 1
+    if include_notes_field:
+        lines += 1
+    if include_qr:
+        lines += 1
+    return lines
+
+
+def _safe_font_scale(value: float | int | None) -> float:
+    try:
+        return min(max(float(value or 1.0), 0.75), 1.35)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _safe_line_spacing(value: float | int | None) -> float:
+    try:
+        return min(max(float(value or 1.0), 0.8), 1.8)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _safe_writing_space_chars(value: int | float | None) -> int:
+    try:
+        return min(max(int(value or 30), 8), 48)
+    except (TypeError, ValueError):
+        return 30
+
+
+def _writing_field_text(label: str, writing_space_chars: int) -> str:
+    return f"{label}: {'_' * _safe_writing_space_chars(writing_space_chars)}"
+
+
+def _resolve_layout_name(
+    layout: str,
+    *,
+    include_score_field: bool,
+    include_signature_field: bool,
+    include_notes_field: bool,
+    include_qr: bool,
+    extra_fields: set[str],
+) -> str:
+    normalized = (layout or "").strip().lower()
+    custom_match = re.fullmatch(r"([1-4])x([1-9]|10)", normalized)
+    allowed = {"auto", "2x3", "2x4", "2x5", "3x3", "3x4", "3x5", "3x6"}
+    if custom_match:
+        return normalized
+    if normalized not in allowed:
+        normalized = "auto"
+    if normalized != "auto":
+        return normalized
+    visible_lines = _visible_card_line_budget(
+        include_score_field=include_score_field,
+        include_signature_field=include_signature_field,
+        include_notes_field=include_notes_field,
+        include_qr=include_qr,
+        extra_fields=extra_fields,
+    )
+    if visible_lines <= 4:
+        return "3x6"
+    if visible_lines <= 5:
+        return "3x5"
+    if visible_lines <= 6:
+        return "3x4"
+    if visible_lines <= 7:
+        return "2x5"
+    if visible_lines <= 8:
+        return "2x4"
+    return "2x3"
+
+
 def _layout_to_grid(layout: str) -> tuple[int, int]:
     normalized = (layout or "").strip().lower()
-    allowed = {"2x3", "2x4", "3x3"}
-    if normalized not in allowed:
-        normalized = "2x4"
     cols, rows = normalized.split("x", 1)
     return int(cols), int(rows)
 
@@ -174,7 +273,7 @@ def _build_cards_dataset(
 
     cp_query = (
         select(CompetitionParticipant, Participant)
-        .join(Participant, Participant.id == CompetitionParticipant.participant_id)
+        .join(Participant, Participant.id == CompetitionParticipant.user_id)
         .where(CompetitionParticipant.competition_id == competition_id)
     )
     if only_confirmed:
@@ -188,7 +287,7 @@ def _build_cards_dataset(
         if category_filter and category.lower() not in category_filter:
             continue
         participants_pool[int(participant.id)] = {
-            "participant_id": int(participant.id),
+            "user_id": int(participant.id),
             "participant_name": f"{(participant.nombre or '').strip()} {(participant.apellido or '').strip()}".strip(),
             "cedula": str(participant.cedula or "").strip(),
             "category": category or "Sin categoria",
@@ -207,10 +306,10 @@ def _build_cards_dataset(
 
     assigned_by_phase: dict[int, list[dict]] = {}
     for assignment, heat in heat_rows:
-        participant_id = int(assignment.participant_id or 0)
-        if participant_id <= 0:
+        user_id = int(assignment.user_id or 0)
+        if user_id <= 0:
             continue
-        base = participants_pool.get(participant_id)
+        base = participants_pool.get(user_id)
         if not base:
             continue
         pid = int(heat.phase_id)
@@ -271,6 +370,62 @@ def _sort_cards(cards: list[dict], sort_mode: str) -> list[dict]:
     )
 
 
+def _card_meta_lines(*, card: dict, include_cedula: bool) -> list[tuple[str, float, str]]:
+    lines: list[tuple[str, float, str]] = [
+        (f"{card.get('phase_name', '')} | {card.get('category', '')}", 6.7, "#252A33")
+    ]
+    heat_parts = []
+    if card.get("heat_name"):
+        heat_parts.append(f"Heat: {card['heat_name']}")
+    if int(card.get("lane_number") or 0) > 0:
+        heat_parts.append(f"Carril: {int(card['lane_number'])}")
+    if card.get("location_name"):
+        heat_parts.append(f"Zona: {card['location_name']}")
+    if heat_parts:
+        lines.append((" | ".join(heat_parts), 5.8, "#6B7280"))
+    if include_cedula and card.get("cedula"):
+        lines.append((f"ID: {card['cedula']}", 5.8, "#6B7280"))
+    return lines
+
+
+def _card_form_lines(*, include_score_field: bool, include_signature_field: bool, include_notes_field: bool, writing_space_chars: int) -> list[tuple[str, float, str]]:
+    lines: list[tuple[str, float, str]] = []
+    if include_score_field:
+        lines.append((_writing_field_text("Puntuacion", writing_space_chars), 7.5, "#0D0F12"))
+    if include_signature_field:
+        lines.append((_writing_field_text("Firma atleta", writing_space_chars), 7.5, "#0D0F12"))
+    if include_notes_field:
+        lines.append((_writing_field_text("Notas", writing_space_chars), 6.5, "#6B7280"))
+    return lines
+
+
+def _card_column_lines(*, card: dict, include_score_field: bool, include_signature_field: bool, include_notes_field: bool, include_cedula: bool, writing_space_chars: int) -> list[tuple[str, float, str, bool]]:
+    lines: list[tuple[str, float, str, bool]] = []
+    for text, size, color in _card_meta_lines(card=card, include_cedula=include_cedula):
+        lines.append((text, size, color, False))
+    for text, size, color in _card_form_lines(
+        include_score_field=include_score_field,
+        include_signature_field=include_signature_field,
+        include_notes_field=include_notes_field,
+        writing_space_chars=writing_space_chars,
+    ):
+        lines.append((text, size, color, color == "#0D0F12"))
+    return lines
+
+
+def _ensure_fixed_qr_fits(*, width: float, height: float, include_qr: bool) -> None:
+    if not include_qr:
+        return
+    right_column_width = CARD_QR_FIXED_SIZE_PT + (CARD_QR_SAFE_ZONE_PT * 2)
+    left_column_width = width - (CARD_INNER_PADDING * 2) - right_column_width - CARD_COLUMN_GAP_PT
+    body_height = height - CARD_TITLE_BAND_PT - (CARD_INNER_PADDING * 2)
+    if left_column_width < CARD_LEFT_COLUMN_MIN_WIDTH_PT or body_height < CARD_QR_FIXED_SIZE_PT:
+        raise HTTPException(
+            400,
+            "La configuracion actual deja las tarjetas demasiado pequenas para mantener un QR fijo y legible. Reduce tarjetas por hoja.",
+        )
+
+
 def _add_card_to_cell(
     cell,
     *,
@@ -280,75 +435,152 @@ def _add_card_to_cell(
     include_notes_field: bool,
     include_qr: bool,
     qr_url: str | None,
-    qr_width_inches: float,
     extra_fields: set[str],
+    font_scale: float,
+    line_spacing: float,
+    writing_space_chars: int,
 ) -> None:
     cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
     _set_cell_border(cell)
     cell.text = ""
+    for paragraph in cell.paragraphs:
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
 
     p_name = cell.add_paragraph()
-    p_name.paragraph_format.space_after = Pt(1)
+    p_name.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_name.paragraph_format.space_after = Pt(0)
     run_name = p_name.add_run(card["participant_name"] or "Participante")
     run_name.bold = True
-    run_name.font.size = Pt(10.5)
+    run_name.font.size = Pt(10 * _safe_font_scale(font_scale))
     run_name.font.color.rgb = RGBColor(0x0D, 0x0F, 0x12)
 
-    p_meta = cell.add_paragraph()
-    p_meta.paragraph_format.space_after = Pt(1)
-    run_meta = p_meta.add_run(f"{card['phase_name']} | {card['category']}")
-    run_meta.font.size = Pt(8.5)
-    run_meta.font.color.rgb = RGBColor(0x25, 0x2A, 0x33)
+    include_cedula = "cedula" in extra_fields
+    inner = cell.add_table(rows=1, cols=2)
+    inner.autofit = False
+    left_cell = inner.cell(0, 0)
+    right_cell = inner.cell(0, 1)
+    right_width_inches = CARD_QR_FIXED_SIZE_INCHES + ((CARD_QR_SAFE_ZONE_PT * 2) / 72)
+    right_cell.width = int(Inches(right_width_inches)) if cell.width else None
+    left_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+    right_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
-    heat_bits = []
-    if card.get("heat_name"):
-        heat_bits.append(f"Heat: {card['heat_name']}")
-    if int(card.get("lane_number") or 0) > 0:
-        heat_bits.append(f"Carril: {int(card['lane_number'])}")
-    if card.get("location_name"):
-        heat_bits.append(f"Zona: {card['location_name']}")
-    if heat_bits:
-        p_heat = cell.add_paragraph()
-        p_heat.paragraph_format.space_after = Pt(1)
-        run_heat = p_heat.add_run(" | ".join(heat_bits))
-        run_heat.font.size = Pt(8)
-        run_heat.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
-
-    if "cedula" in extra_fields and card.get("cedula"):
-        p_id = cell.add_paragraph()
-        p_id.paragraph_format.space_after = Pt(1)
-        run_id = p_id.add_run(f"ID: {card['cedula']}")
-        run_id.font.size = Pt(8)
-        run_id.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
-
-    if include_score_field:
-        p_score = cell.add_paragraph()
-        p_score.paragraph_format.space_before = Pt(2)
-        p_score.paragraph_format.space_after = Pt(1)
-        run_score = p_score.add_run("Puntuacion: ____________________")
-        run_score.font.size = Pt(9)
-        run_score.font.color.rgb = RGBColor(0x0D, 0x0F, 0x12)
-
-    if include_signature_field:
-        p_signature = cell.add_paragraph()
-        p_signature.paragraph_format.space_after = Pt(1)
-        run_signature = p_signature.add_run("Firma atleta: __________________")
-        run_signature.font.size = Pt(9)
-        run_signature.font.color.rgb = RGBColor(0x0D, 0x0F, 0x12)
-
-    if include_notes_field:
-        p_notes = cell.add_paragraph()
-        p_notes.paragraph_format.space_after = Pt(1)
-        run_notes = p_notes.add_run("Notas: _________________________")
-        run_notes.font.size = Pt(8.5)
-        run_notes.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
+    column_lines = _card_column_lines(
+        card=card,
+        include_score_field=include_score_field,
+        include_signature_field=include_signature_field,
+        include_notes_field=include_notes_field,
+        include_cedula=include_cedula,
+        writing_space_chars=writing_space_chars,
+    )
+    for text, size, color, bold in column_lines:
+        p = left_cell.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = Pt((size + 1.2) * _safe_font_scale(font_scale) * _safe_line_spacing(line_spacing))
+        run = p.add_run(text)
+        run.font.size = Pt((size + 0.4) * _safe_font_scale(font_scale))
+        run.bold = bool(bold)
+        rgb = {"#0D0F12": RGBColor(0x0D, 0x0F, 0x12), "#252A33": RGBColor(0x25, 0x2A, 0x33), "#6B7280": RGBColor(0x6B, 0x72, 0x80)}[color]
+        run.font.color.rgb = rgb
 
     if include_qr and qr_url:
-        p_qr = cell.add_paragraph()
-        p_qr.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p_qr.paragraph_format.space_before = Pt(1)
+        p_qr = right_cell.add_paragraph()
+        p_qr.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_qr.paragraph_format.space_before = Pt(0)
+        p_qr.paragraph_format.space_after = Pt(0)
         run_qr = p_qr.add_run()
-        run_qr.add_picture(_qr_image_bytes(qr_url), width=Inches(qr_width_inches))
+        run_qr.add_picture(_qr_image_bytes(qr_url), width=Inches(CARD_QR_FIXED_SIZE_INCHES))
+
+
+def _build_portal_url(body: JudgeCardsExportBody) -> str:
+    portal_base = (body.judge_portal_base_url or os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
+    portal_path = (body.judge_portal_path or "judge/score").lstrip("/")
+    portal_base = portal_base if portal_base.endswith("/") else f"{portal_base}/"
+    return urljoin(portal_base, portal_path)
+
+
+def _card_qr_url(*, body: JudgeCardsExportBody, card: dict, portal_url: str) -> str:
+    token = _make_judge_token(
+        competition_id=body.competition_id,
+        user_id=int(card["user_id"]),
+        phase_id=int(card["phase_id"]),
+        heat_id=(int(card["heat_id"]) if card.get("heat_id") else None),
+        expires_days=int(body.qr_expiration_days or 30),
+    )
+    # Keep only token in query to reduce QR density and improve scan reliability.
+    query = urlencode({"token": token})
+    return f"{portal_url}?{query}"
+
+
+def _resolve_page_size(raw: str | None) -> tuple[tuple[float, float], str]:
+    normalized = str(raw or "letter").strip().lower()
+    if normalized in {"a4"}:
+        return A4, "a4"
+    return LETTER, "letter"
+
+
+def _draw_pdf_card(
+    pdf: canvas.Canvas,
+    *,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    card: dict,
+    include_score_field: bool,
+    include_signature_field: bool,
+    include_notes_field: bool,
+    include_qr: bool,
+    qr_url: str | None,
+    include_cedula: bool,
+    font_scale: float,
+    line_spacing: float,
+    writing_space_chars: int,
+) -> None:
+    pad = CARD_INNER_PADDING
+    _ensure_fixed_qr_fits(width=width, height=height, include_qr=include_qr and bool(qr_url))
+    pdf.setStrokeColor(HexColor("#252A33"))
+    pdf.setLineWidth(0.8)
+    pdf.rect(x, y, width, height, stroke=1, fill=0)
+
+    top_band_height = CARD_TITLE_BAND_PT
+    name_y = y + height - pad - 8
+    pdf.setFillColor(HexColor("#0D0F12"))
+    safe_font_scale = _safe_font_scale(font_scale)
+    pdf.setFont("Helvetica-Bold", 8.8 * safe_font_scale)
+    pdf.drawCentredString(x + (width / 2), name_y, (card.get("participant_name") or "Participante")[:80])
+
+    body_top = y + height - top_band_height - pad
+    body_bottom = y + pad
+    body_height = body_top - body_bottom
+    left_x = x + pad
+    qr_column_width = (CARD_QR_FIXED_SIZE_PT + (CARD_QR_SAFE_ZONE_PT * 2)) if include_qr and qr_url else 0
+    qr_size = CARD_QR_FIXED_SIZE_PT if include_qr and qr_url else 0
+    left_width = width - (pad * 2) - qr_column_width - (CARD_COLUMN_GAP_PT if qr_column_width else 0)
+    text_width = max(0, left_width)
+    column_lines = _card_column_lines(
+        card=card,
+        include_score_field=include_score_field,
+        include_signature_field=include_signature_field,
+        include_notes_field=include_notes_field,
+        include_cedula=include_cedula,
+        writing_space_chars=writing_space_chars,
+    )
+    line_step = 7.2 * safe_font_scale * _safe_line_spacing(line_spacing)
+    block_height = (max(0, len(column_lines) - 1) * line_step) + ((column_lines[-1][1] * safe_font_scale) if column_lines else 0)
+    line_y = body_bottom + ((body_height + block_height) / 2) - 2
+    for text, size, color, bold in column_lines:
+        pdf.setFillColor(HexColor(color))
+        sized_font = size * safe_font_scale
+        pdf.setFont("Helvetica-Bold" if bold else "Helvetica", sized_font)
+        pdf.drawString(left_x, line_y, text[: max(10, int(text_width / max(sized_font * 0.43, 1)))])
+        line_y -= line_step
+    if include_qr and qr_url:
+        qr_x = x + width - pad - CARD_QR_SAFE_ZONE_PT - qr_size
+        qr_y = body_bottom + ((body_height - qr_size) / 2)
+        qr_reader = ImageReader(_qr_image_bytes(qr_url))
+        pdf.drawImage(qr_reader, qr_x, qr_y, width=qr_size, height=qr_size, preserveAspectRatio=True, mask="auto")
 
 
 @router.post("/export-docx")
@@ -367,16 +599,18 @@ def export_judge_cards_docx(
         include_unassigned=bool(body.include_unassigned),
     )
     cards = _sort_cards(cards, body.sort_mode)
-
-    cols, rows = _layout_to_grid(body.layout)
-    cards_per_page = cols * rows
     extra_fields = {str(name or "").strip().lower() for name in (body.extra_fields or []) if str(name or "").strip()}
-    qr_width_inches = 0.95 if cols >= 3 else 1.1
-
-    portal_base = (body.judge_portal_base_url or os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
-    portal_path = (body.judge_portal_path or "judge/score").lstrip("/")
-    portal_base = portal_base if portal_base.endswith("/") else f"{portal_base}/"
-    portal_url = urljoin(portal_base, portal_path)
+    resolved_layout = _resolve_layout_name(
+        body.layout,
+        include_score_field=bool(body.include_score_field),
+        include_signature_field=bool(body.include_signature_field),
+        include_notes_field=bool(body.include_notes_field),
+        include_qr=bool(body.include_qr),
+        extra_fields=extra_fields,
+    )
+    cols, rows = _layout_to_grid(resolved_layout)
+    cards_per_page = cols * rows
+    portal_url = _build_portal_url(body)
 
     doc = Document()
     _set_page_style(doc)
@@ -392,7 +626,7 @@ def export_judge_cards_docx(
         table.autofit = False
         page_width = doc.sections[0].page_width - doc.sections[0].left_margin - doc.sections[0].right_margin
         col_width = int(page_width / cols)
-        row_height = Inches(2.42 if rows == 4 else 3.2)
+        row_height = Inches(9.68 / max(rows, 1))
         for row in table.rows:
             row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
             row.height = row_height
@@ -403,22 +637,7 @@ def export_judge_cards_docx(
         for idx, card in enumerate(chunk):
             r = idx // cols
             c = idx % cols
-            token = _make_judge_token(
-                competition_id=body.competition_id,
-                participant_id=int(card["participant_id"]),
-                phase_id=int(card["phase_id"]),
-                heat_id=(int(card["heat_id"]) if card.get("heat_id") else None),
-                expires_days=int(body.qr_expiration_days or 30),
-            )
-            query = urlencode(
-                {
-                    "token": token,
-                    "competition_id": int(body.competition_id),
-                    "phase_id": int(card["phase_id"]),
-                    "participant_id": int(card["participant_id"]),
-                }
-            )
-            qr_url = f"{portal_url}?{query}"
+            qr_url = _card_qr_url(body=body, card=card, portal_url=portal_url)
             _add_card_to_cell(
                 table.cell(r, c),
                 card=card,
@@ -427,8 +646,10 @@ def export_judge_cards_docx(
                 include_notes_field=bool(body.include_notes_field),
                 include_qr=bool(body.include_qr),
                 qr_url=qr_url,
-                qr_width_inches=qr_width_inches,
                 extra_fields=extra_fields,
+                font_scale=body.font_scale,
+                line_spacing=body.line_spacing,
+                writing_space_chars=body.writing_space_chars,
             )
 
     buf = io.BytesIO()
@@ -438,5 +659,95 @@ def export_judge_cards_docx(
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@router.post("/export-pdf")
+def export_judge_cards_pdf(
+    body: JudgeCardsExportBody,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, body.competition_id, user)
+    cards, _phase_map = _build_cards_dataset(
+        session,
+        competition_id=body.competition_id,
+        phase_ids=body.phase_ids,
+        categories=body.categories,
+        only_confirmed=bool(body.only_confirmed),
+        include_unassigned=bool(body.include_unassigned),
+    )
+    cards = _sort_cards(cards, body.sort_mode)
+    extra_fields = {str(name or "").strip().lower() for name in (body.extra_fields or []) if str(name or "").strip()}
+    resolved_layout = _resolve_layout_name(
+        body.layout,
+        include_score_field=bool(body.include_score_field),
+        include_signature_field=bool(body.include_signature_field),
+        include_notes_field=bool(body.include_notes_field),
+        include_qr=bool(body.include_qr),
+        extra_fields=extra_fields,
+    )
+    cols, rows = _layout_to_grid(resolved_layout)
+    cards_per_page = cols * rows
+    page_size, page_size_label = _resolve_page_size(body.page_size)
+    page_width, page_height = page_size
+    margin = 24
+    header_space = 28
+    grid_top = page_height - margin - header_space
+    grid_width = page_width - (margin * 2)
+    grid_height = page_height - (margin * 2) - header_space
+    cell_w = grid_width / cols
+    cell_h = grid_height / rows
+    include_cedula = "cedula" in extra_fields
+    portal_url = _build_portal_url(body)
+    title = (body.title or f"Tarjetas de puntuacion - {competition.nombre}").strip()
+
+    buf = io.BytesIO()
+    pdf = canvas.Canvas(buf, pagesize=page_size)
+    total_pages = max(1, (len(cards) + cards_per_page - 1) // cards_per_page)
+
+    for page_index, start in enumerate(range(0, len(cards), cards_per_page), 1):
+        chunk = cards[start:start + cards_per_page]
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.setFillColor(HexColor("#0D0F12"))
+        pdf.drawString(margin, page_height - margin + 4, title[:100])
+        pdf.setFont("Helvetica", 7)
+        pdf.setFillColor(HexColor("#6B7280"))
+        stamp = _utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        pdf.drawString(margin, page_height - margin - 8, f"Competencia: {competition.nombre} | Pagina {page_index}/{total_pages} | {page_size_label.upper()} | {stamp}")
+
+        for idx, card in enumerate(chunk):
+            row = idx // cols
+            col = idx % cols
+            x = margin + (col * cell_w)
+            y = grid_top - ((row + 1) * cell_h)
+            qr_url = _card_qr_url(body=body, card=card, portal_url=portal_url)
+            _draw_pdf_card(
+                pdf,
+                x=x,
+                y=y,
+                width=cell_w,
+                height=cell_h,
+                card=card,
+                include_score_field=bool(body.include_score_field),
+                include_signature_field=bool(body.include_signature_field),
+                include_notes_field=bool(body.include_notes_field),
+                include_qr=bool(body.include_qr),
+                qr_url=qr_url,
+                include_cedula=include_cedula,
+                font_scale=body.font_scale,
+                line_spacing=body.line_spacing,
+                writing_space_chars=body.writing_space_chars,
+            )
+        if page_index < total_pages:
+            pdf.showPage()
+
+    pdf.save()
+    buf.seek(0)
+    filename = f"finalrep_tarjetas_competencia_{int(body.competition_id)}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename={filename}"},
     )

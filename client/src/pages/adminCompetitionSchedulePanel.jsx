@@ -154,7 +154,7 @@ export function CompetitionSchedulePanel({ competition }) {
       note: item.note || '',
       is_published: !!item.is_published,
       assignments: (item.participants || []).map((participant, index) => ({
-        participant_id: participant.participant_id,
+      user_id: participant.user_id,
         team_id: participant.team_id,
         lane_number: participant.lane_number || index + 1,
         seed_order: participant.seed_order || index + 1,

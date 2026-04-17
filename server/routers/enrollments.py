@@ -18,7 +18,7 @@ from sqlalchemy import func, text
 from sqlmodel import Session, select
 
 from access import require_competition_access
-from auth import get_current_user, get_effective_participant_id, is_end_user, require_admin, require_auth, require_staff
+from auth import get_current_user, get_current_user_id, is_end_user, require_admin, require_auth, require_staff
 from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
@@ -71,7 +71,7 @@ def _parse_enrollment_questions(raw: str | None) -> list[dict]:
     return out
 
 
-def _process_enrollment_image(file: UploadFile, participant_id: int) -> str:
+def _process_enrollment_image(file: UploadFile, user_id: int) -> str:
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(400, "El archivo debe ser una imagen")
     try:
@@ -86,24 +86,28 @@ def _process_enrollment_image(file: UploadFile, participant_id: int) -> str:
         scale = MAX_ENROLLMENT_IMAGE_SIDE / max_side
         image = image.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.LANCZOS)
 
-    filename = f"enrollment_{participant_id}_{uuid.uuid4().hex}.jpg"
+    filename = f"enrollment_{user_id}_{uuid.uuid4().hex}.jpg"
     image.save(ENROLLMENT_UPLOAD_DIR / filename, format="JPEG", quality=86, optimize=True)
     return f"/uploads/enrollment_answers/{filename}"
 
 
+def _with_user_id(payload: dict, user_id: int) -> dict:
+    return {**payload, "user_id": user_id}
+
+
 def _get_checkin_usage_by_participant(session: Session, competition_id: int) -> dict[int, datetime]:
     rows = session.exec(
-        select(CompetitionCheckinUsage.participant_id, func.min(CompetitionCheckinUsage.used_at))
+        select(CompetitionCheckinUsage.user_id, func.min(CompetitionCheckinUsage.used_at))
         .join(CompetitionCheckinPhase, CompetitionCheckinPhase.id == CompetitionCheckinUsage.phase_id)
         .where(CompetitionCheckinUsage.competition_id == competition_id)
         .where(CompetitionCheckinPhase.competition_id == competition_id)
         .where(CompetitionCheckinPhase.code == SYSTEM_CHECKIN_PHASE_CODE)
-        .group_by(CompetitionCheckinUsage.participant_id)
+        .group_by(CompetitionCheckinUsage.user_id)
     ).all()
     return {
-        int(participant_id): used_at
-        for participant_id, used_at in rows
-        if participant_id is not None and used_at is not None
+        int(user_id): used_at
+        for user_id, used_at in rows
+        if user_id is not None and used_at is not None
     }
 
 
@@ -114,6 +118,7 @@ def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datet
         items.append(
             {
                 **p.model_dump(),
+                "user_id": p.id,
                 "categoria_competencia": cp.categoria,
                 "estado": cp.estado,
                 "enrollment_answers": cp.enrollment_answers,
@@ -332,7 +337,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         session.add(enrollment)
         _try_send_payment_email(
             session,
-            participant_id=enrollment.participant_id,
+            user_id=enrollment.user_id,
             competition_id=enrollment.competition_id,
             categoria=enrollment.categoria,
             payment_status=payment_status,
@@ -362,7 +367,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         intent.payment_platform_net = _platform_net_amount(intent.payment_platform_fee, total_amount, proc_rate, proc_fixed)
     if payment_status == "approved":
         intent.payment_processed_at = now
-        existing = session.get(CompetitionParticipant, (intent.competition_id, intent.participant_id))
+        existing = session.get(CompetitionParticipant, (intent.competition_id, intent.user_id))
         if existing:
             existing.categoria = intent.categoria
             existing.estado = "confirmado"
@@ -384,7 +389,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         else:
             session.add(CompetitionParticipant(
                 competition_id=intent.competition_id,
-                participant_id=intent.participant_id,
+                user_id=intent.user_id,
                 categoria=intent.categoria,
                 estado="confirmado",
                 enrollment_answers=intent.enrollment_answers,
@@ -405,7 +410,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
     session.add(intent)
     _try_send_payment_email(
         session,
-        participant_id=intent.participant_id,
+        user_id=intent.user_id,
         competition_id=intent.competition_id,
         categoria=intent.categoria,
         payment_status=payment_status,
@@ -423,7 +428,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
 def _try_send_payment_email(
     session: Session,
     *,
-    participant_id: int,
+    user_id: int,
     competition_id: int,
     categoria: str | None,
     payment_status: str,
@@ -432,7 +437,7 @@ def _try_send_payment_email(
     if payment_status not in {"approved", "rejected"}:
         return
     try:
-        participant = session.get(Participant, participant_id)
+        participant = session.get(Participant, user_id)
         competition = session.get(Competition, competition_id)
         email = str(getattr(participant, "email", "") or "").strip()
         if not email:
@@ -455,7 +460,7 @@ def _try_send_payment_email(
             )
         send_email(to_email=email, subject=subject, body=body, html_body=html)
     except Exception:
-        logger.exception("Failed to send payment email (participant_id=%s, status=%s)", participant_id, payment_status)
+        logger.exception("Failed to send payment email (user_id=%s, status=%s)", user_id, payment_status)
 
 
 def _sync_bold_notification_by_reference(reference: str) -> dict | None:
@@ -485,10 +490,10 @@ def upload_enrollment_answer_image(
     file: UploadFile = File(...),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
-    return {"url": _process_enrollment_image(file, participant_id)}
+    return {"url": _process_enrollment_image(file, user_id)}
 
 
 @router.get("/api/competitions/{competition_id}/participants")
@@ -497,7 +502,7 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
 
     rows = session.exec(
         select(CompetitionParticipant, Participant)
-        .join(Participant, Participant.id == CompetitionParticipant.participant_id)
+        .join(Participant, Participant.id == CompetitionParticipant.user_id)
         .where(CompetitionParticipant.competition_id == competition_id)
         .order_by(CompetitionParticipant.estado, Participant.apellido, Participant.nombre)
     ).all()
@@ -524,9 +529,10 @@ def set_enrolled(
     session.flush()
 
     for entry in body.participants:
-        if not session.get(Participant, entry.participant_id):
-            raise HTTPException(404, f"Participante {entry.participant_id} no encontrado")
-        existing = session.get(CompetitionParticipant, (competition_id, entry.participant_id))
+        target_user_id = int(entry.user_id)
+        if not session.get(Participant, target_user_id):
+            raise HTTPException(404, f"Usuario {target_user_id} no encontrado")
+        existing = session.get(CompetitionParticipant, (competition_id, target_user_id))
         if existing:
             existing.estado = "confirmado"
             existing.categoria = entry.categoria
@@ -534,7 +540,7 @@ def set_enrolled(
         else:
             session.add(CompetitionParticipant(
                 competition_id=competition_id,
-                participant_id=entry.participant_id,
+                user_id=target_user_id,
                 categoria=entry.categoria,
                 estado="confirmado",
             ))
@@ -543,10 +549,10 @@ def set_enrolled(
     return {"enrolled": len(body.participants)}
 
 
-@router.put("/api/competitions/{competition_id}/participants/{participant_id}/status")
+@router.put("/api/competitions/{competition_id}/users/{user_id}/status")
 def update_enrollment_status(
     competition_id: int,
-    participant_id: int,
+    user_id: int,
     body: EnrollStatusUpdate,
     session: Session = Depends(get_session),
     user=Depends(require_staff),
@@ -554,7 +560,7 @@ def update_enrollment_status(
     require_competition_access(session, competition_id, user)
     if body.estado != "confirmado":
         raise HTTPException(400, "Solo se permite confirmar la inscripcion")
-    cp = session.get(CompetitionParticipant, (competition_id, participant_id))
+    cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if not cp:
         raise HTTPException(404, "Inscripción no encontrada")
     cp.estado = body.estado
@@ -562,7 +568,7 @@ def update_enrollment_status(
     session.commit()
 
     try:
-        participant = session.get(Participant, participant_id)
+        participant = session.get(Participant, user_id)
         competition = session.get(Competition, competition_id)
         email = str(getattr(participant, "email", "") or "").strip()
         if email:
@@ -575,20 +581,20 @@ def update_enrollment_status(
             )
             send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
     except Exception:
-        logger.exception("Failed to send enrollment status email (participant_id=%s, estado=%s)", participant_id, body.estado)
+        logger.exception("Failed to send enrollment status email (user_id=%s, estado=%s)", user_id, body.estado)
 
-    return {"ok": True, "estado": cp.estado}
+    return {"ok": True, "estado": cp.estado, "user_id": user_id}
 
 
-@router.delete("/api/competitions/{competition_id}/participants/{participant_id}", status_code=204)
+@router.delete("/api/competitions/{competition_id}/users/{user_id}", status_code=204)
 def unenroll(
     competition_id: int,
-    participant_id: int,
+    user_id: int,
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
-    cp = session.get(CompetitionParticipant, (competition_id, participant_id))
+    cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if cp:
         session.delete(cp)
         session.commit()
@@ -601,8 +607,8 @@ def self_enroll(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
     comp = session.get(Competition, competition_id)
@@ -610,7 +616,7 @@ def self_enroll(
         raise HTTPException(404, "Competencia no encontrada")
     _ensure_competition_open(comp)
 
-    existing = session.get(CompetitionParticipant, (competition_id, participant_id))
+    existing = session.get(CompetitionParticipant, (competition_id, user_id))
     if not existing:
         raise HTTPException(409, "Debes iniciar el pago antes de completar la inscripcion")
     if _payment_status_label(existing.payment_status) != "approved":
@@ -638,7 +644,7 @@ def self_enroll(
     existing.payment_updated_at = datetime.now(timezone.utc)
     session.add(existing)
     session.commit()
-    return {"ok": True, "estado": "confirmado"}
+    return {"ok": True, "estado": "confirmado", "user_id": user_id}
 
 @router.post("/api/competitions/{competition_id}/bold-checkout")
 def create_bold_checkout(
@@ -647,8 +653,8 @@ def create_bold_checkout(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
     comp = session.get(Competition, competition_id)
@@ -698,16 +704,16 @@ def create_bold_checkout(
     if not identity_key or not secret_key:
         raise HTTPException(500, "Faltan las credenciales de Bold en el servidor")
 
-    participant = session.get(Participant, participant_id)
-    order_id = f"FR-C{competition_id}-P{participant_id}-{int(datetime.now(timezone.utc).timestamp())}"
-    existing = session.get(CompetitionParticipant, (competition_id, participant_id))
+    participant = session.get(Participant, user_id)
+    order_id = f"FR-C{competition_id}-U{user_id}-{int(datetime.now(timezone.utc).timestamp())}"
+    existing = session.get(CompetitionParticipant, (competition_id, user_id))
     if existing and existing.estado in ("confirmado", "pendiente", PAYMENT_PENDING_STATE):
         raise HTTPException(409, f"Ya tienes una inscripcion con estado: {existing.estado}")
 
     latest_intent = session.exec(
         select(CompetitionPaymentIntent)
         .where(CompetitionPaymentIntent.competition_id == competition_id)
-        .where(CompetitionPaymentIntent.participant_id == participant_id)
+        .where(CompetitionPaymentIntent.user_id == user_id)
         .order_by(CompetitionPaymentIntent.payment_updated_at.desc(), CompetitionPaymentIntent.id.desc())
     ).first()
     if _is_payment_intent_blocking(latest_intent):
@@ -725,7 +731,7 @@ def create_bold_checkout(
     now = datetime.now(timezone.utc)
     session.add(CompetitionPaymentIntent(
         competition_id=competition_id,
-        participant_id=participant_id,
+        user_id=user_id,
         categoria=category_name,
         enrollment_answers=serialized_answers,
         payment_provider="bold",
@@ -760,6 +766,7 @@ def create_bold_checkout(
     customer_data = {key: value for key, value in customer_data.items() if value}
 
     return {
+        "user_id": user_id,
         "order_id": order_id,
         "api_key": identity_key,
         "amount": str(breakdown["total_price"]),
@@ -779,8 +786,8 @@ def activate_bold_intent(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
     reference = str(body.reference or "").strip()
@@ -790,7 +797,7 @@ def activate_bold_intent(
     intent = session.exec(
         select(CompetitionPaymentIntent)
         .where(CompetitionPaymentIntent.competition_id == competition_id)
-        .where(CompetitionPaymentIntent.participant_id == participant_id)
+        .where(CompetitionPaymentIntent.user_id == user_id)
         .where(CompetitionPaymentIntent.payment_reference == reference)
         .order_by(CompetitionPaymentIntent.id.desc())
     ).first()
@@ -799,20 +806,20 @@ def activate_bold_intent(
 
     status = _payment_status_label(intent.payment_status)
     if status in {"approved", "processing", "pending", "rejected", "failed", "voided", "void_rejected"}:
-        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+        return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
     if status == "created":
         intent.payment_updated_at = datetime.now(timezone.utc)
         session.add(intent)
         session.commit()
-        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+        return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
     if status != "prepared":
-        return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+        return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
 
     intent.payment_status = "created"
     intent.payment_updated_at = datetime.now(timezone.utc)
     session.add(intent)
     session.commit()
-    return {"ok": True, "payment_status": intent.payment_status, "reference": reference}
+    return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
 
 
 @router.post("/api/competitions/{competition_id}/payment-status/sync")
@@ -821,15 +828,15 @@ def sync_payment_status(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
-    enrollment = session.get(CompetitionParticipant, (competition_id, participant_id))
+    enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     intent = session.exec(
         select(CompetitionPaymentIntent)
         .where(CompetitionPaymentIntent.competition_id == competition_id)
-        .where(CompetitionPaymentIntent.participant_id == participant_id)
+        .where(CompetitionPaymentIntent.user_id == user_id)
         .order_by(CompetitionPaymentIntent.payment_updated_at.desc(), CompetitionPaymentIntent.id.desc())
     ).first()
     reference = (
@@ -851,7 +858,7 @@ def sync_payment_status(
         else None
     )
     if str(local_payment_status or "").strip().lower() in {"approved", "rejected", "failed", "voided"}:
-        return {
+        return _with_user_id({
             "ok": True,
             "result": {
                 "matched": True,
@@ -865,13 +872,13 @@ def sync_payment_status(
             "payment_status": local_payment_status,
             "payment_reference": enrollment.payment_reference if enrollment else reference,
             "payment_transaction_id": local_transaction_id,
-        }
+        }, user_id)
 
     notification = _sync_bold_notification_by_reference(reference)
     if notification:
         result = _apply_bold_notification(session, notification)
         session.commit()
-        enrollment = session.get(CompetitionParticipant, (competition_id, participant_id))
+        enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     else:
         result = {
             "matched": True,
@@ -880,14 +887,14 @@ def sync_payment_status(
             "payment_status": enrollment.payment_status if enrollment else (intent.payment_status if intent else None),
             "transaction_id": enrollment.payment_transaction_id if enrollment else (intent.payment_transaction_id if intent else None),
         }
-    return {
+    return _with_user_id({
         "ok": True,
         "result": result,
         "estado": enrollment.estado if enrollment else None,
         "payment_status": enrollment.payment_status if enrollment else (intent.payment_status if intent else None),
         "payment_reference": enrollment.payment_reference if enrollment else reference,
         "payment_transaction_id": enrollment.payment_transaction_id if enrollment else (intent.payment_transaction_id if intent else None),
-    }
+    }, user_id)
 
 
 @router.post("/api/payments/bold/webhook")
@@ -916,10 +923,10 @@ def cancel_self_enroll(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
-    cp = session.get(CompetitionParticipant, (competition_id, participant_id))
+    cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if not cp:
         return
     payment_state = _payment_status_label(cp.payment_status)
@@ -937,21 +944,21 @@ def enrolled_list(competition_id: int, session: Session = Depends(get_session)):
     rows = session.execute(text("""
         SELECT p.nombre, p.apellido, COALESCE(p.genero, p.sexo) AS sexo, cp.categoria
         FROM competition_participants cp
-        JOIN participants p ON p.id = cp.participant_id
+        JOIN participants p ON p.id = cp.user_id
         WHERE cp.competition_id = :cid AND cp.estado = 'confirmado'
         ORDER BY cp.categoria, p.apellido, p.nombre
     """), {"cid": competition_id}).mappings().all()
     return [dict(r) for r in rows]
 
 
-@router.get("/api/participants/{participant_id}/competitions")
+@router.get("/api/users/{user_id}/competitions")
 def participant_competitions(
-    participant_id: int,
+    user_id: int,
     session: Session = Depends(get_session),
     user=Depends(get_current_user),
 ):
-    user_sub = get_effective_participant_id(user)
-    if is_end_user(user) and user_sub != participant_id:
+    user_sub = get_current_user_id(user)
+    if is_end_user(user) and user_sub != user_id:
         raise HTTPException(403, "Sin permiso")
 
     rows = session.execute(text("""
@@ -961,8 +968,8 @@ def participant_competitions(
                cp.payment_processed_at, cp.payment_updated_at
         FROM competitions c
         JOIN competition_participants cp ON cp.competition_id = c.id
-        WHERE cp.participant_id = :pid
+        WHERE cp.user_id = :uid
         ORDER BY c.id DESC
-    """), {"pid": participant_id}).mappings().all()
-    return [dict(r) for r in rows]
+    """), {"uid": user_id}).mappings().all()
+    return [_with_user_id(dict(r), user_id) for r in rows]
 

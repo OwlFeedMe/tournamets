@@ -4,10 +4,10 @@ Diseñado para degradar a DB sin crash si Redis esta caido.
 Uso:
     from cache import Cache, Keys
 
-    data = Cache.get(Keys.APP_USER.format(user_id=42))
+    data = Cache.get(Keys.USER.format(user_id=42))
     if data is None:
         data = load_from_db()
-        Cache.set(Keys.APP_USER.format(user_id=42), data, ttl=60)
+        Cache.set(Keys.USER.format(user_id=42), data, ttl=60)
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ class Cache:
 class Keys:
     """Namespaces de claves. Centralizados para evitar typos."""
 
-    APP_USER = "auth:user:{user_id}"
+    USER = "auth:user:{user_id}"
     OWNED_COMPS = "auth:owned_comps:{user_id}"
     LEADERBOARD = "leaderboard:{competition_id}"
     COMP_CONFIG = "comp:{competition_id}:config"

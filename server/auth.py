@@ -15,6 +15,7 @@ from sqlmodel import Session
 
 from cache import Cache, Keys
 from constants import Role
+from database import get_session
 from models import User
 
 ROOT_ENV_PATH = Path(__file__).resolve().parent / ".env"
@@ -63,7 +64,7 @@ def _deserialize_user(data: dict) -> User:
 
 
 def load_user_cached(session: Session, user_id: int) -> User | None:
-    key = Keys.APP_USER.format(user_id=user_id)
+    key = Keys.USER.format(user_id=user_id)
     cached = Cache.get(key)
     if isinstance(cached, dict):
         try:
@@ -81,22 +82,16 @@ def load_user_cached(session: Session, user_id: int) -> User | None:
     return user
 
 
-def invalidate_app_user(user_id: int | None) -> None:
+def invalidate_user(user_id: int | None) -> None:
     if user_id is None:
         return
     try:
         Cache.delete(
-            Keys.APP_USER.format(user_id=int(user_id)),
+            Keys.USER.format(user_id=int(user_id)),
             Keys.OWNED_COMPS.format(user_id=int(user_id)),
         )
     except (TypeError, ValueError):
         return
-
-
-def get_auth_session():
-    from database import get_session
-
-    yield from get_session()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -164,10 +159,6 @@ def _effective_role(base_role: str, user: User) -> str:
 def _refresh_user_access(payload: dict, session: Session) -> dict:
     refreshed = dict(payload)
     raw_user_id = refreshed.get("user_id")
-    if raw_user_id is None:
-        raw_user_id = refreshed.get("app_user_id")
-    if raw_user_id is None:
-        raw_user_id = refreshed.get("participant_id")
     if raw_user_id is None and refreshed.get("sub") is not None:
         raw_user_id = refreshed.get("sub")
 
@@ -190,8 +181,6 @@ def _refresh_user_access(payload: dict, session: Session) -> dict:
 
     refreshed["sub"] = str(user.id)
     refreshed["user_id"] = user.id
-    refreshed["app_user_id"] = user.id
-    refreshed["participant_id"] = user.id
     refreshed["username"] = user.username or user.email or user.cedula
     refreshed["display_name"] = user.display_name or f"{(user.nombre or '').strip()} {(user.apellido or '').strip()}".strip()
     refreshed["base_role"] = user.role
@@ -218,14 +207,14 @@ def _get_current_user_from_credentials(
 
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    session: Session = Depends(get_auth_session),
+    session: Session = Depends(get_session),
 ):
     return _get_current_user_from_credentials(credentials, session, optional=False)
 
 
 def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    session: Session = Depends(get_auth_session),
+    session: Session = Depends(get_session),
 ):
     return _get_current_user_from_credentials(credentials, session, optional=True)
 
@@ -274,25 +263,27 @@ def is_end_user(user: dict) -> bool:
     if user.get("role") in Role.END_USER_ROLES:
         return True
     return (
-        get_effective_participant_id(user) is not None
+        get_current_user_id(user) is not None
         and (has_organizer_access(user) or has_admin_access(user) or has_judge_access(user))
     )
 
 
-def get_effective_participant_id(user: dict) -> Optional[int]:
-    participant_id = user.get("participant_id")
-    if participant_id is not None:
-        try:
-            return int(participant_id)
-        except (TypeError, ValueError):
-            return None
-    user_id = user.get("user_id") or user.get("app_user_id")
+def get_current_user_id(user: dict | None) -> Optional[int]:
+    if not user:
+        return None
+    user_id = user.get("user_id")
+    if user_id is None and user.get("sub") is not None:
+        user_id = user.get("sub")
     if user_id is not None:
         try:
             return int(user_id)
         except (TypeError, ValueError):
             return None
     return None
+
+
+def get_effective_user_id(user: dict) -> Optional[int]:
+    return get_current_user_id(user)
 
 
 def require_auth(user: dict = Depends(get_current_user)):

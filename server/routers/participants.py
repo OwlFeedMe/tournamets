@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_effective_participant_id, invalidate_app_user, is_end_user, require_admin, require_auth
+from auth import get_effective_user_id, invalidate_user, is_end_user, require_admin, require_auth
 from database import get_session
 from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
 
@@ -47,7 +47,7 @@ def _read_df(content: bytes, filename: str) -> pd.DataFrame:
     else:
         raise ValueError("Formato no soportado. Use CSV o Excel (.xlsx/.xls)")
 
-router = APIRouter(prefix="/api/participants", tags=["participants"])
+users_router = APIRouter(prefix="/api/users", tags=["users"])
 PROFILE_PHOTO_DIR = Path(__file__).resolve().parents[1] / "uploads" / "profile_photos"
 PROFILE_PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 MAX_PROFILE_PHOTO_SIZE = 512
@@ -126,7 +126,7 @@ def _delete_local_profile_photo(photo_url: Optional[str]) -> None:
         pass
 
 
-def _process_profile_photo(file: UploadFile, participant_id: int) -> str:
+def _process_profile_photo(file: UploadFile, user_id: int) -> str:
     # TODO: migrate this local upload flow to S3-compatible object storage.
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(400, "El archivo debe ser una imagen")
@@ -144,33 +144,33 @@ def _process_profile_photo(file: UploadFile, participant_id: int) -> str:
     image = image.crop((left, top, left + crop_size, top + crop_size))
     image = image.resize((MAX_PROFILE_PHOTO_SIZE, MAX_PROFILE_PHOTO_SIZE), Image.Resampling.LANCZOS)
 
-    filename = f"participant_{participant_id}_{uuid.uuid4().hex}.jpg"
+    filename = f"user_{user_id}_{uuid.uuid4().hex}.jpg"
     output_path = PROFILE_PHOTO_DIR / filename
     image.save(output_path, format="JPEG", quality=84, optimize=True)
     return f"/uploads/profile_photos/{filename}"
 
 
-@router.get("/me", response_model=ParticipantProfile)
+@users_router.get("/me", response_model=ParticipantProfile)
 def get_my_profile(session: Session = Depends(get_session), user=Depends(require_auth)):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
-    p = session.get(Participant, participant_id)
+    p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
     return p
 
 
-@router.patch("/me", response_model=ParticipantProfile)
+@users_router.patch("/me", response_model=ParticipantProfile)
 def update_my_profile(
     body: ParticipantSelfUpdate,
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
-    p = session.get(Participant, participant_id)
+    p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
@@ -189,26 +189,26 @@ def update_my_profile(
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
-    invalidate_app_user(changed_app_user_id)
+    invalidate_user(changed_app_user_id)
     return p
 
 
-@router.post("/me/photo", response_model=ParticipantProfile)
+@users_router.post("/me/photo", response_model=ParticipantProfile)
 def upload_my_profile_photo(
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
-    participant = session.get(Participant, participant_id)
+    participant = session.get(Participant, user_id)
     if not participant:
         raise HTTPException(404, "Participante no encontrado")
 
     previous_photo = participant.profile_photo_url
-    participant.profile_photo_url = _process_profile_photo(file, participant_id)
+    participant.profile_photo_url = _process_profile_photo(file, user_id)
     session.add(participant)
     session.commit()
     session.refresh(participant)
@@ -216,14 +216,14 @@ def upload_my_profile_photo(
     return participant
 
 
-@router.get("", response_model=List[Participant])
+@users_router.get("", response_model=List[Participant])
 def list_participants(session: Session = Depends(get_session), _=Depends(require_admin)):
     return session.exec(
         select(Participant).order_by(Participant.apellido, Participant.nombre)
     ).all()
 
 
-@router.get("/admin-users")
+@users_router.get("/admin")
 def list_admin_users(session: Session = Depends(get_session), _=Depends(require_admin)):
     participants = session.exec(select(Participant).order_by(Participant.apellido, Participant.nombre)).all()
     items = []
@@ -237,7 +237,7 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
             extra_role = "judge"
 
         payload = participant.model_dump()
-        payload["app_user_id"] = participant.id
+        payload["user_id"] = participant.id
         payload["username"] = participant.username
         payload["display_name"] = participant.display_name
         payload["base_role"] = participant.role or "user"
@@ -249,14 +249,14 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
     return items
 
 
-@router.put("/{participant_id}/role")
+@users_router.put("/{user_id}/role")
 def update_participant_role(
-    participant_id: int,
+    user_id: int,
     body: dict,
     session: Session = Depends(get_session),
     _=Depends(require_admin),
 ):
-    participant = session.get(Participant, participant_id)
+    participant = session.get(Participant, user_id)
     if not participant:
         raise HTTPException(404, "Usuario no encontrado")
 
@@ -270,24 +270,24 @@ def update_participant_role(
     participant.admin_enabled = 1 if extra_role == "admin" else 0
     session.add(participant)
     session.commit()
-    invalidate_app_user(participant.id)
+    invalidate_user(participant.id)
 
     return {
         "ok": True,
-        "participant_id": participant_id,
+        "user_id": user_id,
         "extra_role": extra_role if extra_role not in {"", "user"} else None,
     }
 
 
-@router.get("/{participant_id}", response_model=Participant)
-def get_participant(participant_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
-    p = session.get(Participant, participant_id)
+@users_router.get("/{user_id}", response_model=Participant)
+def get_participant(user_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
+    p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
     return p
 
 
-@router.post("", response_model=Participant, status_code=201)
+@users_router.post("", response_model=Participant, status_code=201)
 def create_participant(body: ParticipantCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
     payload = _sync_genero_fields(body.model_dump())
     _validate_participant_payload(payload)
@@ -304,10 +304,10 @@ def create_participant(body: ParticipantCreate, session: Session = Depends(get_s
         raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
 
 
-@router.put("/{participant_id}", response_model=Participant)
-def update_participant(participant_id: int, body: ParticipantUpdate,
+@users_router.put("/{user_id}", response_model=Participant)
+def update_participant(user_id: int, body: ParticipantUpdate,
                        session: Session = Depends(get_session), _=Depends(require_admin)):
-    p = session.get(Participant, participant_id)
+    p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
 
@@ -326,19 +326,19 @@ def update_participant(participant_id: int, body: ParticipantUpdate,
     except IntegrityError:
         session.rollback()
         raise HTTPException(409, "Ya existe una cuenta con ese email o esa cédula")
-    invalidate_app_user(changed_app_user_id)
+    invalidate_user(changed_app_user_id)
     return p
 
 
-@router.delete("/{participant_id}", status_code=204)
-def delete_participant(participant_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
-    p = session.get(Participant, participant_id)
+@users_router.delete("/{user_id}", status_code=204)
+def delete_participant(user_id: int, session: Session = Depends(get_session), _=Depends(require_admin)):
+    p = session.get(Participant, user_id)
     if p:
         session.delete(p)
         session.commit()
 
 
-@router.get("/template")
+@users_router.get("/template")
 def download_template(_=Depends(require_admin)):
     """Descarga un Excel de ejemplo con las columnas esperadas para la carga masiva."""
     wb = openpyxl.Workbook()
@@ -368,7 +368,7 @@ def download_template(_=Depends(require_admin)):
     )
 
 
-@router.post("/import", status_code=201)
+@users_router.post("/import", status_code=201)
 def import_participants(
     file: UploadFile = File(...),
     competition_id: Optional[int] = Query(None),
@@ -453,7 +453,7 @@ def import_participants(
                 existing_cp = session.get(CompetitionParticipant, (competition_id, p.id))
                 if not existing_cp:
                     session.add(CompetitionParticipant(
-                        competition_id=competition_id, participant_id=p.id
+                        competition_id=competition_id, user_id=p.id
                     ))
                     enrolled += 1
         session.commit()

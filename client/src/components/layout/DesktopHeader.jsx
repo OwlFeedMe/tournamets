@@ -25,7 +25,7 @@ function buildNavItems(session) {
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
   ]
-  if (session.participantId) {
+  if (session.userId) {
     items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
   }
   if (session.organizerEnabled) {

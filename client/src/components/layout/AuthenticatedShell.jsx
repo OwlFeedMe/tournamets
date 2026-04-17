@@ -172,7 +172,7 @@ function NotificationSheet({ open, onClose, session, displayName, items = [], bu
 export function AuthenticatedShell() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { session, displayName, signOut, participantId, role, isAthlete, persistSession: persistAuthSession } = useAuth()
+  const { session, displayName, signOut, userId, role, isAthlete, persistSession: persistAuthSession } = useAuth()
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [notificationsOpen, setNotificationsOpen] = useState(false)
   const [overlayOpen, setOverlayOpen] = useState(false)
@@ -223,11 +223,11 @@ export function AuthenticatedShell() {
       return
     }
     let active = true
-    const storageKey = `finalrep:enrollment-status:${participantId}`
+    const storageKey = `finalrep:enrollment-status:${userId}`
     const requests = []
-    if (isAthlete && participantId) {
+    if (isAthlete && userId) {
       requests.push(
-        api.get(`/participants/${participantId}/competitions`)
+        api.get(`/users/${userId}/competitions`)
           .then(({ data }) => ({ kind: 'athlete', data }))
           .catch(() => ({ kind: 'athlete', data: [] }))
       )
@@ -277,7 +277,7 @@ export function AuthenticatedShell() {
             unread += 1
           }
         }
-        if (participantId && !window.localStorage.getItem(storageKey)) {
+        if (userId && !window.localStorage.getItem(storageKey)) {
           window.localStorage.setItem(storageKey, JSON.stringify(currentMap))
         }
       }
@@ -306,22 +306,22 @@ export function AuthenticatedShell() {
     return () => {
       active = false
     }
-  }, [isAthlete, participantId, role, session, location.pathname])
+  }, [isAthlete, userId, role, session, location.pathname])
 
   useEffect(() => {
-    if (!notificationsOpen || !session || !isAthlete || !participantId) return
-    api.get(`/participants/${participantId}/competitions`)
+    if (!notificationsOpen || !session || !isAthlete || !userId) return
+    api.get(`/users/${userId}/competitions`)
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : []
         const currentMap = {}
         for (const item of list) {
           currentMap[String(item.id)] = item.enrollment_estado || ''
         }
-        window.localStorage.setItem(`finalrep:enrollment-status:${participantId}`, JSON.stringify(currentMap))
+        window.localStorage.setItem(`finalrep:enrollment-status:${userId}`, JSON.stringify(currentMap))
         setUnreadCount(0)
       })
       .catch(() => {})
-  }, [isAthlete, notificationsOpen, participantId, role, session])
+  }, [isAthlete, notificationsOpen, userId, role, session])
 
   const handleNotificationAction = async (action) => {
     if (!action?.assignmentId || !action?.actionType) return

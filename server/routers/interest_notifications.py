@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_current_user_optional, get_effective_participant_id, is_end_user
+from auth import get_current_user_id, get_current_user_optional, is_end_user
 from database import get_session
 from models import Competition, CompetitionInterestNotification, Participant
 
@@ -13,6 +13,12 @@ router = APIRouter(prefix="/api/competitions", tags=["interest_notifications"])
 
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 VALID_NOTIFICATION_TYPES = {"open_enrollment", "organizer_updates"}
+
+
+def _with_user_id(payload: dict, user_id: int | None) -> dict:
+    if user_id is None:
+        return payload
+    return {**payload, "user_id": user_id}
 
 
 def _normalize_notification_type(value: str | None) -> str:
@@ -43,26 +49,26 @@ def create_interest_notification(
         raise HTTPException(status_code=404, detail="Competencia no encontrada")
 
     notification_type = _normalize_notification_type(body.get("notification_type"))
-    participant_id = None
+    user_id = None
     email = _normalize_email(body.get("email"))
 
     if user and is_end_user(user):
-        participant_id = get_effective_participant_id(user)
-        if participant_id is not None:
-            participant = session.get(Participant, participant_id)
+        user_id = get_current_user_id(user)
+        if user_id is not None:
+            participant = session.get(Participant, user_id)
             if participant and participant.email:
                 email = _normalize_email(participant.email) or email
 
-    if participant_id is None and not email:
+    if user_id is None and not email:
         raise HTTPException(status_code=400, detail="Necesitamos un email para guardar el aviso")
 
     existing = None
-    if participant_id is not None:
+    if user_id is not None:
         existing = session.exec(
             select(CompetitionInterestNotification).where(
                 CompetitionInterestNotification.competition_id == competition_id,
                 CompetitionInterestNotification.notification_type == notification_type,
-                CompetitionInterestNotification.participant_id == participant_id,
+                CompetitionInterestNotification.user_id == user_id,
             )
         ).first()
     elif email:
@@ -80,16 +86,16 @@ def create_interest_notification(
             session.add(existing)
             session.commit()
             session.refresh(existing)
-        return {
+        return _with_user_id({
             "saved": True,
             "already_exists": True,
             "notification_type": existing.notification_type,
             "message": "Tu aviso ya estaba guardado.",
-        }
+        }, user_id)
 
     record = CompetitionInterestNotification(
         competition_id=competition_id,
-        participant_id=participant_id,
+        user_id=user_id,
         email=email,
         notification_type=notification_type,
         source="competition_landing",
@@ -100,16 +106,16 @@ def create_interest_notification(
         session.refresh(record)
     except IntegrityError:
         session.rollback()
-        return {
+        return _with_user_id({
             "saved": True,
             "already_exists": True,
             "notification_type": notification_type,
             "message": "Tu aviso ya estaba guardado.",
-        }
+        }, user_id)
 
-    return {
+    return _with_user_id({
         "saved": True,
         "already_exists": False,
         "notification_type": notification_type,
         "message": "Aviso guardado.",
-    }
+    }, user_id)

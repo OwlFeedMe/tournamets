@@ -23,7 +23,7 @@ api.interceptors.response.use(
           localStorage.removeItem('base_role')
           localStorage.removeItem('extra_roles')
           localStorage.removeItem('nombre')
-          localStorage.removeItem('participant_id')
+          localStorage.removeItem('user_id')
           localStorage.removeItem('organizer_enabled')
           localStorage.removeItem('judge_enabled')
           localStorage.removeItem('admin_enabled')

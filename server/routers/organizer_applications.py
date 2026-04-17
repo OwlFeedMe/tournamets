@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
-from auth import get_effective_participant_id, invalidate_app_user, require_admin, require_auth
+from auth import get_current_user_id, invalidate_user, require_admin, require_auth
 from constants import Role
 from database import get_session
 from models import (
@@ -49,7 +49,7 @@ def _profile_missing_fields(participant: Participant | None) -> list[str]:
 
 def _profile_snapshot(participant: Participant) -> dict:
     return {
-        "participant_id": participant.id,
+        "user_id": participant.id,
         "cedula": participant.cedula,
         "nombre": participant.nombre,
         "apellido": participant.apellido,
@@ -76,19 +76,19 @@ def _can_request_organizer_access(user: Participant | None) -> bool:
     return True
 
 
-def _serialize_application(item: OrganizerApplication, *, app_user: Participant | None = None, participant: Participant | None = None) -> dict:
+def _serialize_application(item: OrganizerApplication, *, user: Participant | None = None, participant: Participant | None = None) -> dict:
     payload = item.model_dump()
     try:
         payload["profile_snapshot"] = json.loads(item.profile_snapshot_json or "{}")
     except Exception:
         payload["profile_snapshot"] = {}
     payload.pop("profile_snapshot_json", None)
-    if app_user:
-        payload["app_user"] = {
-            "id": app_user.id,
-            "username": app_user.username,
-            "display_name": app_user.display_name,
-            "role": app_user.role,
+    if user:
+        payload["user"] = {
+            "id": user.id,
+            "username": user.username,
+            "display_name": user.display_name,
+            "role": user.role,
         }
     if participant:
         payload["participant"] = {
@@ -106,20 +106,18 @@ def get_my_organizer_application(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    app_user_id = user.get("app_user_id")
-    participant_id = get_effective_participant_id(user)
-    if app_user_id is None or participant_id is None:
+    user_id = get_current_user_id(user)
+    if user_id is None:
         raise HTTPException(403, "Solo usuarios finales")
 
-    app_user = session.get(Participant, int(app_user_id))
-    if not _can_request_organizer_access(app_user):
+    current_user = session.get(Participant, int(user_id))
+    if not _can_request_organizer_access(current_user):
         raise HTTPException(403, "La cuenta no puede solicitar este acceso")
 
-    participant = session.get(Participant, participant_id)
-    missing = _profile_missing_fields(participant)
+    missing = _profile_missing_fields(current_user)
     item = session.exec(
         select(OrganizerApplication)
-        .where(OrganizerApplication.app_user_id == int(app_user_id))
+        .where(OrganizerApplication.user_id == int(user_id))
         .order_by(OrganizerApplication.created_at.desc(), OrganizerApplication.id.desc())
     ).first()
     return {
@@ -135,23 +133,21 @@ def create_organizer_application(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    app_user_id = user.get("app_user_id")
-    participant_id = get_effective_participant_id(user)
-    if app_user_id is None or participant_id is None:
+    user_id = get_current_user_id(user)
+    if user_id is None:
         raise HTTPException(403, "Solo usuarios finales")
 
-    app_user = session.get(Participant, int(app_user_id))
-    if not _can_request_organizer_access(app_user):
+    current_user = session.get(Participant, int(user_id))
+    if not _can_request_organizer_access(current_user):
         raise HTTPException(403, "La cuenta no puede enviar esta solicitud")
 
-    participant = session.get(Participant, participant_id)
-    missing = _profile_missing_fields(participant)
+    missing = _profile_missing_fields(current_user)
     if missing:
         raise HTTPException(400, f"Completa tu perfil antes de solicitar este acceso. Faltan: {', '.join(missing)}")
 
     existing_pending = session.exec(
         select(OrganizerApplication)
-        .where(OrganizerApplication.app_user_id == int(app_user_id))
+        .where(OrganizerApplication.user_id == int(user_id))
         .where(OrganizerApplication.status == "pending")
     ).first()
     if existing_pending:
@@ -165,8 +161,7 @@ def create_organizer_application(
         raise HTTPException(400, "Completa los campos obligatorios de la solicitud")
 
     item = OrganizerApplication(
-        app_user_id=int(app_user_id),
-        participant_id=int(participant_id),
+        user_id=int(user_id),
         status="pending",
         requested_event_name=requested_event_name,
         requested_event_location=str(payload.get("requested_event_location") or "").strip() or None,
@@ -175,14 +170,14 @@ def create_organizer_application(
         why_organizer=why_organizer,
         prior_events_summary=str(payload.get("prior_events_summary") or "").strip() or None,
         why_finalrep=why_finalrep,
-        profile_snapshot_json=json.dumps(_profile_snapshot(participant), ensure_ascii=False),
+        profile_snapshot_json=json.dumps(_profile_snapshot(current_user), ensure_ascii=False),
     )
     session.add(item)
     session.commit()
     session.refresh(item)
 
-    participant_email = str(getattr(participant, "email", "") or "").strip()
-    participant_name = f"{str(getattr(participant, 'nombre', '') or '').strip()} {str(getattr(participant, 'apellido', '') or '').strip()}".strip()
+    participant_email = str(getattr(current_user, "email", "") or "").strip()
+    participant_name = f"{str(getattr(current_user, 'nombre', '') or '').strip()} {str(getattr(current_user, 'apellido', '') or '').strip()}".strip()
     if participant_email:
         try:
             subject, body, html = render_organizer_application_received(nombre=participant_name)
@@ -202,7 +197,7 @@ def create_organizer_application(
         except Exception:
             logger.exception("Failed to send organizer application admin notice email")
 
-    return {"ok": True, "application": _serialize_application(item, app_user=app_user, participant=participant)}
+    return {"ok": True, "application": _serialize_application(item, user=current_user, participant=current_user)}
 
 
 @router.get("")
@@ -222,22 +217,17 @@ def list_organizer_applications(
         query = query.where(OrganizerApplication.status == normalized_status)
 
     items = session.exec(query).all()
-    app_user_ids = {int(item.app_user_id) for item in items}
-    participant_ids = {int(item.participant_id) for item in items}
-    app_users = {
+    user_ids = {int(item.user_id) for item in items}
+    users = {
         item.id: item
-        for item in session.exec(select(Participant).where(Participant.id.in_(app_user_ids))).all()
-    } if app_user_ids else {}
-    participants = {
-        item.id: item
-        for item in session.exec(select(Participant).where(Participant.id.in_(participant_ids))).all()
-    } if participant_ids else {}
+        for item in session.exec(select(Participant).where(Participant.id.in_(user_ids))).all()
+    } if user_ids else {}
 
     return [
         _serialize_application(
             item,
-            app_user=app_users.get(int(item.app_user_id)),
-            participant=participants.get(int(item.participant_id)),
+            user=users.get(int(item.user_id)),
+            participant=users.get(int(item.user_id)),
         )
         for item in items
     ]
@@ -258,26 +248,26 @@ def review_organizer_application(
     if next_status not in {"approved", "rejected"}:
         raise HTTPException(400, "Estado invalido")
 
-    app_user = session.get(Participant, int(item.app_user_id))
-    if not app_user:
+    requested_user = session.get(Participant, int(item.user_id))
+    if not requested_user:
         raise HTTPException(404, "Usuario de la solicitud no encontrado")
 
     item.status = next_status
     item.review_note = str(body.review_note or "").strip() or None
-    item.reviewed_by_user_id = int(user.get("app_user_id") or 0) or None
+    item.reviewed_by_user_id = get_current_user_id(user)
     item.reviewed_at = datetime.now(timezone.utc)
     session.add(item)
 
     if next_status == "approved":
-        app_user.organizer_enabled = 1
-        session.add(app_user)
+        requested_user.organizer_enabled = 1
+        session.add(requested_user)
 
     session.commit()
     session.refresh(item)
-    session.refresh(app_user)
+    session.refresh(requested_user)
     if next_status == "approved":
-        invalidate_app_user(app_user.id)
-    participant = session.get(Participant, int(item.participant_id))
+        invalidate_user(requested_user.id)
+    participant = session.get(Participant, int(item.user_id))
 
     if participant:
         participant_email = str(getattr(participant, "email", "") or "").strip()
@@ -297,5 +287,5 @@ def review_organizer_application(
 
     return {
         "ok": True,
-        "application": _serialize_application(item, app_user=app_user, participant=participant),
+        "application": _serialize_application(item, user=requested_user, participant=participant),
     }

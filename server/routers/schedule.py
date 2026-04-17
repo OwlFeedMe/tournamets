@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from access import require_competition_access
-from auth import get_current_user_optional, get_effective_participant_id, is_end_user, require_auth, require_staff
+from auth import get_current_user_optional, get_effective_user_id, is_end_user, require_auth, require_staff
 from database import get_session
 from models import (
     Competition,
@@ -40,7 +40,7 @@ LANE_PATTERNS: dict[int, list[int]] = {
 
 
 class HeatAssignmentInput(BaseModel):
-    participant_id: Optional[int] = None
+    user_id: Optional[int] = None
     team_id: Optional[int] = None
     lane_number: int = 1
     seed_order: int = 0
@@ -134,31 +134,31 @@ def _leaderboard_seed_map(session: Session, competition_id: int, phase: Competit
     result_rows = session.exec(
         select(Result).where(
             Result.competition_id == competition_id,
-            Result.participant_id.is_not(None),
+            Result.user_id.is_not(None),
             Result.phase_id.in_(previous_ids),
         )
     ).all()
     if not result_rows:
         return {}
-    participant_ids = {int(row.participant_id) for row in result_rows if row.participant_id is not None}
+    participant_ids = {int(row.user_id) for row in result_rows if row.user_id is not None}
     participant_map = {
         int(item.id): item
         for item in session.exec(select(Participant).where(Participant.id.in_(participant_ids))).all()
         if item.id is not None
     }
     competition_participant_map = {
-        int(item.participant_id): item
+        int(item.user_id): item
         for item in session.exec(
             select(CompetitionParticipant).where(
                 CompetitionParticipant.competition_id == competition_id,
-                CompetitionParticipant.participant_id.in_(participant_ids),
+                CompetitionParticipant.user_id.in_(participant_ids),
             )
         ).all()
     }
     out: dict[int, dict] = {}
     target_category = (categoria or "").strip().lower()
     for row in result_rows:
-        pid = int(row.participant_id)
+        pid = int(row.user_id)
         competition_row = competition_participant_map.get(pid)
         participant = participant_map.get(pid)
         cat = str((competition_row.categoria if competition_row else None) or (participant.categoria if participant else None) or "").strip()
@@ -191,7 +191,7 @@ def _eligible_participants(session: Session, competition_id: int, categoria: str
                 COALESCE(cp.categoria, p.categoria, '') AS categoria,
                 cp.inscrito_at
             FROM competition_participants cp
-            JOIN participants p ON p.id = cp.participant_id
+            JOIN participants p ON p.id = cp.user_id
             WHERE cp.competition_id = :cid
               AND cp.estado = 'confirmado'
             ORDER BY cp.inscrito_at, p.id
@@ -207,7 +207,7 @@ def _eligible_participants(session: Session, competition_id: int, categoria: str
             continue
         items.append(
             {
-                "participant_id": int(row["id"]),
+                "user_id": int(row["id"]),
                 "name": f"{row['nombre']} {row['apellido']}".strip(),
                 "categoria": row_category,
                 "inscrito_at": row["inscrito_at"],
@@ -226,11 +226,11 @@ def _seed_entries_for_phase(session: Session, competition_id: int, phase: Compet
     return sorted(
         items,
         key=lambda item: (
-            0 if item["participant_id"] in seed_map else 1,
-            -(seed_map.get(item["participant_id"], {}).get("total_points", -999999)),
-            seed_map.get(item["participant_id"], {}).get("best_position", 999999),
-            seed_map.get(item["participant_id"], {}).get("enrolled_at") or item["inscrito_at"] or datetime.max.replace(tzinfo=timezone.utc),
-            item["participant_id"],
+            0 if item["user_id"] in seed_map else 1,
+            -(seed_map.get(item["user_id"], {}).get("total_points", -999999)),
+            seed_map.get(item["user_id"], {}).get("best_position", 999999),
+            seed_map.get(item["user_id"], {}).get("enrolled_at") or item["inscrito_at"] or datetime.max.replace(tzinfo=timezone.utc),
+            item["user_id"],
         ),
     )
 
@@ -263,7 +263,7 @@ def _schedule_payload(
     competition: Competition,
     *,
     published_only: bool,
-    participant_id: int | None = None,
+    user_id: int | None = None,
 ) -> dict:
     phases = session.exec(
         select(CompetitionPhase)
@@ -304,7 +304,7 @@ def _schedule_payload(
                 CompetitionHeatAssignment.id,
             )
         ).all()
-        participant_ids = {int(item.participant_id) for item in assignment_rows if item.participant_id is not None}
+        participant_ids = {int(item.user_id) for item in assignment_rows if item.user_id is not None}
         team_ids = {int(item.team_id) for item in assignment_rows if item.team_id is not None}
         participant_map = {
             int(item.id): item
@@ -312,11 +312,11 @@ def _schedule_payload(
             if item.id is not None
         } if participant_ids else {}
         competition_participant_map = {
-            int(item.participant_id): item
+            int(item.user_id): item
             for item in session.exec(
                 select(CompetitionParticipant).where(
                     CompetitionParticipant.competition_id == int(competition.id),
-                    CompetitionParticipant.participant_id.in_(participant_ids),
+                    CompetitionParticipant.user_id.in_(participant_ids),
                 )
             ).all()
         } if participant_ids else {}
@@ -326,8 +326,8 @@ def _schedule_payload(
             if item.id is not None
         } if team_ids else {}
         for row in assignment_rows:
-            pid = row.participant_id
-            if participant_id is not None and int(pid or 0) != int(participant_id):
+            pid = row.user_id
+            if user_id is not None and int(pid or 0) != int(user_id):
                 continue
             heat_id = int(row.heat_id)
             participant = participant_map.get(int(pid)) if pid is not None else None
@@ -335,9 +335,15 @@ def _schedule_payload(
             team = team_map.get(int(row.team_id)) if row.team_id is not None else None
             assignments_by_heat.setdefault(heat_id, []).append(
                 {
-                    "id": int(row.id),
-                    "participant_id": int(pid) if pid is not None else None,
+                "id": int(row.id),
+                    "user_id": int(pid) if pid is not None else None,
+                    "user_id": int(pid) if pid is not None else None,
                     "team_id": int(row.team_id) if row.team_id is not None else None,
+                    "user_name": (
+                        f"{participant.nombre} {participant.apellido}".strip()
+                        if pid is not None
+                        else str(team.nombre if team else "Equipo")
+                    ),
                     "participant_name": (
                         f"{participant.nombre} {participant.apellido}".strip()
                         if pid is not None
@@ -354,7 +360,7 @@ def _schedule_payload(
     items = []
     for heat in heats:
         current_assignments = assignments_by_heat.get(int(heat.id or 0), [])
-        if participant_id is not None and not current_assignments:
+        if user_id is not None and not current_assignments:
             continue
         items.append(_serialize_heat_payload(heat, phase_name_map.get(int(heat.phase_id), "Fase"), current_assignments))
 
@@ -365,7 +371,7 @@ def _schedule_payload(
             updated_at = max(timestamps)
 
     return {
-        "scope": "personal" if participant_id is not None else "public",
+        "scope": "personal" if user_id is not None else "public",
         "competition": competition.model_dump(),
         "phases": phase_payload,
         "items": items,
@@ -390,12 +396,13 @@ def _replace_assignments(
     session.flush()
 
     for idx, entry in enumerate(assignments):
-        if entry.participant_id is None and entry.team_id is None:
+        resolved_user_id = entry.user_id
+        if resolved_user_id is None and entry.team_id is None:
             continue
         session.add(
-            CompetitionHeatAssignment(
-                heat_id=int(heat.id),
-                participant_id=entry.participant_id,
+                CompetitionHeatAssignment(
+                    heat_id=int(heat.id),
+                user_id=resolved_user_id,
                 team_id=entry.team_id,
                 lane_number=max(1, int(entry.lane_number or 1)),
                 seed_order=int(entry.seed_order if entry.seed_order else idx + 1),
@@ -423,19 +430,20 @@ def get_public_schedule(
 
 
 @router.get("/{competition_id}/my-schedule")
+@router.get("/users/me/competitions/{competition_id}/schedule")
 def get_my_schedule(
     competition_id: int,
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
     competition = require_competition_access(session, competition_id, user)
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo participantes autenticados pueden ver su cronograma")
-    enrollment = session.get(CompetitionParticipant, (competition_id, participant_id))
+    enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     if not enrollment or str(enrollment.estado or "").strip().lower() != "confirmado":
         raise HTTPException(403, "Tu inscripcion aun no esta confirmada para esta competencia")
-    return _schedule_payload(session, competition, published_only=True, participant_id=participant_id)
+    return _schedule_payload(session, competition, published_only=True, user_id=user_id)
 
 
 @router.get("/{competition_id}/schedule/me")
@@ -634,7 +642,7 @@ def generate_heats(
             lane_number = lane_order[seed_index] if seed_index < len(lane_order) else seed_index + 1
             assignments.append(
                 HeatAssignmentInput(
-                    participant_id=int(entry["participant_id"]),
+                    user_id=int(entry["user_id"]),
                     lane_number=lane_number,
                     seed_order=seed_index + 1,
                 )

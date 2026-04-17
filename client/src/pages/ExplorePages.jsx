@@ -330,7 +330,7 @@ export function WorkoutsPage() {
 }
 
 export function MyEventsPage() {
-  const { participantId } = useAuth()
+  const { userId } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -363,7 +363,7 @@ export function MyEventsPage() {
   }
 
   useEffect(() => {
-    if (!participantId) {
+    if (!userId) {
       setItems([])
       setLoading(false)
       return
@@ -371,7 +371,7 @@ export function MyEventsPage() {
 
     let mounted = true
     setLoading(true)
-    api.get(`/participants/${participantId}/competitions`)
+      api.get(`/users/${userId}/competitions`)
       .then(({ data }) => {
         if (!mounted) return
         setItems(Array.isArray(data) ? data : [])
@@ -388,7 +388,7 @@ export function MyEventsPage() {
     return () => {
       mounted = false
     }
-  }, [participantId])
+  }, [userId])
 
   const filteredItems = useMemo(() => filterCompetitionsByQuery(items, query), [items, query])
 

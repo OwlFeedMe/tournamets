@@ -9,7 +9,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import create_access_token, get_current_user, hash_password, invalidate_app_user, require_auth, verify_password
+from auth import create_access_token, get_current_user, hash_password, invalidate_user, require_auth, verify_password
 from constants import EstadoParticipante, Role
 from database import get_session
 from models import MeResponse, Participant, PasswordResetCode, TokenResponse, User
@@ -60,8 +60,6 @@ def _session_token_payload(user: User) -> dict:
     return {
         "sub": str(user.id),
         "user_id": user.id,
-        "app_user_id": user.id,
-        "participant_id": user.id,
         "role": effective_role,
         "base_role": user.role,
         "extra_roles": extra_roles,
@@ -78,14 +76,13 @@ def _token_response(user: User) -> TokenResponse:
     payload = _session_token_payload(user)
     return TokenResponse(
         access_token=create_access_token(payload),
+        user_id=payload["user_id"],
         role=payload["role"],
         base_role=payload["base_role"],
         extra_roles=list(payload["extra_roles"]),
         display_name=payload["display_name"],
         nombre=payload["nombre"],
         username=payload["username"],
-        app_user_id=payload["app_user_id"],
-        participant_id=payload["participant_id"],
         organizer_enabled=payload["organizer_enabled"],
         judge_enabled=payload["judge_enabled"],
         admin_enabled=payload["admin_enabled"],
@@ -95,14 +92,13 @@ def _token_response(user: User) -> TokenResponse:
 def _me_response(user: User) -> MeResponse:
     payload = _session_token_payload(user)
     return MeResponse(
+        user_id=payload["user_id"],
         role=payload["role"],
         base_role=payload["base_role"],
         extra_roles=list(payload["extra_roles"]),
         display_name=payload["display_name"],
         nombre=payload["nombre"],
         username=payload["username"],
-        app_user_id=payload["app_user_id"],
-        participant_id=payload["participant_id"],
         organizer_enabled=payload["organizer_enabled"],
         judge_enabled=payload["judge_enabled"],
         admin_enabled=payload["admin_enabled"],
@@ -278,13 +274,13 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
     session.add(user)
     session.commit()
     session.refresh(user)
-    invalidate_app_user(user.id)
+    invalidate_user(user.id)
     return _token_response(user)
 
 
 @router.get("/me", response_model=MeResponse)
 def me(session: Session = Depends(get_session), user=Depends(get_current_user)):
-    user_id = user.get("user_id") or user.get("app_user_id") or user.get("participant_id")
+    user_id = user.get("user_id") or user.get("sub")
     current = session.get(User, int(user_id)) if user_id is not None else None
     if not current or int(current.is_active or 0) != 1:
         raise HTTPException(status_code=401, detail="Sesion invalida")
@@ -303,7 +299,7 @@ def change_password(body: dict = Body(...), session: Session = Depends(get_sessi
             detail="La contrasena debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial",
         )
 
-    user_id = user.get("user_id") or user.get("app_user_id") or user.get("participant_id")
+    user_id = user.get("user_id") or user.get("sub")
     current = session.get(User, int(user_id)) if user_id is not None else None
     if not current or int(current.is_active or 0) != 1:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
@@ -313,7 +309,7 @@ def change_password(body: dict = Body(...), session: Session = Depends(get_sessi
     current.password_hash = hash_password(new_password)
     session.add(current)
     session.commit()
-    invalidate_app_user(current.id)
+    invalidate_user(current.id)
     return {"ok": True}
 
 
@@ -327,8 +323,8 @@ def forgot_password(body: dict = Body(...), session: Session = Depends(get_sessi
     if not email or not BASIC_EMAIL_REGEX.fullmatch(email):
         raise HTTPException(status_code=400, detail="Ingresa un email valido")
 
-    app_user = _active_user_for_email(session, email)
-    if not app_user:
+    target_user = _active_user_for_email(session, email)
+    if not target_user:
         return {"ok": True}
 
     now = datetime.now(timezone.utc)
@@ -347,7 +343,7 @@ def forgot_password(body: dict = Body(...), session: Session = Depends(get_sessi
         session.add(PasswordResetCode(email=email, code=code, expires_at=expires_at))
         session.commit()
 
-    nombre = _display_name(app_user)
+    nombre = _display_name(target_user)
     try:
         subject, mail_body, html = render_password_reset_code(nombre=nombre, code=code)
         sent = send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
@@ -383,14 +379,14 @@ def reset_password(body: dict = Body(...), session: Session = Depends(get_sessio
     if not reset_code:
         raise HTTPException(status_code=400, detail="El codigo es invalido o ya expiro")
 
-    app_user = _active_user_for_email(session, email)
-    if not app_user:
+    target_user = _active_user_for_email(session, email)
+    if not target_user:
         raise HTTPException(status_code=400, detail="El codigo es invalido o ya expiro")
 
-    app_user.password_hash = hash_password(new_password)
+    target_user.password_hash = hash_password(new_password)
     reset_code.used_at = now
-    session.add(app_user)
+    session.add(target_user)
     session.add(reset_code)
     session.commit()
-    invalidate_app_user(app_user.id)
+    invalidate_user(target_user.id)
     return {"ok": True}

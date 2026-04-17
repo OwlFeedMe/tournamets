@@ -5,7 +5,15 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
+from auth import (
+    get_effective_user_id,
+    has_admin_access,
+    has_judge_access,
+    has_organizer_access,
+    is_end_user,
+    require_auth,
+    require_staff,
+)
 from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
@@ -19,6 +27,14 @@ PHASE_TIPO_ALIAS = {
 }
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
+
+
+def _should_scope_to_authenticated_participant(user: dict | None) -> bool:
+    if not user:
+        return False
+    if has_admin_access(user) or has_organizer_access(user) or has_judge_access(user):
+        return False
+    return is_end_user(user)
 
 
 def _normalize_phase_type(raw: str | None) -> str:
@@ -82,12 +98,12 @@ def _participant_categories_map(session: Session, competition_id: int, participa
     rows = session.exec(
         select(CompetitionParticipant).where(
             CompetitionParticipant.competition_id == competition_id,
-            CompetitionParticipant.participant_id.in_(participant_ids),
+            CompetitionParticipant.user_id.in_(participant_ids),
         )
     ).all()
     out: dict[int, str] = {}
     for cp in rows:
-        out[int(cp.participant_id)] = _normalize_category(cp.categoria)
+        out[int(cp.user_id)] = _normalize_category(cp.categoria)
     return out
 
 
@@ -97,13 +113,13 @@ def _team_categories_map(session: Session, competition_id: int, team_ids: set[in
     members = session.exec(
         select(TeamMember).where(TeamMember.team_id.in_(team_ids))
     ).all()
-    participant_ids = {int(m.participant_id) for m in members}
+    participant_ids = {int(m.user_id) for m in members}
     participant_category = _participant_categories_map(session, competition_id, participant_ids)
 
     team_categories: dict[int, set[str]] = {}
     for m in members:
         tid = int(m.team_id)
-        pid = int(m.participant_id)
+        pid = int(m.user_id)
         team_categories.setdefault(tid, set()).add(participant_category.get(pid, "Sin categoria"))
 
     out: dict[int, str] = {}
@@ -189,15 +205,15 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     with_metric = [r for r in rows if r.marca is not None]
     without_metric = [r for r in rows if r.marca is None]
     if rank_by_category:
-        participant_ids = {int(r.participant_id) for r in with_metric if r.participant_id is not None}
-        team_ids = {int(r.team_id) for r in with_metric if r.team_id is not None and r.participant_id is None}
+        participant_ids = {int(r.user_id) for r in with_metric if r.user_id is not None}
+        team_ids = {int(r.team_id) for r in with_metric if r.team_id is not None and r.user_id is None}
         participant_category = _participant_categories_map(session, competition_id, participant_ids)
         team_category = _team_categories_map(session, competition_id, team_ids)
 
         grouped_rows: dict[str, list[Result]] = {}
         for r in with_metric:
-            if r.participant_id is not None:
-                category = participant_category.get(int(r.participant_id), "Sin categoria")
+            if r.user_id is not None:
+                category = participant_category.get(int(r.user_id), "Sin categoria")
             elif r.team_id is not None:
                 category = team_category.get(int(r.team_id), "Sin categoria")
             else:
@@ -225,15 +241,16 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
 def _enrich(session: Session, result_id: int) -> dict:
     row = session.execute(text("""
-        SELECT r.id, r.participant_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.puntos, r.posicion, r.created_at,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.puntos, r.posicion, r.created_at,
                p.nombre        AS nombre,
                p.apellido      AS apellido,
+               TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
                p.categoria     AS categoria,
                c.nombre        AS competencia,
                t.nombre        AS equipo,
                ph.nombre       AS fase
         FROM results r
-        LEFT JOIN participants       p  ON p.id  = r.participant_id
+        LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN  competitions           c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
@@ -247,7 +264,7 @@ def _has_phase_duplicate(
     *,
     competition_id: int,
     phase_id: int,
-    participant_id: int | None,
+    user_id: int | None,
     team_id: int | None,
     exclude_result_id: int | None = None,
 ) -> bool:
@@ -257,8 +274,8 @@ def _has_phase_duplicate(
     )
     if exclude_result_id is not None:
         query = query.where(Result.id != exclude_result_id)
-    if participant_id is not None:
-        query = query.where(Result.participant_id == participant_id)
+    if user_id is not None:
+        query = query.where(Result.user_id == user_id)
     elif team_id is not None:
         query = query.where(Result.team_id == team_id)
     else:
@@ -270,33 +287,34 @@ def _participant_team_in_competition(
     session: Session,
     *,
     competition_id: int,
-    participant_id: int,
+    user_id: int,
 ) -> int | None:
     rows = session.exec(
         select(Team.id)
         .join(TeamMember, TeamMember.team_id == Team.id)
         .where(
             Team.competition_id == competition_id,
-            TeamMember.participant_id == participant_id,
+            TeamMember.user_id == user_id,
         )
     ).all()
     if not rows:
         return None
     if len(rows) > 1:
-        raise HTTPException(409, "El participante pertenece a multiples equipos en esta competencia")
+        raise HTTPException(409, "El usuario pertenece a multiples equipos en esta competencia")
     return int(rows[0])
 
 
 @router.get("")
 def list_results(
     competition_id: Optional[int] = None,
-    participant_id: Optional[int] = None,
+    user_id: Optional[int] = None,
     team_id: Optional[int] = None,
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    if is_end_user(user):
-        participant_id = get_effective_participant_id(user)
+    resolved_user_id = user_id
+    if _should_scope_to_authenticated_participant(user):
+        resolved_user_id = get_effective_user_id(user)
 
     conditions: list[str] = []
     params: dict = {}
@@ -313,9 +331,9 @@ def list_results(
             conditions.append("r.competition_id = ANY(:owned_ids)")
             params["owned_ids"] = owned_ids
 
-    if participant_id:
-        conditions.append("r.participant_id = :pid")
-        params["pid"] = participant_id
+    if resolved_user_id:
+        conditions.append("r.user_id = :uid")
+        params["uid"] = resolved_user_id
     if team_id:
         conditions.append("r.team_id = :tid")
         params["tid"] = team_id
@@ -323,16 +341,17 @@ def list_results(
     where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     rows = session.execute(text(f"""
-        SELECT r.id, r.participant_id, r.team_id, r.competition_id, r.phase_id,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id,
                r.marca, r.puntos, r.posicion, r.created_at,
                p.nombre   AS nombre,
                p.apellido AS apellido,
+               TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
                p.categoria AS categoria,
                c.nombre   AS competencia,
                t.nombre   AS equipo,
                ph.nombre  AS fase
         FROM results r
-        LEFT JOIN participants       p  ON p.id  = r.participant_id
+        LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN      competitions       c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
@@ -344,9 +363,11 @@ def list_results(
 
 @router.post("", status_code=201)
 def create_result(body: ResultCreate, session: Session = Depends(get_session), user=Depends(require_auth)):
-    if not body.participant_id and not body.team_id:
-        raise HTTPException(400, "Se requiere participant_id o team_id")
-    if not is_end_user(user):
+    scoped_end_user = _should_scope_to_authenticated_participant(user)
+    target_user_id = body.user_id
+    if not target_user_id and not body.team_id:
+        raise HTTPException(400, "Se requiere user_id o team_id")
+    if not scoped_end_user:
         require_competition_access(session, body.competition_id, user)
 
     resolved_team_id = body.team_id
@@ -359,23 +380,23 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         if not team or team.competition_id != body.competition_id:
             raise HTTPException(400, "El equipo no pertenece a esta competencia")
 
-    if body.participant_id:
-        enrolled = session.get(CompetitionParticipant, (body.competition_id, body.participant_id))
+    if target_user_id:
+        enrolled = session.get(CompetitionParticipant, (body.competition_id, target_user_id))
         if not enrolled or enrolled.estado != "confirmado":
-            raise HTTPException(403, "El participante no está inscrito y confirmado en esta competencia")
+            raise HTTPException(403, "El usuario no está inscrito y confirmado en esta competencia")
         participant_team_id = _participant_team_in_competition(
-            session, competition_id=body.competition_id, participant_id=body.participant_id
+            session, competition_id=body.competition_id, user_id=target_user_id
         )
         if resolved_team_id is None:
             resolved_team_id = participant_team_id
         elif participant_team_id is None or int(participant_team_id) != int(resolved_team_id):
-            raise HTTPException(400, "El participante no pertenece al equipo indicado")
+            raise HTTPException(400, "El usuario no pertenece al equipo indicado")
 
-    if is_end_user(user):
-        current_participant_id = get_effective_participant_id(user)
+    if scoped_end_user:
+        current_participant_id = get_effective_user_id(user)
         if body.team_id:
             raise HTTPException(403, "Los usuarios no pueden cargar resultados de equipo")
-        if current_participant_id is None or current_participant_id != body.participant_id:
+        if current_participant_id is None or current_participant_id != target_user_id:
             raise HTTPException(403, "Solo puedes cargar tus propios resultados")
 
         comp = session.get(Competition, body.competition_id)
@@ -403,7 +424,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         if phase_mode == "total" and resolved_team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
 
-        duplicate_participant_id = body.participant_id
+        duplicate_participant_id = target_user_id
         duplicate_team_id = resolved_team_id
         if phase_mode == "total" and resolved_team_id is not None:
             duplicate_participant_id = None
@@ -412,14 +433,15 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
             session,
             competition_id=body.competition_id,
             phase_id=body.phase_id,
-            participant_id=duplicate_participant_id,
+            user_id=duplicate_participant_id,
             team_id=duplicate_team_id,
         ):
             raise HTTPException(409, "Esta fase permite un solo resultado por participante/equipo")
 
     payload = body.model_dump()
+    payload["user_id"] = target_user_id
     if phase_mode == "total" and resolved_team_id is not None:
-        payload["participant_id"] = None
+        payload["user_id"] = None
     payload["team_id"] = resolved_team_id
     payload["marca"] = computed_mark
     if computed_points is not None:
@@ -469,7 +491,7 @@ def update_result(result_id: int, body: ResultUpdate,
         if phase_mode == "total" and r.team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
 
-        duplicate_participant_id = r.participant_id
+        duplicate_participant_id = r.user_id
         duplicate_team_id = r.team_id
         if phase_mode == "total" and r.team_id is not None:
             duplicate_participant_id = None
@@ -478,7 +500,7 @@ def update_result(result_id: int, body: ResultUpdate,
             session,
             competition_id=r.competition_id,
             phase_id=phase_id,
-            participant_id=duplicate_participant_id,
+            user_id=duplicate_participant_id,
             team_id=duplicate_team_id,
             exclude_result_id=r.id,
         ):
@@ -487,7 +509,7 @@ def update_result(result_id: int, body: ResultUpdate,
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(r, field, value)
     if phase_mode == "total" and r.team_id is not None:
-        r.participant_id = None
+        r.user_id = None
     r.marca = computed_mark
     if computed_points is not None:
         r.puntos = int(computed_points)

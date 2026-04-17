@@ -26,7 +26,7 @@ function buildDockItems(session) {
   if (!hasExtra) {
     items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })
   }
-  if (session.participantId) {
+  if (session.userId) {
     items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
   } else if (hasExtra) {
     items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })

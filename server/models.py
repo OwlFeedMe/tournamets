@@ -52,17 +52,13 @@ class User(SQLModel, table=True):
 
 
 Participant = User
-AppUser = User
 
 
 class OrganizerApplication(SQLModel, table=True):
     __tablename__ = "organizer_applications"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    app_user_id: int = Field(
-        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
-    )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     status: str = Field(default="pending", index=True)  # pending | approved | rejected
@@ -324,7 +320,7 @@ class SpectatorTicketCheckinAudit(SQLModel, table=True):
     reason: Optional[str] = None
     station: Optional[str] = None
     device_id: Optional[str] = None
-    actor_app_user_id: Optional[int] = Field(
+    actor_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -356,7 +352,7 @@ class PasswordResetCode(SQLModel, table=True):
 class CompetitionInterestNotification(SQLModel, table=True):
     __tablename__ = "competition_interest_notifications"
     __table_args__ = (
-        UniqueConstraint("competition_id", "notification_type", "participant_id", name="uq_comp_interest_participant"),
+        UniqueConstraint("competition_id", "notification_type", "user_id", name="uq_comp_interest_user"),
         UniqueConstraint("competition_id", "notification_type", "email", name="uq_comp_interest_email"),
         Index("ix_comp_interest_competition_type", "competition_id", "notification_type"),
     )
@@ -365,7 +361,7 @@ class CompetitionInterestNotification(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
-    participant_id: Optional[int] = Field(
+    user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True, index=True),
     )
@@ -425,7 +421,7 @@ class TeamMember(SQLModel, table=True):
     team_id: int = Field(
         sa_column=Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True)
     )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), primary_key=True)
     )
 
@@ -519,7 +515,7 @@ class CompetitionHeatAssignment(SQLModel, table=True):
     heat_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competition_heats.id", ondelete="CASCADE"), nullable=False)
     )
-    participant_id: Optional[int] = Field(
+    user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=True),
     )
@@ -541,7 +537,7 @@ class CompetitionParticipant(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), primary_key=True)
     )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), primary_key=True)
     )
     categoria: Optional[str] = Field(
@@ -581,7 +577,7 @@ class CompetitionParticipant(SQLModel, table=True):
 class CompetitionJudgeAssignment(SQLModel, table=True):
     __tablename__ = "competition_judge_assignments"
     __table_args__ = (
-        UniqueConstraint("competition_id", "app_user_id", name="uq_comp_judge_assignment_user"),
+        UniqueConstraint("competition_id", "user_id", name="uq_comp_judge_assignment_user"),
         UniqueConstraint("competition_id", "invited_email", name="uq_comp_judge_assignment_email"),
         Index("ix_comp_judge_assignment_competition", "competition_id"),
         Index("ix_comp_judge_assignment_status", "status"),
@@ -591,13 +587,13 @@ class CompetitionJudgeAssignment(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
-    app_user_id: Optional[int] = Field(
+    user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     invited_email: str = Field(index=True)
     status: str = Field(default="pending", index=True)  # pending | active | rejected | revoked
-    invited_by_app_user_id: int = Field(
+    invited_by_user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
     )
     accepted_at: Optional[datetime] = Field(
@@ -627,7 +623,7 @@ class CompetitionJudgeActionAudit(SQLModel, table=True):
     __table_args__ = (
         Index("ix_comp_judge_audit_competition", "competition_id"),
         Index("ix_comp_judge_audit_assignment", "judge_assignment_id"),
-        Index("ix_comp_judge_audit_actor", "actor_app_user_id"),
+        Index("ix_comp_judge_audit_actor", "actor_user_id"),
         Index("ix_comp_judge_audit_action", "action"),
     )
 
@@ -639,7 +635,7 @@ class CompetitionJudgeActionAudit(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, ForeignKey("competition_judge_assignments.id", ondelete="SET NULL"), nullable=True),
     )
-    actor_app_user_id: Optional[int] = Field(
+    actor_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -661,7 +657,7 @@ class CompetitionPaymentIntent(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     categoria: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
@@ -705,10 +701,10 @@ class PlatformConfig(SQLModel, table=True):
 class CompetitionQrIdentity(SQLModel, table=True):
     __tablename__ = "competition_qr_identities"
     __table_args__ = (
-        UniqueConstraint("competition_id", "participant_id", name="uq_comp_qr_identity_enrollment"),
+        UniqueConstraint("competition_id", "user_id", name="uq_comp_qr_identity_enrollment"),
         UniqueConstraint("qr_uid", name="uq_comp_qr_uid"),
         Index("ix_comp_qr_identity_competition", "competition_id"),
-        Index("ix_comp_qr_identity_participant", "participant_id"),
+        Index("ix_comp_qr_identity_user", "user_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -716,7 +712,7 @@ class CompetitionQrIdentity(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
     )
     version: int = Field(default=1)
@@ -734,11 +730,11 @@ class CompetitionQrIdentity(SQLModel, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
     revoked_reason: Optional[str] = None
-    created_by_app_user_id: Optional[int] = Field(
+    created_by_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
-    revoked_by_app_user_id: Optional[int] = Field(
+    revoked_by_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -782,14 +778,14 @@ class CompetitionCheckinUsage(SQLModel, table=True):
         UniqueConstraint("qr_identity_id", "phase_id", "use_number", name="uq_comp_checkin_usage_slot"),
         Index("ix_comp_checkin_usage_competition", "competition_id"),
         Index("ix_comp_checkin_usage_phase", "phase_id"),
-        Index("ix_comp_checkin_usage_participant", "participant_id"),
+        Index("ix_comp_checkin_usage_user", "user_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
-    participant_id: int = Field(
+    user_id: int = Field(
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
     )
     qr_identity_id: int = Field(
@@ -802,7 +798,7 @@ class CompetitionCheckinUsage(SQLModel, table=True):
     idempotency_key: Optional[str] = Field(default=None, index=True)
     station: Optional[str] = None
     device_id: Optional[str] = None
-    used_by_app_user_id: Optional[int] = Field(
+    used_by_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -824,7 +820,7 @@ class CompetitionCheckinAudit(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
     )
-    participant_id: Optional[int] = Field(
+    user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -843,7 +839,7 @@ class CompetitionCheckinAudit(SQLModel, table=True):
     station: Optional[str] = None
     device_id: Optional[str] = None
     idempotency_key: Optional[str] = None
-    actor_app_user_id: Optional[int] = Field(
+    actor_user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
@@ -897,12 +893,12 @@ class Result(SQLModel, table=True):
     __tablename__ = "results"
     __table_args__ = (
         Index("ix_results_comp_phase", "competition_id", "phase_id"),
-        Index("ix_results_comp_participant", "competition_id", "participant_id"),
+        Index("ix_results_comp_user", "competition_id", "user_id"),
         Index("ix_results_comp_team", "competition_id", "team_id"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    participant_id: Optional[int] = Field(
+    user_id: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=True),
     )
@@ -946,28 +942,26 @@ class RegisterRequest(SQLModel):
 class TokenResponse(SQLModel):
     access_token: str
     token_type: str = "bearer"
+    user_id: int
     role: str
     base_role: str = Role.USER
     extra_roles: List[str] = []
     display_name: Optional[str] = None
     nombre: Optional[str] = None
     username: Optional[str] = None
-    app_user_id: Optional[int] = None
-    participant_id: Optional[int] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
     admin_enabled: bool = False
 
 
 class MeResponse(SQLModel):
+    user_id: int
     role: str
     base_role: str = Role.USER
     extra_roles: List[str] = []
     display_name: Optional[str] = None
     nombre: Optional[str] = None
     username: Optional[str] = None
-    app_user_id: Optional[int] = None
-    participant_id: Optional[int] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
     admin_enabled: bool = False
@@ -1178,19 +1172,24 @@ class TeamCreate(SQLModel):
     nombre: str
     competition_id: int
     member_ids: List[int] = []
+    user_ids: Optional[List[int]] = None
     captain_id: Optional[int] = None
+    user_id: Optional[int] = None
     team_category_id: Optional[int] = None
 
 
 class TeamUpdate(SQLModel):
     nombre: Optional[str] = None
     member_ids: Optional[List[int]] = None
+    user_ids: Optional[List[int]] = None
     captain_id: Optional[int] = None
+    user_id: Optional[int] = None
     team_category_id: Optional[int] = None
 
 
 class TeamInviteRequest(SQLModel):
     invitee_cedula: str
+    invitee_user_id: Optional[int] = None
 
 
 class TeamRenameRequest(SQLModel):
@@ -1201,7 +1200,7 @@ class TeamRenameRequest(SQLModel):
 
 class ResultCreate(SQLModel):
     competition_id: int
-    participant_id: Optional[int] = None
+    user_id: Optional[int] = None
     team_id: Optional[int] = None
     phase_id: Optional[int] = None
     marca: Optional[int] = None
@@ -1219,7 +1218,7 @@ class ResultUpdate(SQLModel):
 # ── Enrollment schemas ─────────────────────────────────────────────────────────
 
 class EnrollEntry(SQLModel):
-    participant_id: int
+    user_id: int
     categoria: Optional[str] = None
 
 

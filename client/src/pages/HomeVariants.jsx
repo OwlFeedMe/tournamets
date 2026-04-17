@@ -269,7 +269,7 @@ function TickerItem({ label, value }) {
 
 export default function HomeVariants({ variant = 1 }) {
   const navigate = useNavigate()
-  const { session, role, participantId, isAthlete } = useAuth()
+  const { session, role, userId, isAthlete } = useAuth()
   const [competitions, setCompetitions] = useState([])
   const [myComps, setMyComps] = useState([])
   const [query, setQuery] = useState('')
@@ -286,8 +286,8 @@ export default function HomeVariants({ variant = 1 }) {
     let active = true
     Promise.all([
       api.get('/competitions?scope=public').catch(() => ({ data: [] })),
-      isAthlete && participantId
-        ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
+    isAthlete && userId
+      ? api.get(`/users/${userId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
     ])
       .then(([competitionsResponse, mineResponse]) => {
@@ -302,7 +302,7 @@ export default function HomeVariants({ variant = 1 }) {
     return () => {
       active = false
     }
-  }, [isAthlete, participantId, role])
+  }, [isAthlete, userId, role])
 
   const enrollmentByComp = useMemo(() => {
     const map = {}
@@ -348,7 +348,7 @@ export default function HomeVariants({ variant = 1 }) {
     if (enrollmentByComp[competition.id] && enrollmentByComp[competition.id] !== 'rechazado') return
     if (!competition.enrollment_open) return
     try {
-      const { data } = await api.get('/participants/me')
+        const { data } = await api.get('/users/me')
       const missingFields = getMissingParticipantProfileFields(data)
       if (missingFields.length) {
         navigate('/profile', {

@@ -31,10 +31,10 @@ def _fetch_loaded_counts_by_phase(session: Session, competition_id: int) -> dict
     rows = session.execute(text("""
         SELECT
             phase_id,
-            COUNT(DISTINCT participant_id)
-                FILTER (WHERE participant_id IS NOT NULL)::int AS loaded_participants,
+            COUNT(DISTINCT user_id)
+                FILTER (WHERE user_id IS NOT NULL)::int AS loaded_participants,
             COUNT(DISTINCT team_id)
-                FILTER (WHERE team_id IS NOT NULL AND participant_id IS NULL)::int AS loaded_teams
+                FILTER (WHERE team_id IS NOT NULL AND user_id IS NULL)::int AS loaded_teams
         FROM results
         WHERE competition_id = :cid
           AND phase_id IS NOT NULL

@@ -1,3 +1,4 @@
+from auth import get_current_user_id
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
@@ -6,14 +7,8 @@ from constants import Role
 from models import Competition, CompetitionJudgeAssignment
 
 
-def get_app_user_id(user: dict | None) -> int | None:
-    if not user:
-        return None
-    app_user_id = user.get("app_user_id")
-    try:
-        return int(app_user_id) if app_user_id is not None else None
-    except (TypeError, ValueError):
-        return None
+def get_user_id(user: dict | None) -> int | None:
+    return get_current_user_id(user)
 
 
 def is_admin_user(user: dict | None) -> bool:
@@ -31,11 +26,11 @@ def is_organizer_user(user: dict | None) -> bool:
 def get_owned_competition_ids(session: Session, user: dict | None) -> list[int]:
     if not is_organizer_user(user):
         return []
-    app_user_id = get_app_user_id(user)
-    if app_user_id is None:
+    user_id = get_user_id(user)
+    if user_id is None:
         return []
     rows = session.exec(
-        select(Competition.id).where(Competition.organizer_user_id == app_user_id)
+        select(Competition.id).where(Competition.organizer_user_id == user_id)
     ).all()
     return [int(row) for row in rows]
 
@@ -47,8 +42,8 @@ def require_competition_access(session: Session, competition_id: int, user: dict
     if is_admin_user(user):
         return competition
     if is_organizer_user(user):
-        app_user_id = get_app_user_id(user)
-        if app_user_id is None or int(competition.organizer_user_id or 0) != app_user_id:
+        user_id = get_user_id(user)
+        if user_id is None or int(competition.organizer_user_id or 0) != user_id:
             raise HTTPException(403, "No tienes acceso a esta competencia")
     return competition
 
@@ -58,13 +53,13 @@ def get_active_judge_assignment(
     competition_id: int,
     user: dict | None,
 ) -> CompetitionJudgeAssignment | None:
-    app_user_id = get_app_user_id(user)
-    if app_user_id is None:
+    user_id = get_user_id(user)
+    if user_id is None:
         return None
     return session.exec(
         select(CompetitionJudgeAssignment).where(
             CompetitionJudgeAssignment.competition_id == competition_id,
-            CompetitionJudgeAssignment.app_user_id == app_user_id,
+            CompetitionJudgeAssignment.user_id == user_id,
             CompetitionJudgeAssignment.status == "active",
         )
     ).first()
@@ -81,8 +76,8 @@ def require_competition_operator_access(session: Session, competition_id: int, u
     if is_admin_user(user):
         return competition
     if is_organizer_user(user):
-        app_user_id = get_app_user_id(user)
-        if app_user_id is not None and int(competition.organizer_user_id or 0) == app_user_id:
+        user_id = get_user_id(user)
+        if user_id is not None and int(competition.organizer_user_id or 0) == user_id:
             return competition
     if has_competition_judge_access(session, competition_id, user):
         return competition

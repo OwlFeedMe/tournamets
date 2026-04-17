@@ -65,10 +65,82 @@ function SuccessToast({ text, onDone }) {
 const CATEGORIAS = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro']
 const GENEROS = ['M', 'F', 'Otro']
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
+const JUDGE_CARD_PAGE_SPECS = {
+  letter: { width: 612, height: 792, label: 'LETTER' },
+  a4: { width: 595.28, height: 841.89, label: 'A4' },
+}
+const JUDGE_CARD_QR_FIXED_SIZE_PT = 0.72 * 72
+const JUDGE_CARD_QR_SAFE_ZONE_PT = 8
+const JUDGE_CARD_TITLE_BAND_PT = 20
+const JUDGE_CARD_COLUMN_GAP_PT = 12
+
+function resolveJudgeCardLayout(layout, options = {}) {
+  const normalized = String(layout || 'auto').trim().toLowerCase()
+  if (/^[1-4]x([1-9]|10)$/.test(normalized)) return normalized
+  if (normalized && normalized !== 'auto') return normalized
+  let visibleLines = 2
+  if (options.includeCedula) visibleLines += 1
+  if (options.includeScoreField) visibleLines += 1
+  if (options.includeSignatureField) visibleLines += 1
+  if (options.includeNotesField) visibleLines += 1
+  if (options.includeQr) visibleLines += 1
+  if (visibleLines <= 4) return '3x6'
+  if (visibleLines <= 5) return '3x5'
+  if (visibleLines <= 6) return '3x4'
+  if (visibleLines <= 7) return '2x5'
+  if (visibleLines <= 8) return '2x4'
+  return '2x3'
+}
+
+function sanitizeJudgeCardGridValue(value, fallback, min, max) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.min(max, Math.max(min, Math.floor(parsed)))
+}
 
 function orderCategories(data) {
   const keys = Object.keys(data || {})
   return CATEGORY_ORDER.filter(c => keys.includes(c)).concat(keys.filter(c => !CATEGORY_ORDER.includes(c)))
+}
+
+function buildJudgeCardPreviewMetaRows(card, includeCedula) {
+  const rows = [
+    { text: `${card.phaseName || ''} | ${card.category || ''}`, size: 6.7, color: '#252A33', gap: 7.4 },
+  ]
+  const heatParts = []
+  if (card.heat) heatParts.push(`Heat: ${card.heat}`)
+  if (Number(card.lane) > 0) heatParts.push(`Carril: ${Number(card.lane)}`)
+  if (card.zone) heatParts.push(`Zona: ${card.zone}`)
+  if (heatParts.length) rows.push({ text: heatParts.join(' | '), size: 5.8, color: '#6B7280', gap: 7.4 })
+  if (includeCedula && card.cedula) rows.push({ text: `ID: ${card.cedula}`, size: 5.8, color: '#6B7280', gap: 7.4 })
+  return rows
+}
+
+function buildJudgeCardPreviewFormRows(card, writingSpaceChars) {
+  const writing = '_'.repeat(Math.min(48, Math.max(8, Number(writingSpaceChars || 30))))
+  const rows = []
+  if (card.includeScoreField) rows.push({ text: `Puntuacion: ${writing}`, size: 7.5, color: '#0D0F12', bold: true })
+  if (card.includeSignatureField) rows.push({ text: `Firma atleta: ${writing}`, size: 7.5, color: '#0D0F12', bold: true })
+  if (card.includeNotesField) rows.push({ text: `Notas: ${writing}`, size: 6.5, color: '#6B7280', bold: false })
+  return rows
+}
+
+async function readBlobErrorDetail(error, fallbackMessage) {
+  const detail = error?.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail.trim()
+  const blob = error?.response?.data
+  if (blob instanceof Blob) {
+    try {
+      const text = await blob.text()
+      if (text) {
+        const parsed = JSON.parse(text)
+        if (typeof parsed?.detail === 'string' && parsed.detail.trim()) return parsed.detail.trim()
+      }
+    } catch {
+      // Ignore blob parsing errors and use fallback below.
+    }
+  }
+  return fallbackMessage
 }
 
 function parseEnrollmentQuestions(raw) {
@@ -3351,7 +3423,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     setSaving(true)
     const participants = Object.entries(enrollMap)
       .filter(([, v]) => v.selected)
-      .map(([pid, v]) => ({ participant_id: Number(pid), categoria: v.categoria || null }))
+      .map(([pid, v]) => ({ user_id: Number(pid), categoria: v.categoria || null }))
     try {
       await api.post(`/competitions/${competition.id}/participants`, { participants })
       onSaved()
@@ -8116,7 +8188,7 @@ function CompetitionResultsPanel({ competition }) {
   const [results, setResults] = useState([])
   const [msg, setMsg] = useState(null)
   const [activePhaseId, setActivePhaseId] = useState('')
-  const [form, setForm] = useState({ participant_id: '', phase_id: '', puntos: 0, posicion: '' })
+  const [form, setForm] = useState({ user_id: '', phase_id: '', puntos: 0, posicion: '' })
   const [quickRows, setQuickRows] = useState({})
   const [quick, setQuick] = useState({ phase_id: '' })
   const [teamQuickRows, setTeamQuickRows] = useState({})
@@ -8136,41 +8208,48 @@ function CompetitionResultsPanel({ competition }) {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [massDeleteModal, setMassDeleteModal] = useState({ open: false, scope: 'phase', phaseId: null, phaseName: '' })
   const [massDeleteLoading, setMassDeleteLoading] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const load = async () => {
-    const [phRes, enRes, rRes, tRes] = await Promise.all([
-      api.get(`/competitions/${competition.id}/phases`),
-      api.get(`/competitions/${competition.id}/participants`),
-      api.get(`/results?competition_id=${competition.id}`),
-      api.get(`/teams?competition_id=${competition.id}`),
-    ])
-    const enrolled = (enRes.data || []).filter(p => p.estado === 'confirmado')
-    setPhases(phRes.data || [])
-    setParticipants(enrolled)
-    setResults(rRes.data || [])
-    setTeams(tRes.data || [])
+    setLoading(true)
+    try {
+      const [phRes, enRes, rRes, tRes] = await Promise.all([
+        api.get(`/competitions/${competition.id}/phases`),
+        api.get(`/competitions/${competition.id}/participants`),
+        api.get(`/results?competition_id=${competition.id}`),
+        api.get(`/teams?competition_id=${competition.id}`),
+      ])
+      const enrolled = (enRes.data || []).filter(p => p.estado === 'confirmado')
+      setPhases(phRes.data || [])
+      setParticipants(enrolled)
+      setResults(rRes.data || [])
+      setTeams(tRes.data || [])
+      setCategoryFilter('')
 
-    const map = {}
-    enrolled.forEach(p => { map[p.id] = { puntos: '', posicion: '' } })
-    setQuickRows(map)
+      const map = {}
+      enrolled.forEach(p => { map[p.id] = { puntos: '', posicion: '' } })
+      setQuickRows(map)
 
-    const teamMap = {}
-    ;(tRes.data || []).forEach(t => { teamMap[t.id] = { puntos: '', posicion: '' } })
-    setTeamQuickRows(teamMap)
+      const teamMap = {}
+      ;(tRes.data || []).forEach(t => { teamMap[t.id] = { puntos: '', posicion: '' } })
+      setTeamQuickRows(teamMap)
 
-    const membersMap = {}
-    ;(tRes.data || []).forEach(t => {
-      const a = t.members?.[0]
-      const b = t.members?.[1]
-      membersMap[t.id] = {
-        performer: a ? String(a.id) : '',
-        puntos_a: '',
-        puntos_b: '',
-        puntos_total: '',
-        posicion: '',
-      }
-    })
-    setTeamMembersQuickRows(membersMap)
+      const membersMap = {}
+      ;(tRes.data || []).forEach(t => {
+        const a = t.members?.[0]
+        const b = t.members?.[1]
+        membersMap[t.id] = {
+          performer: a ? String(a.id) : '',
+          puntos_a: '',
+          puntos_b: '',
+          puntos_total: '',
+          posicion: '',
+        }
+      })
+      setTeamMembersQuickRows(membersMap)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load().catch(() => setMsg({ type: 'error', text: 'No se pudo cargar resultados' })) }, [competition.id])
@@ -8186,14 +8265,20 @@ function CompetitionResultsPanel({ competition }) {
       return
     }
     if (!activePhaseId || !phases.some(p => String(p.id) === String(activePhaseId))) {
-      const first = String(phases[0].id)
-      setActivePhaseId(first)
-      setQuick(prev => ({ ...prev, phase_id: first }))
-      setTeamQuick(prev => ({ ...prev, phase_id: first }))
-      setTeamMembersQuick(prev => ({ ...prev, phase_id: first }))
-      setForm(prev => ({ ...prev, phase_id: first }))
+      const latestResultPhaseId = results.find(r => r?.phase_id != null)?.phase_id
+      const fallback = phases[0]?.id
+      const nextPhaseId = String(
+        (latestResultPhaseId != null && phases.some(p => String(p.id) === String(latestResultPhaseId)))
+          ? latestResultPhaseId
+          : fallback
+      )
+      setActivePhaseId(nextPhaseId)
+      setQuick(prev => ({ ...prev, phase_id: nextPhaseId }))
+      setTeamQuick(prev => ({ ...prev, phase_id: nextPhaseId }))
+      setTeamMembersQuick(prev => ({ ...prev, phase_id: nextPhaseId }))
+      setForm(prev => ({ ...prev, phase_id: nextPhaseId }))
     }
-  }, [phases, activePhaseId])
+  }, [phases, activePhaseId, results])
 
   const applyPhaseSelection = (phaseId) => {
     const value = String(phaseId || '')
@@ -8203,6 +8288,27 @@ function CompetitionResultsPanel({ competition }) {
     setTeamMembersQuick(prev => ({ ...prev, phase_id: value }))
     setForm(prev => ({ ...prev, phase_id: value }))
   }
+
+  useEffect(() => {
+    if (!phases.length || !results.length) return
+    const latestResultPhaseId = String(results[0]?.phase_id || '')
+    if (!latestResultPhaseId) return
+    const activeValid = !!activePhaseId && phases.some(p => String(p.id) === String(activePhaseId))
+    const activeHasRows = activeValid && results.some(r => String(r.phase_id || '') === String(activePhaseId))
+    const latestExistsInPhases = phases.some(p => String(p.id) === latestResultPhaseId)
+    if ((!activeValid || !activeHasRows) && latestExistsInPhases) {
+      applyPhaseSelection(latestResultPhaseId)
+    }
+  }, [results, phases])
+  useEffect(() => {
+    const timer = setInterval(() => { load().catch(() => {}) }, 12000)
+    const onFocus = () => load().catch(() => {})
+    if (typeof window !== 'undefined') window.addEventListener('focus', onFocus)
+    return () => {
+      clearInterval(timer)
+      if (typeof window !== 'undefined') window.removeEventListener('focus', onFocus)
+    }
+  }, [competition.id])
 
   const isPointsModeDirect = () => false
   const isPointsModeRules = () => false
@@ -8268,7 +8374,7 @@ function CompetitionResultsPanel({ competition }) {
       }
       if (form.phase_id && !formAllowMultiple) {
         const duplicate = results.some(r =>
-          Number(r.participant_id) === Number(form.participant_id) &&
+          Number(r.user_id) === Number(form.user_id) &&
           String(r.phase_id || '') === String(form.phase_id)
         )
         if (duplicate) {
@@ -8277,7 +8383,7 @@ function CompetitionResultsPanel({ competition }) {
         }
       }
       await api.post('/results', {
-        participant_id: Number(form.participant_id),
+        user_id: Number(form.user_id),
         competition_id: competition.id,
         phase_id: form.phase_id ? Number(form.phase_id) : null,
         marca: phaseType === 'posicion'
@@ -8287,7 +8393,7 @@ function CompetitionResultsPanel({ competition }) {
         posicion: form.posicion ? Number(form.posicion) : null,
       })
       setMsg({ type: 'success', text: 'Resultado guardado' })
-      setForm({ participant_id: '', phase_id: form.phase_id, puntos: 0, posicion: '' })
+      setForm({ user_id: '', phase_id: form.phase_id, puntos: 0, posicion: '' })
       await load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'Error al guardar' })
@@ -8308,7 +8414,7 @@ function CompetitionResultsPanel({ competition }) {
     }
     if (quick.phase_id && !quickAllowMultiple) {
       const blocked = rows.filter(({ p }) => results.some(r =>
-        Number(r.participant_id) === Number(p.id) &&
+        Number(r.user_id) === Number(p.id) &&
         String(r.phase_id || '') === String(quick.phase_id)
       ))
       if (blocked.length > 0) {
@@ -8328,7 +8434,7 @@ function CompetitionResultsPanel({ competition }) {
           throw new Error(isTimeMeasurement(phaseMethod) ? 'Tiempo invalido. Usa HH:MM:SS' : 'Valor invalido')
         }
         return api.post('/results', {
-          participant_id: p.id,
+          user_id: p.id,
           competition_id: competition.id,
           phase_id: quick.phase_id ? Number(quick.phase_id) : null,
           marca: phaseType === 'posicion'
@@ -8362,7 +8468,7 @@ function CompetitionResultsPanel({ competition }) {
     if (teamQuick.phase_id && !teamQuickAllowMultiple) {
       const blocked = rows.filter(({ t }) => results.some(r =>
         Number(r.team_id) === Number(t.id) &&
-        Number(r.participant_id || 0) === 0 &&
+        Number(r.user_id || 0) === 0 &&
         String(r.phase_id || '') === String(teamQuick.phase_id)
       ))
       if (blocked.length > 0) {
@@ -8436,7 +8542,7 @@ function CompetitionResultsPanel({ competition }) {
           }
           const existingTeam = results.find(x =>
             Number(x.team_id) === Number(t.id) &&
-            Number(x.participant_id || 0) === 0 &&
+        Number(x.user_id || 0) === 0 &&
             String(x.phase_id || '') === String(teamMembersQuick.phase_id)
           )
           const teamPayload = {
@@ -8487,11 +8593,11 @@ function CompetitionResultsPanel({ competition }) {
 
         for (const pm of perMember) {
           const existing = results.find(x =>
-            Number(x.participant_id) === Number(pm.member.id) &&
+        Number(x.user_id) === Number(pm.member.id) &&
             String(x.phase_id || '') === String(teamMembersQuick.phase_id)
           )
           const payload = {
-            participant_id: Number(pm.member.id),
+            user_id: Number(pm.member.id),
             team_id: Number(t.id),
             competition_id: competition.id,
             phase_id: Number(teamMembersQuick.phase_id),
@@ -8622,8 +8728,8 @@ function CompetitionResultsPanel({ competition }) {
       if (categoryFilter !== '') setCategoryFilter('')
       return
     }
-    if (!categoryFilter || !categories.includes(categoryFilter)) {
-      setCategoryFilter(categories[0])
+    if (categoryFilter && !categories.includes(categoryFilter)) {
+      setCategoryFilter('')
     }
   }, [categories, categoryFilter])
 
@@ -8650,12 +8756,14 @@ function CompetitionResultsPanel({ competition }) {
   const hiddenTeamsBySingleResultRule = Math.max(0, teamsForCategory.length - teamsForEntry.length)
   const filteredResults = results.filter(r => {
     const phaseMatch = !activePhaseId || String(r.phase_id || '') === String(activePhaseId)
-    const cat = r.participant_id
-      ? (participantCategoryById[r.participant_id] || 'Sin categoria')
-      : (teamCategoryById[r.team_id] || 'Sin categoria')
-    const catMatch = !!categoryFilter && cat === categoryFilter
+      const cat = r.user_id
+        ? (participantCategoryById[r.user_id] || 'Sin categoria')
+        : (teamCategoryById[r.team_id] || 'Sin categoria')
+    const catMatch = !categoryFilter || cat === categoryFilter
     return phaseMatch && catMatch
   }).sort((a, b) => (Number(b.puntos || 0) - Number(a.puntos || 0)))
+  const latestResultPhaseId = String(results[0]?.phase_id || '')
+  const latestResultPhaseName = phases.find(p => String(p.id) === latestResultPhaseId)?.nombre || (latestResultPhaseId ? `Fase ${latestResultPhaseId}` : '')
 
   const openRulesModal = () => {
     const fromForm = phases.find(p => String(p.id) === String(form.phase_id))
@@ -8726,7 +8834,20 @@ function CompetitionResultsPanel({ competition }) {
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
 
       <div className="card" style={{ padding: 12 }}>
-        <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Seleccion rapida de evento</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+          <div style={{ fontSize: 12, color: '#647063' }}>Seleccion rapida de evento</div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#647063' }}>Total resultados: {results.length}</span>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => load().catch(() => {})} disabled={loading}>
+              {loading ? 'Recargando...' : 'Recargar'}
+            </button>
+            {latestResultPhaseId ? (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => applyPhaseSelection(latestResultPhaseId)}>
+                Ir a ultima fase con resultados
+              </button>
+            ) : null}
+          </div>
+        </div>
         {isMobile ? (
           <div style={{ display: 'grid', gap: 8 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
@@ -8738,10 +8859,14 @@ function CompetitionResultsPanel({ competition }) {
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ fontSize: 12, color: '#647063' }}>Categoria</label>
               <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                <option value="">Todas</option>
                 {categories.length
                   ? categories.map(cat => <option key={`results-cat-mobile-${cat}`} value={cat}>{cat}</option>)
                   : <option value="">Sin categorias</option>}
               </select>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setCategoryFilter('')}>
+                Limpiar filtros
+              </button>
             </div>
           </div>
         ) : (
@@ -8762,10 +8887,14 @@ function CompetitionResultsPanel({ competition }) {
             <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12, color: '#647063' }}>Categoria:</label>
               <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} style={{ width: 220 }}>
+                <option value="">Todas</option>
                 {categories.length
                   ? categories.map(cat => <option key={`results-cat-${cat}`} value={cat}>{cat}</option>)
                   : <option value="">Sin categorias</option>}
               </select>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setCategoryFilter('')}>
+                Limpiar filtros
+              </button>
             </div>
           </>
         )}
@@ -8780,6 +8909,11 @@ function CompetitionResultsPanel({ competition }) {
             {activePhaseRules.length > 0 ? ` | reglas por posicion: ${activePhaseRules.length}` : ''}
           </div>
         )}
+        {!filteredResults.length && results.length > 0 ? (
+          <div style={{ marginTop: 8, borderRadius: 10, border: '1px solid rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', padding: '8px 10px', color: '#D7DEE8', fontSize: 12 }}>
+            Hay {results.length} resultados cargados, pero no coinciden con el filtro actual (evento/categoria). Ultima fase con datos: <b>{latestResultPhaseName || '-'}</b>.
+          </div>
+        ) : null}
         <div style={{ marginTop: 10, borderTop: '1px dashed #d5ddd3', paddingTop: 10 }}>
           <div style={{ fontSize: 12, color: '#647063', marginBottom: 8 }}>Borrado masivo de resultados</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -9187,7 +9321,7 @@ function CompetitionResultsPanel({ competition }) {
           <h4 style={{ margin: 0, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}><ClipboardList size={16} />Resultados cargados</h4>
           <span style={{ fontSize: 12, color: '#647063' }}>
             Evento: <b style={{ color: '#ddd' }}>{activePhase?.nombre || '-'}</b>
-            {categoryFilter ? ` | Categoria: ${categoryFilter}` : ' | Categoria: Sin categorias'}
+            {categoryFilter ? ` | Categoria: ${categoryFilter}` : ' | Categoria: Todas'}
           </span>
         </div>
         <div style={{ maxHeight: isMobile ? 'none' : 360, overflowY: isMobile ? 'visible' : 'auto' }}>
@@ -9198,7 +9332,7 @@ function CompetitionResultsPanel({ competition }) {
                 return (
                   <div key={`result-mobile-${r.id}`} style={{ border: '1px solid #d5ddd3', borderRadius: 10, padding: 10, background: '#fff' }}>
                     <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                      {r.participant_id
+                    {r.user_id
                         ? `${r.nombre || ''} ${r.apellido || ''}`.trim()
                         : (r.equipo || `Equipo ${r.team_id}`)}
                     </div>
@@ -9240,7 +9374,7 @@ function CompetitionResultsPanel({ competition }) {
                   return (
                     <tr key={r.id}>
                       <td>
-                        {r.participant_id
+                    {r.user_id
                           ? `${r.nombre || ''} ${r.apellido || ''}`.trim()
                           : (r.equipo || `Equipo ${r.team_id}`)}
                       </td>
@@ -9269,6 +9403,23 @@ function CompetitionResultsPanel({ competition }) {
       </div>
     </div>
   )
+}
+
+function getDownloadFilenameFromDisposition(disposition, fallbackName) {
+  const raw = String(disposition || '')
+  const utf8Match = raw.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]).replace(/[\\/:*?"<>|]/g, '_')
+    } catch {
+      return utf8Match[1].replace(/[\\/:*?"<>|]/g, '_')
+    }
+  }
+  const plainMatch = raw.match(/filename\s*=\s*"?([^\";]+)"?/i)
+  if (plainMatch?.[1]) {
+    return plainMatch[1].replace(/[\\/:*?"<>|]/g, '_')
+  }
+  return fallbackName
 }
 
 function CompetitionJudgesPanel({ competition }) {
@@ -9414,6 +9565,552 @@ function CompetitionJudgesPanel({ competition }) {
           </div>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+function CompetitionJudgeCardsPanel({ competition, isMobile = false }) {
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+  const [phases, setPhases] = useState([])
+  const [categories, setCategories] = useState([])
+  const [form, setForm] = useState({
+    phase_ids: [],
+    categories: [],
+    layout: 'custom',
+    custom_cols: 3,
+    custom_rows: 6,
+    sort_mode: 'phase_heat_lane_name',
+    only_confirmed: true,
+    include_unassigned: true,
+    include_score_field: true,
+    include_signature_field: true,
+    include_notes_field: false,
+    include_qr: true,
+    include_cedula: true,
+    qr_expiration_days: 30,
+    title: '',
+    page_size: 'letter',
+    font_scale: 1,
+    line_spacing: 1.15,
+    writing_space_chars: 22,
+  })
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const [phasesRes, categoriesRes] = await Promise.all([
+        api.get(`/competitions/${competition.id}/phases`),
+        api.get(`/competitions/${competition.id}/categories`),
+      ])
+      const phaseItems = Array.isArray(phasesRes.data) ? phasesRes.data : []
+      const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
+      setPhases(phaseItems)
+      setCategories(categoryItems)
+      setForm(prev => {
+        const activeIds = new Set((prev.phase_ids || []).map(Number))
+        const availableIds = phaseItems.map(item => Number(item.id)).filter(Number.isFinite)
+        const normalized = availableIds.filter(id => activeIds.has(id))
+        return {
+          ...prev,
+          phase_ids: normalized.length ? normalized : availableIds,
+        }
+      })
+    } catch (error) {
+      setMsg({ type: 'error', text: error?.response?.data?.detail || 'No se pudieron cargar fases y categorias' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    load()
+  }, [competition.id])
+
+  const phaseCount = form.phase_ids.length || phases.length
+  const categoryCount = form.categories.length
+  const customCols = sanitizeJudgeCardGridValue(form.custom_cols, 3, 1, 4)
+  const customRows = sanitizeJudgeCardGridValue(form.custom_rows, 6, 1, 10)
+  const safeFontScale = Math.min(1.35, Math.max(0.75, Number(form.font_scale || 1)))
+  const safeLineSpacing = Math.min(1.8, Math.max(0.8, Number(form.line_spacing || 1)))
+  const safeWritingSpaceChars = Math.min(48, Math.max(8, Number(form.writing_space_chars || 22)))
+  const requestedLayout = `${customCols}x${customRows}`
+  const resolvedPreviewLayout = requestedLayout
+  const [previewCols, previewRows] = String(resolvedPreviewLayout || '2x5').split('x').map((item) => Number(item || 0))
+  const safePreviewCols = Math.max(1, previewCols || 2)
+  const safePreviewRows = Math.max(1, previewRows || 5)
+  const previewCapacity = safePreviewCols * safePreviewRows
+  const previewPageSpec = JUDGE_CARD_PAGE_SPECS[String(form.page_size || 'letter').trim().toLowerCase()] || JUDGE_CARD_PAGE_SPECS.letter
+  const pageAspect = previewPageSpec.width / previewPageSpec.height
+  const selectedPhaseNames = phases
+    .filter((phase) => form.phase_ids.includes(Number(phase.id)))
+    .map((phase) => String(phase.nombre || '').trim())
+    .filter(Boolean)
+  const selectedCategoryNames = (form.categories || []).map((item) => String(item || '').trim()).filter(Boolean)
+  const previewCards = Array.from({ length: previewCapacity }, (_, index) => ({
+    participantName: `Participante ${index + 1}`,
+    phaseName: selectedPhaseNames[index % Math.max(1, selectedPhaseNames.length)] || 'Evento',
+    category: selectedCategoryNames[index % Math.max(1, selectedCategoryNames.length)] || 'Categoria',
+    heat: `Heat ${Math.floor(index / Math.max(1, safePreviewCols)) + 1}`,
+    lane: index + 1,
+    cedula: `10${String(index + 1).padStart(6, '0')}`,
+    zone: index % 2 === 0 ? 'Arena Norte' : '',
+    includeScoreField: form.include_score_field,
+    includeSignatureField: form.include_signature_field,
+    includeNotesField: form.include_notes_field,
+  }))
+  const previewSheet = useMemo(() => {
+    const margin = 24
+    const headerSpace = 28
+    const scaleBaseWidth = isMobile ? 340 : 430
+    const scale = scaleBaseWidth / previewPageSpec.width
+    const pageWidth = previewPageSpec.width * scale
+    const pageHeight = previewPageSpec.height * scale
+    const gridWidth = (previewPageSpec.width - (margin * 2)) * scale
+    const gridHeight = (previewPageSpec.height - (margin * 2) - headerSpace) * scale
+    const cellWidth = gridWidth / safePreviewCols
+    const cellHeight = gridHeight / safePreviewRows
+    return {
+      scale,
+      pageWidth,
+      pageHeight,
+      margin: margin * scale,
+      headerSpace: headerSpace * scale,
+      cellWidth,
+      cellHeight,
+      subtitleTop: (margin + 12) * scale,
+      titleTop: (margin - 4) * scale,
+      contentTop: (margin + headerSpace) * scale,
+    }
+  }, [isMobile, previewPageSpec.height, previewPageSpec.width, safePreviewCols, safePreviewRows])
+
+  const toggleSelection = (collection, value) => {
+    const normalized = String(value)
+    if (collection.includes(normalized)) {
+      return collection.filter(item => item !== normalized)
+    }
+    return [...collection, normalized]
+  }
+
+  const togglePhase = (phaseId) => {
+    setForm(prev => {
+      const strItems = (prev.phase_ids || []).map(item => String(item))
+      const next = toggleSelection(strItems, String(phaseId))
+      return { ...prev, phase_ids: next.map(Number).filter(Number.isFinite) }
+    })
+  }
+
+  const toggleCategory = (categoryName) => {
+    setForm(prev => ({
+      ...prev,
+      categories: toggleSelection(prev.categories || [], String(categoryName)),
+    }))
+  }
+
+  const checkboxStyle = {
+    accentColor: '#FF6B00',
+    width: 16,
+    height: 16,
+    margin: 0,
+    cursor: 'pointer',
+  }
+  const toggleRowStyle = (enabled) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    border: `1px solid ${enabled ? 'rgba(255,107,0,0.42)' : '#252A33'}`,
+    background: enabled ? 'rgba(255,107,0,0.10)' : 'rgba(13,15,18,0.72)',
+    borderRadius: 12,
+    padding: '8px 10px',
+    color: enabled ? '#F5F7FA' : '#D7DEE8',
+    fontSize: 13,
+    fontWeight: 600,
+  })
+  const settingsSectionStyle = {
+    border: '1px solid #252A33',
+    borderRadius: 14,
+    background: 'rgba(13,15,18,0.72)',
+    padding: isMobile ? 12 : 14,
+    display: 'grid',
+    gap: 12,
+  }
+  const sliderCardStyle = {
+    border: '1px solid rgba(255,107,0,0.18)',
+    borderRadius: 14,
+    background: 'linear-gradient(180deg, rgba(23,27,33,0.98) 0%, rgba(13,15,18,0.98) 100%)',
+    padding: isMobile ? '12px 12px 10px' : '14px 14px 12px',
+    display: 'grid',
+    gap: 10,
+  }
+  const sliderInputStyle = {
+    width: '100%',
+    accentColor: '#FF6B00',
+    cursor: 'pointer',
+    margin: 0,
+  }
+
+  const downloadCards = async (event) => {
+    event.preventDefault()
+    setBusy(true)
+    setMsg(null)
+    try {
+      const payload = {
+        competition_id: Number(competition.id),
+        phase_ids: form.phase_ids.length ? form.phase_ids.map(Number) : null,
+        categories: form.categories.length ? form.categories : null,
+        layout: requestedLayout,
+        sort_mode: form.sort_mode,
+        only_confirmed: form.only_confirmed ? 1 : 0,
+        include_unassigned: form.include_unassigned ? 1 : 0,
+        include_score_field: form.include_score_field ? 1 : 0,
+        include_signature_field: form.include_signature_field ? 1 : 0,
+        include_notes_field: form.include_notes_field ? 1 : 0,
+        include_qr: form.include_qr ? 1 : 0,
+        extra_fields: form.include_cedula ? ['cedula'] : [],
+        qr_expiration_days: Math.max(1, Number(form.qr_expiration_days || 30)),
+        title: String(form.title || '').trim() || null,
+        page_size: String(form.page_size || 'letter').trim() || 'letter',
+        font_scale: Number(form.font_scale || 1),
+        line_spacing: Number(form.line_spacing || 1),
+        writing_space_chars: Number(form.writing_space_chars || 22),
+      }
+      const response = await api.post('/judge-cards/export-pdf', payload, { responseType: 'blob' })
+      const blob = new Blob(
+        [response.data],
+        { type: response.headers?.['content-type'] || 'application/pdf' }
+      )
+      const url = URL.createObjectURL(blob)
+      const fallbackName = `finalrep_tarjetas_competencia_${competition.id}.pdf`
+      const filename = getDownloadFilenameFromDisposition(response.headers?.['content-disposition'], fallbackName)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setMsg({ type: 'success', text: 'PDF generado y descargado.' })
+    } catch (error) {
+      const detail = await readBlobErrorDetail(error, 'No se pudo generar el PDF de tarjetas')
+      setMsg({ type: 'error', text: detail })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 10, flexWrap: 'wrap' }}>
+        <div>
+          <h4 style={{ margin: 0, fontSize: 16 }}>Tarjetas de puntuacion</h4>
+          <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
+            Genera un solo PDF para imprimir todo el bloque de jueceo.
+          </div>
+        </div>
+        <button type="button" className="btn-secondary btn-sm" onClick={load} disabled={loading || busy}>Recargar</button>
+      </div>
+
+      {msg ? <div className={`alert alert-${msg.type}`}>{msg.text}</div> : null}
+      {loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando configuracion...</div> : null}
+
+      {!loading ? (
+        <form onSubmit={downloadCards} style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+            <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Eventos</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setForm(prev => ({ ...prev, phase_ids: phases.map(item => Number(item.id)).filter(Number.isFinite) }))}>Todos</button>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setForm(prev => ({ ...prev, phase_ids: [] }))}>Limpiar</button>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 4 }}>
+                {phases.map((phase) => {
+                  const checked = form.phase_ids.includes(Number(phase.id))
+                  return (
+                    <label key={`judge-card-phase-${phase.id}`} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#D7DEE8', fontSize: 13, border: checked ? '1px solid rgba(255,107,0,0.35)' : '1px solid #252A33', borderRadius: 10, padding: '7px 9px', background: checked ? 'rgba(255,107,0,0.10)' : 'rgba(9,11,14,0.56)' }}>
+                      <input type="checkbox" style={checkboxStyle} checked={checked} onChange={() => togglePhase(phase.id)} />
+                      <span>{phase.nombre}</span>
+                    </label>
+                  )
+                })}
+                {!phases.length ? <div style={{ color: '#6B7280', fontSize: 12 }}>No hay eventos configurados.</div> : null}
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 12, display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Categorias</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setForm(prev => ({ ...prev, categories: categories.map(item => String(item.nombre || '').trim()).filter(Boolean) }))}>Todas</button>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setForm(prev => ({ ...prev, categories: [] }))}>Limpiar</button>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: 6, maxHeight: 200, overflowY: 'auto', paddingRight: 4 }}>
+                {categories.map((category) => {
+                  const name = String(category.nombre || '').trim()
+                  if (!name) return null
+                  const checked = form.categories.includes(name)
+                  return (
+                    <label key={`judge-card-category-${category.id || name}`} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#D7DEE8', fontSize: 13, border: checked ? '1px solid rgba(0,194,168,0.38)' : '1px solid #252A33', borderRadius: 10, padding: '7px 9px', background: checked ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.56)' }}>
+                      <input type="checkbox" style={checkboxStyle} checked={checked} onChange={() => toggleCategory(name)} />
+                      <span>{name}</span>
+                    </label>
+                  )
+                })}
+                {!categories.length ? <div style={{ color: '#6B7280', fontSize: 12 }}>No hay categorias; se usaran todos.</div> : null}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={settingsSectionStyle}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Hoja y densidad</div>
+                  <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>Define el tamaño de hoja y cuántas tarjetas salen por página.</div>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 12, border: '1px solid rgba(255,107,0,0.22)', background: 'rgba(255,107,0,0.08)' }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4 }}>Layout</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>{requestedLayout.replace('x', ' x ')}</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ color: '#AAB2C0', fontSize: 12 }}>Tamaño de hoja</span>
+                  <select value={form.page_size} onChange={(e) => setForm(prev => ({ ...prev, page_size: e.target.value }))}>
+                    <option value="letter">Carta</option>
+                    <option value="a4">A4</option>
+                  </select>
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ color: '#AAB2C0', fontSize: 12 }}>Columnas</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="4"
+                    value={form.custom_cols}
+                    onChange={(e) => setForm(prev => ({ ...prev, custom_cols: e.target.value }))}
+                  />
+                </label>
+                <label style={{ display: 'grid', gap: 6 }}>
+                  <span style={{ color: '#AAB2C0', fontSize: 12 }}>Filas</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={form.custom_rows}
+                    onChange={(e) => setForm(prev => ({ ...prev, custom_rows: e.target.value }))}
+                  />
+                </label>
+                <div style={{ border: '1px solid #252A33', borderRadius: 12, background: 'rgba(9,11,14,0.56)', padding: 10, display: 'grid', alignContent: 'center' }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12 }}>Tarjetas por hoja</div>
+                  <div style={{ color: '#F5F7FA', fontSize: 22, fontWeight: 800, marginTop: 4 }}>{customCols * customRows}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={settingsSectionStyle}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Tipografía y escritura</div>
+                <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>Ajusta legibilidad, respiración vertical y longitud de las líneas a diligenciar.</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                <label style={sliderCardStyle}>
+                  <span style={{ color: '#AAB2C0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.45 }}>Tamaño letra</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <strong style={{ color: '#F5F7FA', fontSize: 18 }}>{safeFontScale.toFixed(2)}</strong>
+                    <span style={{ color: '#6B7280', fontSize: 12 }}>0.75 - 1.35</span>
+                  </div>
+                  <input style={sliderInputStyle} type="range" min="0.75" max="1.35" step="0.05" value={form.font_scale} onChange={(e) => setForm(prev => ({ ...prev, font_scale: e.target.value }))} />
+                </label>
+                <label style={sliderCardStyle}>
+                  <span style={{ color: '#AAB2C0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.45 }}>Espaciado lineas</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <strong style={{ color: '#F5F7FA', fontSize: 18 }}>{safeLineSpacing.toFixed(2)}</strong>
+                    <span style={{ color: '#6B7280', fontSize: 12 }}>0.80 - 1.80</span>
+                  </div>
+                  <input style={sliderInputStyle} type="range" min="0.8" max="1.8" step="0.05" value={form.line_spacing} onChange={(e) => setForm(prev => ({ ...prev, line_spacing: e.target.value }))} />
+                </label>
+                <label style={sliderCardStyle}>
+                  <span style={{ color: '#AAB2C0', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.45 }}>Largo escritura</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                    <strong style={{ color: '#F5F7FA', fontSize: 18 }}>{safeWritingSpaceChars}</strong>
+                    <span style={{ color: '#6B7280', fontSize: 12 }}>8 - 48</span>
+                  </div>
+                  <input style={sliderInputStyle} type="range" min="8" max="48" step="1" value={form.writing_space_chars} onChange={(e) => setForm(prev => ({ ...prev, writing_space_chars: e.target.value }))} />
+                </label>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr', gap: 12 }}>
+              <div style={settingsSectionStyle}>
+                <div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Documento</div>
+                  <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>Define el nombre del archivo y el orden en que se organizan las tarjetas.</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ color: '#AAB2C0', fontSize: 12 }}>Titulo del documento</span>
+                    <input value={form.title} onChange={(e) => setForm(prev => ({ ...prev, title: e.target.value }))} placeholder={`Tarjetas de puntuacion - ${competition.nombre}`} />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ color: '#AAB2C0', fontSize: 12 }}>Orden</span>
+                    <select value={form.sort_mode} onChange={(e) => setForm(prev => ({ ...prev, sort_mode: e.target.value }))}>
+                      <option value="phase_heat_lane_name">Evento / heat / carril / nombre</option>
+                      <option value="name">Nombre</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'grid', gap: 6 }}>
+                    <span style={{ color: '#AAB2C0', fontSize: 12 }}>Expiracion QR (dias)</span>
+                    <input type="number" min="1" max="365" value={form.qr_expiration_days} onChange={(e) => setForm(prev => ({ ...prev, qr_expiration_days: e.target.value }))} />
+                  </label>
+                </div>
+              </div>
+
+              <div style={settingsSectionStyle}>
+                <div>
+                  <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Contenido</div>
+                  <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>Activa solo los datos que necesitas imprimir en cada tarjeta.</div>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <label style={toggleRowStyle(form.only_confirmed)}><span>Solo confirmados</span><input type="checkbox" style={checkboxStyle} checked={form.only_confirmed} onChange={(e) => setForm(prev => ({ ...prev, only_confirmed: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_unassigned)}><span>Incluir no asignados a heat</span><input type="checkbox" style={checkboxStyle} checked={form.include_unassigned} onChange={(e) => setForm(prev => ({ ...prev, include_unassigned: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_qr)}><span>Incluir QR por tarjeta</span><input type="checkbox" style={checkboxStyle} checked={form.include_qr} onChange={(e) => setForm(prev => ({ ...prev, include_qr: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_score_field)}><span>Campo de puntuacion</span><input type="checkbox" style={checkboxStyle} checked={form.include_score_field} onChange={(e) => setForm(prev => ({ ...prev, include_score_field: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_signature_field)}><span>Campo firma atleta</span><input type="checkbox" style={checkboxStyle} checked={form.include_signature_field} onChange={(e) => setForm(prev => ({ ...prev, include_signature_field: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_notes_field)}><span>Campo notas</span><input type="checkbox" style={checkboxStyle} checked={form.include_notes_field} onChange={(e) => setForm(prev => ({ ...prev, include_notes_field: e.target.checked }))} /></label>
+                  <label style={toggleRowStyle(form.include_cedula)}><span>Mostrar cedula</span><input type="checkbox" style={checkboxStyle} checked={form.include_cedula} onChange={(e) => setForm(prev => ({ ...prev, include_cedula: e.target.checked }))} /></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid rgba(0,194,168,0.24)', borderRadius: 12, background: 'rgba(0,194,168,0.08)', padding: 10, color: '#D7DEE8', fontSize: 13 }}>
+            Se exportaran {phaseCount} evento(s){categoryCount ? ` y ${categoryCount} categoria(s)` : ''} en un solo archivo listo para impresion. Layout activo: {resolvedPreviewLayout.replace('x', ' x ')}.
+          </div>
+          <div style={{ border: '1px solid #252A33', borderRadius: 12, background: 'rgba(13,15,18,0.72)', padding: 10, display: 'grid', gap: 8 }}>
+            <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>Vista previa</div>
+            <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+              Replica el PDF en escala real de layout.
+            </div>
+            <div style={{ borderRadius: 10, border: '1px solid #252A33', background: '#E5E7EB', padding: 12, display: 'grid', placeItems: 'center' }}>
+              <div style={{ width: '100%', maxWidth: isMobile ? 340 : 430, aspectRatio: `${pageAspect}`, background: '#FFFFFF', border: '1px solid #D1D5DB', borderRadius: 6, position: 'relative', overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', left: previewSheet.margin, top: previewSheet.titleTop, color: '#0D0F12', fontSize: 11 * previewSheet.scale, fontWeight: 700, lineHeight: 1 }}>
+                  {String(form.title || '').trim() || `Tarjetas de puntuacion - ${competition.nombre}`}
+                </div>
+                <div style={{ position: 'absolute', left: previewSheet.margin, top: previewSheet.subtitleTop, color: '#6B7280', fontSize: 7 * previewSheet.scale, lineHeight: 1 }}>
+                  {`Competencia: ${competition.nombre} | Pagina 1/1 | ${previewPageSpec.label} | ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`}
+                </div>
+                {previewCards.map((item, idx) => {
+                  const row = Math.floor(idx / safePreviewCols)
+                  const col = idx % safePreviewCols
+                  const cardLeft = previewSheet.margin + (col * previewSheet.cellWidth)
+                  const cardTop = previewSheet.contentTop + (row * previewSheet.cellHeight)
+                  const pad = 6 * previewSheet.scale
+                  const qrSize = JUDGE_CARD_QR_FIXED_SIZE_PT * previewSheet.scale
+                  const qrSafeZone = JUDGE_CARD_QR_SAFE_ZONE_PT * previewSheet.scale
+                  const columnGap = JUDGE_CARD_COLUMN_GAP_PT * previewSheet.scale
+                  const rightColumnWidth = form.include_qr ? qrSize + (qrSafeZone * 2) : 0
+                  const metaRows = buildJudgeCardPreviewMetaRows(item, form.include_cedula)
+                  const formRows = buildJudgeCardPreviewFormRows(item, safeWritingSpaceChars)
+                  const columnRows = [...metaRows, ...formRows]
+                  const topBandHeight = JUDGE_CARD_TITLE_BAND_PT * previewSheet.scale
+                  const nameTop = pad
+                  const bodyTop = topBandHeight
+                  const bodyBottom = previewSheet.cellHeight - pad
+                  const bodyHeight = bodyBottom - bodyTop
+                  const textWidth = previewSheet.cellWidth - (pad * 2) - rightColumnWidth - (form.include_qr ? columnGap : 0)
+                  const lineStep = 7.2 * previewSheet.scale * safeFontScale * safeLineSpacing
+                  const blockHeight = columnRows.length
+                    ? ((columnRows.length - 1) * lineStep) + (columnRows[columnRows.length - 1].size * previewSheet.scale * safeFontScale)
+                    : 0
+                  let rowY = bodyTop + ((bodyHeight - blockHeight) / 2)
+                  return (
+                    <div
+                      key={`preview-card-${idx}`}
+                      style={{
+                        position: 'absolute',
+                        left: cardLeft,
+                        top: cardTop,
+                        width: previewSheet.cellWidth,
+                        height: previewSheet.cellHeight,
+                        border: `${0.8 * previewSheet.scale}px solid #252A33`,
+                        boxSizing: 'border-box',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: pad,
+                          right: pad,
+                          top: nameTop,
+                          color: '#0D0F12',
+                          fontSize: 8.8 * previewSheet.scale,
+                          fontWeight: 700,
+                          lineHeight: 1,
+                          textAlign: 'center',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {item.participantName}
+                      </div>
+                      {columnRows.map((rowItem, rowIdx) => {
+                        const node = (
+                          <div
+                            key={`preview-card-${idx}-row-${rowIdx}`}
+                            style={{
+                              position: 'absolute',
+                              left: pad,
+                              top: rowY,
+                              width: Math.max(0, textWidth),
+                              color: rowItem.color,
+                              fontSize: rowItem.size * previewSheet.scale * safeFontScale,
+                              fontWeight: rowItem.bold ? 700 : 400,
+                              whiteSpace: 'nowrap',
+                              lineHeight: 1,
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {rowItem.text}
+                          </div>
+                        )
+                        rowY += lineStep
+                        return node
+                      })}
+                      {form.include_qr ? (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            right: pad + qrSafeZone,
+                            top: bodyTop + ((bodyHeight - qrSize) / 2),
+                            width: qrSize,
+                            height: qrSize,
+                            border: `${0.9 * previewSheet.scale}px solid #252A33`,
+                            background: 'linear-gradient(135deg, #F5F7FA 0%, #F5F7FA 100%)',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(0deg, #0D0F12 0, #0D0F12 2px, transparent 2px, transparent 4px), repeating-linear-gradient(90deg, #0D0F12 0, #0D0F12 2px, transparent 2px, transparent 4px)', opacity: 0.9 }} />
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+            <button type="submit" className="btn-primary btn-sm" disabled={busy || !phases.length}>
+              {busy ? 'Generando PDF...' : 'Descargar PDF'}
+            </button>
+          </div>
+        </form>
+      ) : null}
     </div>
   )
 }
@@ -9693,6 +10390,7 @@ function CompetitionsTab() {
   }
   const prepSubSections = [
     { id: 'schedule', label: 'Cronograma' },
+    { id: 'judge_cards', label: 'Tarjetas' },
     ...(selectedCompetition?.team_enabled ? [{ id: 'teams', label: 'Equipos' }] : []),
   ]
   const enrollmentsSubSections = [
@@ -9877,7 +10575,7 @@ function CompetitionsTab() {
                     onClick={() => {
                       setSelectedTab(section.id)
                       if (section.id === 'enrollments' && !['enrollment_list', 'checkin_ops'].includes(competitionTab)) setCompetitionTab('enrollment_list')
-                      if (section.id === 'prep' && !['schedule', 'teams'].includes(competitionTab)) setCompetitionTab('schedule')
+                      if (section.id === 'prep' && !['schedule', 'judge_cards', 'teams'].includes(competitionTab)) setCompetitionTab('schedule')
                       if (section.id === 'live' && !['results', 'timer'].includes(competitionTab)) setCompetitionTab('results')
                     }}
                     style={{ ...sectionTabStyle(selectedTab === section.id), padding: '10px 12px', flex: isMobile ? '0 0 auto' : undefined }}
@@ -10259,6 +10957,7 @@ function CompetitionsTab() {
               </div>
 
               {competitionTab === 'schedule' && <CompetitionSchedulePanel competition={selectedCompetition} />}
+              {competitionTab === 'judge_cards' && <CompetitionJudgeCardsPanel competition={selectedCompetition} isMobile={isMobile} />}
               {competitionTab === 'teams' && <CompetitionTeamsPanel competition={selectedCompetition} />}
             </div>
           )}
@@ -10399,7 +11098,7 @@ function ParticipantsTab() {
   }, [participants, search])
   const totalUsers = participants.length
 
-  const load = () => api.get('/participants/admin-users').then(r => setParticipants(r.data))
+  const load = () => api.get('/users/admin').then(r => setParticipants(r.data))
   useEffect(() => {
     load()
   }, [])
@@ -10470,8 +11169,8 @@ function ParticipantsTab() {
       delete payload.city
       delete payload.countryCode
       delete payload.extra_role
-      await api.put(`/participants/${editingParticipant.id}`, payload)
-      await api.put(`/participants/${editingParticipant.id}/role`, { extra_role: extraRole })
+      await api.put(`/users/${editingParticipant.id}`, payload)
+      await api.put(`/users/${editingParticipant.id}/role`, { extra_role: extraRole })
       setMsg({ type: 'success', text: 'Usuario actualizado' })
       setEditingParticipant(null)
       load()
@@ -10483,7 +11182,7 @@ function ParticipantsTab() {
   const removeParticipant = async (p) => {
     if (!confirm(`Eliminar usuario "${p.nombre} ${p.apellido}"?`)) return
     try {
-      await api.delete(`/participants/${p.id}`)
+      await api.delete(`/users/${p.id}`)
       setMsg({ type: 'success', text: 'Usuario eliminado' })
       load()
     } catch (err) {
@@ -11536,14 +12235,14 @@ function OrganizerApplicationsTab() {
       <div style={{ display: 'grid', gap: 14 }}>
         {items.map((item) => {
           const snapshot = item.profile_snapshot || {}
-          const applicantName = snapshot.nombre && snapshot.apellido ? `${snapshot.nombre} ${snapshot.apellido}` : (item.app_user?.display_name || 'Usuario')
+          const applicantName = snapshot.nombre && snapshot.apellido ? `${snapshot.nombre} ${snapshot.apellido}` : (item.user?.display_name || 'Usuario')
           const statusTone = item.status === 'approved' ? '#22C55E' : item.status === 'rejected' ? '#EF4444' : '#F59E0B'
           return (
             <div key={item.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18, display: 'grid', gap: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>{applicantName}</div>
-                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{item.app_user?.username || snapshot.email || 'Sin usuario'}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{item.user?.username || snapshot.email || 'Sin usuario'}</div>
                   <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Recibida: {formatDate(item.created_at)}</div>
                 </div>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 999, border: `1px solid ${statusTone}55`, background: `${statusTone}1A`, color: statusTone, fontSize: 12, fontWeight: 800 }}>

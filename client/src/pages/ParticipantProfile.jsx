@@ -533,7 +533,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 
 export default function ParticipantProfile() {
   const location = useLocation()
-  const { participantId, displayName, organizerEnabled } = useAuth()
+  const { userId, displayName, organizerEnabled } = useAuth()
   const nombre = displayName || 'Participante'
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
@@ -663,7 +663,7 @@ export default function ParticipantProfile() {
   }, [showEditProfile])
 
   const loadResults = () => api.get('/results').then(r => setResults(r.data))
-  const loadMyCompetitions = async () => { const res = await api.get(`/participants/${participantId}/competitions`); setMyComps(res.data) }
+  const loadMyCompetitions = async () => { const res = await api.get(`/users/${userId}/competitions`); setMyComps(res.data) }
   const loadMyInvitations = async () => {
     try {
       const res = await api.get('/teams/my-invitations')
@@ -672,7 +672,7 @@ export default function ParticipantProfile() {
   }
   const loadMyProfile = async () => {
     try {
-      const res = await api.get('/participants/me')
+      const res = await api.get('/users/me')
       setMyProfile(res.data)
       setEditForm({
         nombre: res.data.nombre || '',
@@ -716,14 +716,14 @@ export default function ParticipantProfile() {
   useEffect(() => {
     loadMyProfile().catch(() => {})
     loadOrganizerApplication().catch(() => {})
-    if (!participantId) {
+    if (!userId) {
       setMyComps([])
       setPendingInvitations([])
       setResults([])
       return
     }
     Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations()]).catch(() => {})
-  }, [participantId])
+  }, [userId])
 
   const enrollmentByComp = useMemo(() => {
     const map = {}
@@ -760,7 +760,7 @@ export default function ParticipantProfile() {
       if (!(c.id in myTeamByComp)) {
         try {
           const res = await api.get(`/teams?competition_id=${c.id}`)
-          const myTeam = res.data.find(t => t.members.some(m => m.id === participantId))
+    const myTeam = res.data.find(t => t.members.some(m => m.id === userId))
           setMyTeamByComp(prev => ({ ...prev, [c.id]: myTeam || null }))
         } catch { setMyTeamByComp(prev => ({ ...prev, [c.id]: null })) }
       }
@@ -792,7 +792,7 @@ export default function ParticipantProfile() {
     }
     if (city && countryName) payload.ciudad_pais = buildCityCountry(city, countryName)
     try {
-      const res = await api.patch('/participants/me', payload)
+    const res = await api.patch('/users/me', payload)
       setMyProfile(res.data)
       localStorage.setItem('nombre', `${res.data.nombre} ${res.data.apellido}`)
       setEditForm((current) => ({
@@ -927,7 +927,7 @@ export default function ParticipantProfile() {
       }
       const formData = new FormData()
       formData.append('file', blob, 'profile-photo.jpg')
-      const { data } = await api.post('/participants/me/photo', formData, {
+      const { data } = await api.post('/users/me/photo', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setMyProfile(data)
@@ -954,7 +954,7 @@ export default function ParticipantProfile() {
       return
     }
     const payload = {
-      participant_id: participantId,
+      user_id: userId,
       competition_id: compId,
       marca: isPosition ? undefined : metricValue,
       puntos: isPosition ? 0 : metricValue,
@@ -1055,7 +1055,7 @@ export default function ParticipantProfile() {
       {selectedComp && (
         <CompetitionDetailModal
           comp={selectedComp}
-          participantId={participantId}
+        participantId={userId}
           allResults={results}
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}

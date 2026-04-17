@@ -46,7 +46,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(participants.router)
+app.include_router(participants.users_router)
 app.include_router(competitions.router)
 app.include_router(results.router)
 app.include_router(leaderboard.router)

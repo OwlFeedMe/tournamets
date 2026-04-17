@@ -436,7 +436,7 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
-  const { session, role, participantId, isAthlete } = useAuth()
+  const { session, role, userId, isAthlete } = useAuth()
   const [ctaBusy, setCtaBusy] = useState(false)
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -506,12 +506,12 @@ export default function CompetitionLanding() {
   useEffect(() => {
     let active = true
     setMyEnrollmentState('')
-    if (!session || !isAthlete || !participantId) {
+    if (!session || !isAthlete || !userId) {
       return () => {
         active = false
       }
     }
-    api.get(`/participants/${participantId}/competitions`)
+      api.get(`/users/${userId}/competitions`)
       .then(({ data }) => {
         if (!active) return
         const current = Array.isArray(data) ? data.find(item => String(item?.id) === String(competitionId)) : null
@@ -524,7 +524,7 @@ export default function CompetitionLanding() {
     return () => {
       active = false
     }
-  }, [competitionId, isAthlete, participantId, role, session])
+  }, [competitionId, isAthlete, userId, role, session])
 
   const competition = payload?.competition || null
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
@@ -585,7 +585,7 @@ export default function CompetitionLanding() {
     [competition]
   )
   const isUpcomingCompetition = !!(competitionStartDate && competitionStartDate.getTime() > Date.now())
-  const canSeeMySchedule = !!(session && participantId && myEnrollmentState === 'confirmado')
+  const canSeeMySchedule = !!(session && userId && myEnrollmentState === 'confirmado')
   const enrollmentButton = enrollmentButtonState(competition, isAthlete, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : isAthlete ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label
@@ -617,7 +617,7 @@ export default function CompetitionLanding() {
     if (enrollmentButton.disabled || !competition?.enrollment_open) return
     setCtaBusy(true)
     try {
-      const { data } = await api.get('/participants/me')
+              const { data } = await api.get('/users/me')
       const missingFields = getMissingParticipantProfileFields(data)
       if (missingFields.length) {
         navigate('/profile', {
@@ -669,7 +669,7 @@ export default function CompetitionLanding() {
   }
 
   const handleInterestNotificationClick = async () => {
-    if (session && participantId) {
+              if (session && userId) {
       await saveInterestNotification()
       return
     }

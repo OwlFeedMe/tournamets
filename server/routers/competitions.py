@@ -16,7 +16,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import get_current_user_optional, has_organizer_access, require_staff
+from auth import get_current_user_id, get_current_user_optional, has_organizer_access, require_staff
 from competition_rules import filter_visible_phases, normalize_phase_measurement_method, normalize_phase_visibility, normalize_rm_unit, type_from_measurement_method
 from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
@@ -747,7 +747,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _serialize_social_links(payload)
     _serialize_enrollment_questions(payload)
     if is_organizer_user(user):
-        payload["organizer_user_id"] = user.get("app_user_id")
+        payload["organizer_user_id"] = get_current_user_id(user)
     payload["slug"] = _generate_slug(payload["nombre"], session)
     competition = Competition.model_validate(payload)
     session.add(competition)

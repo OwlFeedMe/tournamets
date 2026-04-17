@@ -14,7 +14,7 @@ from sqlalchemy import func
 from sqlmodel import Session, SQLModel, select
 
 from access import require_competition_access, require_competition_operator_access
-from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
+from auth import get_current_user_id, is_end_user, require_auth, require_staff
 from database import get_session
 from models import (
     CompetitionCheckinAudit,
@@ -181,8 +181,8 @@ def _ensure_system_phase(session: Session, competition_id: int) -> CompetitionCh
     return phase
 
 
-def _get_confirmed_enrollment(session: Session, competition_id: int, participant_id: int) -> CompetitionParticipant:
-    cp = session.get(CompetitionParticipant, (competition_id, participant_id))
+def _get_confirmed_enrollment(session: Session, competition_id: int, user_id: int) -> CompetitionParticipant:
+    cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if not cp:
         raise HTTPException(404, "Inscripcion no encontrada")
     if cp.estado != "confirmado":
@@ -190,28 +190,38 @@ def _get_confirmed_enrollment(session: Session, competition_id: int, participant
     return cp
 
 
+def _user_payload(user_id: int, participant: Participant | None, categoria: str | None = None) -> dict:
+    return {
+        "id": user_id,
+        "user_id": user_id,
+        "nombre": str(getattr(participant, "nombre", "") or "").strip(),
+        "apellido": str(getattr(participant, "apellido", "") or "").strip(),
+        "categoria": categoria,
+    }
+
+
 def _get_or_create_identity(
     session: Session,
     *,
     competition_id: int,
-    participant_id: int,
-    actor_app_user_id: int | None = None,
+    user_id: int,
+    actor_user_id: int | None = None,
 ) -> CompetitionQrIdentity:
     identity = session.exec(
         select(CompetitionQrIdentity)
         .where(CompetitionQrIdentity.competition_id == competition_id)
-        .where(CompetitionQrIdentity.participant_id == participant_id)
+        .where(CompetitionQrIdentity.user_id == user_id)
     ).first()
     if identity:
         return identity
     identity = CompetitionQrIdentity(
         competition_id=competition_id,
-        participant_id=participant_id,
+        user_id=user_id,
         qr_uid=uuid.uuid4().hex,
         version=1,
         status=QR_STATUS_ACTIVE,
         issued_at=_utcnow(),
-        created_by_app_user_id=actor_app_user_id,
+        created_by_user_id=actor_user_id,
     )
     session.add(identity)
     session.commit()
@@ -225,7 +235,7 @@ def _append_audit(
     competition_id: int,
     action: str,
     result: str,
-    participant_id: int | None = None,
+    user_id: int | None = None,
     qr_identity_id: int | None = None,
     phase_id: int | None = None,
     reason: str | None = None,
@@ -233,13 +243,13 @@ def _append_audit(
     station: str | None = None,
     device_id: str | None = None,
     idempotency_key: str | None = None,
-    actor_app_user_id: int | None = None,
+    actor_user_id: int | None = None,
     meta: dict | None = None,
 ) -> None:
     session.add(
         CompetitionCheckinAudit(
             competition_id=competition_id,
-            participant_id=participant_id,
+            user_id=user_id,
             qr_identity_id=qr_identity_id,
             phase_id=phase_id,
             action=action,
@@ -249,7 +259,7 @@ def _append_audit(
             station=(station or "").strip() or None,
             device_id=(device_id or "").strip() or None,
             idempotency_key=(idempotency_key or "").strip() or None,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
             meta_json=json.dumps(meta or {}, ensure_ascii=False) if meta else None,
         )
     )
@@ -270,12 +280,12 @@ def my_checkin_qr(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
-    _get_confirmed_enrollment(session, competition_id, participant_id)
+    _get_confirmed_enrollment(session, competition_id, user_id)
     _ensure_system_phase(session, competition_id)
-    identity = _get_or_create_identity(session, competition_id=competition_id, participant_id=participant_id)
+    identity = _get_or_create_identity(session, competition_id=competition_id, user_id=user_id)
     token = _make_qr_token(identity)
 
     checkin_usage = session.exec(
@@ -287,7 +297,7 @@ def my_checkin_qr(
     ).first()
     return {
         "competition_id": competition_id,
-        "participant_id": participant_id,
+        "user_id": user_id,
         "status": identity.status,
         "version": identity.version,
         "short_code": f"{identity.qr_uid[:8].upper()}-{identity.version}",
@@ -349,7 +359,7 @@ def create_checkin_phase(
         action="phase_create",
         result="accepted",
         phase_id=phase.id,
-        actor_app_user_id=user.get("app_user_id"),
+        actor_user_id=get_current_user_id(user),
         meta={"code": phase.code, "max_uses": phase.max_uses},
     )
     session.commit()
@@ -387,7 +397,7 @@ def update_checkin_phase(
         action="phase_update",
         result="accepted",
         phase_id=phase.id,
-        actor_app_user_id=user.get("app_user_id"),
+        actor_user_id=get_current_user_id(user),
     )
     session.commit()
     session.refresh(phase)
@@ -419,32 +429,32 @@ def delete_checkin_phase(
         action="phase_delete",
         result="accepted",
         phase_id=phase_id,
-        actor_app_user_id=user.get("app_user_id"),
+        actor_user_id=get_current_user_id(user),
     )
     session.commit()
     return {"ok": True}
 
 
-@router.get("/api/competitions/{competition_id}/participants/{participant_id}/checkin-qr")
+@router.get("/api/competitions/{competition_id}/users/{user_id}/checkin-qr")
 def participant_checkin_qr(
     competition_id: int,
-    participant_id: int,
+    user_id: int,
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
-    _get_confirmed_enrollment(session, competition_id, participant_id)
+    _get_confirmed_enrollment(session, competition_id, user_id)
     _ensure_system_phase(session, competition_id)
     identity = _get_or_create_identity(
         session,
         competition_id=competition_id,
-        participant_id=participant_id,
-        actor_app_user_id=user.get("app_user_id"),
+        user_id=user_id,
+        actor_user_id=get_current_user_id(user),
     )
     token = _make_qr_token(identity)
     return {
         "competition_id": competition_id,
-        "participant_id": participant_id,
+        "user_id": user_id,
         "status": identity.status,
         "version": identity.version,
         "short_code": f"{identity.qr_uid[:8].upper()}-{identity.version}",
@@ -453,37 +463,37 @@ def participant_checkin_qr(
     }
 
 
-@router.post("/api/competitions/{competition_id}/participants/{participant_id}/checkin-qr/reissue")
+@router.post("/api/competitions/{competition_id}/users/{user_id}/checkin-qr/reissue")
 def reissue_checkin_qr(
     competition_id: int,
-    participant_id: int,
+    user_id: int,
     body: ReissueQrBody,
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
-    _get_confirmed_enrollment(session, competition_id, participant_id)
+    _get_confirmed_enrollment(session, competition_id, user_id)
     identity = _get_or_create_identity(
         session,
         competition_id=competition_id,
-        participant_id=participant_id,
-        actor_app_user_id=user.get("app_user_id"),
+        user_id=user_id,
+        actor_user_id=get_current_user_id(user),
     )
     identity.version = int(identity.version or 1) + 1
     identity.status = QR_STATUS_ACTIVE
     identity.last_reissued_at = _utcnow()
     identity.revoked_at = None
     identity.revoked_reason = None
-    identity.revoked_by_app_user_id = None
+    identity.revoked_by_user_id = None
     session.add(identity)
     _append_audit(
         session,
         competition_id=competition_id,
         action="qr_reissue",
         result="accepted",
-        participant_id=participant_id,
+        user_id=user_id,
         qr_identity_id=identity.id,
-        actor_app_user_id=user.get("app_user_id"),
+        actor_user_id=get_current_user_id(user),
         reason=str(body.reason or "").strip() or None,
     )
     session.commit()
@@ -492,7 +502,7 @@ def reissue_checkin_qr(
     return {
         "ok": True,
         "competition_id": competition_id,
-        "participant_id": participant_id,
+        "user_id": user_id,
         "version": identity.version,
         "short_code": f"{identity.qr_uid[:8].upper()}-{identity.version}",
         "token": token,
@@ -538,7 +548,7 @@ def scan_checkin_qr(
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "phase_disabled", "phase_code": phase_code}
@@ -565,7 +575,7 @@ def scan_checkin_qr(
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "invalid_token", "phase_code": phase_code}
@@ -609,7 +619,7 @@ def scan_checkin_qr(
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "invalid_qr", "phase_code": phase_code}
@@ -621,8 +631,8 @@ def scan_checkin_qr(
             user=user,
             action="qr_scan",
             result="stale_token",
-            target_type="participant",
-            target_id=str(identity.participant_id),
+            target_type="user",
+            target_id=str(identity.user_id),
             meta={"phase_code": phase.code},
         )
         _append_audit(
@@ -630,14 +640,14 @@ def scan_checkin_qr(
             competition_id=competition_id,
             action="scan",
             result="stale_token",
-            participant_id=identity.participant_id,
+            user_id=identity.user_id,
             qr_identity_id=identity.id,
             phase_id=phase.id,
             token=body.token,
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "stale_token", "phase_code": phase_code}
@@ -648,8 +658,8 @@ def scan_checkin_qr(
             user=user,
             action="qr_scan",
             result="revoked",
-            target_type="participant",
-            target_id=str(identity.participant_id),
+            target_type="user",
+            target_id=str(identity.user_id),
             meta={"phase_code": phase.code},
         )
         _append_audit(
@@ -657,19 +667,19 @@ def scan_checkin_qr(
             competition_id=competition_id,
             action="scan",
             result="revoked",
-            participant_id=identity.participant_id,
+            user_id=identity.user_id,
             qr_identity_id=identity.id,
             phase_id=phase.id,
             token=body.token,
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "revoked", "phase_code": phase_code}
 
-    cp = session.get(CompetitionParticipant, (competition_id, identity.participant_id))
+    cp = session.get(CompetitionParticipant, (competition_id, identity.user_id))
     if not cp or cp.estado != "confirmado":
         append_judge_action_audit(
             session,
@@ -677,8 +687,8 @@ def scan_checkin_qr(
             user=user,
             action="qr_scan",
             result="not_confirmed",
-            target_type="participant",
-            target_id=str(identity.participant_id),
+            target_type="user",
+            target_id=str(identity.user_id),
             meta={"phase_code": phase.code},
         )
         _append_audit(
@@ -686,14 +696,14 @@ def scan_checkin_qr(
             competition_id=competition_id,
             action="scan",
             result="not_confirmed",
-            participant_id=identity.participant_id,
+            user_id=identity.user_id,
             qr_identity_id=identity.id,
             phase_id=phase.id,
             token=body.token,
             station=body.station,
             device_id=body.device_id,
             idempotency_key=body.idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
         return {"ok": False, "status": "not_confirmed", "phase_code": phase_code}
@@ -707,19 +717,17 @@ def scan_checkin_qr(
             .where(CompetitionCheckinUsage.idempotency_key == idempotency_key)
         ).first()
         if existing_by_idempotency:
-            participant = session.get(Participant, identity.participant_id)
+            participant = session.get(Participant, identity.user_id)
+            user_payload = _user_payload(identity.user_id, participant, cp.categoria)
             return {
                 "ok": True,
                 "status": "accepted",
                 "idempotent": True,
                 "phase_code": phase.code,
                 "used_at": existing_by_idempotency.used_at,
-                "participant": {
-                    "id": identity.participant_id,
-                    "nombre": str(getattr(participant, "nombre", "") or "").strip(),
-                    "apellido": str(getattr(participant, "apellido", "") or "").strip(),
-                    "categoria": cp.categoria,
-                },
+                "user_id": identity.user_id,
+                "user": user_payload,
+                "participant": user_payload,
             }
 
     usage_count = _phase_usage_count(session, identity.id, phase.id)
@@ -736,8 +744,8 @@ def scan_checkin_qr(
             user=user,
             action="qr_scan",
             result="already_used",
-            target_type="participant",
-            target_id=str(identity.participant_id),
+            target_type="user",
+            target_id=str(identity.user_id),
             meta={"phase_code": phase.code},
         )
         _append_audit(
@@ -745,7 +753,7 @@ def scan_checkin_qr(
             competition_id=competition_id,
             action="scan",
             result="already_used",
-            participant_id=identity.participant_id,
+            user_id=identity.user_id,
             qr_identity_id=identity.id,
             phase_id=phase.id,
             reason=f"max_uses={phase.max_uses}",
@@ -753,33 +761,31 @@ def scan_checkin_qr(
             station=body.station,
             device_id=body.device_id,
             idempotency_key=idempotency_key,
-            actor_app_user_id=user.get("app_user_id"),
+            actor_user_id=get_current_user_id(user),
         )
         session.commit()
-        participant = session.get(Participant, identity.participant_id)
+        participant = session.get(Participant, identity.user_id)
+        user_payload = _user_payload(identity.user_id, participant, cp.categoria)
         return {
             "ok": False,
             "status": "already_used",
             "phase_code": phase.code,
             "used_at": first_usage.used_at if first_usage else None,
-            "participant": {
-                "id": identity.participant_id,
-                "nombre": str(getattr(participant, "nombre", "") or "").strip(),
-                "apellido": str(getattr(participant, "apellido", "") or "").strip(),
-                "categoria": cp.categoria,
-            },
+            "user_id": identity.user_id,
+            "user": user_payload,
+            "participant": user_payload,
         }
 
     usage = CompetitionCheckinUsage(
         competition_id=competition_id,
-        participant_id=identity.participant_id,
+        user_id=identity.user_id,
         qr_identity_id=identity.id,
         phase_id=phase.id,
         use_number=usage_count + 1,
         idempotency_key=idempotency_key,
         station=str(body.station or "").strip() or None,
         device_id=str(body.device_id or "").strip() or None,
-        used_by_app_user_id=user.get("app_user_id"),
+        used_by_user_id=get_current_user_id(user),
     )
     session.add(usage)
     append_judge_action_audit(
@@ -788,8 +794,8 @@ def scan_checkin_qr(
         user=user,
         action="qr_scan",
         result="accepted",
-        target_type="participant",
-        target_id=str(identity.participant_id),
+        target_type="user",
+        target_id=str(identity.user_id),
         meta={"phase_code": phase.code},
     )
     _append_audit(
@@ -797,27 +803,25 @@ def scan_checkin_qr(
         competition_id=competition_id,
         action="scan",
         result="accepted",
-        participant_id=identity.participant_id,
+        user_id=identity.user_id,
         qr_identity_id=identity.id,
         phase_id=phase.id,
         token=body.token,
         station=body.station,
         device_id=body.device_id,
         idempotency_key=idempotency_key,
-        actor_app_user_id=user.get("app_user_id"),
+        actor_user_id=get_current_user_id(user),
     )
     session.commit()
     session.refresh(usage)
-    participant = session.get(Participant, identity.participant_id)
+    participant = session.get(Participant, identity.user_id)
+    user_payload = _user_payload(identity.user_id, participant, cp.categoria)
     return {
         "ok": True,
         "status": "accepted",
         "phase_code": phase.code,
         "used_at": usage.used_at,
-        "participant": {
-            "id": identity.participant_id,
-            "nombre": str(getattr(participant, "nombre", "") or "").strip(),
-            "apellido": str(getattr(participant, "apellido", "") or "").strip(),
-            "categoria": cp.categoria,
-        },
+        "user_id": identity.user_id,
+        "user": user_payload,
+        "participant": user_payload,
     }

@@ -7,7 +7,7 @@ const STORAGE_KEYS = {
   baseRole: 'base_role',
   extraRoles: 'extra_roles',
   nombre: 'nombre',
-  participantId: 'participant_id',
+  userId: 'user_id',
   organizerEnabled: 'organizer_enabled',
   judgeEnabled: 'judge_enabled',
   adminEnabled: 'admin_enabled',
@@ -108,7 +108,7 @@ function storeSessionPayload(payload, token) {
   if (!token || !role) return
 
   const displayName = payload?.display_name || payload?.nombre || payload?.displayName || ''
-  const participantId = toNumber(payload?.participant_id)
+  const userId = toNumber(payload?.user_id || payload?.sub)
 
   window.localStorage.setItem(STORAGE_KEYS.token, token)
   window.localStorage.setItem(STORAGE_KEYS.role, role)
@@ -118,10 +118,10 @@ function storeSessionPayload(payload, token) {
   window.localStorage.setItem(STORAGE_KEYS.organizerEnabled, organizerEnabled ? '1' : '0')
   window.localStorage.setItem(STORAGE_KEYS.judgeEnabled, judgeEnabled ? '1' : '0')
   window.localStorage.setItem(STORAGE_KEYS.adminEnabled, adminEnabled ? '1' : '0')
-  if (participantId != null) {
-    window.localStorage.setItem(STORAGE_KEYS.participantId, String(participantId))
+  if (userId != null) {
+    window.localStorage.setItem(STORAGE_KEYS.userId, String(userId))
   } else {
-    window.localStorage.removeItem(STORAGE_KEYS.participantId)
+    window.localStorage.removeItem(STORAGE_KEYS.userId)
   }
   window.dispatchEvent(new Event(SESSION_EVENT))
 }
@@ -151,7 +151,11 @@ export function readStoredSession() {
   const role = payloadRole || storedRole || getEffectiveRole(baseRole, extraRoles)
   if (!role) return null
 
-  const participantId = toNumber(window.localStorage.getItem(STORAGE_KEYS.participantId) || payload?.participant_id || payload?.sub)
+  const userId = toNumber(
+    window.localStorage.getItem(STORAGE_KEYS.userId) ||
+    payload?.user_id ||
+    payload?.sub,
+  )
   const displayName =
     window.localStorage.getItem(STORAGE_KEYS.nombre) ||
     payload?.display_name ||
@@ -164,7 +168,7 @@ export function readStoredSession() {
     baseRole,
     extraRoles,
     displayName,
-    participantId,
+    userId,
     organizerEnabled,
     judgeEnabled,
     adminEnabled,
@@ -252,7 +256,7 @@ export function AuthProvider({ children }) {
     window.localStorage.removeItem(STORAGE_KEYS.baseRole)
     window.localStorage.removeItem(STORAGE_KEYS.extraRoles)
     window.localStorage.removeItem(STORAGE_KEYS.nombre)
-    window.localStorage.removeItem(STORAGE_KEYS.participantId)
+    window.localStorage.removeItem(STORAGE_KEYS.userId)
     window.localStorage.removeItem(STORAGE_KEYS.organizerEnabled)
     window.localStorage.removeItem(STORAGE_KEYS.judgeEnabled)
     window.localStorage.removeItem(STORAGE_KEYS.adminEnabled)
@@ -272,12 +276,11 @@ export function AuthProvider({ children }) {
       extraRoles: session?.extraRoles || [],
       roleRank,
       displayName: session?.displayName || '',
-      participantId: session?.participantId || null,
-      appUserId: session?.claims?.app_user_id || null,
+      userId: session?.userId || null,
       organizerEnabled: !!session?.organizerEnabled,
       judgeEnabled: !!session?.judgeEnabled,
       adminEnabled: !!session?.adminEnabled,
-      isAthlete: !!session?.participantId && (session?.role === 'user' || session?.baseRole === 'user'),
+      isAthlete: !!session?.userId && (session?.role === 'user' || session?.baseRole === 'user'),
       refreshSession,
       persistSession: persistAndRefreshSession,
       signOut,
@@ -288,7 +291,7 @@ export function AuthProvider({ children }) {
         if (allowedRoles.includes('organizer') && session.organizerEnabled) return true
         if (allowedRoles.includes('judge') && session.judgeEnabled) return true
         if (allowedRoles.includes('admin') && session.adminEnabled) return true
-        if (allowedRoles.includes('user') && session.participantId) return true
+        if (allowedRoles.includes('user') && session.userId) return true
         return false
       },
     }

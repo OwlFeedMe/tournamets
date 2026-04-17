@@ -65,7 +65,7 @@ function getPhaseId(value) {
 
 function normalizeParticipant(item, index) {
   if (!item || typeof item !== 'object') return null
-  const id = item.id ?? item.participant_id ?? item.participantId ?? `p_${index + 1}`
+  const id = item.id ?? item.user_id ?? item.participantId ?? `p_${index + 1}`
   const firstName = String(item.nombre || item.first_name || item.name || '').trim()
   const lastName = String(item.apellido || item.last_name || '').trim()
   const name = String(item.participant_name || item.full_name || [firstName, lastName].filter(Boolean).join(' ') || '').trim()
@@ -356,7 +356,7 @@ function ScheduleSection({ section, personal = false, theme }) {
 
 export default function CompetitionSchedulePage({ scope = 'public' }) {
   const { competitionId } = useParams()
-  const { session, participantId, isAthlete } = useAuth()
+  const { session, userId, isAthlete } = useAuth()
   const isPersonal = scope === 'personal'
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -374,7 +374,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
     const personalEndpoints = [
       `/competitions/${competitionId}/schedule/me`,
       `/competitions/${competitionId}/my-schedule`,
-      `/participants/me/competitions/${competitionId}/schedule`,
+      `/competitions/users/me/${competitionId}/schedule`,
     ]
 
     const endpoints = isPersonal ? personalEndpoints : publicEndpoints
@@ -473,7 +473,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
   const stats = schedule.summary || {}
   const modeCopy = scheduleCopy[isPersonal ? 'personal' : 'public']
-  const hasPersonalAccess = isPersonal && session && !!participantId && isAthlete
+  const hasPersonalAccess = isPersonal && session && !!userId && isAthlete
   const heroLink = competition ? `/competitions/${competition.id}` : '/'
   const leaderboardLink = competition ? `/leaderboard/${competition.id}` : '/leaderboard'
   const myScheduleLink = competition ? `/competitions/${competition.id}/my-schedule` : '/profile'

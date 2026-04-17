@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import get_effective_participant_id, is_end_user, require_auth, require_staff
+from auth import get_effective_user_id, is_end_user, require_auth, require_staff
 from database import MAX_TEAM_SIZE, get_session
 from models import (
     Competition, CompetitionCategory, CompetitionParticipant,
@@ -47,10 +47,10 @@ def _build_team_category_from_members(
 def _with_members(session: Session, team: Team) -> dict:
     member_rows = session.exec(
         select(Participant, CompetitionParticipant.categoria)
-        .join(TeamMember, TeamMember.participant_id == Participant.id)
+        .join(TeamMember, TeamMember.user_id == Participant.id)
         .outerjoin(
             CompetitionParticipant,
-            (CompetitionParticipant.participant_id == Participant.id)
+            (CompetitionParticipant.user_id == Participant.id)
             & (CompetitionParticipant.competition_id == team.competition_id),
         )
         .where(TeamMember.team_id == team.id)
@@ -58,6 +58,7 @@ def _with_members(session: Session, team: Team) -> dict:
     members = [
         {
             "id": participant.id,
+            "user_id": participant.id,
             "nombre": participant.nombre,
             "apellido": participant.apellido,
             "box": participant.box,
@@ -74,6 +75,7 @@ def _with_members(session: Session, team: Team) -> dict:
         **team.model_dump(),
         "team_category": _build_team_category_from_members(team, members, explicit),
         "team_category_id": team.team_category_id,
+        "captain_user_id": team.captain_id,
         "members": members,
     }
 
@@ -88,10 +90,10 @@ def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
     member_rows = session.exec(
         select(TeamMember.team_id, Participant, CompetitionParticipant.categoria)
         .join(Team, Team.id == TeamMember.team_id)
-        .join(Participant, Participant.id == TeamMember.participant_id)
+        .join(Participant, Participant.id == TeamMember.user_id)
         .outerjoin(
             CompetitionParticipant,
-            (CompetitionParticipant.participant_id == Participant.id)
+            (CompetitionParticipant.user_id == Participant.id)
             & (CompetitionParticipant.competition_id == Team.competition_id),
         )
         .where(TeamMember.team_id.in_(team_ids))
@@ -104,6 +106,7 @@ def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
             continue
         members_by_team[int(team_id)].append({
             "id": participant.id,
+            "user_id": participant.id,
             "nombre": participant.nombre,
             "apellido": participant.apellido,
             "box": participant.box,
@@ -127,6 +130,7 @@ def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
             **t.model_dump(),
             "team_category": _build_team_category_from_members(t, members, explicit),
             "team_category_id": t.team_category_id,
+            "captain_user_id": t.captain_id,
             "members": members,
         })
     return result
@@ -134,6 +138,16 @@ def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
 
 def _clean_name(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _resolve_member_ids(member_ids: list[int] | None, user_ids: list[int] | None) -> list[int]:
+    resolved = user_ids if user_ids is not None else member_ids
+    return [int(item) for item in (resolved or [])]
+
+
+def _resolve_captain_id(captain_id: int | None, user_id: int | None) -> int | None:
+    resolved = user_id if user_id is not None else captain_id
+    return int(resolved) if resolved is not None else None
 
 
 def _competition_team_size(session: Session, competition_id: int, fallback: int = 2) -> int:
@@ -162,11 +176,11 @@ def _team_category(session: Session, team_category_id: int | None) -> Competitio
     return session.get(CompetitionCategory, team_category_id)
 
 
-def _member_category_label(session: Session, competition_id: int, participant_id: int) -> str:
-    enrollment = session.get(CompetitionParticipant, (competition_id, participant_id))
+def _member_category_label(session: Session, competition_id: int, user_id: int) -> str:
+    enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     if enrollment and (enrollment.categoria or "").strip():
         return (enrollment.categoria or "").strip()
-    participant = session.get(Participant, participant_id)
+    participant = session.get(Participant, user_id)
     if participant and (participant.categoria or "").strip():
         return (participant.categoria or "").strip()
     return "Sin categoria"
@@ -222,7 +236,7 @@ def _validate_team_membership(
             select(Team)
             .join(TeamMember, TeamMember.team_id == Team.id)
             .where(
-                TeamMember.participant_id == pid,
+                TeamMember.user_id == pid,
                 Team.competition_id == competition_id,
                 Team.id != (current_team_id or 0),
             )
@@ -232,13 +246,13 @@ def _validate_team_membership(
 
 
 def _require_captain(team_id: int, user: dict, session: Session) -> Team:
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios pueden realizar esta accion")
     team = session.get(Team, team_id)
     if not team:
         raise HTTPException(404, "Equipo no encontrado")
-    if team.captain_id != participant_id:
+    if team.captain_id != user_id:
         raise HTTPException(403, "No eres el capitan de este equipo")
     return team
 
@@ -248,12 +262,12 @@ def _require_captain(team_id: int, user: dict, session: Session) -> Team:
 @router.get("/my-invitations")
 def my_invitations(session: Session = Depends(get_session), user=Depends(require_auth)):
     """Invitaciones pendientes que el participante autenticado ha recibido."""
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
     invs = session.exec(
         select(TeamInvitation).where(
-            TeamInvitation.invitee_id == participant_id,
+            TeamInvitation.invitee_id == user_id,
             TeamInvitation.status == "pending",
         )
     ).all()
@@ -276,20 +290,22 @@ def my_invitations(session: Session = Depends(get_session), user=Depends(require
         captain = captains_by_id.get(int(team.captain_id)) if team and team.captain_id else None
         result.append({
             **inv.model_dump(),
+            "invitee_user_id": inv.invitee_id,
             "team": team_payloads.get(int(team.id)) if team else None,
             "captain_nombre": f"{captain.nombre} {captain.apellido}" if captain else None,
+            "captain_user_id": int(team.captain_id) if team and team.captain_id is not None else None,
         })
     return result
 
 
 @router.post("/invitations/{inv_id}/accept")
 def accept_invitation(inv_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
     inv = session.get(TeamInvitation, inv_id)
-    if not inv or inv.invitee_id != participant_id:
+    if not inv or inv.invitee_id != user_id:
         raise HTTPException(404, "Invitacion no encontrada")
     if inv.status != "pending":
         raise HTTPException(400, "La invitacion ya fue procesada")
@@ -308,12 +324,12 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
     existing = session.exec(
         select(Team)
         .join(TeamMember, TeamMember.team_id == Team.id)
-        .where(TeamMember.participant_id == participant_id, Team.competition_id == team.competition_id)
+        .where(TeamMember.user_id == user_id, Team.competition_id == team.competition_id)
     ).first()
     if existing:
         raise HTTPException(409, f"Ya estas en el equipo '{existing.nombre}'")
 
-    session.add(TeamMember(team_id=team.id, participant_id=participant_id))
+    session.add(TeamMember(team_id=team.id, user_id=user_id))
     inv.status = "accepted"
     session.add(inv)
 
@@ -322,7 +338,7 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
         select(TeamInvitation)
         .join(Team, Team.id == TeamInvitation.team_id)
         .where(
-            TeamInvitation.invitee_id == participant_id,
+            TeamInvitation.invitee_id == user_id,
             TeamInvitation.status == "pending",
             Team.competition_id == team.competition_id,
             TeamInvitation.id != inv_id,
@@ -338,12 +354,12 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
 
 @router.delete("/invitations/{inv_id}")
 def reject_invitation(inv_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
-    participant_id = get_effective_participant_id(user)
-    if not is_end_user(user) or participant_id is None:
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
 
     inv = session.get(TeamInvitation, inv_id)
-    if not inv or inv.invitee_id != participant_id:
+    if not inv or inv.invitee_id != user_id:
         raise HTTPException(404, "Invitacion no encontrada")
     if inv.status != "pending":
         raise HTTPException(400, "La invitacion ya fue procesada")
@@ -386,21 +402,23 @@ def get_team(team_id: int, session: Session = Depends(get_session), user=Depends
 @router.post("", status_code=201)
 def create_team(body: TeamCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, body.competition_id, user)
-    if body.captain_id and body.captain_id not in body.member_ids:
+    member_ids = _resolve_member_ids(body.member_ids, body.user_ids)
+    captain_id = _resolve_captain_id(body.captain_id, body.user_id)
+    if captain_id and captain_id not in member_ids:
         raise HTTPException(400, "El capitan debe ser uno de los integrantes del equipo")
     _validate_team_membership(
         session,
         competition_id=body.competition_id,
-        member_ids=body.member_ids,
+        member_ids=member_ids,
         team_category_id=body.team_category_id,
     )
 
     requested_name = _clean_name(body.nombre)
     team = Team(
-        nombre=requested_name or f"tmp-{body.competition_id}-{len(body.member_ids)}",
+        nombre=requested_name or f"tmp-{body.competition_id}-{len(member_ids)}",
         competition_id=body.competition_id,
         team_category_id=body.team_category_id,
-        captain_id=body.captain_id if body.captain_id else (body.member_ids[0] if body.member_ids else None),
+        captain_id=captain_id if captain_id else (member_ids[0] if member_ids else None),
     )
     session.add(team)
     try:
@@ -418,8 +436,8 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), user=
             session.rollback()
             raise HTTPException(409, "No se pudo generar un nombre de equipo")
 
-    for pid in body.member_ids:
-        session.add(TeamMember(team_id=team.id, participant_id=pid))
+    for pid in member_ids:
+        session.add(TeamMember(team_id=team.id, user_id=pid))
 
     session.commit()
     session.refresh(team)
@@ -442,8 +460,8 @@ def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_s
             session.rollback()
             raise HTTPException(409, "Ya existe un equipo con ese nombre en esta competencia")
 
-    next_member_ids = body.member_ids if body.member_ids is not None else [
-        m.participant_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
+    next_member_ids = _resolve_member_ids(body.member_ids, body.user_ids) if (body.member_ids is not None or body.user_ids is not None) else [
+        m.user_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
     ]
     next_team_category_id = body.team_category_id if body.team_category_id is not None else team.team_category_id
     _validate_team_membership(
@@ -454,31 +472,32 @@ def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_s
         current_team_id=team_id,
     )
 
-    if body.member_ids is not None:
+    if body.member_ids is not None or body.user_ids is not None:
         for tm in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all():
             session.delete(tm)
         session.flush()
-        for pid in body.member_ids:
-            session.add(TeamMember(team_id=team_id, participant_id=pid))
+        for pid in next_member_ids:
+            session.add(TeamMember(team_id=team_id, user_id=pid))
 
         # if new member_ids no longer include existing captain, reset captain to first member
-        if team.captain_id and team.captain_id not in body.member_ids:
-            team.captain_id = body.member_ids[0] if body.member_ids else None
+        if team.captain_id and team.captain_id not in next_member_ids:
+            team.captain_id = next_member_ids[0] if next_member_ids else None
             session.add(team)
 
     if body.team_category_id is not None:
         team.team_category_id = body.team_category_id
         session.add(team)
 
-    if body.captain_id is not None:
+    next_captain_id = _resolve_captain_id(body.captain_id, body.user_id)
+    if next_captain_id is not None:
         # validate captain is a member
         member_ids = [
-            m.participant_id
+            m.user_id
             for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
         ]
-        if body.captain_id not in member_ids:
+        if next_captain_id not in member_ids:
             raise HTTPException(400, "El capitan debe ser uno de los integrantes del equipo")
-        team.captain_id = body.captain_id
+        team.captain_id = next_captain_id
         session.add(team)
 
     session.commit()
@@ -527,7 +546,9 @@ def captain_invite(
     team = _require_captain(team_id, user, session)
 
     invitee = session.exec(
-        select(Participant).where(Participant.cedula == body.invitee_cedula)
+        select(Participant).where(
+            Participant.id == body.invitee_user_id if body.invitee_user_id is not None else Participant.cedula == body.invitee_cedula
+        )
     ).first()
     if not invitee:
         raise HTTPException(404, "Participante no encontrado con esa cedula")
@@ -541,7 +562,7 @@ def captain_invite(
     existing_team = session.exec(
         select(Team)
         .join(TeamMember, TeamMember.team_id == Team.id)
-        .where(TeamMember.participant_id == invitee.id, Team.competition_id == team.competition_id)
+        .where(TeamMember.user_id == invitee.id, Team.competition_id == team.competition_id)
     ).first()
     if existing_team:
         raise HTTPException(409, f"El participante ya esta en el equipo '{existing_team.nombre}'")
@@ -552,7 +573,7 @@ def captain_invite(
     if current_size >= team_size:
         raise HTTPException(400, f"El equipo ya tiene el maximo de {team_size} integrantes")
 
-    current_member_ids = [m.participant_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()]
+    current_member_ids = [m.user_id for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()]
     _validate_team_membership(
         session,
         competition_id=team.competition_id,
@@ -574,7 +595,7 @@ def captain_invite(
 
     session.add(TeamInvitation(team_id=team_id, invitee_id=invitee.id))
     session.commit()
-    return {"ok": True, "invitee": {"nombre": invitee.nombre, "apellido": invitee.apellido, "cedula": invitee.cedula}}
+    return {"ok": True, "invitee": {"id": invitee.id, "user_id": invitee.id, "nombre": invitee.nombre, "apellido": invitee.apellido, "cedula": invitee.cedula}}
 
 
 @router.get("/{team_id}/invitations")
@@ -595,6 +616,7 @@ def get_team_invitations(
         p = session.get(Participant, inv.invitee_id)
         result.append({
             **inv.model_dump(),
+            "invitee_user_id": inv.invitee_id,
             "invitee_nombre": f"{p.nombre} {p.apellido}" if p else None,
             "invitee_cedula": p.cedula if p else None,
         })
@@ -610,18 +632,19 @@ def transfer_captain(
 ):
     team = _require_captain(team_id, user, session)
 
-    if body.captain_id is None:
+    next_captain_id = _resolve_captain_id(body.captain_id, body.user_id)
+    if next_captain_id is None:
         raise HTTPException(400, "Falta new_captain_id")
     member_ids = [
-        m.participant_id
+        m.user_id
         for m in session.exec(select(TeamMember).where(TeamMember.team_id == team_id)).all()
     ]
-    if body.captain_id not in member_ids:
+    if next_captain_id not in member_ids:
         raise HTTPException(400, "El nuevo capitan debe ser integrante del equipo")
-    if body.captain_id == team.captain_id:
+    if next_captain_id == team.captain_id:
         raise HTTPException(400, "Esa persona ya es el capitan")
 
-    team.captain_id = body.captain_id
+    team.captain_id = next_captain_id
     session.add(team)
     session.commit()
     session.refresh(team)

@@ -295,7 +295,7 @@ function TermsContent({ text, onReachedEnd }) {
 export default function CompetitionEnrollmentPage() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
-  const { session, role, participantId, isAthlete } = useAuth()
+  const { session, role, userId, isAthlete } = useAuth()
   const [payload, setPayload] = useState(null)
   const [categories, setCategories] = useState([])
   const [enrollmentState, setEnrollmentState] = useState(null)
@@ -340,10 +340,10 @@ export default function CompetitionEnrollmentPage() {
     Promise.all([
       api.get(`/competitions/${competitionId}/public`),
       api.get(`/competitions/${competitionId}/categories?modality=individual`).catch(() => ({ data: [] })),
-      isAthlete && participantId
-        ? api.get(`/participants/${participantId}/competitions`).catch(() => ({ data: [] }))
+    isAthlete && userId
+      ? api.get(`/users/${userId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
-      isAthlete ? api.get('/participants/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+      isAthlete ? api.get('/users/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
     ]).then(([publicRes, categoriesRes, mineRes, profileRes]) => {
       if (!active) return
       const publicPayload = publicRes.data || null
@@ -368,7 +368,7 @@ export default function CompetitionEnrollmentPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [competitionId, isAthlete, participantId, role])
+  }, [competitionId, isAthlete, userId, role])
 
   const competition = payload?.competition || null
   const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])

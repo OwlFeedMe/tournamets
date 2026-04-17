@@ -20,7 +20,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from access import require_competition_access
-from auth import get_current_user_optional, require_staff
+from auth import get_current_user_id, get_current_user_optional, require_staff
 from database import get_session
 from models import (
     Competition,
@@ -659,7 +659,7 @@ def _append_checkin_audit(
     reason: str | None,
     station: str | None,
     device_id: str | None,
-    actor_app_user_id: int | None,
+    actor_user_id: int | None,
 ) -> None:
     session.add(
         SpectatorTicketCheckinAudit(
@@ -671,7 +671,7 @@ def _append_checkin_audit(
             reason=reason,
             station=(station or "").strip() or None,
             device_id=(device_id or "").strip() or None,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
     )
 
@@ -1203,7 +1203,7 @@ def scan_ticket(
 ):
     require_competition_access(session, competition_id, user)
     token = str(body.token or "").strip()
-    actor_app_user_id = user.get("app_user_id")
+    actor_user_id = get_current_user_id(user)
     station = str(body.station or "").strip() or None
     device_id = str(body.device_id or "").strip() or None
 
@@ -1218,7 +1218,7 @@ def scan_ticket(
             reason="invalid_token",
             station=station,
             device_id=device_id,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
         session.commit()
         return {"status": "invalid", "label": "Boleta invalida", "message": "El QR no es valido para esta boleteria."}
@@ -1234,7 +1234,7 @@ def scan_ticket(
             reason="wrong_competition",
             station=station,
             device_id=device_id,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
         session.commit()
         return {"status": "null", "label": "Boleta nula", "message": "La boleta pertenece a otra competencia."}
@@ -1255,7 +1255,7 @@ def scan_ticket(
             reason="ticket_not_found",
             station=station,
             device_id=device_id,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
         session.commit()
         return {"status": "null", "label": "Boleta nula", "message": "No existe una boleta activa con ese QR."}
@@ -1271,7 +1271,7 @@ def scan_ticket(
             reason="already_used",
             station=station,
             device_id=device_id,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
         session.commit()
         return {
@@ -1292,7 +1292,7 @@ def scan_ticket(
             reason=f"status_{ticket.status}",
             station=station,
             device_id=device_id,
-            actor_app_user_id=actor_app_user_id,
+            actor_user_id=actor_user_id,
         )
         session.commit()
         return {"status": "invalid", "label": "Boleta invalida", "message": "La boleta no esta habilitada para ingreso."}
@@ -1312,7 +1312,7 @@ def scan_ticket(
         reason="accepted",
         station=station,
         device_id=device_id,
-        actor_app_user_id=actor_app_user_id,
+        actor_user_id=actor_user_id,
     )
     session.commit()
 

@@ -82,7 +82,7 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
         SELECT p.id, p.nombre, p.apellido, cp.categoria, COALESCE(p.genero, p.sexo) AS sexo
         FROM participants p
         JOIN competition_participants cp
-          ON cp.participant_id = p.id
+          ON cp.user_id = p.id
          AND cp.competition_id = :cid
          AND cp.estado = 'confirmado'
     """), {"cid": competition_id}).mappings().all()
@@ -99,11 +99,11 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
 
 
 def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
-    """dict[(phase_id, participant_id)] = {sum, count, min, max}. phase_id may be None."""
+    """dict[(phase_id, user_id)] = {sum, count, min, max}. phase_id may be None."""
     rows = session.execute(text("""
         SELECT
             phase_id,
-            participant_id,
+            user_id,
             COALESCE(SUM(puntos), 0)::int AS sum_pts,
             COUNT(id)::int                AS cnt,
             MIN(marca)                    AS min_mark,
@@ -111,11 +111,11 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
         FROM results
         WHERE competition_id = :cid
           AND team_id IS NULL
-          AND participant_id IS NOT NULL
-        GROUP BY phase_id, participant_id
+          AND user_id IS NOT NULL
+        GROUP BY phase_id, user_id
     """), {"cid": competition_id}).mappings().all()
     return {
-        (r["phase_id"], int(r["participant_id"])): {
+        (r["phase_id"], int(r["user_id"])): {
             "sum": int(r["sum_pts"] or 0),
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
@@ -126,12 +126,12 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
 
 
 def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -> dict:
-    """dict[(phase_id, team_id, participant_id)] = {sum, count, min, max}. Results tagged to both team and participant."""
+    """dict[(phase_id, team_id, user_id)] = {sum, count, min, max}. Results tagged to both team and participant."""
     rows = session.execute(text("""
         SELECT
             r.phase_id,
             r.team_id,
-            r.participant_id,
+            r.user_id,
             COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
@@ -141,11 +141,11 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
         WHERE r.competition_id = :cid
           AND t.competition_id = :cid
           AND r.team_id IS NOT NULL
-          AND r.participant_id IS NOT NULL
-        GROUP BY r.phase_id, r.team_id, r.participant_id
+          AND r.user_id IS NOT NULL
+        GROUP BY r.phase_id, r.team_id, r.user_id
     """), {"cid": competition_id}).mappings().all()
     return {
-        (r["phase_id"], int(r["team_id"]), int(r["participant_id"])): {
+        (r["phase_id"], int(r["team_id"]), int(r["user_id"])): {
             "sum": int(r["sum_pts"] or 0),
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
@@ -168,7 +168,7 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
         FROM results
         WHERE competition_id = :cid
           AND team_id IS NOT NULL
-          AND participant_id IS NULL
+          AND user_id IS NULL
         GROUP BY phase_id, team_id
     """), {"cid": competition_id}).mappings().all()
     return {
@@ -186,23 +186,23 @@ def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list
     rows = session.execute(text("""
         SELECT
             tm.team_id,
-            p.id AS participant_id,
+            p.id AS user_id,
             p.nombre,
             p.apellido,
             cp.categoria,
             COALESCE(p.genero, p.sexo) AS sexo
         FROM team_members tm
         JOIN teams t ON t.id = tm.team_id
-        JOIN participants p ON p.id = tm.participant_id
+        JOIN participants p ON p.id = tm.user_id
         LEFT JOIN competition_participants cp
-            ON cp.participant_id = p.id AND cp.competition_id = :cid
+            ON cp.user_id = p.id AND cp.competition_id = :cid
         WHERE t.competition_id = :cid
         ORDER BY p.apellido, p.nombre
     """), {"cid": competition_id}).mappings().all()
     out: dict[int, list[dict]] = defaultdict(list)
     for r in rows:
         out[int(r["team_id"])].append({
-            "id": int(r["participant_id"]),
+            "id": int(r["user_id"]),
             "nombre": r["nombre"],
             "apellido": r["apellido"],
             "categoria": r["categoria"],
