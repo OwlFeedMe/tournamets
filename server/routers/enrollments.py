@@ -7,6 +7,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 import uuid
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
@@ -42,6 +43,7 @@ ENROLLMENT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_ENROLLMENT_IMAGE_SIDE = 1600
 BOLD_PLATFORM_FEE_RATE_DEFAULT = 0.05
 PAYMENT_PENDING_STATE = "pago_pendiente"
+PENDING_VERIFICATION_STATE = "pago_en_verificacion"
 SYSTEM_CHECKIN_PHASE_CODE = "check_in"
 
 
@@ -281,6 +283,43 @@ def _is_payment_intent_blocking(intent) -> bool:
         age = datetime.now(timezone.utc) - intent.payment_updated_at
         return age.total_seconds() < _CREATED_INTENT_TIMEOUT_MINUTES * 60
     return False
+
+
+def _should_show_pending_intent(intent_row: dict) -> bool:
+    payment_status = _payment_status_label(intent_row.get("payment_status"))
+    if payment_status == "approved":
+        return True
+    if payment_status in {"processing", "pending"}:
+        return True
+    if payment_status != "created":
+        return False
+    updated_at = intent_row.get("payment_updated_at")
+    if not isinstance(updated_at, datetime):
+        return False
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
+    return _is_payment_intent_blocking(SimpleNamespace(payment_status=payment_status, payment_updated_at=updated_at))
+
+
+def _merge_participant_competition_rows(enrollment_rows: list[dict], intent_rows: list[dict]) -> list[dict]:
+    merged_by_competition: dict[int, dict] = {}
+    for row in enrollment_rows:
+        item = dict(row)
+        competition_id = int(item.get("id") or 0)
+        if competition_id:
+            merged_by_competition[competition_id] = item
+
+    for row in intent_rows:
+        item = dict(row)
+        competition_id = int(item.get("id") or 0)
+        if not competition_id or competition_id in merged_by_competition:
+            continue
+        if not _should_show_pending_intent(item):
+            continue
+        item["enrollment_estado"] = PENDING_VERIFICATION_STATE
+        merged_by_competition[competition_id] = item
+
+    return sorted(merged_by_competition.values(), key=lambda item: int(item.get("id") or 0), reverse=True)
 
 
 def _verify_bold_webhook_signature(raw_body: bytes, signature: str | None) -> bool:
@@ -971,5 +1010,20 @@ def participant_competitions(
         WHERE cp.user_id = :uid
         ORDER BY c.id DESC
     """), {"uid": user_id}).mappings().all()
-    return [_with_user_id(dict(r), user_id) for r in rows]
+    intent_rows = session.execute(text("""
+        SELECT c.*, :pending_state AS enrollment_estado, i.categoria AS enrollment_categoria, NULL AS enrollment_answers,
+               i.payment_provider, i.payment_reference, i.payment_order_id, i.payment_status,
+               i.payment_transaction_id, i.payment_base_amount, i.payment_platform_fee, i.payment_amount_total,
+               i.payment_processed_at, i.payment_updated_at
+        FROM competitions c
+        JOIN competition_payment_intents i ON i.competition_id = c.id
+        WHERE i.user_id = :uid
+        ORDER BY
+            CASE WHEN i.payment_updated_at IS NULL THEN 1 ELSE 0 END,
+            i.payment_updated_at DESC,
+            i.id DESC,
+            c.id DESC
+    """), {"uid": user_id, "pending_state": PENDING_VERIFICATION_STATE}).mappings().all()
+    merged_rows = _merge_participant_competition_rows([dict(r) for r in rows], [dict(r) for r in intent_rows])
+    return [_with_user_id(row, user_id) for row in merged_rows]
 

@@ -222,6 +222,11 @@ Responsabilidad y disponibilidad
 function enrollmentStateLabel(value, paymentStatus) {
   if (value === 'confirmado') return 'Ya estas inscrito en esta competencia.'
   if (value === 'pendiente') return 'Tu inscripcion ya esta registrada. Estamos actualizando el estado final.'
+  if (value === 'pago_en_verificacion') {
+    if (paymentStatus === 'approved') return 'Pago confirmado. Estamos activando tu inscripcion en esta competencia.'
+    if (['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)) return 'El pago no fue aprobado por Bold. Puedes intentarlo de nuevo mientras las inscripciones sigan abiertas.'
+    return 'Estamos validando tu pago con Bold. Tu cupo se activara cuando quede confirmado.'
+  }
   if (value === 'pago_pendiente') {
     if (['rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)) return 'El pago no fue aprobado por Bold. Puedes intentarlo de nuevo mientras las inscripciones sigan abiertas.'
     return 'Tu pago esta en proceso. Cuando Bold lo apruebe activaremos tu inscripcion automaticamente.'
@@ -371,7 +376,7 @@ export default function CompetitionEnrollmentPage() {
   const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee), [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee])
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
-  const paymentInProgress = enrollmentState === 'pago_pendiente'
+  const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
   const profileIncomplete = isAthlete && profileMissingFields.length > 0
   const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit || profileIncomplete
 
@@ -779,10 +784,8 @@ export default function CompetitionEnrollmentPage() {
                           </div>
                         </div>
                       ) : paymentInProgress ? (
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                          <button type="button" className="btn-secondary" onClick={() => syncPaymentStatus()} disabled={checkoutLoading || syncingPayment}>
-                            {syncingPayment ? 'Consultando...' : 'Consultar estado del pago'}
-                          </button>
+                        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                          Estamos validando el estado de tu pago. Esta vista se actualizara automaticamente cuando llegue la confirmacion.
                         </div>
                       ) : (
                         <div style={{ color: '#AAB2C0', fontSize: 13 }}>
@@ -848,15 +851,6 @@ export default function CompetitionEnrollmentPage() {
                     <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || syncingPayment || checkoutLoading}>Anterior</button>
                     {currentStep < 4 ? (
                       <button type="button" className="btn-primary" onClick={handleNextStep} disabled={submissionBlocked || syncingPayment || checkoutLoading || !!uploadingQuestionId}>Siguiente</button>
-                    ) : paymentInProgress && !boldButtonConfig ? (
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        disabled={checkoutLoading || syncingPayment}
-                        onClick={() => syncPaymentStatus()}
-                      >
-                        {syncingPayment ? 'Consultando...' : 'Consultar estado del pago'}
-                      </button>
                     ) : null}
                   </div>
                 </div>

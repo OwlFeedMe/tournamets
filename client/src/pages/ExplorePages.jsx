@@ -98,9 +98,22 @@ function TopBlock({ kicker, title, text }) {
 
 function enrollmentBadge(status) {
   if (status === 'confirmado') return { label: 'Confirmado', color: '#22C55E', border: 'rgba(34,197,94,0.28)', background: 'rgba(34,197,94,0.12)' }
+  if (status === 'pago_en_verificacion') return { label: 'Pago en verificacion', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
   if (status === 'pendiente') return { label: 'En proceso', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
   if (status === 'rechazado') return { label: 'Rechazado', color: '#FF453A', border: 'rgba(255,69,58,0.28)', background: 'rgba(255,69,58,0.12)' }
   return { label: status || 'Sin registro', color: '#AAB2C0', border: 'rgba(170,178,192,0.22)', background: 'rgba(170,178,192,0.08)' }
+}
+
+function enrollmentStatusCopy(competition) {
+  const status = String(competition?.enrollment_estado || '').trim().toLowerCase()
+  const paymentStatus = String(competition?.payment_status || '').trim().toLowerCase()
+  if (status === 'pago_en_verificacion') {
+    if (paymentStatus === 'approved') return 'Pago confirmado. Estamos activando tu inscripcion en esta competencia.'
+    return 'Estamos validando tu pago con Bold. Tu cupo se activara cuando quede confirmado.'
+  }
+  if (status === 'confirmado') return 'Tu cupo ya esta activo en esta competencia.'
+  if (status === 'rechazado') return 'Tu ultimo intento no fue aprobado. Puedes revisar el estado desde la competencia.'
+  return ''
 }
 
 function CheckinQrModal({ open, onClose, loading, payload, error, competitionName }) {
@@ -410,6 +423,7 @@ export function MyEventsPage() {
           {filteredItems.map((competition) => {
             const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
             const badge = enrollmentBadge(competition.enrollment_estado)
+            const statusCopy = enrollmentStatusCopy(competition)
 
             return (
               <article key={competition.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
@@ -437,6 +451,7 @@ export function MyEventsPage() {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
                         <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
+                        {statusCopy ? <div style={{ color: '#D7DEE8', marginTop: 8, lineHeight: 1.6, fontSize: 13 }}>{statusCopy}</div> : null}
                       </div>
                       <div
                         style={{

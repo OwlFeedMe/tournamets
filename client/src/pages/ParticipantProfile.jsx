@@ -14,9 +14,20 @@ import {
 
 function statusBadge(estado) {
   if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
+  if (estado === 'pago_en_verificacion') return { label: 'Pago en verificacion', cls: 'badge-pendiente' }
   if (estado === 'pendiente') return { label: 'En proceso', cls: 'badge-pendiente' }
   if (estado === 'rechazado') return { label: 'Rechazado', cls: 'badge-rechazado' }
   return { label: estado || 'No inscrito', cls: 'badge-default' }
+}
+
+function enrollmentStatusCopy(comp) {
+  const status = String(comp?.enrollment_estado || '').trim().toLowerCase()
+  const paymentStatus = String(comp?.payment_status || '').trim().toLowerCase()
+  if (status === 'pago_en_verificacion') {
+    if (paymentStatus === 'approved') return 'Pago confirmado. Estamos activando tu inscripcion.'
+    return 'Estamos validando tu pago con Bold. Tu cupo se activara cuando quede confirmado.'
+  }
+  return ''
 }
 
 function formatDate(iso) {
@@ -1519,6 +1530,7 @@ export default function ParticipantProfile() {
             <div style={{ display: 'grid', gap: 8 }}>
               {myComps.map(c => {
                 const badge = statusBadge(c.enrollment_estado)
+                const statusCopy = enrollmentStatusCopy(c)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
                 const isBusy = cancelEnrollmentBusy === c.id
                 const paymentStatus = String(c.payment_status || '').trim().toLowerCase()
@@ -1531,6 +1543,7 @@ export default function ParticipantProfile() {
                     <div style={{ minWidth: 0, flex: 1, cursor: isConfirmed ? 'pointer' : 'default' }} onClick={() => isConfirmed && openModal(c)}>
                       <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
                       {c.enrollment_categoria && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
+                      {statusCopy ? <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 3, whiteSpace: 'normal' }}>{statusCopy}</div> : null}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                       <span className={`badge ${badge.cls}`}>{badge.label}</span>

@@ -16,8 +16,17 @@ function normalizeStatus(status) {
   return 'unknown'
 }
 
-function statusCopy(status) {
+function statusCopy(status, enrollmentState) {
+  const enrollmentValue = String(enrollmentState || '').trim().toLowerCase()
   if (status === 'approved') {
+    if (enrollmentValue !== 'confirmado') {
+      return {
+        title: 'Pago aprobado',
+        text: 'Tu pago fue confirmado. Estamos activando tu inscripcion y este estado se actualizara en breve.',
+        tone: '#5EEAD4',
+        icon: CheckCircle2,
+      }
+    }
     return {
       title: 'Pago aprobado',
       text: 'Tu pago fue confirmado y tu inscripcion quedo activa en esta competencia.',
@@ -116,7 +125,7 @@ export default function CompetitionPaymentResultPage() {
   }, [boldOrderId, boldTxStatus, competitionId, isAthlete, session])
 
   const effectiveStatus = useMemo(() => normalizeStatus(syncState.status), [syncState.status])
-  const copy = statusCopy(effectiveStatus)
+  const copy = statusCopy(effectiveStatus, syncState.enrollmentState)
   const StatusIcon = copy.icon
 
   return (
