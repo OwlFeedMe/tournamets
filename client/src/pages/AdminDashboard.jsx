@@ -632,16 +632,17 @@ function ImagePreviewModal({ item, onClose }) {
   )
 }
 
-function CheckinStatusChip({ participant }) {
+function CheckinStatusChip({ participant, labeled = false }) {
   const done = Boolean(participant?.check_in_done)
   const usedAt = participant?.check_in_used_at
+  const labelPrefix = labeled ? 'Check-in: ' : ''
 
   if (done) {
     return (
       <div style={{ display: 'grid', gap: 4 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, border: '1px solid rgba(34,197,94,0.34)', background: 'rgba(34,197,94,0.12)', color: '#86EFAC', fontSize: 12, fontWeight: 800, padding: '6px 10px', width: 'fit-content' }}>
           <CheckCircle2 size={14} />
-          Check-in realizado
+          {labelPrefix}realizado
         </div>
         {usedAt ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{formatDate(usedAt)}</div> : null}
       </div>
@@ -651,7 +652,7 @@ function CheckinStatusChip({ participant }) {
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, border: '1px solid rgba(170,178,192,0.24)', background: 'rgba(170,178,192,0.08)', color: '#AAB2C0', fontSize: 12, fontWeight: 700, padding: '6px 10px' }}>
       <Clock3 size={14} />
-      Pendiente
+      {labelPrefix}pendiente
     </div>
   )
 }
@@ -10874,7 +10875,7 @@ function CompetitionsTab() {
                           Descargar Excel
                         </button>
                         <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
-                          Gestionar inscripciones
+                          Ver inscritos
                         </button>
                       </div>
                     </div>
@@ -10884,11 +10885,11 @@ function CompetitionsTab() {
                         {selectedParticipants.map(p => (
                           <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 12, padding: '12px 14px', background: 'rgba(13,15,18,0.72)', display: 'grid', gap: 8 }}>
                             <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{p.nombre} {p.apellido}</div>
-                            <div style={{ fontSize: 12, color: '#AAB2C0', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                              <span>Categoria: {p.categoria_competencia || '-'}</span>
-                              <span>{p.estado || '-'}</span>
+                            <div style={{ fontSize: 12, color: '#AAB2C0', display: 'grid', gap: 6 }}>
+                              <span>Inscripcion: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{String(p.estado || '-').trim() || '-'}</span></span>
+                              <span>Categoria: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{p.categoria_competencia || '-'}</span></span>
                             </div>
-                            <CheckinStatusChip participant={p} />
+                            <CheckinStatusChip participant={p} labeled />
                             <div>
                               <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
                             </div>
@@ -10898,19 +10899,20 @@ function CompetitionsTab() {
                     ) : (
                       <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                       <table>
-                        <thead><tr><th>Participante</th><th>Categoria</th><th>Check-in</th><th>Accion</th></tr></thead>
+                        <thead><tr><th>Participante</th><th>Inscripcion</th><th>Categoria</th><th>Estado check-in</th><th>Accion</th></tr></thead>
                         <tbody>
                           {selectedParticipants.map(p => (
                             <tr key={p.id}>
                               <td>{p.nombre} {p.apellido}</td>
+                              <td>{String(p.estado || '-').trim() || '-'}</td>
                               <td>{p.categoria_competencia || '-'}</td>
-                              <td><CheckinStatusChip participant={p} /></td>
+                              <td><CheckinStatusChip participant={p} labeled /></td>
                               <td>
                                 <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
                               </td>
                             </tr>
                           ))}
-                          {!selectedParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
+                          {!selectedParticipants.length && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
                         </tbody>
                       </table>
                       </div>
