@@ -6,6 +6,18 @@ import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api/axios'
 
+const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
+const footerLegalLinks = [
+  {
+    href: 'https://www.iubenda.com/privacy-policy/54305130',
+    label: 'Política de Privacidad',
+  },
+  {
+    href: 'https://www.iubenda.com/privacy-policy/54305130/cookie-policy',
+    label: 'Política de Cookies',
+  },
+]
+
 function NotificationSheet({ open, onClose, session, displayName, items = [], busyActionId = '', onAction = null }) {
   const fallbackItems = useMemo(() => {
     if (session) {
@@ -193,6 +205,17 @@ export function AuthenticatedShell() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  useEffect(() => {
+    if (typeof document === 'undefined' || isMobile || isLoginRoute) return
+    if (document.querySelector("script[data-iubenda-loader='true']")) return
+
+    const script = document.createElement('script')
+    script.src = IUBENDA_SCRIPT_SRC
+    script.async = true
+    script.dataset.iubendaLoader = 'true'
+    document.body.appendChild(script)
+  }, [isLoginRoute, isMobile])
 
   useEffect(() => {
     const handleOverlayVisibility = (event) => {
@@ -507,6 +530,18 @@ export function AuthenticatedShell() {
                 +57 318 5781385
               </a>
             </small>
+            {footerLegalLinks.map((item) => (
+              <small key={item.href} style={{ fontSize: 12 }}>
+                <a
+                  href={item.href}
+                  className="iubenda-white iubenda-noiframe iubenda-embed"
+                  title={item.label}
+                  style={{ color: '#AAB2C0', textDecoration: 'none' }}
+                >
+                  {item.label}
+                </a>
+              </small>
+            ))}
           </div>
         </footer>
       )}
