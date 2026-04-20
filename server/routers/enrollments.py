@@ -502,23 +502,71 @@ def _try_send_payment_email(
         logger.exception("Failed to send payment email (user_id=%s, status=%s)", user_id, payment_status)
 
 
-def _sync_bold_notification_by_reference(reference: str) -> dict | None:
-    identity_key = (os.getenv("BOLD_IDENTITY_KEY") or "").strip()
-    if not identity_key:
-        raise HTTPException(500, "Falta la llave de identidad de Bold en el servidor")
-    encoded_reference = urllib_parse.quote(reference, safe="")
-    url = f"https://integrations.api.bold.co/payments/webhook/notifications/{encoded_reference}?is_external_reference=true"
+_BOLD_STATUS_TO_EVENT_TYPE = {
+    "APPROVED": "SALE_APPROVED",
+    "REJECTED": "SALE_REJECTED",
+    "FAILED": "SALE_REJECTED",
+    "VOIDED": "VOID_APPROVED",
+}
+
+
+def _voucher_to_notification(voucher: dict, reference: str) -> dict | None:
+    if not isinstance(voucher, dict):
+        return None
+    status = str(voucher.get("payment_status") or "").strip().upper()
+    event_type = _BOLD_STATUS_TO_EVENT_TYPE.get(status)
+    if not event_type:
+        return None
+    metadata = {
+        "reference": voucher.get("reference_id") or reference,
+    }
+    total = voucher.get("total")
+    if total is not None:
+        metadata["amount"] = {"total": total, "currency": voucher.get("currency") or "COP"}
+    tx_id = voucher.get("transaction_id")
+    if tx_id:
+        metadata["payment_id"] = tx_id
+    return {
+        "type": event_type,
+        "data": {
+            "metadata": metadata,
+            "payment_method": voucher.get("payment_method"),
+            "card": voucher.get("card"),
+        },
+    }
+
+
+def _bold_get(url: str, identity_key: str) -> dict | None:
     req = urllib_request.Request(url, headers={"Authorization": f"x-api-key {identity_key}"}, method="GET")
     try:
         with urllib_request.urlopen(req, timeout=15) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+            return json.loads(response.read().decode("utf-8"))
     except urllib_error.HTTPError as exc:
+        if exc.code == 404:
+            return None
         detail = exc.read().decode("utf-8", errors="ignore")
         raise HTTPException(exc.code, detail or "No se pudo consultar el estado del pago en Bold")
     except urllib_error.URLError:
         raise HTTPException(502, "No se pudo conectar con Bold para consultar el pago")
 
-    notifications = payload.get("notifications") if isinstance(payload, dict) else None
+
+def _sync_bold_notification_by_reference(reference: str) -> dict | None:
+    identity_key = (os.getenv("BOLD_IDENTITY_KEY") or "").strip()
+    if not identity_key:
+        raise HTTPException(500, "Falta la llave de identidad de Bold en el servidor")
+    encoded_reference = urllib_parse.quote(reference, safe="")
+
+    voucher_url = f"https://payments.api.bold.co/v2/payment-voucher/{encoded_reference}"
+    voucher_payload = _bold_get(voucher_url, identity_key)
+    if isinstance(voucher_payload, dict):
+        voucher = voucher_payload.get("payload") if isinstance(voucher_payload.get("payload"), dict) else voucher_payload
+        notif = _voucher_to_notification(voucher, reference)
+        if notif:
+            return notif
+
+    fallback_url = f"https://integrations.api.bold.co/payments/webhook/notifications/{encoded_reference}?is_external_reference=true"
+    fallback_payload = _bold_get(fallback_url, identity_key)
+    notifications = fallback_payload.get("notifications") if isinstance(fallback_payload, dict) else None
     if not isinstance(notifications, list) or not notifications:
         return None
     return notifications[0] if isinstance(notifications[0], dict) else None
