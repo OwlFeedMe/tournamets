@@ -10139,6 +10139,7 @@ function CompetitionsTab() {
   const [showConfirmPublish, setShowConfirmPublish] = useState(false)
   const [deleteCompetitionTarget, setDeleteCompetitionTarget] = useState(null)
   const [deleteCompetitionBusy, setDeleteCompetitionBusy] = useState(false)
+  const [deleteCompetitionConfirmText, setDeleteCompetitionConfirmText] = useState('')
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
@@ -10243,6 +10244,7 @@ function CompetitionsTab() {
         setSelectedCompetition(null)
       }
       setDeleteCompetitionTarget(null)
+      setDeleteCompetitionConfirmText('')
       load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar' })
@@ -11042,8 +11044,16 @@ function CompetitionsTab() {
           )}
         </div>
       )}
-      {deleteCompetitionTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.76)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => !deleteCompetitionBusy && setDeleteCompetitionTarget(null)}>
+      {deleteCompetitionTarget && (() => {
+        const expectedName = (deleteCompetitionTarget.nombre || '').trim()
+        const nameMatches = deleteCompetitionConfirmText.trim() === expectedName && expectedName.length > 0
+        const closeDeleteModal = () => {
+          if (deleteCompetitionBusy) return
+          setDeleteCompetitionTarget(null)
+          setDeleteCompetitionConfirmText('')
+        }
+        return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.76)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={closeDeleteModal}>
           <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 20, padding: 28, maxWidth: 460, width: '100%', display: 'grid', gap: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
               <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '2px solid rgba(239,68,68,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -11058,14 +11068,28 @@ function CompetitionsTab() {
             <div style={{ borderRadius: 16, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.08)', padding: '12px 14px', color: '#F5F7FA', fontSize: 13, lineHeight: 1.55 }}>
               Se eliminarán su configuración, inscripciones y contenido asociado en este entorno.
             </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ fontSize: 12, color: '#AAB2C0' }}>
+                Para confirmar, escribe el nombre exacto de la competencia: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{expectedName}</span>
+              </label>
+              <input
+                type="text"
+                value={deleteCompetitionConfirmText}
+                onChange={(e) => setDeleteCompetitionConfirmText(e.target.value)}
+                disabled={deleteCompetitionBusy}
+                autoFocus
+                placeholder={expectedName}
+                style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: '#0F1217', color: '#F5F7FA', fontSize: 14, outline: 'none' }}
+              />
+            </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-secondary btn-sm" onClick={() => setDeleteCompetitionTarget(null)} disabled={deleteCompetitionBusy}>Cancelar</button>
+              <button type="button" className="btn-secondary btn-sm" onClick={closeDeleteModal} disabled={deleteCompetitionBusy}>Cancelar</button>
               <button
                 type="button"
                 className="btn-danger btn-sm"
                 onClick={() => deleteCompetition(deleteCompetitionTarget)}
-                disabled={deleteCompetitionBusy}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                disabled={deleteCompetitionBusy || !nameMatches}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: (!nameMatches && !deleteCompetitionBusy) ? 0.55 : 1 }}
               >
                 <Trash2 size={14} />
                 {deleteCompetitionBusy ? 'Eliminando...' : 'Eliminar competencia'}
@@ -11073,7 +11097,8 @@ function CompetitionsTab() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {editor && (
         editor.mode === 'create' ? (
