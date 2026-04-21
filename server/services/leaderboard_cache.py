@@ -3,7 +3,7 @@ import os
 from cache import Cache, Keys
 
 LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS = int(
-    os.getenv("LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS", "300")
+    os.getenv("LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS", "900")
 )
 
 
