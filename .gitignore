@@ -24,7 +24,7 @@ client/build/
 
 # Claude Code
 .claude/settings.local.json
-
+settings.json
 # OS
 .DS_Store
 Thumbs.db
@@ -49,3 +49,8 @@ test/*.xlsx
 test/*.pdf
 test/*.csv
 server/uploads/
+
+#Docker
+docker-compose.server.local.yml
+docker-compose.yml
+
