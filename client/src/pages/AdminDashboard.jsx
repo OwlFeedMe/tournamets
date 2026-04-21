@@ -718,8 +718,33 @@ function Modal({ title, onClose, width = 480, children, panelStyle = null, title
     <div style={{ position: 'fixed', inset: 0, background: '#0006', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
       <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: isMobile ? 16 : 18, width: '100%', maxWidth: width, maxHeight: 'calc(100dvh - 24px)', display: 'flex', flexDirection: 'column', overflow: 'hidden', color: 'var(--oa-text)', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', ...panelStyle, padding: 0 }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: isMobile ? '14px 14px 12px' : '18px 20px 14px', marginBottom: 0, background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
-          <h3 style={{ margin: 0, fontSize: 15, paddingRight: 8, color: 'var(--oa-text)', ...titleStyle }}>{title}</h3>
-          <button style={{ background: '#0D0F12', border: '1px solid #252A33', borderRadius: 10, color: '#F5F7FA', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, ...closeButtonStyle }} onClick={onClose}><X size={18} strokeWidth={2.2} /></button>
+          <h3 style={{ margin: 0, fontSize: 15, paddingRight: 8, color: 'var(--oa-text)', minWidth: 0, ...titleStyle }}>{title}</h3>
+          <button
+            type="button"
+            aria-label="Cerrar modal"
+            style={{
+              background: '#0D0F12',
+              border: '1px solid #313845',
+              borderRadius: 10,
+              color: '#F5F7FA',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 38,
+              height: 38,
+              minWidth: 38,
+              minHeight: 38,
+              padding: 0,
+              lineHeight: 0,
+              flexShrink: 0,
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.02)',
+              ...closeButtonStyle,
+            }}
+            onClick={onClose}
+          >
+            <X size={18} strokeWidth={2.4} color="#F5F7FA" />
+          </button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 14 : 20 }}>
           {children}
@@ -10447,9 +10472,13 @@ function CompetitionsTab() {
         display: 'flex',
         gap: 8,
         overflowX: 'auto',
+        overflowY: 'hidden',
         flexWrap: 'nowrap',
         WebkitOverflowScrolling: 'touch',
         scrollbarWidth: 'none',
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
         paddingBottom: 4,
       }
     : {
@@ -10462,10 +10491,13 @@ function CompetitionsTab() {
         display: 'flex',
         gap: 8,
         overflowX: 'auto',
+        overflowY: 'hidden',
         flexWrap: 'nowrap',
         WebkitOverflowScrolling: 'touch',
         scrollbarWidth: 'none',
         width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
         paddingBottom: 4,
       }
     : {
@@ -10492,6 +10524,7 @@ function CompetitionsTab() {
     padding: '9px 12px',
     fontSize: 13,
     fontWeight: 700,
+    whiteSpace: 'nowrap',
   })
   const workspaceStatTileStyle = {
     border: '1px solid #252A33',
@@ -10958,13 +10991,23 @@ function CompetitionsTab() {
           )}
 
           {selectedTab === 'enrollments' && (
-            <div style={{ display: 'grid', gap: 14 }}>
-              <div className="card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-                  <div>
+            <div style={{ display: 'grid', gap: 14, minWidth: 0, maxWidth: '100%' }}>
+              <div className="card" style={{ minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: isMobile ? 'column' : 'row',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  alignItems: isMobile ? 'stretch' : 'center',
+                  flexWrap: 'wrap',
+                  marginBottom: 14,
+                  minWidth: 0,
+                  maxWidth: '100%',
+                }}>
+                  <div style={{ minWidth: 0 }}>
                     <h4 style={{ margin: 0, fontSize: 16 }}>Inscripciones</h4>
                   </div>
-                  <div style={mobileSubSectionTabsStyle}>
+                  <div style={{ ...mobileSubSectionTabsStyle, alignSelf: isMobile ? 'stretch' : undefined }}>
                     {enrollmentsSubSections.map(item => (
                       <button
                         key={item.id}
@@ -10995,22 +11038,53 @@ function CompetitionsTab() {
                   </div>
                 ) : (
                   <>
-                    <div style={{ display: 'grid', gap: 12, marginBottom: 12 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ display: 'grid', gap: 12, marginBottom: 12, minWidth: 0, maxWidth: '100%' }}>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        gap: 10,
+                        minWidth: 0,
+                        maxWidth: '100%',
+                      }}>
+                        <div style={{ display: 'grid', gap: 4, minWidth: 0 }}>
                           <h4 style={{ margin: 0, fontSize: 16 }}>Listado de inscritos</h4>
                           <div style={{ color: '#AAB2C0', fontSize: 12 }}>
                             {enrollmentListGroupByCategory ? 'Vista operativa agrupada por categoria' : 'Vista operativa de inscritos confirmados'}
                           </div>
                         </div>
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : 'repeat(3, auto)',
+                          gap: 8,
+                          alignItems: 'center',
+                          justifyContent: isMobile ? 'stretch' : 'end',
+                          width: isMobile ? '100%' : 'auto',
+                          maxWidth: '100%',
+                          minWidth: 0,
+                        }}>
+                          <button
+                            className="btn-secondary btn-sm"
+                            onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition?.nombre || 'inscripciones')}
+                            style={isMobile ? { gridColumn: '1 / -1', width: '100%', minWidth: 0 } : undefined}
+                          >
                           Descargar Excel
                         </button>
-                          <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
+                          <button
+                            className="btn-primary btn-sm"
+                            onClick={() => setEnrollingComp(selectedCompetition)}
+                            style={isMobile ? { width: '100%', minWidth: 0 } : undefined}
+                          >
                           Ver inscritos
                         </button>
-                          <div ref={enrollmentListMenuRef} style={{ position: 'relative' }}>
+                          <div
+                            ref={enrollmentListMenuRef}
+                            style={{
+                              position: 'relative',
+                              justifySelf: isMobile ? 'end' : undefined,
+                              minWidth: 0,
+                            }}
+                          >
                           <button
                             type="button"
                             className="btn-secondary btn-sm"
@@ -11025,7 +11099,9 @@ function CompetitionsTab() {
                               position: 'absolute',
                               top: 'calc(100% + 8px)',
                               right: 0,
-                              minWidth: 220,
+                              minWidth: isMobile ? 180 : 220,
+                              width: isMobile ? 'min(220px, calc(100vw - 56px))' : undefined,
+                              maxWidth: isMobile ? 'calc(100vw - 56px)' : undefined,
                               padding: 8,
                               borderRadius: 12,
                               border: '1px solid #252A33',
@@ -11064,7 +11140,7 @@ function CompetitionsTab() {
                         </div>
                         </div>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10, minWidth: 0, maxWidth: '100%' }}>
                         {[
                           { label: 'Inscritos', value: enrollmentSummary.total, tone: '#FFB36F' },
                           { label: 'Categorias', value: enrollmentSummary.categoriesCount, tone: '#8DF1E4' },
@@ -11077,6 +11153,7 @@ function CompetitionsTab() {
                             background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.94))',
                             display: 'grid',
                             gap: 6,
+                            minWidth: 0,
                           }}>
                             <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{item.label}</div>
                             <div style={{ color: item.tone, fontSize: isMobile ? 22 : 24, fontWeight: 900, lineHeight: 1 }}>{item.value}</div>
@@ -11090,14 +11167,17 @@ function CompetitionsTab() {
                         background: 'rgba(13,15,18,0.72)',
                         display: 'grid',
                         gap: 12,
+                        minWidth: 0,
+                        maxWidth: '100%',
                       }}>
                         <div style={{
                           display: 'grid',
                           gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 320px) minmax(0, 1fr)',
                           gap: 12,
                           alignItems: 'end',
+                          minWidth: 0,
                         }}>
-                          <div style={{ display: 'grid', gap: 6 }}>
+                          <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
                             <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>Filtrar por categoria</span>
                             <select
                               value={enrollmentCategoryFilter}
@@ -11113,6 +11193,7 @@ function CompetitionsTab() {
                                 fontSize: 13,
                                 fontWeight: 700,
                                 outline: 'none',
+                                maxWidth: '100%',
                               }}
                             >
                               <option value="">Todas</option>
@@ -11125,13 +11206,15 @@ function CompetitionsTab() {
                           </div>
                           <div style={{
                             display: 'flex',
-                            justifyContent: isMobile ? 'space-between' : 'flex-end',
-                            alignItems: 'center',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            justifyContent: isMobile ? 'flex-start' : 'flex-end',
+                            alignItems: isMobile ? 'stretch' : 'center',
                             gap: 10,
                             flexWrap: 'wrap',
                             minHeight: 42,
+                            minWidth: 0,
                           }}>
-                            <div style={{ color: '#AAB2C0', fontSize: 12, textAlign: isMobile ? 'left' : 'right' }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 12, textAlign: isMobile ? 'left' : 'right', overflowWrap: 'anywhere' }}>
                               Mostrando <span style={{ color: '#F5F7FA', fontWeight: 800 }}>{enrollmentSummary.filteredTotal}</span> de <span style={{ color: '#F5F7FA', fontWeight: 800 }}>{enrollmentSummary.total}</span> inscritos
                             </div>
                             {!!enrollmentCategoryFilter && (
@@ -11139,6 +11222,7 @@ function CompetitionsTab() {
                                 type="button"
                                 className="btn-secondary btn-sm"
                                 onClick={() => setEnrollmentCategoryFilter('')}
+                                style={isMobile ? { width: '100%' } : undefined}
                               >
                                 Ver todas
                               </button>
@@ -11180,12 +11264,24 @@ function CompetitionsTab() {
                                 <div style={{ display: 'grid', gap: 8, padding: 10 }}>
                                   {group.participants.map(p => (
                                     <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 14, padding: '12px 14px', background: '#171B21', display: 'grid', gap: 10 }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+                                      <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                                         <div style={{ minWidth: 0 }}>
-                                          <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15 }}>{p.nombre} {p.apellido}</div>
-                                          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                                          <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>{p.nombre} {p.apellido}</div>
+                                          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                                         </div>
-                                        <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>
+                                        <span style={{
+                                          border: '1px solid rgba(0,194,168,0.24)',
+                                          background: 'rgba(0,194,168,0.12)',
+                                          color: '#8DF1E4',
+                                          borderRadius: 999,
+                                          padding: '5px 9px',
+                                          fontSize: 11,
+                                          fontWeight: 800,
+                                          maxWidth: '100%',
+                                          width: 'fit-content',
+                                          whiteSpace: 'normal',
+                                          overflowWrap: 'anywhere',
+                                        }}>
                                           {p.categoria_competencia || 'Sin categoria'}
                                         </span>
                                       </div>
@@ -11203,12 +11299,24 @@ function CompetitionsTab() {
                           )
                         }) : filteredSelectedParticipants.map((p) => (
                           <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 16, padding: '14px', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', display: 'grid', gap: 10 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+                            <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15 }}>{p.nombre} {p.apellido}</div>
-                                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                                <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>{p.nombre} {p.apellido}</div>
+                                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                               </div>
-                              <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>
+                              <span style={{
+                                border: '1px solid rgba(0,194,168,0.24)',
+                                background: 'rgba(0,194,168,0.12)',
+                                color: '#8DF1E4',
+                                borderRadius: 999,
+                                padding: '5px 9px',
+                                fontSize: 11,
+                                fontWeight: 800,
+                                maxWidth: '100%',
+                                width: 'fit-content',
+                                whiteSpace: 'normal',
+                                overflowWrap: 'anywhere',
+                              }}>
                                 {p.categoria_competencia || 'Sin categoria'}
                               </span>
                             </div>
