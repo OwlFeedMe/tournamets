@@ -9,6 +9,10 @@ from competition_rules import normalize_phase_measurement_method, type_from_meas
 from database import get_session
 from models import Competition, CompetitionCategory, CompetitionPhase, Team
 from phase_status import compute_phase_status_map
+from services.leaderboard_cache import (
+    get_leaderboard_results_snapshot,
+    set_leaderboard_results_snapshot,
+)
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
@@ -450,8 +454,7 @@ def _build_team_rows_for_phase(
     return rows
 
 
-@router.get("/{competition_id}")
-def get_leaderboard(competition_id: int, session: Session = Depends(get_session)):
+def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -> dict:
     comp = session.get(Competition, competition_id)
     comp_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
     individual_enabled = bool(getattr(comp, "individual_enabled", 1)) if comp else True
@@ -646,3 +649,14 @@ def get_leaderboard(competition_id: int, session: Session = Depends(get_session)
         "teams": teams_list,
         "has_teams": team_enabled and len(teams_list) > 0,
     }
+
+
+@router.get("/{competition_id}")
+def get_leaderboard(competition_id: int, session: Session = Depends(get_session)):
+    cached = get_leaderboard_results_snapshot(competition_id)
+    if isinstance(cached, dict):
+        return cached
+
+    payload = _build_leaderboard_results_snapshot(competition_id, session)
+    set_leaderboard_results_snapshot(competition_id, payload)
+    return payload

@@ -199,6 +199,7 @@ class Keys:
     USER = "auth:user:{user_id}"
     OWNED_COMPS = "auth:owned_comps:{user_id}"
     LEADERBOARD = "leaderboard:{competition_id}"
+    RESULTS_SNAPSHOT = "results:snapshot:{competition_id}"
     COMP_CONFIG = "comp:{competition_id}:config"
     RATE_LIMIT = "rl:{scope}:{ident}"
     JWT_REVOKED = "revoked:{jti}"

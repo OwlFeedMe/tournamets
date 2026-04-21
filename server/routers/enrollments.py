@@ -33,6 +33,7 @@ from services.email_templates import (
     render_payment_rejected,
     render_enrollment_confirmed,
 )
+from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from routers.ticketing import apply_spectator_bold_notification
 
 logger = logging.getLogger(__name__)
@@ -374,6 +375,8 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
             if enrollment.estado in {PAYMENT_PENDING_STATE, "pendiente"}:
                 enrollment.estado = "confirmado"
         session.add(enrollment)
+        if payment_status == "approved":
+            invalidate_leaderboard_results_snapshot(enrollment.competition_id)
         _try_send_payment_email(
             session,
             user_id=enrollment.user_id,
@@ -446,6 +449,7 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 payment_processed_at=now,
                 payment_updated_at=now,
             ))
+        invalidate_leaderboard_results_snapshot(intent.competition_id)
     session.add(intent)
     _try_send_payment_email(
         session,
@@ -633,6 +637,7 @@ def set_enrolled(
             ))
 
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
     return {"enrolled": len(body.participants)}
 
 
@@ -653,6 +658,7 @@ def update_enrollment_status(
     cp.estado = body.estado
     session.add(cp)
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
 
     try:
         participant = session.get(Participant, user_id)
@@ -685,6 +691,7 @@ def unenroll(
     if cp:
         session.delete(cp)
         session.commit()
+        invalidate_leaderboard_results_snapshot(competition_id)
 
 
 @router.post("/api/competitions/{competition_id}/enroll", status_code=201)
@@ -731,6 +738,7 @@ def self_enroll(
     existing.payment_updated_at = datetime.now(timezone.utc)
     session.add(existing)
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
     return {"ok": True, "estado": "confirmado", "user_id": user_id}
 
 @router.post("/api/competitions/{competition_id}/bold-checkout")
@@ -1024,6 +1032,7 @@ def cancel_self_enroll(
         )
     session.delete(cp)
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
 
 
 @router.get("/api/competitions/{competition_id}/enrolled-list")

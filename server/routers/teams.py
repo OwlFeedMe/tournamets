@@ -13,6 +13,7 @@ from models import (
     Participant, Team, TeamCreate, TeamMember, TeamUpdate,
     TeamInvitation, TeamInviteRequest, TeamRenameRequest,
 )
+from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -349,6 +350,7 @@ def accept_invitation(inv_id: int, session: Session = Depends(get_session), user
         session.add(oi)
 
     session.commit()
+    invalidate_leaderboard_results_snapshot(team.competition_id)
     return {"ok": True}
 
 
@@ -441,6 +443,7 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), user=
 
     session.commit()
     session.refresh(team)
+    invalidate_leaderboard_results_snapshot(body.competition_id)
     return _with_members(session, team)
 
 
@@ -502,6 +505,7 @@ def update_team(team_id: int, body: TeamUpdate, session: Session = Depends(get_s
 
     session.commit()
     session.refresh(team)
+    invalidate_leaderboard_results_snapshot(team.competition_id)
     return _with_members(session, team)
 
 
@@ -510,8 +514,10 @@ def delete_team(team_id: int, session: Session = Depends(get_session), user=Depe
     team = session.get(Team, team_id)
     if team:
         require_competition_access(session, int(team.competition_id), user)
+        competition_id = int(team.competition_id)
         session.delete(team)
         session.commit()
+        invalidate_leaderboard_results_snapshot(competition_id)
 
 
 # ── Captain-only endpoints ────────────────────────────────────────────────────
@@ -533,6 +539,7 @@ def captain_rename_team(
         session.rollback()
         raise HTTPException(409, "Ya existe un equipo con ese nombre en esta competencia")
     session.refresh(team)
+    invalidate_leaderboard_results_snapshot(team.competition_id)
     return _with_members(session, team)
 
 
@@ -648,6 +655,7 @@ def transfer_captain(
     session.add(team)
     session.commit()
     session.refresh(team)
+    invalidate_leaderboard_results_snapshot(team.competition_id)
     return _with_members(session, team)
 
 
