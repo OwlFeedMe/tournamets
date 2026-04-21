@@ -1,35 +1,33 @@
 import { sleep } from "k6";
-import { getJson, settings } from "./common.js";
+import { getJson, rampingStages, settings } from "./common.js";
 
 const includeTimer = __ENV.INCLUDE_TIMER === "1";
+const leaderboardTargets = (__ENV.LEADERBOARD_TARGETS || "20,50,100")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const publicTargets = (__ENV.PUBLIC_TARGETS || "5,10,20")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const timerTargets = (__ENV.TIMER_TARGETS || "5,10,15")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value > 0);
+const rampDuration = __ENV.RAMP_DURATION || "1m";
+const holdDuration = __ENV.HOLD_DURATION || "2m";
 
 const scenarios = {
   leaderboard_viewers: {
     executor: "ramping-vus",
     exec: "leaderboardScenario",
-    stages: [
-      { duration: "1m", target: 20 },
-      { duration: "2m", target: 20 },
-      { duration: "1m", target: 50 },
-      { duration: "2m", target: 50 },
-      { duration: "1m", target: 100 },
-      { duration: "2m", target: 100 },
-      { duration: "30s", target: 0 },
-    ],
+    stages: [...rampingStages(leaderboardTargets, rampDuration, holdDuration), { duration: "30s", target: 0 }],
     gracefulRampDown: "15s",
   },
   public_page_viewers: {
     executor: "ramping-vus",
     exec: "publicScenario",
-    stages: [
-      { duration: "1m", target: 5 },
-      { duration: "2m", target: 5 },
-      { duration: "1m", target: 10 },
-      { duration: "2m", target: 10 },
-      { duration: "1m", target: 20 },
-      { duration: "2m", target: 20 },
-      { duration: "30s", target: 0 },
-    ],
+    stages: [...rampingStages(publicTargets, rampDuration, holdDuration), { duration: "30s", target: 0 }],
     gracefulRampDown: "15s",
   },
 };
@@ -38,15 +36,7 @@ if (includeTimer) {
   scenarios.timer_viewers = {
     executor: "ramping-vus",
     exec: "timerScenario",
-    stages: [
-      { duration: "1m", target: 5 },
-      { duration: "2m", target: 5 },
-      { duration: "1m", target: 10 },
-      { duration: "2m", target: 10 },
-      { duration: "1m", target: 15 },
-      { duration: "2m", target: 15 },
-      { duration: "30s", target: 0 },
-    ],
+    stages: [...rampingStages(timerTargets, rampDuration, holdDuration), { duration: "30s", target: 0 }],
     gracefulRampDown: "15s",
   };
 }

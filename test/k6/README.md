@@ -13,6 +13,11 @@ Estos scripts no buscan tumbar el servicio. Sirven para validar rapido si un dep
 - `BASE_URL`: URL base, por ejemplo `https://finalrep.co`
 - `COMPETITION_ID`: ID de la competencia a consultar
 - `INCLUDE_TIMER`: `1` para incluir trafico de timer en el escenario mixto
+- `LEADERBOARD_TARGETS`: lista separada por comas para los escalones de leaderboard, default `20,50,100`
+- `PUBLIC_TARGETS`: lista separada por comas para los escalones del endpoint publico, default `5,10,20`
+- `TIMER_TARGETS`: lista separada por comas para los escalones de timer, default `5,10,15`
+- `RAMP_DURATION`: duracion de subida por escalon, default `1m`
+- `HOLD_DURATION`: duracion estable por escalon, default `2m`
 - `LEADERBOARD_SLEEP_SECONDS`: intervalo entre consultas de leaderboard, default `5`
 - `PUBLIC_SLEEP_SECONDS`: intervalo entre consultas de public endpoint, default `20`
 - `TIMER_SLEEP_SECONDS`: intervalo entre consultas de timer, default `30`
@@ -67,3 +72,19 @@ Si falla:
 ## Recomendacion operativa
 
 Corre primero `leaderboard-smoke.js`. Si sale limpio, corre `mixed-smoke.js`. Si ambos salen bien, ya tienes una validacion minima de capacidad para un deploy sin hacer un stress test completo.
+
+## Preset pesado
+
+Este comando sube bastante la presion sin tocar el codigo:
+
+```bash
+k6 run -e BASE_URL=https://finalrep.co -e COMPETITION_ID=6 -e INCLUDE_TIMER=1 -e LEADERBOARD_TARGETS=100,150,200 -e PUBLIC_TARGETS=20,30,40 -e TIMER_TARGETS=10,20,30 -e LEADERBOARD_SLEEP_SECONDS=5 -e PUBLIC_SLEEP_SECONDS=15 -e TIMER_SLEEP_SECONDS=15 test/k6/mixed-smoke.js
+```
+
+Ese preset se acerca a un pico de unas `43 req/s`:
+
+- leaderboard: `200 / 5 = 40 req/s`
+- public: `40 / 15 = 2.67 req/s`
+- timer: `30 / 15 = 2 req/s`
+
+Usalo solo si el smoke previo ya salio limpio.

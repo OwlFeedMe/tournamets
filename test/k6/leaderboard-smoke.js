@@ -1,16 +1,16 @@
 import { sleep } from "k6";
-import { getJson, settings } from "./common.js";
+import { getJson, rampingStages, settings } from "./common.js";
+
+const targets = (__ENV.LEADERBOARD_TARGETS || "20,50,100")
+  .split(",")
+  .map((value) => Number(value.trim()))
+  .filter((value) => Number.isFinite(value) && value > 0);
+
+const rampDuration = __ENV.RAMP_DURATION || "1m";
+const holdDuration = __ENV.HOLD_DURATION || "2m";
 
 export const options = {
-  stages: [
-    { duration: "1m", target: 20 },
-    { duration: "2m", target: 20 },
-    { duration: "1m", target: 50 },
-    { duration: "2m", target: 50 },
-    { duration: "1m", target: 100 },
-    { duration: "2m", target: 100 },
-    { duration: "30s", target: 0 },
-  ],
+  stages: [...rampingStages(targets, rampDuration, holdDuration), { duration: "30s", target: 0 }],
   thresholds: {
     http_req_failed: ["rate<0.01"],
     checks: ["rate>0.99"],

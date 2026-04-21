@@ -20,6 +20,13 @@ export const settings = {
   timerSleepSeconds: Number(__ENV.TIMER_SLEEP_SECONDS || 30),
 };
 
+export function rampingStages(targets, rampDuration = "1m", holdDuration = "2m") {
+  return targets.flatMap((target) => [
+    { duration: rampDuration, target },
+    { duration: holdDuration, target },
+  ]);
+}
+
 export function getJson(path, endpointTag) {
   const response = http.get(`${settings.baseUrl}${path}`, {
     tags: { endpoint: endpointTag },
