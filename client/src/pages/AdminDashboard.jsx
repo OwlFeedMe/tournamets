@@ -5,7 +5,7 @@ import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry 
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
 import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
-import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2 } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
@@ -3479,7 +3479,23 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
 
   const organizerListView = (
     <div style={{ overflowY: 'auto', flex: 1, display: 'grid', gap: 10 }}>
-      {!currentOrganizerList.length && (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        flexWrap: 'wrap',
+        padding: '12px 14px',
+        borderRadius: 12,
+        border: '1px solid #252A33',
+        background: 'rgba(13,15,18,0.72)',
+      }}>
+        <div style={{ display: 'grid', gap: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>Listado de inscritos</div>
+          <div style={{ fontSize: 12, color: '#AAB2C0' }}>{currentOrganizerList.length} inscritos confirmados</div>
+        </div>
+      </div>
+      {!confirmedList.length && (
         <div style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>
           No hay inscritos
         </div>
@@ -10139,6 +10155,7 @@ function CompetitionsTab() {
   const [showConfirmPublish, setShowConfirmPublish] = useState(false)
   const [deleteCompetitionTarget, setDeleteCompetitionTarget] = useState(null)
   const [deleteCompetitionBusy, setDeleteCompetitionBusy] = useState(false)
+  const [deleteCompetitionConfirmText, setDeleteCompetitionConfirmText] = useState('')
   const [editor, setEditor] = useState(null)
   const [enrollingComp, setEnrollingComp] = useState(null)
   const [enrollCounts, setEnrollCounts] = useState({})
@@ -10151,10 +10168,16 @@ function CompetitionsTab() {
   const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
   const [participantDetail, setParticipantDetail] = useState(null)
+  const [enrollmentListMenuOpen, setEnrollmentListMenuOpen] = useState(false)
+  const [enrollmentListGroupByCategory, setEnrollmentListGroupByCategory] = useState(false)
+  const [enrollmentCategoryFilter, setEnrollmentCategoryFilter] = useState('')
+  const [enrollmentExpandedGroups, setEnrollmentExpandedGroups] = useState({})
   const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [selectedCategoryCount, setSelectedCategoryCount] = useState(0)
+  const [selectedCompetitionCategories, setSelectedCompetitionCategories] = useState([])
   const [selectedPhaseCount, setSelectedPhaseCount] = useState(0)
+  const enrollmentListMenuRef = useRef(null)
 
   const syncCompetitionParticipants = async (competitionId) => {
     const res = await api.get(`/competitions/${competitionId}/participants`)
@@ -10188,9 +10211,12 @@ function CompetitionsTab() {
         api.get(`/competitions/${competitionId}/categories`),
         api.get(`/competitions/${competitionId}/phases`),
       ])
-      setSelectedCategoryCount((categoriesRes.data || []).length)
+      const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
+      setSelectedCompetitionCategories(categoryItems)
+      setSelectedCategoryCount(categoryItems.length)
       setSelectedPhaseCount((phasesRes.data || []).length)
     } catch {
+      setSelectedCompetitionCategories([])
       setSelectedCategoryCount(0)
       setSelectedPhaseCount(0)
     }
@@ -10199,6 +10225,79 @@ function CompetitionsTab() {
   const participantDetailName = participantDetail
     ? `${participantDetail.nombre || ''} ${participantDetail.apellido || ''}`.trim()
     : ''
+  const enrollmentCategoryOptions = useMemo(() => {
+    const names = selectedCompetitionCategories
+      .map(category => String(category?.nombre || '').trim())
+      .filter(Boolean)
+    const hasUncategorized = selectedParticipants.some(participant => !String(participant?.categoria_competencia || '').trim())
+    if (hasUncategorized) names.push('Sin categoria')
+    return Array.from(new Set(names))
+  }, [selectedCompetitionCategories, selectedParticipants])
+  const filteredSelectedParticipants = useMemo(() => {
+    return selectedParticipants.filter((participant) => {
+      if (!enrollmentCategoryFilter) return true
+      const categoryName = String(participant?.categoria_competencia || '').trim() || 'Sin categoria'
+      return categoryName === enrollmentCategoryFilter
+    })
+  }, [selectedParticipants, enrollmentCategoryFilter])
+  const groupedSelectedParticipants = useMemo(() => {
+    const groups = {}
+    filteredSelectedParticipants.forEach((participant) => {
+      const categoryName = String(participant?.categoria_competencia || '').trim() || 'Sin categoria'
+      if (!groups[categoryName]) groups[categoryName] = []
+      groups[categoryName].push(participant)
+    })
+    return orderCategories(groups).map((categoryName) => ({
+      categoryName,
+      participants: groups[categoryName] || [],
+    }))
+  }, [filteredSelectedParticipants])
+  const enrollmentSummary = useMemo(() => {
+    const total = selectedParticipants.length
+    const categoriesCount = new Set(
+      selectedParticipants.map(participant => String(participant?.categoria_competencia || '').trim() || 'Sin categoria')
+    ).size
+    return {
+      total,
+      categoriesCount,
+      filteredTotal: filteredSelectedParticipants.length,
+    }
+  }, [selectedParticipants, filteredSelectedParticipants])
+  const enrollmentEmptyMessage = selectedParticipants.length
+    ? (enrollmentCategoryFilter ? 'No hay inscritos en esta categoria' : 'No hay inscritos')
+    : 'No hay inscritos'
+
+  useEffect(() => {
+    if (!enrollmentListMenuOpen || typeof document === 'undefined') return undefined
+    const handlePointerDown = (event) => {
+      if (!enrollmentListMenuRef.current?.contains(event.target)) {
+        setEnrollmentListMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [enrollmentListMenuOpen])
+
+  useEffect(() => {
+    setEnrollmentListMenuOpen(false)
+    setEnrollmentListGroupByCategory(false)
+    setEnrollmentCategoryFilter('')
+    setEnrollmentExpandedGroups({})
+  }, [selectedCompetition?.id])
+
+  useEffect(() => {
+    if (!enrollmentListGroupByCategory) return
+    setEnrollmentExpandedGroups((prev) => {
+      const next = {}
+      groupedSelectedParticipants.forEach((group) => {
+        next[group.categoryName] = prev[group.categoryName] ?? true
+      })
+      return next
+    })
+    if (!groupedSelectedParticipants.length) {
+      setEnrollmentExpandedGroups({})
+    }
+  }, [enrollmentListGroupByCategory, groupedSelectedParticipants])
 
   const load = () => api.get(isOrganizer ? '/competitions?scope=owned' : '/competitions').then(r => {
     setCompetitions(r.data)
@@ -10243,6 +10342,7 @@ function CompetitionsTab() {
         setSelectedCompetition(null)
       }
       setDeleteCompetitionTarget(null)
+      setDeleteCompetitionConfirmText('')
       load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar' })
@@ -10895,30 +10995,226 @@ function CompetitionsTab() {
                   </div>
                 ) : (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                      <div>
-                        <h4 style={{ margin: 0, fontSize: 16 }}>Listado de inscritos</h4>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                        <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(selectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
+                    <div style={{ display: 'grid', gap: 12, marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'grid', gap: 4 }}>
+                          <h4 style={{ margin: 0, fontSize: 16 }}>Listado de inscritos</h4>
+                          <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                            {enrollmentListGroupByCategory ? 'Vista operativa agrupada por categoria' : 'Vista operativa de inscritos confirmados'}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button className="btn-secondary btn-sm" onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition?.nombre || 'inscripciones')}>
                           Descargar Excel
                         </button>
-                        <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
+                          <button className="btn-primary btn-sm" onClick={() => setEnrollingComp(selectedCompetition)}>
                           Ver inscritos
                         </button>
+                          <div ref={enrollmentListMenuRef} style={{ position: 'relative' }}>
+                          <button
+                            type="button"
+                            className="btn-secondary btn-sm"
+                            onClick={() => setEnrollmentListMenuOpen(prev => !prev)}
+                            style={{ width: 36, height: 36, padding: 0, justifyContent: 'center' }}
+                            aria-label="Opciones de listado"
+                          >
+                            <MoreHorizontal size={18} />
+                          </button>
+                          {enrollmentListMenuOpen && (
+                            <div style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 8px)',
+                              right: 0,
+                              minWidth: 220,
+                              padding: 8,
+                              borderRadius: 12,
+                              border: '1px solid #252A33',
+                              background: '#171B21',
+                              boxShadow: '0 18px 40px rgba(0,0,0,0.35)',
+                              zIndex: 4,
+                              display: 'grid',
+                              gap: 4,
+                            }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEnrollmentListGroupByCategory(prev => !prev)
+                                  setEnrollmentListMenuOpen(false)
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 10,
+                                  width: '100%',
+                                  border: 'none',
+                                  background: enrollmentListGroupByCategory ? 'rgba(255,107,0,0.12)' : 'transparent',
+                                  color: '#F5F7FA',
+                                  borderRadius: 10,
+                                  padding: '10px 12px',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                <span style={{ fontSize: 13, fontWeight: 700 }}>Agrupar por categoria</span>
+                                {enrollmentListGroupByCategory && <CheckCircle2 size={16} color="#FF6B00" />}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                        {[
+                          { label: 'Inscritos', value: enrollmentSummary.total, tone: '#FFB36F' },
+                          { label: 'Categorias', value: enrollmentSummary.categoriesCount, tone: '#8DF1E4' },
+                          { label: 'Mostrados', value: enrollmentSummary.filteredTotal, tone: '#FFD0AE' },
+                        ].map((item) => (
+                          <div key={item.label} style={{
+                            border: '1px solid #252A33',
+                            borderRadius: 16,
+                            padding: '14px 16px',
+                            background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.94))',
+                            display: 'grid',
+                            gap: 6,
+                          }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4 }}>{item.label}</div>
+                            <div style={{ color: item.tone, fontSize: isMobile ? 22 : 24, fontWeight: 900, lineHeight: 1 }}>{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{
+                        border: '1px solid #252A33',
+                        borderRadius: 16,
+                        padding: isMobile ? 12 : 14,
+                        background: 'rgba(13,15,18,0.72)',
+                        display: 'grid',
+                        gap: 12,
+                      }}>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 320px) minmax(0, 1fr)',
+                          gap: 12,
+                          alignItems: 'end',
+                        }}>
+                          <div style={{ display: 'grid', gap: 6 }}>
+                            <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>Filtrar por categoria</span>
+                            <select
+                              value={enrollmentCategoryFilter}
+                              onChange={(event) => setEnrollmentCategoryFilter(event.target.value)}
+                              style={{
+                                width: '100%',
+                                minHeight: 42,
+                                borderRadius: 12,
+                                border: '1px solid #252A33',
+                                background: '#171B21',
+                                color: '#F5F7FA',
+                                padding: '0 14px',
+                                fontSize: 13,
+                                fontWeight: 700,
+                                outline: 'none',
+                              }}
+                            >
+                              <option value="">Todas</option>
+                              {enrollmentCategoryOptions.map((categoryName) => (
+                                <option key={categoryName} value={categoryName}>
+                                  {categoryName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: isMobile ? 'space-between' : 'flex-end',
+                            alignItems: 'center',
+                            gap: 10,
+                            flexWrap: 'wrap',
+                            minHeight: 42,
+                          }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 12, textAlign: isMobile ? 'left' : 'right' }}>
+                              Mostrando <span style={{ color: '#F5F7FA', fontWeight: 800 }}>{enrollmentSummary.filteredTotal}</span> de <span style={{ color: '#F5F7FA', fontWeight: 800 }}>{enrollmentSummary.total}</span> inscritos
+                            </div>
+                            {!!enrollmentCategoryFilter && (
+                              <button
+                                type="button"
+                                className="btn-secondary btn-sm"
+                                onClick={() => setEnrollmentCategoryFilter('')}
+                              >
+                                Ver todas
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                     {isMobile ? (
-                      <div style={{ display: 'grid', gap: 8 }}>
-                        {!selectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</p>}
-                        {selectedParticipants.map(p => (
-                          <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 12, padding: '12px 14px', background: 'rgba(13,15,18,0.72)', display: 'grid', gap: 8 }}>
-                            <div style={{ fontWeight: 700, color: '#F5F7FA' }}>{p.nombre} {p.apellido}</div>
-                            <div style={{ fontSize: 12, color: '#AAB2C0', display: 'grid', gap: 6 }}>
-                              <span>Inscripcion: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{String(p.estado || '-').trim() || '-'}</span></span>
-                              <span>Categoria: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{p.categoria_competencia || '-'}</span></span>
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {!filteredSelectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</p>}
+                        {enrollmentListGroupByCategory ? groupedSelectedParticipants.map((group) => {
+                          const isExpanded = enrollmentExpandedGroups[group.categoryName] ?? true
+                          return (
+                            <div key={group.categoryName} style={{ border: '1px solid #252A33', borderRadius: 16, background: 'rgba(13,15,18,0.72)', overflow: 'hidden' }}>
+                              <button
+                                type="button"
+                                onClick={() => setEnrollmentExpandedGroups(prev => ({ ...prev, [group.categoryName]: !isExpanded }))}
+                                style={{
+                                  width: '100%',
+                                  border: 'none',
+                                  background: 'linear-gradient(135deg, rgba(255,107,0,0.16) 0%, rgba(255,154,61,0.08) 100%)',
+                                  padding: '12px 14px',
+                                  color: '#F5F7FA',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 10,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                <div style={{ display: 'grid', justifyItems: 'start', gap: 2 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 800 }}>{group.categoryName}</span>
+                                  <span style={{ color: '#AAB2C0', fontSize: 11 }}>{group.participants.length} inscritos</span>
+                                </div>
+                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                              </button>
+                              {isExpanded && (
+                                <div style={{ display: 'grid', gap: 8, padding: 10 }}>
+                                  {group.participants.map(p => (
+                                    <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 14, padding: '12px 14px', background: '#171B21', display: 'grid', gap: 10 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15 }}>{p.nombre} {p.apellido}</div>
+                                          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                                        </div>
+                                        <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>
+                                          {p.categoria_competencia || 'Sin categoria'}
+                                        </span>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                        <span style={{ color: '#AAB2C0', fontSize: 12 }}>Inscripcion: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{String(p.estado || '-').trim() || '-'}</span></span>
+                                      </div>
+                                      <div>
+                                        <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                            <CheckinStatusChip participant={p} labeled />
+                          )
+                        }) : filteredSelectedParticipants.map((p) => (
+                          <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 16, padding: '14px', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', display: 'grid', gap: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15 }}>{p.nombre} {p.apellido}</div>
+                                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                              </div>
+                              <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>
+                                {p.categoria_competencia || 'Sin categoria'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <span style={{ color: '#AAB2C0', fontSize: 12 }}>Inscripcion: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{String(p.estado || '-').trim() || '-'}</span></span>
+                            </div>
                             <div>
                               <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
                             </div>
@@ -10926,25 +11222,99 @@ function CompetitionsTab() {
                         ))}
                       </div>
                     ) : (
-                      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                      <table>
-                        <thead><tr><th>Participante</th><th>Inscripcion</th><th>Categoria</th><th>Estado check-in</th><th>Accion</th></tr></thead>
-                        <tbody>
-                          {selectedParticipants.map(p => (
-                            <tr key={p.id}>
-                              <td>{p.nombre} {p.apellido}</td>
-                              <td>{String(p.estado || '-').trim() || '-'}</td>
-                              <td>{p.categoria_competencia || '-'}</td>
-                              <td><CheckinStatusChip participant={p} labeled /></td>
-                              <td>
-                                <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
-                              </td>
-                            </tr>
-                          ))}
-                          {!selectedParticipants.length && <tr><td colSpan={5} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin participantes</td></tr>}
-                        </tbody>
-                      </table>
-                      </div>
+                      enrollmentListGroupByCategory ? (
+                        <div style={{ display: 'grid', gap: 12 }}>
+                          {!groupedSelectedParticipants.length && <div style={{ textAlign: 'center', color: '#666', padding: 24 }}>{enrollmentEmptyMessage}</div>}
+                          {groupedSelectedParticipants.map((group) => {
+                            const isExpanded = enrollmentExpandedGroups[group.categoryName] ?? true
+                            return (
+                              <div key={group.categoryName} style={{ border: '1px solid #252A33', borderRadius: 18, overflow: 'hidden', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setEnrollmentExpandedGroups(prev => ({ ...prev, [group.categoryName]: !isExpanded }))}
+                                  style={{
+                                    width: '100%',
+                                    border: 'none',
+                                    background: 'linear-gradient(135deg, rgba(255,107,0,0.16) 0%, rgba(255,154,61,0.08) 100%)',
+                                    padding: '14px 16px',
+                                    color: '#F5F7FA',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 12,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <div style={{ display: 'grid', justifyItems: 'start', gap: 2 }}>
+                                    <span style={{ fontSize: 14, fontWeight: 900 }}>{group.categoryName}</span>
+                                    <span style={{ color: '#AAB2C0', fontSize: 12 }}>{group.participants.length} inscritos</span>
+                                  </div>
+                                  {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                </button>
+                                {isExpanded && (
+                                  <div style={{ padding: 10, display: 'grid', gap: 8 }}>
+                                    {group.participants.map((p) => (
+                                      <div key={p.id} style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'minmax(0, 1.4fr) minmax(140px, 0.8fr) auto',
+                                        gap: 12,
+                                        alignItems: 'center',
+                                        padding: '12px 14px',
+                                        borderRadius: 14,
+                                        border: '1px solid #252A33',
+                                        background: '#171B21',
+                                      }}>
+                                        <div style={{ minWidth: 0 }}>
+                                          <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>{p.nombre} {p.apellido}</div>
+                                          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                                        </div>
+                                        <div style={{ display: 'grid', gap: 6 }}>
+                                          <span style={{ color: '#6B7280', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>Inscripcion</span>
+                                          <span style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>{String(p.estado || '-').trim() || '-'}</span>
+                                        </div>
+                                        <div style={{ display: 'grid', justifyItems: 'end', gap: 8 }}>
+                                          <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800 }}>
+                                            {p.categoria_competencia || 'Sin categoria'}
+                                          </span>
+                                          <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid #252A33', borderRadius: 18, background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))' }}>
+                          <table>
+                            <thead>
+                              <tr><th>Participante</th><th>Categoria</th><th>Inscripcion</th><th>Accion</th></tr>
+                            </thead>
+                            <tbody>
+                              {filteredSelectedParticipants.map((p) => (
+                                <tr key={p.id}>
+                                  <td>
+                                    <div style={{ color: '#F5F7FA', fontWeight: 800 }}>{p.nombre} {p.apellido}</div>
+                                    <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
+                                  </td>
+                                  <td>
+                                    <span style={{ border: '1px solid rgba(0,194,168,0.24)', background: 'rgba(0,194,168,0.12)', color: '#8DF1E4', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 800, display: 'inline-flex' }}>
+                                      {p.categoria_competencia || 'Sin categoria'}
+                                    </span>
+                                  </td>
+                                  <td>{String(p.estado || '-').trim() || '-'}</td>
+                                  <td>
+                                    <button className="btn-secondary btn-sm" onClick={() => setParticipantDetail(p)}>Ver participante</button>
+                                  </td>
+                                </tr>
+                              ))}
+                              {!filteredSelectedParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</td></tr>}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
                     )}
                   </>
                 )}
@@ -11042,8 +11412,16 @@ function CompetitionsTab() {
           )}
         </div>
       )}
-      {deleteCompetitionTarget && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.76)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => !deleteCompetitionBusy && setDeleteCompetitionTarget(null)}>
+      {deleteCompetitionTarget && (() => {
+        const expectedName = (deleteCompetitionTarget.nombre || '').trim()
+        const nameMatches = deleteCompetitionConfirmText.trim() === expectedName && expectedName.length > 0
+        const closeDeleteModal = () => {
+          if (deleteCompetitionBusy) return
+          setDeleteCompetitionTarget(null)
+          setDeleteCompetitionConfirmText('')
+        }
+        return (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.76)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={closeDeleteModal}>
           <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 20, padding: 28, maxWidth: 460, width: '100%', display: 'grid', gap: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
               <div style={{ width: 54, height: 54, borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '2px solid rgba(239,68,68,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -11058,14 +11436,28 @@ function CompetitionsTab() {
             <div style={{ borderRadius: 16, border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.08)', padding: '12px 14px', color: '#F5F7FA', fontSize: 13, lineHeight: 1.55 }}>
               Se eliminarán su configuración, inscripciones y contenido asociado en este entorno.
             </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ fontSize: 12, color: '#AAB2C0' }}>
+                Para confirmar, escribe el nombre exacto de la competencia: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{expectedName}</span>
+              </label>
+              <input
+                type="text"
+                value={deleteCompetitionConfirmText}
+                onChange={(e) => setDeleteCompetitionConfirmText(e.target.value)}
+                disabled={deleteCompetitionBusy}
+                autoFocus
+                placeholder={expectedName}
+                style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: '#0F1217', color: '#F5F7FA', fontSize: 14, outline: 'none' }}
+              />
+            </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button type="button" className="btn-secondary btn-sm" onClick={() => setDeleteCompetitionTarget(null)} disabled={deleteCompetitionBusy}>Cancelar</button>
+              <button type="button" className="btn-secondary btn-sm" onClick={closeDeleteModal} disabled={deleteCompetitionBusy}>Cancelar</button>
               <button
                 type="button"
                 className="btn-danger btn-sm"
                 onClick={() => deleteCompetition(deleteCompetitionTarget)}
-                disabled={deleteCompetitionBusy}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                disabled={deleteCompetitionBusy || !nameMatches}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, opacity: (!nameMatches && !deleteCompetitionBusy) ? 0.55 : 1 }}
               >
                 <Trash2 size={14} />
                 {deleteCompetitionBusy ? 'Eliminando...' : 'Eliminar competencia'}
@@ -11073,7 +11465,8 @@ function CompetitionsTab() {
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {editor && (
         editor.mode === 'create' ? (

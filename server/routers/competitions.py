@@ -22,6 +22,7 @@ from database import MAX_TEAM_SIZE, get_session
 from models import Competition, CompetitionCreate, CompetitionUpdate
 from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
+from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -807,6 +808,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     session.add(c)
     session.commit()
     session.refresh(c)
+    invalidate_leaderboard_results_snapshot(competition_id)
     return c
 
 

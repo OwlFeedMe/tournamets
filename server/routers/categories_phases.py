@@ -22,6 +22,7 @@ from models import (
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
     CompetitionHeat,
 )
+from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
 router = APIRouter(tags=["categories_phases"])
 PHASE_FORMATS_VALIDOS = {"activity", "wod"}
@@ -351,6 +352,7 @@ def create_category(competition_id: int, body: CategoryCreate,
     session.add(cat)
     session.commit()
     session.refresh(cat)
+    invalidate_leaderboard_results_snapshot(competition_id)
     return cat
 
 
@@ -376,6 +378,7 @@ def update_category(
     session.add(cat)
     session.commit()
     session.refresh(cat)
+    invalidate_leaderboard_results_snapshot(competition_id)
     payload = cat.model_dump()
     payload["modality"] = _normalize_modality(getattr(cat, "modality", None))
     payload["enrollment_price"] = _normalize_enrollment_price(getattr(cat, "enrollment_price", 0))
@@ -390,6 +393,7 @@ def delete_category(competition_id: int, cat_id: int,
     if cat and cat.competition_id == competition_id:
         session.delete(cat)
         session.commit()
+        invalidate_leaderboard_results_snapshot(competition_id)
 
 
 @router.get("/api/competitions/{competition_id}/phases")
@@ -487,6 +491,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
     session.add(phase)
     session.commit()
     session.refresh(phase)
+    invalidate_leaderboard_results_snapshot(competition_id)
     return _phase_response(phase)
 
 
@@ -572,6 +577,7 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
     session.add(phase)
     session.commit()
     session.refresh(phase)
+    invalidate_leaderboard_results_snapshot(competition_id)
     return _phase_response(phase)
 
 
@@ -591,3 +597,4 @@ def delete_phase(competition_id: int, phase_id: int,
             session.delete(heat)
         session.delete(phase)
         session.commit()
+        invalidate_leaderboard_results_snapshot(competition_id)

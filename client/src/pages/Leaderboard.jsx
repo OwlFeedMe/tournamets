@@ -7,6 +7,8 @@ import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
+const ACTIVE_TIMER_POLL_INTERVAL_MS = 3000
+const IDLE_TIMER_POLL_INTERVAL_MS = 30000
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
 const THEME = {
   primary: '#D6D9E0',
@@ -28,6 +30,12 @@ function safeServerNowMs(value) {
 function smoothClockOffset(prevOffset, nextOffset) {
   if (prevOffset == null) return nextOffset
   return prevOffset + ((nextOffset - prevOffset) * 0.2)
+}
+
+function timerPollIntervalMs(timerData) {
+  if (!timerData) return ACTIVE_TIMER_POLL_INTERVAL_MS
+  if (timerData.state === 'running') return ACTIVE_TIMER_POLL_INTERVAL_MS
+  return IDLE_TIMER_POLL_INTERVAL_MS
 }
 
 
@@ -706,32 +714,6 @@ export default function Leaderboard() {
     }
   }, [selectedComp, fetchLeaderboard])
 
-  // Poll timer state every 3 s
-  useEffect(() => {
-    clearInterval(timerIntervalRef.current)
-    setTimerData(null)
-    setTimerClockOffsetMs(null)
-    if (!selectedComp) return
-    const fetch = () => {
-      const sentAt = Date.now()
-      return api.get(`/competitions/${selectedComp}/timer`)
-      .then(r => {
-        const receivedAt = Date.now()
-        const serverNowMs = safeServerNowMs(r.data?.server_now)
-        if (serverNowMs != null) {
-          const midpoint = sentAt + ((receivedAt - sentAt) / 2)
-          const targetOffset = serverNowMs - midpoint
-          setTimerClockOffsetMs(prev => smoothClockOffset(prev, targetOffset))
-        }
-        setTimerData(r.data)
-      })
-      .catch(() => {})
-    }
-    fetch()
-    timerIntervalRef.current = setInterval(fetch, 3000)
-    return () => clearInterval(timerIntervalRef.current)
-  }, [selectedComp])
-
   const hasTeams = data?.has_teams
   const showIndividualLeaderboard = !!data?.show_individual_leaderboard
   const showTeamAllByCategoryOption = !!data?.show_team_all_by_category_option
@@ -751,6 +733,43 @@ export default function Leaderboard() {
   const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''
+
+  // Only poll timer when TV mode actually needs it.
+  useEffect(() => {
+    clearInterval(timerIntervalRef.current)
+    if (!selectedComp || !tvMode || !tvShowTimer) {
+      setTimerData(null)
+      setTimerClockOffsetMs(null)
+      return
+    }
+    const fetch = () => {
+      const sentAt = Date.now()
+      return api.get(`/competitions/${selectedComp}/timer`)
+      .then(r => {
+        const receivedAt = Date.now()
+        const serverNowMs = safeServerNowMs(r.data?.server_now)
+        if (serverNowMs != null) {
+          const midpoint = sentAt + ((receivedAt - sentAt) / 2)
+          const targetOffset = serverNowMs - midpoint
+          setTimerClockOffsetMs(prev => smoothClockOffset(prev, targetOffset))
+        }
+        setTimerData(prev => {
+          const next = r.data
+          const nextInterval = timerPollIntervalMs(next)
+          const prevInterval = timerPollIntervalMs(prev)
+          if (nextInterval !== prevInterval) {
+            clearInterval(timerIntervalRef.current)
+            timerIntervalRef.current = setInterval(fetch, nextInterval)
+          }
+          return next
+        })
+      })
+      .catch(() => {})
+    }
+    fetch()
+    timerIntervalRef.current = setInterval(fetch, timerPollIntervalMs(null))
+    return () => clearInterval(timerIntervalRef.current)
+  }, [selectedComp, tvMode, tvShowTimer])
 
   useEffect(() => {
     if (!selectedComp) return

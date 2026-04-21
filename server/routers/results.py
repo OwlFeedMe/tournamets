@@ -17,6 +17,7 @@ from auth import (
 from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
+from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
 router = APIRouter(prefix="/api/results", tags=["results"])
 PHASE_TIPOS_VALIDOS = {"posicion", "cantidad", "tiempo"}
@@ -456,6 +457,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         recompute_and_persist_phase_status(session, body.competition_id, int(body.phase_id))
     session.commit()
     session.refresh(result)
+    invalidate_leaderboard_results_snapshot(body.competition_id)
     return _enrich(session, result.id)
 
 
@@ -525,6 +527,7 @@ def update_result(result_id: int, body: ResultUpdate,
         _recompute_phase_positions_and_points(session, r.competition_id, prev_phase_id)
         recompute_and_persist_phase_status(session, r.competition_id, prev_phase_id)
     session.commit()
+    invalidate_leaderboard_results_snapshot(r.competition_id)
     return _enrich(session, result_id)
 
 
@@ -540,6 +543,7 @@ def delete_result(result_id: int, session: Session = Depends(get_session), user=
         if phase_id is not None:
             recompute_and_persist_phase_status(session, competition_id, phase_id)
         session.commit()
+        invalidate_leaderboard_results_snapshot(competition_id)
 
 
 @router.delete("/competition/{competition_id}/phase/{phase_id}")
@@ -566,6 +570,7 @@ def delete_results_by_phase(
 
     recompute_and_persist_phase_status(session, competition_id)
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
     return {"deleted": int(deleted)}
 
 
@@ -587,4 +592,5 @@ def delete_results_by_competition(
 
     recompute_and_persist_phase_status(session, competition_id)
     session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
     return {"deleted": int(deleted)}
