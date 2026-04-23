@@ -19,7 +19,7 @@ import {
 } from '../components/home/homeModel'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
-import { getMissingParticipantProfileFields } from '../utils/participantProfile'
+import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
 
 const premium = {
   bg: '#0F1114',
@@ -336,41 +336,16 @@ export default function HomeVariants({ variant = 1 }) {
   const openCount = featuredCompetitions.filter(item => item.enrollment_open).length
   const activeCount = featuredCompetitions.filter(item => item.activa).length
 
-  const handleParticipate = async (competition) => {
-    if (!session) {
-      navigate('/login')
-      return
-    }
-    if (!isAthlete) {
-      navigate(getHomePath(role))
-      return
-    }
-    if (enrollmentByComp[competition.id] && enrollmentByComp[competition.id] !== 'rechazado') return
-    if (!competition.enrollment_open) return
-    try {
-        const { data } = await api.get('/users/me')
-      const missingFields = getMissingParticipantProfileFields(data)
-      if (missingFields.length) {
-        navigate('/profile', {
-          state: {
-            profileRequiredForEnrollment: true,
-            missingFields,
-            competitionName: competition.nombre || '',
-          },
-        })
-        return
-      }
-    } catch {
-      navigate('/profile', {
-        state: {
-          profileRequiredForEnrollment: true,
-          missingFields: ['perfil'],
-          competitionName: competition.nombre || '',
-        },
-      })
-      return
-    }
-    navigate(`/competitions/${competition.id}/register`)
+  const handleParticipate = (competition) => {
+    const target = getCompetitionEnrollmentNavigationTarget({
+      session,
+      isAthlete,
+      role,
+      competition,
+      enrollmentState: enrollmentByComp[competition.id],
+    })
+    if (!target) return
+    navigate(target)
   }
 
   return (

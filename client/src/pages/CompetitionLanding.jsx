@@ -6,7 +6,6 @@ import { getHomePath, useAuth } from '../context/AuthContext'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
-import { getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 function buildPageBackground(theme) {
   return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.18)}, transparent 28%), radial-gradient(circle at 85% 20%, ${hexToRgba(theme.accent, 0.12)}, transparent 24%), ${theme.background}`
@@ -598,32 +597,7 @@ export default function CompetitionLanding() {
       return
     }
     if (enrollmentButton.disabled || !competition?.enrollment_open) return
-    setCtaBusy(true)
-    try {
-              const { data } = await api.get('/users/me')
-      const missingFields = getMissingParticipantProfileFields(data)
-      if (missingFields.length) {
-        navigate('/profile', {
-          state: {
-            profileRequiredForEnrollment: true,
-            missingFields,
-            competitionName: competition?.nombre || '',
-          },
-        })
-        return
-      }
-      navigate(registerHref)
-    } catch {
-      navigate('/profile', {
-        state: {
-          profileRequiredForEnrollment: true,
-          missingFields: ['perfil'],
-          competitionName: competition?.nombre || '',
-        },
-      })
-    } finally {
-      setCtaBusy(false)
-    }
+    navigate(registerHref)
   }
 
   const saveInterestNotification = async (email = '') => {

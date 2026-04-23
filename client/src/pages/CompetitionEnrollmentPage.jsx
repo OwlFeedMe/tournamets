@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { formatCalendarDateRange } from '../utils/calendarDate'
-import { formatMissingParticipantProfileFields, getMissingParticipantProfileFields } from '../utils/participantProfile'
+import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
+import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
@@ -59,6 +60,51 @@ function formatCop(value) {
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
 const BOLD_BUTTON_LIBRARY_ID = 'bold-payment-button-library'
 const ENROLLMENT_INTRO_COPY = 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'
+const PROFILE_FIELD_CONFIG = [
+  { key: 'nombre', label: 'Nombre', type: 'text', requiredMessage: 'Completa tu nombre para continuar.' },
+  { key: 'apellido', label: 'Apellido', type: 'text', requiredMessage: 'Completa tu apellido para continuar.' },
+  { key: 'email', label: 'Email', type: 'email', requiredMessage: 'Completa tu email para continuar.' },
+  { key: 'celular', label: 'Celular', type: 'tel', requiredMessage: 'Completa tu celular para continuar.' },
+  { key: 'genero', label: 'Genero', type: 'select', requiredMessage: 'Selecciona tu genero para continuar.' },
+  { key: 'cedula', label: 'Cedula', type: 'text', requiredMessage: 'Completa tu cedula para continuar.' },
+  { key: 'fecha_nacimiento', label: 'Fecha de nacimiento', type: 'date', requiredMessage: 'Completa tu fecha de nacimiento para continuar.' },
+  { key: 'ciudad_pais', label: 'Ciudad / pais', type: 'text', requiredMessage: 'Completa tu ciudad / pais para continuar.' },
+]
+
+function normalizeProfileDraft(profile) {
+  const parsedCityCountry = parseCityCountry(profile?.ciudad_pais || '')
+  return {
+    nombre: String(profile?.nombre || '').trim(),
+    apellido: String(profile?.apellido || '').trim(),
+    email: String(profile?.email || '').trim(),
+    celular: String(profile?.celular || '').trim(),
+    genero: String(profile?.genero || profile?.sexo || '').trim(),
+    cedula: cedulaInputValue(profile?.cedula),
+    fecha_nacimiento: String(profile?.fecha_nacimiento || '').slice(0, 10),
+    ciudad_pais: String(profile?.ciudad_pais || '').trim(),
+    city: parsedCityCountry.city,
+    countryCode: '',
+  }
+}
+
+function profileFieldValue(profile, key) {
+  if (!profile) return '-'
+  if (key === 'cedula') return formatCedula(profile.cedula)
+  if (key === 'fecha_nacimiento') return String(profile.fecha_nacimiento || '').slice(0, 10) || '-'
+  if (key === 'genero') return String(profile.genero || profile.sexo || '').trim() || '-'
+  return String(profile[key] || '').trim() || '-'
+}
+
+function isProfileDraftFieldComplete(fieldKey, profileDraft) {
+  if (fieldKey === 'ciudad_pais') {
+    return !!String(profileDraft?.city || '').trim() && !!String(profileDraft?.countryCode || '').trim()
+  }
+  const rawValue = profileDraft?.[fieldKey]
+  const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue
+  if (!value) return false
+  if (fieldKey === 'cedula') return /^\d{6,11}$/.test(value)
+  return true
+}
 
 function ensureBoldButtonLibrary({ reload = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -315,7 +361,13 @@ export default function CompetitionEnrollmentPage() {
   const [competitionTermsAccepted, setCompetitionTermsAccepted] = useState(false)
   const [appTermsAccepted, setAppTermsAccepted] = useState(false)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const [profileData, setProfileData] = useState(null)
+  const [profileDraft, setProfileDraft] = useState(() => normalizeProfileDraft(null))
   const [profileMissingFields, setProfileMissingFields] = useState([])
+  const [editableProfileFields, setEditableProfileFields] = useState([])
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [countries, setCountries] = useState([])
+  const [allCities, setAllCities] = useState([])
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -326,6 +378,18 @@ export default function CompetitionEnrollmentPage() {
   useEffect(() => {
     api.get('/config/pricing').then(({ data }) => setPricingCfg(data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    loadCountries().then(setCountries).catch(() => setCountries([]))
+  }, [])
+
+  useEffect(() => {
+    if (!profileDraft.countryCode) {
+      setAllCities([])
+      return
+    }
+    loadCitiesByCountry(profileDraft.countryCode).then(setAllCities).catch(() => setAllCities([]))
+  }, [profileDraft.countryCode])
 
   useEffect(() => {
     let active = true
@@ -344,7 +408,8 @@ export default function CompetitionEnrollmentPage() {
       const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
       const mine = Array.isArray(mineRes.data) ? mineRes.data : []
       const mineRecord = mine.find(item => String(item.id) === String(competitionId))
-      const missingFields = isAthlete ? getMissingParticipantProfileFields(profileRes.data) : []
+      const profile = profileRes.data || null
+      const missingFields = isAthlete ? getMissingParticipantProfileFields(profile) : []
       setPayload(publicPayload)
       setCategories(categoryItems)
       setSelectedCategory(mineRecord?.enrollment_categoria || categoryItems[0]?.nombre || '')
@@ -353,7 +418,10 @@ export default function CompetitionEnrollmentPage() {
       setPaymentStatus(mineRecord?.payment_status || null)
       setPaymentReference(mineRecord?.payment_reference || '')
       setPaymentTransactionId(mineRecord?.payment_transaction_id || '')
+      setProfileData(profile)
+      setProfileDraft(normalizeProfileDraft(profile))
       setProfileMissingFields(missingFields)
+      setEditableProfileFields(missingFields.filter((fieldKey) => fieldKey !== 'perfil'))
     }).catch((err) => {
       if (!active) return
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo cargar la informacion de inscripcion' })
@@ -371,18 +439,50 @@ export default function CompetitionEnrollmentPage() {
   const selectedCategoryData = useMemo(() => categories.find(category => category.nombre === selectedCategory) || null, [categories, selectedCategory])
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
+  const countryNameByCode = useMemo(() => Object.fromEntries(countries.map((country) => [country.code, country.name])), [countries])
+  const countryCodeByName = useMemo(() => Object.fromEntries(countries.map((country) => [country.name.toLowerCase(), country.code])), [countries])
+  const cityCountryComplete = !!String(profileDraft.countryCode || '').trim() && !!String(profileDraft.city || '').trim()
   const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
   const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee), [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee])
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
-  const profileIncomplete = isAthlete && profileMissingFields.length > 0
-  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit || profileIncomplete
+  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit
+  const outstandingProfileMissingFields = useMemo(() => profileMissingFields.filter((fieldKey) => {
+    if (fieldKey === 'perfil') return true
+    if (fieldKey === 'ciudad_pais') return !cityCountryComplete
+    return !isProfileDraftFieldComplete(fieldKey, profileDraft)
+  }), [cityCountryComplete, profileDraft, profileMissingFields])
+  const profileFields = useMemo(() => PROFILE_FIELD_CONFIG.map(field => ({
+    ...field,
+    missing: outstandingProfileMissingFields.includes(field.key),
+    originallyMissing: editableProfileFields.includes(field.key),
+    value: profileFieldValue(profileData, field.key),
+  })), [editableProfileFields, outstandingProfileMissingFields, profileData])
+  const hasOrganizerQuestions = questions.length > 0
+  const stepTwoBlocked = currentStep === 2 && (
+    submissionBlocked
+    || syncingPayment
+    || checkoutLoading
+    || savingProfile
+    || !!uploadingQuestionId
+    || outstandingProfileMissingFields.length > 0
+    || questions.some((question) => question.required && !String(answers[question.id] || '').trim())
+  )
 
   useEffect(() => {
     setSubmitted(enrollmentState === 'pendiente' || enrollmentState === 'confirmado')
   }, [enrollmentState])
+
+  useEffect(() => {
+    if (!countries.length || !profileDraft.ciudad_pais || profileDraft.countryCode) return
+    const parsed = parseCityCountry(profileDraft.ciudad_pais)
+    if (!parsed.countryName) return
+    const inferredCountryCode = countryCodeByName[parsed.countryName.toLowerCase()] || ''
+    if (!inferredCountryCode) return
+    setProfileDraft((prev) => ({ ...prev, countryCode: inferredCountryCode, city: parsed.city }))
+  }, [countries, countryCodeByName, profileDraft.ciudad_pais, profileDraft.countryCode])
 
   useEffect(() => {
     setBoldButtonConfig(null)
@@ -415,8 +515,76 @@ export default function CompetitionEnrollmentPage() {
     setUploadingQuestionId(null)
   }
 
+  const validateMissingProfileFields = () => {
+    if (outstandingProfileMissingFields.includes('perfil')) {
+      return 'No pudimos cargar tu perfil en este momento. Recarga la pagina para continuar.'
+    }
+    for (const field of PROFILE_FIELD_CONFIG) {
+      if (!outstandingProfileMissingFields.includes(field.key)) continue
+      if (field.key === 'ciudad_pais') {
+        const city = String(profileDraft.city || '').trim()
+        const countryCode = String(profileDraft.countryCode || '').trim()
+        if (!city || !countryCode) return 'Selecciona pais y ciudad validos para continuar.'
+        if (!allCities.includes(city)) {
+          return 'La ciudad no pertenece al pais seleccionado.'
+        }
+        continue
+      }
+      const rawValue = profileDraft[field.key]
+      const value = typeof rawValue === 'string' ? rawValue.trim() : rawValue
+      if (!value) return field.requiredMessage
+      if (field.key === 'cedula' && !/^\d+$/.test(value)) return 'La cedula debe contener solo numeros.'
+      if (field.key === 'cedula' && (value.length < 6 || value.length > 11)) return 'La cedula debe tener entre 6 y 11 numeros.'
+    }
+    return ''
+  }
+
+  const saveMissingProfileFields = async () => {
+    const validationError = validateMissingProfileFields()
+    if (validationError) {
+      setMsg({ type: 'error', text: validationError })
+      return false
+    }
+    if (!editableProfileFields.length) return true
+
+    const profilePayload = {}
+    for (const field of PROFILE_FIELD_CONFIG) {
+      if (!editableProfileFields.includes(field.key)) continue
+      if (field.key === 'ciudad_pais') continue
+      const value = profileDraft[field.key]
+      profilePayload[field.key] = typeof value === 'string' ? value.trim() : value
+    }
+
+    if (editableProfileFields.includes('ciudad_pais')) {
+      const city = String(profileDraft.city || '').trim()
+      const countryCode = String(profileDraft.countryCode || '').trim()
+      const countryName = countryNameByCode[countryCode] || ''
+      if (city && countryName) {
+        profilePayload.ciudad_pais = buildCityCountry(city, countryName)
+      }
+    }
+
+    if (!Object.keys(profilePayload).length) return true
+
+    setSavingProfile(true)
+    setMsg(null)
+    try {
+      const { data: savedProfile } = await api.patch('/users/me', profilePayload)
+      setProfileData(savedProfile)
+      setProfileDraft(normalizeProfileDraft(savedProfile))
+      setProfileMissingFields(getMissingParticipantProfileFields(savedProfile))
+      return true
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo guardar tu perfil.' })
+      return false
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
   const validateBeforeConfirmation = () => {
     if (categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
+    if (outstandingProfileMissingFields.length) return 'Completa los datos obligatorios del atleta antes de continuar.'
     for (const question of questions) {
       const value = String(answers[question.id] || '').trim()
       if (question.required && !value) return `Responde la pregunta obligatoria: ${question.label}`
@@ -429,6 +597,8 @@ export default function CompetitionEnrollmentPage() {
   const validateStep = (step) => {
     if (step === 1 && categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
     if (step === 2) {
+      const profileError = validateMissingProfileFields()
+      if (profileError) return profileError
       for (const question of questions) {
         const value = String(answers[question.id] || '').trim()
         if (question.required && !value) return `Responde la pregunta obligatoria: ${question.label}`
@@ -541,6 +711,10 @@ export default function CompetitionEnrollmentPage() {
     if (validationError) {
       setMsg({ type: 'error', text: validationError })
       return
+    }
+    if (currentStep === 2) {
+      const saved = await saveMissingProfileFields()
+      if (!saved) return
     }
     if (currentStep === 3 && !paymentInProgress && !boldButtonConfig) {
       const ready = await prepareBoldCheckout()
@@ -672,35 +846,163 @@ export default function CompetitionEnrollmentPage() {
           ) : null}
 
           {currentStep === 2 ? (
-            <StepCard number="2" title="Completar preguntas" hint="Responde las preguntas definidas por el organizador. Los campos marcados con * son obligatorios.">
-              <div style={{ display: 'grid', gap: 14 }}>
-                {questions.map((question) => (
-                  <div key={question.id} className="form-group" style={{ marginBottom: 0 }}>
-                    <label>{question.label}{question.required ? ' *' : ''}</label>
-                    {question.field_type === 'image' ? (
-                      <div style={{ display: 'grid', gap: 10 }}>
-                        <label htmlFor={`upload-${question.id}`} style={{ borderRadius: 16, border: '1px dashed #3B4452', background: 'rgba(13,15,18,0.55)', padding: '16px 14px', display: 'flex', alignItems: 'center', gap: 10, color: '#D7DEE8', cursor: 'pointer' }}>
-                          <Upload size={16} color="#5EEAD4" />
-                          <span>{uploadingQuestionId === question.id ? 'Subiendo imagen...' : 'Seleccionar imagen'}</span>
-                        </label>
-                        <input id={`upload-${question.id}`} type="file" accept="image/*" onChange={e => uploadAnswerImage(question, e.target.files?.[0])} required={!!question.required && !answers[question.id]} />
-                        <div style={{ color: '#AAB2C0', fontSize: 12 }}>{answers[question.id] ? 'Imagen cargada correctamente.' : (question.placeholder || 'Sube una imagen clara y legible.')}</div>
-                        {answers[question.id] ? <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#5EEAD4', fontSize: 12 }}>Ver archivo cargado</a> : null}
-                      </div>
-                    ) : question.field_type === 'number' ? (
-                      <input
-                        value={answers[question.id] || ''}
-                        onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value.replace(/[^\d]/g, '') }))}
-                        placeholder={question.placeholder || ''}
-                        inputMode="numeric"
-                        required={!!question.required}
-                      />
-                    ) : (
-                      <input value={answers[question.id] || ''} onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value }))} placeholder={question.placeholder || ''} required={!!question.required} />
-                    )}
+            <StepCard number="2" title="Completar inscripcion" hint="Revisa tus datos, completa lo que falta y responde las preguntas necesarias para continuar.">
+              <div style={{ display: 'grid', gap: 18 }}>
+                <section style={{ borderRadius: 20, border: '1px solid #252A33', background: 'rgba(13,15,18,0.46)', padding: 18, display: 'grid', gap: 14 }}>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>Datos del atleta</div>
+                    <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                      Los datos ya registrados quedan bloqueados. Solo debes completar lo que falta para continuar.
+                    </div>
                   </div>
-                ))}
-                {!questions.length ? <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.6)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>Esta competencia no tiene preguntas adicionales. Usaremos la informacion de tu perfil para completar la inscripcion.</div> : null}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    {profileFields.map((field) => (
+                      <div key={field.key} style={{ borderRadius: 16, border: `1px solid ${field.missing ? 'rgba(255,107,0,0.38)' : 'rgba(94,234,212,0.18)'}`, background: field.missing ? 'rgba(255,107,0,0.08)' : 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(255,255,255,0.02))', boxShadow: field.missing ? 'none' : 'inset 0 1px 0 rgba(94,234,212,0.08)', padding: 14, display: 'grid', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                          <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>{field.label}</div>
+                          {!field.originallyMissing ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.14)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}>
+                              <CheckCircle2 size={12} />
+                              Registrado
+                            </span>
+                          ) : field.missing ? null : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.14)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}>
+                              <CheckCircle2 size={12} />
+                              Listo
+                            </span>
+                          )}
+                        </div>
+                        {field.originallyMissing ? (
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            {field.key === 'ciudad_pais' ? (
+                              <div style={{ display: 'grid', gap: 10 }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(180px, 220px) minmax(0, 1fr)', gap: 10 }}>
+                                  <select
+                                    value={profileDraft.countryCode || ''}
+                                    onChange={(e) => {
+                                      const nextCountryCode = e.target.value
+                                      setProfileDraft((prev) => ({
+                                        ...prev,
+                                        countryCode: nextCountryCode,
+                                        city: '',
+                                        ciudad_pais: '',
+                                      }))
+                                    }}
+                                  >
+                                    <option value="">Pais</option>
+                                    {countries.map((country) => (
+                                      <option key={country.code} value={country.code}>{country.name}</option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={profileDraft.city || ''}
+                                    onChange={(e) => {
+                                      const nextCity = e.target.value
+                                      setProfileDraft((prev) => ({
+                                        ...prev,
+                                        city: nextCity,
+                                        ciudad_pais: nextCity && prev.countryCode ? buildCityCountry(nextCity, countryNameByCode[prev.countryCode] || '') : '',
+                                      }))
+                                    }}
+                                    disabled={!profileDraft.countryCode || !allCities.length}
+                                  >
+                                    <option value="">{profileDraft.countryCode ? 'Ciudad / pais' : 'Selecciona primero el pais'}</option>
+                                    {allCities.map((city) => (
+                                      <option key={city} value={city}>{city}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            ) : field.type === 'select' ? (
+                              <select value={profileDraft[field.key] || ''} onChange={(e) => setProfileDraft(prev => ({ ...prev, [field.key]: e.target.value }))}>
+                                <option value="">Selecciona una opcion</option>
+                                <option value="M">M</option>
+                                <option value="F">F</option>
+                                <option value="Otro">Otro</option>
+                              </select>
+                            ) : (
+                              <input
+                                type={field.type}
+                                value={profileDraft[field.key] || ''}
+                                onChange={(e) => {
+                                  const nextValue = field.key === 'cedula' ? e.target.value.replace(/[^\d]/g, '') : e.target.value
+                                  setProfileDraft(prev => ({ ...prev, [field.key]: nextValue }))
+                                }}
+                                inputMode={field.key === 'cedula' || field.key === 'celular' ? 'numeric' : undefined}
+                                placeholder={field.label}
+                                minLength={field.key === 'cedula' ? 6 : undefined}
+                                maxLength={field.key === 'cedula' ? 11 : undefined}
+                              />
+                            )}
+                            <div style={{ color: field.missing ? '#FFB36F' : '#8DF1E4', fontSize: 12 }}>
+                              {field.key === 'cedula' && field.missing
+                                ? 'Necesario para continuar. Usa entre 6 y 11 numeros.'
+                                : field.key === 'ciudad_pais' && field.missing
+                                  ? 'Necesario para continuar. Elige una ciudad valida del pais seleccionado.'
+                                  : (field.missing ? 'Necesario para continuar' : 'Listo para continuar')}
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800, lineHeight: 1.4, overflowWrap: 'anywhere' }}>
+                              {field.value}
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#AAB2C0', fontSize: 12, fontWeight: 600 }}>
+                              <Lock size={12} color="#8DF1E4" />
+                              Bloqueado en esta inscripcion
+                            </div>
+                            <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
+                              Estos datos ya estaban registrados. Si necesitas corregirlos, hazlo desde tu perfil.
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section style={{ borderRadius: 20, border: '1px solid #252A33', background: 'rgba(13,15,18,0.46)', padding: 18, display: 'grid', gap: 14 }}>
+                  <div style={{ display: 'grid', gap: 4 }}>
+                    <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>Preguntas de la competencia</div>
+                    <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                      {hasOrganizerQuestions ? 'Responde las preguntas definidas por el organizador. Los campos marcados con * son obligatorios.' : 'No hay preguntas adicionales para esta competencia.'}
+                    </div>
+                  </div>
+                  {questions.length ? (
+                    <div style={{ display: 'grid', gap: 14 }}>
+                      {questions.map((question) => (
+                        <div key={question.id} className="form-group" style={{ marginBottom: 0 }}>
+                          <label>{question.label}{question.required ? ' *' : ''}</label>
+                          {question.field_type === 'image' ? (
+                            <div style={{ display: 'grid', gap: 10 }}>
+                              <label htmlFor={`upload-${question.id}`} style={{ borderRadius: 16, border: '1px dashed #3B4452', background: 'rgba(13,15,18,0.55)', padding: '16px 14px', display: 'flex', alignItems: 'center', gap: 10, color: '#D7DEE8', cursor: 'pointer' }}>
+                                <Upload size={16} color="#5EEAD4" />
+                                <span>{uploadingQuestionId === question.id ? 'Subiendo imagen...' : 'Seleccionar imagen'}</span>
+                              </label>
+                              <input id={`upload-${question.id}`} type="file" accept="image/*" onChange={e => uploadAnswerImage(question, e.target.files?.[0])} required={!!question.required && !answers[question.id]} />
+                              <div style={{ color: '#AAB2C0', fontSize: 12 }}>{answers[question.id] ? 'Imagen cargada correctamente.' : (question.placeholder || 'Sube una imagen clara y legible.')}</div>
+                              {answers[question.id] ? <a href={answers[question.id]} target="_blank" rel="noreferrer" style={{ color: '#5EEAD4', fontSize: 12 }}>Ver archivo cargado</a> : null}
+                            </div>
+                          ) : question.field_type === 'number' ? (
+                            <input
+                              value={answers[question.id] || ''}
+                              onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value.replace(/[^\d]/g, '') }))}
+                              placeholder={question.placeholder || ''}
+                              inputMode="numeric"
+                              required={!!question.required}
+                            />
+                          ) : (
+                            <input value={answers[question.id] || ''} onChange={e => setAnswers(prev => ({ ...prev, [question.id]: e.target.value }))} placeholder={question.placeholder || ''} required={!!question.required} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 14, color: '#AAB2C0', fontSize: 14 }}>
+                      No hay preguntas adicionales para esta competencia.
+                    </div>
+                  )}
+                </section>
               </div>
             </StepCard>
           ) : null}
@@ -816,11 +1118,6 @@ export default function CompetitionEnrollmentPage() {
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 12 }}>
-                  {profileIncomplete ? (
-                    <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
-                      Completa tu perfil antes de continuar con esta inscripcion. Faltan: {formatMissingParticipantProfileFields(profileMissingFields)}.
-                    </div>
-                  ) : null}
                   {enrollmentStateLabel(enrollmentState, paymentStatus) ? (
                     <div
                       style={{
@@ -842,15 +1139,11 @@ export default function CompetitionEnrollmentPage() {
                     </div>
                   ) : null}
                   {enrollmentClosed ? <div style={{ borderRadius: 16, border: '1px solid rgba(126,135,150,0.24)', background: 'rgba(126,135,150,0.08)', padding: 14, color: '#D7DEE8', fontSize: 14 }}>Las inscripciones estan cerradas en este momento.</div> : null}
+                  {savingProfile ? <div style={{ borderRadius: 16, border: '1px solid rgba(255,107,0,0.24)', background: 'rgba(255,107,0,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>Guardando datos del atleta...</div> : null}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {profileIncomplete ? (
-                      <button type="button" className="btn-primary" onClick={() => navigate('/profile')}>
-                        Completar perfil
-                      </button>
-                    ) : null}
-                    <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || syncingPayment || checkoutLoading}>Anterior</button>
+                    <button type="button" className="btn-secondary" onClick={goPrevStep} disabled={currentStep === 1 || syncingPayment || checkoutLoading || savingProfile}>Anterior</button>
                     {currentStep < 4 ? (
-                      <button type="button" className="btn-primary" onClick={handleNextStep} disabled={submissionBlocked || syncingPayment || checkoutLoading || !!uploadingQuestionId}>Siguiente</button>
+                      <button type="button" className="btn-primary" onClick={handleNextStep} disabled={(currentStep === 2 ? stepTwoBlocked : submissionBlocked || syncingPayment || checkoutLoading || savingProfile || !!uploadingQuestionId)}>Siguiente</button>
                     ) : null}
                   </div>
                 </div>
