@@ -1,4 +1,5 @@
 import io
+from collections import defaultdict
 import json
 import os
 import re
@@ -19,7 +20,16 @@ from access import get_owned_competition_ids, is_organizer_user, require_competi
 from auth import get_current_user_id, get_current_user_optional, has_organizer_access, require_staff
 from competition_rules import filter_visible_phases, normalize_phase_measurement_method, normalize_phase_visibility, normalize_rm_unit, type_from_measurement_method
 from database import MAX_TEAM_SIZE, get_session
-from models import Competition, CompetitionCreate, CompetitionUpdate
+from models import (
+    Competition,
+    CompetitionCategory,
+    CompetitionCreate,
+    CompetitionParticipant,
+    CompetitionUpdate,
+    Participant,
+    Team,
+    TeamMember,
+)
 from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
@@ -487,6 +497,99 @@ def _competition_modality_config(competition: Competition | None) -> dict:
     }
 
 
+def _sanitize_public_participant(row: dict) -> dict:
+    return {
+        "id": row.get("id") or row.get("member_id"),
+        "nombre": str(row.get("nombre") or "").strip(),
+        "apellido": str(row.get("apellido") or "").strip(),
+        "profile_photo_url": row.get("profile_photo_url") or None,
+        "ciudad_pais": str(row.get("ciudad_pais") or "").strip() or None,
+        "box": str(row.get("box") or "").strip() or None,
+    }
+
+
+def _build_public_team_entries(team_rows: list[dict]) -> list[dict]:
+    grouped: dict[int, dict] = {}
+    for row in team_rows:
+        try:
+            team_id = int(row.get("team_id"))
+        except Exception:
+            continue
+        entry = grouped.setdefault(
+            team_id,
+            {
+                "id": team_id,
+                "nombre": str(row.get("team_name") or "").strip() or f"Equipo {team_id}",
+                "category_name": str(row.get("team_category_name") or row.get("member_category") or "").strip() or None,
+                "members": [],
+            },
+        )
+        sanitized_member = _sanitize_public_participant(row)
+        if sanitized_member["id"] is None:
+            continue
+        if not any(member["id"] == sanitized_member["id"] for member in entry["members"]):
+            entry["members"].append(sanitized_member)
+    return list(grouped.values())
+
+
+def _build_public_category_roster_payload(categories: list[dict], individual_rows: list[dict], team_entries: list[dict]) -> dict:
+    individual_buckets: dict[str, list[dict]] = defaultdict(list)
+    for row in individual_rows:
+        category_name = str(row.get("category_name") or row.get("categoria") or "").strip()
+        if not category_name:
+            continue
+        individual_buckets[category_name].append(_sanitize_public_participant(row))
+
+    team_buckets: dict[str, list[dict]] = defaultdict(list)
+    for team in team_entries:
+        category_name = str(team.get("category_name") or "").strip()
+        if not category_name:
+            continue
+        team_buckets[category_name].append({
+            "id": team.get("id"),
+            "nombre": str(team.get("nombre") or "").strip(),
+            "members": [_sanitize_public_participant(member) for member in (team.get("members") or [])],
+        })
+
+    payload = {"individual": [], "teams": []}
+    for category in categories:
+        modality = _normalize_modality(category.get("modality"))
+        category_name = str(category.get("nombre") or "").strip()
+        item = {
+            "category_id": category.get("id"),
+            "category_name": category_name,
+            "modality": modality,
+        }
+        if modality == "teams":
+            payload["teams"].append({**item, "teams": team_buckets.get(category_name, [])})
+        else:
+            payload["individual"].append({**item, "participants": individual_buckets.get(category_name, [])})
+    return payload
+
+
+def _competition_public_preview_allowed(session: Session, competition: Competition, user) -> bool:
+    if competition.activa:
+        return True
+    scoped_user = user
+    if user and user.get("role") != "admin" and has_organizer_access(user):
+        scoped_user = {**user, "staff_mode": "organizer"}
+    owned_ids = get_owned_competition_ids(session, scoped_user)
+    return bool(
+        user
+        and (
+            user.get("role") == "admin"
+            or (is_organizer_user(scoped_user) and competition.id in owned_ids)
+        )
+    )
+
+
+def _require_public_competition_access(session: Session, competition_id: str, user) -> Competition:
+    competition = _resolve_competition(session, competition_id)
+    if not _competition_public_preview_allowed(session, competition, user):
+        raise HTTPException(404, "Competencia no encontrada")
+    return competition
+
+
 def _group_rows_by_modality(rows: list[dict]) -> dict[str, list[dict]]:
     grouped = {"individual": [], "teams": []}
     for row in rows:
@@ -547,22 +650,8 @@ def get_public_competition_detail(
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
-    competition = _resolve_competition(session, competition_id)
+    competition = _require_public_competition_access(session, competition_id, user)
     competition_id_int = competition.id
-    if not competition.activa:
-        scoped_user = user
-        if user and user.get("role") != "admin" and has_organizer_access(user):
-            scoped_user = {**user, "staff_mode": "organizer"}
-        owned_ids = get_owned_competition_ids(session, scoped_user)
-        can_preview = bool(
-            user
-            and (
-                user.get("role") == "admin"
-                or (is_organizer_user(scoped_user) and competition_id_int in owned_ids)
-            )
-        )
-        if not can_preview:
-            raise HTTPException(404, "Competencia no encontrada")
 
     categories = session.execute(
         text("""
@@ -696,6 +785,111 @@ def get_public_competition_detail(
     }
 
 
+@router.get("/{competition_id}/public-roster")
+def get_public_competition_roster(
+    competition_id: str,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    competition = _require_public_competition_access(session, competition_id, user)
+    categories = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition.id)
+        .order_by(CompetitionCategory.modality, CompetitionCategory.orden, CompetitionCategory.nombre)
+    ).all()
+    category_rows = [
+        {
+            "id": category.id,
+            "nombre": category.nombre,
+            "modality": _normalize_modality(getattr(category, "modality", None)),
+        }
+        for category in categories
+    ]
+
+    if not getattr(competition, "show_public_category_roster", 0):
+        empty_payload = _build_public_category_roster_payload(category_rows, [], [])
+        return {"enabled": False, **empty_payload}
+
+    individual_rows = []
+    individual_enrollments = session.exec(
+        select(CompetitionParticipant, Participant)
+        .join(Participant, Participant.id == CompetitionParticipant.user_id)
+        .where(CompetitionParticipant.competition_id == competition.id)
+        .where(CompetitionParticipant.estado == "confirmado")
+    ).all()
+    for enrollment, participant in individual_enrollments:
+        individual_rows.append({
+            "id": participant.id,
+            "nombre": participant.nombre,
+            "apellido": participant.apellido,
+            "profile_photo_url": participant.profile_photo_url,
+            "ciudad_pais": participant.ciudad_pais,
+            "box": participant.box,
+            "categoria": enrollment.categoria,
+            "category_name": enrollment.categoria,
+        })
+
+    team_rows = session.exec(
+        select(
+            Team.id,
+            Team.nombre,
+            CompetitionCategory.nombre,
+            Participant.id,
+            Participant.nombre,
+            Participant.apellido,
+            Participant.profile_photo_url,
+            Participant.ciudad_pais,
+            Participant.box,
+            CompetitionParticipant.categoria,
+        )
+        .join(TeamMember, TeamMember.team_id == Team.id)
+        .join(Participant, Participant.id == TeamMember.user_id)
+        .join(
+            CompetitionParticipant,
+            (CompetitionParticipant.user_id == Participant.id)
+            & (CompetitionParticipant.competition_id == Team.competition_id),
+        )
+        .outerjoin(CompetitionCategory, CompetitionCategory.id == Team.team_category_id)
+        .where(Team.competition_id == competition.id)
+        .where(CompetitionParticipant.estado == "confirmado")
+    ).all()
+
+    public_team_entries = _build_public_team_entries([
+        {
+            "team_id": team_id,
+            "team_name": team_name,
+            "team_category_name": team_category_name,
+            "member_id": member_id,
+            "nombre": member_name,
+            "apellido": member_last_name,
+            "profile_photo_url": profile_photo_url,
+            "ciudad_pais": ciudad_pais,
+            "box": box,
+            "member_category": member_category,
+        }
+        for (
+            team_id,
+            team_name,
+            team_category_name,
+            member_id,
+            member_name,
+            member_last_name,
+            profile_photo_url,
+            ciudad_pais,
+            box,
+            member_category,
+        ) in team_rows
+    ])
+    required_team_size = _normalize_team_size(getattr(competition, "team_size", 2), fallback=2)
+    public_team_entries = [
+        entry for entry in public_team_entries
+        if len(entry.get("members") or []) >= required_team_size
+    ]
+
+    roster_payload = _build_public_category_roster_payload(category_rows, individual_rows, public_team_entries)
+    return {"enabled": True, **roster_payload}
+
+
 @router.get("/{competition_id}/leaderboard-qr")
 def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_session)):
     c = session.get(Competition, competition_id)
@@ -740,6 +934,8 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     payload["enrollment_payment_methods"] = None
     _normalize_competition_theme(payload)
     _normalize_competition_visibility(payload)
+    if "show_public_category_roster" in payload:
+        payload["show_public_category_roster"] = _normalize_toggle(payload.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(payload)
     _normalize_competition_dates(payload)
     _validate_competition_dates(payload)
@@ -793,6 +989,8 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     data["enrollment_payment_methods"] = None
     _normalize_competition_theme(data)
     _normalize_competition_visibility(data)
+    if "show_public_category_roster" in data:
+        data["show_public_category_roster"] = _normalize_toggle(data.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(data)
     _normalize_competition_dates(data)
     _validate_competition_dates(data)

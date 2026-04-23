@@ -4374,6 +4374,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     team_membership_rule: 'free',
     allow_user_results: 0,
     show_individual_leaderboard: 1,
+    show_public_category_roster: 0,
     show_team_all_by_category_option: 1,
     show_team_all_global_option: 1,
     enrollment_open: 0,
@@ -4447,6 +4448,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         team_membership_rule: source.team_membership_rule || 'free',
         allow_user_results: source.allow_user_results || 0,
         show_individual_leaderboard: source.show_individual_leaderboard == null ? 1 : source.show_individual_leaderboard,
+        show_public_category_roster: source.show_public_category_roster == null ? 0 : source.show_public_category_roster,
         show_team_all_by_category_option: source.show_team_all_by_category_option == null ? 1 : source.show_team_all_by_category_option,
         show_team_all_global_option: source.show_team_all_global_option == null ? 1 : source.show_team_all_global_option,
         enrollment_open: source.enrollment_open || 0,
@@ -4736,6 +4738,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       team_membership_rule: form.team_membership_rule === 'same_category' ? 'same_category' : 'free',
       allow_user_results: form.allow_user_results ? 1 : 0,
       show_individual_leaderboard: form.show_individual_leaderboard ? 1 : 0,
+      show_public_category_roster: form.show_public_category_roster ? 1 : 0,
       show_team_all_by_category_option: form.show_team_all_by_category_option ? 1 : 0,
       show_team_all_global_option: form.show_team_all_global_option ? 1 : 0,
       enrollment_open: form.enrollment_open ? 1 : 0,
@@ -5804,6 +5807,16 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div style={{ marginBottom: 14 }}>
             <h4 style={sectionTitleStyle}>Divisiones</h4>
             <div style={sectionHintStyle}>Crea solo las divisiones que realmente vas a usar. Si una no aplica, dejala fuera.</div>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            {renderToggleCard({
+              label: 'Mostrar inscritos publicamente por categoria',
+              hint: 'Publica en la landing los atletas y equipos confirmados dentro de cada categoria.',
+              enabled: !!form.show_public_category_roster,
+              enabledText: 'Visible',
+              disabledText: 'Oculto',
+              onClick: () => setForm(f => ({ ...f, show_public_category_roster: f.show_public_category_roster ? 0 : 1 })),
+            })}
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>

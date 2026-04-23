@@ -120,6 +120,7 @@ class Competition(SQLModel, table=True):
     team_membership_rule: str = Field(default=ReglaMiembro.FREE)  # free | same_category
     allow_user_results: int = Field(default=0)
     show_individual_leaderboard: int = Field(default=1)
+    show_public_category_roster: int = Field(default=0)
     show_team_all_by_category_option: int = Field(default=1)
     show_team_all_global_option: int = Field(default=1)
     tv_show_qr: int = Field(default=1)
@@ -1081,6 +1082,7 @@ class CompetitionCreate(SQLModel):
     team_membership_rule: str = ReglaMiembro.FREE
     allow_user_results: int = 0
     show_individual_leaderboard: int = 1
+    show_public_category_roster: int = 0
     show_team_all_by_category_option: int = 1
     show_team_all_global_option: int = 1
     tv_show_qr: int = 1
@@ -1136,6 +1138,7 @@ class CompetitionUpdate(SQLModel):
     team_membership_rule: Optional[str] = None
     allow_user_results: Optional[int] = None
     show_individual_leaderboard: Optional[int] = None
+    show_public_category_roster: Optional[int] = None
     show_team_all_by_category_option: Optional[int] = None
     show_team_all_global_option: Optional[int] = None
     tv_show_qr: Optional[int] = None

@@ -77,12 +77,30 @@ export function parseCityCountry(value) {
   const raw = (value || '').trim()
   if (!raw) return { city: '', countryName: '', countryCode: '' }
   const parts = raw.split('/').map((part) => part.trim()).filter(Boolean)
-  if (parts.length < 2) return { city: raw, countryName: '', countryCode: '' }
-  const countryName = parts.at(-1)
-  const city = parts.slice(0, -1).join(' / ')
+  if (parts.length >= 2) {
+    const countryName = parts.at(-1)
+    const city = parts.slice(0, -1).join(' / ')
+    return {
+      city,
+      countryName,
+      countryCode: '',
+    }
+  }
+
+  const commaParts = raw.split(',').map((part) => part.trim()).filter(Boolean)
+  if (commaParts.length >= 2) {
+    const countryName = commaParts.at(-1)
+    const city = commaParts.slice(0, -1).join(', ')
+    return {
+      city,
+      countryName,
+      countryCode: '',
+    }
+  }
+
   return {
-    city,
-    countryName,
+    city: raw,
+    countryName: '',
     countryCode: '',
   }
 }

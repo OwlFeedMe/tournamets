@@ -6,6 +6,7 @@ import { AuthenticatedShell } from './components/layout/AuthenticatedShell'
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
+const CompetitionPublicRosterPage = lazy(() => import('./pages/CompetitionPublicRosterPage'))
 const CompetitionPaymentResultPage = lazy(() => import('./pages/CompetitionPaymentResultPage'))
 const CompetitionTicketsPage = lazy(() => import('./pages/CompetitionTicketsPage'))
 const CompetitionTicketsPaymentResultPage = lazy(() => import('./pages/CompetitionTicketsPaymentResultPage'))
@@ -81,6 +82,7 @@ export default function App() {
               <Route path="/competition4" element={<CompetitionVariants variant={4} />} />
               <Route path="/competition5" element={<CompetitionVariants variant={5} />} />
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
+              <Route path="/competitions/:competitionId/inscritos" element={<CompetitionPublicRosterPage />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />

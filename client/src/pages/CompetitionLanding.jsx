@@ -1,5 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, ChevronUp, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -453,6 +453,7 @@ export default function CompetitionLanding() {
     let active = true
     setLoading(true)
     setError('')
+    setExpandedCategoryKey('')
     api.get(`/competitions/${competitionId}/public`)
       .then(({ data }) => {
         if (!active) return
@@ -562,6 +563,8 @@ export default function CompetitionLanding() {
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
+  const publicRosterHref = competition ? `/competitions/${competition.id}/inscritos` : '/events'
+  const canShowPublicRoster = !!competition?.show_public_category_roster
   const competitionStartDate = useMemo(
     () => parseDateValue(competition?.competition_start || competition?.enrollment_start),
     [competition]
@@ -1106,7 +1109,31 @@ export default function CompetitionLanding() {
                   <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                     Categorias
                   </div>
-                  <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Divisiones de la competencia</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+                    <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Divisiones de la competencia</h2>
+                    {canShowPublicRoster ? (
+                      <Link
+                        to={publicRosterHref}
+                        style={{
+                          textDecoration: 'none',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '10px 14px',
+                          borderRadius: 999,
+                          border: `1px solid ${hexToRgba(theme.accent, 0.34)}`,
+                          background: hexToRgba(theme.accent, 0.12),
+                          color: theme.text,
+                          fontSize: 12,
+                          fontWeight: 800,
+                        }}
+                      >
+                        <Users size={15} />
+                        Ver inscritos
+                        <ArrowRight size={15} />
+                      </Link>
+                    ) : null}
+                  </div>
                   <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
                     {categories.length ? Object.entries(categoriesByModality)
                       .filter(([, items]) => Array.isArray(items) && items.length)
