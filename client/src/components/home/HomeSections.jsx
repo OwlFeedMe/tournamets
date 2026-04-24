@@ -311,6 +311,7 @@ export function HomeCompetitionCard({
 }) {
   const status = competition.status
   const cta = getButtonState(competition.raw, isAthlete, enrollmentState)
+  const competitionHref = `/competitions/${competition.id}`
 
   return (
     <article
@@ -322,7 +323,9 @@ export function HomeCompetitionCard({
         gridTemplateRows: 'auto minmax(0, 1fr)',
       }}
     >
-      <div
+      <Link
+        to={competitionHref}
+        aria-label={`Ver competencia ${competition.nombre}`}
         style={{
           position: 'relative',
           display: 'block',
@@ -331,6 +334,7 @@ export function HomeCompetitionCard({
           minWidth: 0,
           background: '#0D0F12',
           overflow: 'hidden',
+          textDecoration: 'none',
         }}
       >
         {competition.bannerUrl ? (
@@ -392,11 +396,16 @@ export function HomeCompetitionCard({
 
           <div />
         </div>
-      </div>
+      </Link>
 
       <div style={{ padding: isMobile ? 16 : 22, display: 'grid', gridTemplateRows: 'auto auto 1fr auto', gap: isMobile ? 14 : 16 }}>
         <div style={{ display: 'grid', gap: 10 }}>
-          <h3 style={{ margin: 0, color: premium.text, fontSize: isMobile ? 21 : 24, lineHeight: 1.1, overflowWrap: 'anywhere' }}>{competition.nombre}</h3>
+          <Link
+            to={competitionHref}
+            style={{ textDecoration: 'none', color: premium.text }}
+          >
+            <h3 style={{ margin: 0, color: 'inherit', fontSize: isMobile ? 21 : 24, lineHeight: 1.1, overflowWrap: 'anywhere' }}>{competition.nombre}</h3>
+          </Link>
           <p style={{ margin: 0, color: premium.textSoft, fontSize: isMobile ? 13 : 14, lineHeight: 1.6 }}>
             {competition.description}
           </p>
@@ -415,7 +424,7 @@ export function HomeCompetitionCard({
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
           <Link
-            to={`/competitions/${competition.id}`}
+            to={competitionHref}
             style={{
               textDecoration: 'none',
               display: 'inline-flex',
