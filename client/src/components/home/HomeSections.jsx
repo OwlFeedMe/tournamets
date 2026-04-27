@@ -310,7 +310,8 @@ export function HomeCompetitionCard({
   getButtonState,
 }) {
   const status = competition.status
-  const cta = getButtonState(competition.raw, isAthlete,   const competitionHref = `/competitions/${competition.id}`
+  const competitionHref = `/competitions/${competition.id}`
+  const cta = getButtonState(competition.raw, isAthlete, enrollmentState)
 
   return (
     <article
@@ -505,4 +506,3 @@ export function HomeEmptyState({ hasCompetitions }) {
     </div>
   )
 }
-
