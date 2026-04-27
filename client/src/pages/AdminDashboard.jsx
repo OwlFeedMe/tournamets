@@ -9,6 +9,7 @@ import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Ho
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
+import CompetitionDiscountsPage from './CompetitionDiscountsPage'
 
 function SuccessToast({ text, onDone }) {
   useEffect(() => {
@@ -11466,6 +11467,12 @@ function CompetitionsTab() {
               <div className="card">
                 <SpectatorTicketingOpsPanel competition={selectedCompetition} />
               </div>
+            </div>
+          )}
+
+          {selectedTab === 'discounts' && (
+            <div className="card">
+              <CompetitionDiscountsPage competition={selectedCompetition} />
             </div>
           )}
 

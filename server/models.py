@@ -569,6 +569,11 @@ class CompetitionParticipant(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+    discount_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_discounts.id", ondelete="SET NULL"), nullable=True),
+    )
+    discount_amount: int = Field(default=0)
     inscrito_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -678,11 +683,89 @@ class CompetitionPaymentIntent(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
+    discount_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_discounts.id", ondelete="SET NULL"), nullable=True),
+    )
+    discount_amount: int = Field(default=0)
     payment_updated_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
     )
     created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionDiscount(SQLModel, table=True):
+    __tablename__ = "competition_discounts"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "code", name="uq_comp_discount_code"),
+        Index("ix_comp_discount_competition", "competition_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    code: str = Field(max_length=50)
+    description: Optional[str] = None
+    discount_type: str = Field(default="percentage")   # "percentage" | "fixed"
+    discount_value: int = Field(default=0)             # % (1-80) o centavos fijos
+    max_uses: Optional[int] = Field(default=None)      # None = ilimitado
+    uses_count: int = Field(default=0)
+    max_uses_per_user: int = Field(default=1)
+    applies_to_category_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_categories.id", ondelete="SET NULL"), nullable=True),
+    )
+    valid_from: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    valid_until: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    is_active: int = Field(default=1)
+    created_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionDiscountUsage(SQLModel, table=True):
+    __tablename__ = "competition_discount_usages"
+    __table_args__ = (
+        Index("ix_comp_discount_usage_discount", "discount_id"),
+        Index("ix_comp_discount_usage_user", "user_id"),
+        Index("ix_comp_discount_usage_competition", "competition_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    discount_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competition_discounts.id", ondelete="CASCADE"), nullable=False)
+    )
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    )
+    discount_code: str
+    discount_type: str
+    discount_value: int
+    base_price_before: int = Field(default=0)
+    discount_amount_applied: int = Field(default=0)
+    final_base_price: int = Field(default=0)
+    payment_intent_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_payment_intents.id", ondelete="SET NULL"), nullable=True),
+    )
+    enrollment_status: str = Field(default="pending")  # pending | confirmed | cancelled
+    applied_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
     )
@@ -1417,6 +1500,7 @@ class SelfEnrollRequest(SQLModel):
     answers: Optional[List[EnrollmentAnswerItem]] = None
     payment_receipt_url: Optional[str] = None
     terms_accepted: int = 0
+    discount_code: Optional[str] = None
 
 
 class EnrollStatusUpdate(SQLModel):

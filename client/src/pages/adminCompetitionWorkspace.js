@@ -32,6 +32,14 @@ export const COMPETITION_WORKSPACE_SECTIONS = [
     primaryAction: 'Gestionar boleteria',
   },
   {
+    id: 'discounts',
+    label: 'Descuentos',
+    shortLabel: 'Descuentos',
+    group: 'operacion',
+    description: 'Codigos de descuento con limite de usos y log.',
+    primaryAction: 'Gestionar descuentos',
+  },
+  {
     id: 'prep',
     label: 'Preparación',
     shortLabel: 'Preparación',

@@ -7,6 +7,7 @@ import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
+import DiscountInput from '../components/enrollment/DiscountInput'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
@@ -368,6 +369,7 @@ export default function CompetitionEnrollmentPage() {
   const [savingProfile, setSavingProfile] = useState(false)
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
+  const [appliedDiscount, setAppliedDiscount] = useState(null)
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -444,7 +446,16 @@ export default function CompetitionEnrollmentPage() {
   const cityCountryComplete = !!String(profileDraft.countryCode || '').trim() && !!String(profileDraft.city || '').trim()
   const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
-  const pricing = useMemo(() => calculateEnrollmentPricing(selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee), [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee])
+  const pricing = useMemo(() => {
+    const basePrice = normalizeEnrollmentPrice(selectedCategoryData?.enrollment_price)
+    const discountAmount = appliedDiscount?.discount_amount ?? 0
+    const effectiveBase = Math.max(0, basePrice - discountAmount)
+    return {
+      ...calculateEnrollmentPricing(effectiveBase, platformFeeRate, minPlatformFee),
+      originalBasePrice: basePrice,
+      discountAmount,
+    }
+  }, [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee, appliedDiscount])
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
@@ -486,6 +497,7 @@ export default function CompetitionEnrollmentPage() {
 
   useEffect(() => {
     setBoldButtonConfig(null)
+    setAppliedDiscount(null)
   }, [selectedCategory, competitionTermsAccepted, appTermsAccepted, JSON.stringify(answers)])
 
   const uploadEnrollmentImage = async (file, onSuccess, onState) => {
@@ -625,6 +637,7 @@ export default function CompetitionEnrollmentPage() {
       answer: answers[question.id] || '',
     })),
     terms_accepted: competitionTermsAccepted && appTermsAccepted ? 1 : 0,
+    discount_code: appliedDiscount?.code || null,
   })
 
   const syncPaymentStatus = async ({ silent = false } = {}) => {
@@ -1050,11 +1063,32 @@ export default function CompetitionEnrollmentPage() {
                   <div style={{ display: 'grid', gap: 10 }}>
                     <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 16, display: 'grid', gap: 12 }}>
                       <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 16 }}>{selectedCategoryData.nombre}</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+
+                      {!boldButtonConfig && !paymentInProgress ? (
+                        <div>
+                          <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Codigo de descuento (opcional)</div>
+                          <DiscountInput
+                            competitionId={competition.id}
+                            categoria={selectedCategory}
+                            applied={appliedDiscount}
+                            onApply={(result) => { setAppliedDiscount(result); setBoldButtonConfig(null) }}
+                            onClear={() => { setAppliedDiscount(null); setBoldButtonConfig(null) }}
+                          />
+                        </div>
+                      ) : null}
+
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${pricing.discountAmount > 0 ? 4 : 3}, minmax(0, 1fr))`, gap: 10 }}>
                         <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Precio inscripcion</div>
-                          <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.organizerPrice)}</div>
+                          <div style={{ color: pricing.discountAmount > 0 ? '#7E8796' : '#F5F7FA', fontSize: 16, fontWeight: 800, textDecoration: pricing.discountAmount > 0 ? 'line-through' : 'none' }}>{formatCop(pricing.originalBasePrice)}</div>
+                          {pricing.discountAmount > 0 ? <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{formatCop(pricing.organizerPrice)}</div> : null}
                         </div>
+                        {pricing.discountAmount > 0 ? (
+                          <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.06)', padding: 12 }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Descuento ({appliedDiscount?.code})</div>
+                            <div style={{ color: '#8DF1E4', fontSize: 16, fontWeight: 800 }}>-{formatCop(pricing.discountAmount)}</div>
+                          </div>
+                        ) : null}
                         <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
                           <div style={{ color: '#FFB36F', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.platformFee)}</div>

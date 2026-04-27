@@ -24,8 +24,9 @@ from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
-    CompetitionPaymentIntentActivateRequest,
+    CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
 )
+from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
 from services.emailer import send_email
 from services.email_templates import (
@@ -341,6 +342,40 @@ def _verify_bold_webhook_signature(raw_body: bytes, signature: str | None) -> bo
     return False
 
 
+def _confirm_discount_usage(session: Session, discount_id: int, user_id: int) -> None:
+    usage = session.exec(
+        select(CompetitionDiscountUsage)
+        .where(CompetitionDiscountUsage.discount_id == discount_id)
+        .where(CompetitionDiscountUsage.user_id == user_id)
+        .where(CompetitionDiscountUsage.enrollment_status == "pending")
+        .order_by(CompetitionDiscountUsage.id.desc())
+    ).first()
+    if usage:
+        usage.enrollment_status = "confirmed"
+        session.add(usage)
+
+
+def _cancel_discount_usage(session: Session, discount_id: int, user_id: int) -> None:
+    from sqlalchemy import update as sa_update
+    from models import CompetitionDiscount
+    usage = session.exec(
+        select(CompetitionDiscountUsage)
+        .where(CompetitionDiscountUsage.discount_id == discount_id)
+        .where(CompetitionDiscountUsage.user_id == user_id)
+        .where(CompetitionDiscountUsage.enrollment_status == "pending")
+        .order_by(CompetitionDiscountUsage.id.desc())
+    ).first()
+    if usage:
+        usage.enrollment_status = "cancelled"
+        session.add(usage)
+        # Devolver el uso al contador
+        session.execute(
+            sa_update(CompetitionDiscount)
+            .where(CompetitionDiscount.id == discount_id)
+            .values(uses_count=CompetitionDiscount.uses_count - 1)
+        )
+
+
 def _apply_bold_notification(session: Session, payload: dict) -> dict:
     data = payload.get("data") if isinstance(payload, dict) else {}
     data = data if isinstance(data, dict) else {}
@@ -377,6 +412,11 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         session.add(enrollment)
         if payment_status == "approved":
             invalidate_leaderboard_results_snapshot(enrollment.competition_id)
+            if enrollment.discount_id:
+                _confirm_discount_usage(session, enrollment.discount_id, enrollment.user_id)
+        elif payment_status in {"rejected", "failed", "voided", "void_rejected"}:
+            if enrollment.discount_id:
+                _cancel_discount_usage(session, enrollment.discount_id, enrollment.user_id)
         _try_send_payment_email(
             session,
             user_id=enrollment.user_id,
@@ -425,6 +465,8 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
             existing.payment_processor_fee = intent.payment_processor_fee
             existing.payment_platform_net = intent.payment_platform_net
             existing.payment_amount_total = intent.payment_amount_total
+            existing.discount_id = intent.discount_id
+            existing.discount_amount = intent.discount_amount
             existing.payment_processed_at = now
             existing.payment_updated_at = now
             session.add(existing)
@@ -446,10 +488,19 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 payment_processor_fee=intent.payment_processor_fee,
                 payment_platform_net=intent.payment_platform_net,
                 payment_amount_total=intent.payment_amount_total,
+                discount_id=intent.discount_id,
+                discount_amount=intent.discount_amount,
                 payment_processed_at=now,
                 payment_updated_at=now,
             ))
         invalidate_leaderboard_results_snapshot(intent.competition_id)
+        # Marcar el uso del descuento como confirmado
+        if intent.discount_id:
+            _confirm_discount_usage(session, intent.discount_id, intent.user_id)
+    elif payment_status in {"rejected", "failed", "voided", "void_rejected"}:
+        # Liberar el slot del descuento si el pago no prosperó
+        if intent.discount_id:
+            _cancel_discount_usage(session, intent.discount_id, intent.user_id)
     session.add(intent)
     _try_send_payment_email(
         session,
@@ -784,8 +835,21 @@ def create_bold_checkout(
 
     pricing_cfg = get_pricing_config(session)
     fee_rate = _normalize_platform_fee_rate(pricing_cfg["default_platform_fee_rate"])
+
+    # ── Descuento ────────────────────────────────────────────────────────────
+    applied_discount = None
+    discount_amount = 0
+    raw_discount_code = str(body.discount_code or "").strip()
+    if raw_discount_code:
+        applied_discount, discount_amount = validate_discount_for_checkout(
+            raw_discount_code, competition_id, user_id, category, session
+        )
+
+    base_price = getattr(category, "enrollment_price", 0)
+    effective_base = max(0, base_price - discount_amount)
+
     breakdown = _price_breakdown(
-        getattr(category, "enrollment_price", 0),
+        effective_base,
         fee_rate,
         pricing_cfg["bold_processor_rate"],
         pricing_cfg["bold_processor_fixed_fee"],
@@ -824,7 +888,7 @@ def create_bold_checkout(
         )
 
     now = datetime.now(timezone.utc)
-    session.add(CompetitionPaymentIntent(
+    intent = CompetitionPaymentIntent(
         competition_id=competition_id,
         user_id=user_id,
         categoria=category_name,
@@ -840,9 +904,39 @@ def create_bold_checkout(
         payment_processor_fee=breakdown["processor_fee"],
         payment_platform_net=breakdown["platform_net"],
         payment_amount_total=breakdown["total_price"],
+        discount_id=applied_discount.id if applied_discount else None,
+        discount_amount=discount_amount,
         payment_processed_at=None,
         payment_updated_at=now,
-    ))
+    )
+    session.add(intent)
+    session.flush()  # obtener intent.id antes del commit
+
+    # Registrar uso del descuento (pending) y reservar el slot
+    if applied_discount:
+        usage = CompetitionDiscountUsage(
+            discount_id=applied_discount.id,
+            competition_id=competition_id,
+            user_id=user_id,
+            discount_code=applied_discount.code,
+            discount_type=applied_discount.discount_type,
+            discount_value=applied_discount.discount_value,
+            base_price_before=base_price,
+            discount_amount_applied=discount_amount,
+            final_base_price=effective_base,
+            payment_intent_id=intent.id,
+            enrollment_status="pending",
+        )
+        session.add(usage)
+        # Incremento atómico del contador de usos
+        from sqlalchemy import update as sa_update
+        from models import CompetitionDiscount
+        session.execute(
+            sa_update(CompetitionDiscount)
+            .where(CompetitionDiscount.id == applied_discount.id)
+            .values(uses_count=CompetitionDiscount.uses_count + 1)
+        )
+
     session.commit()
 
     redirection_base = (os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
@@ -870,7 +964,12 @@ def create_bold_checkout(
         "redirection_url": redirection_url,
         "integrity_signature": _bold_integrity_signature(order_id, breakdown["total_price"], "COP", secret_key),
         "customer_data": customer_data,
-        "pricing": breakdown,
+        "pricing": {
+            **breakdown,
+            "original_base_price": base_price,
+            "discount_amount": discount_amount,
+            "discount_code": applied_discount.code if applied_discount else None,
+        },
     }
 
 
