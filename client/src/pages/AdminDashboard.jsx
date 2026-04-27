@@ -10186,9 +10186,9 @@ function CompetitionJudgeCardsPanel({ competition, isMobile = false }) {
 }
 
 function CompetitionsTab() {
-  const { role, organizerEnabled } = useAuth()
+  const { role, organizerEnabled, adminEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || adminEnabled
   const [competitions, setCompetitions] = useState([])
   const [msg, setMsg] = useState(null)
   const [successToast, setSuccessToast] = useState(null)
@@ -12297,9 +12297,9 @@ function TeamsTab() {
 }
 
 function FinanceTab() {
-  const { role, organizerEnabled } = useAuth()
+  const { role, organizerEnabled, adminEnabled } = useAuth()
   const isOrganizer = role === 'organizer' || organizerEnabled
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || adminEnabled
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
