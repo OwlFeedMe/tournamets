@@ -373,3 +373,48 @@ def render_organizer_application_rejected(
       <p>Si tienes preguntas escribe a <a href="mailto:support@finalrep.co" style="color:#e63946;">support@finalrep.co</a></p>
     """)
     return subject, text, html
+
+
+# ---------------------------------------------------------------------------
+# Invitacion de competidor
+# ---------------------------------------------------------------------------
+
+def render_competitor_invitation(
+    *,
+    nombre: str,
+    competition_name: str,
+    invited_by_name: str,
+    categoria: str | None,
+    note: str | None,
+    invitation_url: str,
+) -> tuple[str, str, str]:
+    categoria_line = f"Categoria asignada: {categoria}\n" if categoria else ""
+    nota_line = f"Nota del organizador: {note}\n" if note else ""
+    categoria_html = f'<p class="detail"><span>Categoria:</span> <strong>{categoria}</strong></p>' if categoria else ""
+    nota_html = f'<p class="detail"><span>Nota:</span> {note}</p>' if note else ""
+
+    subject = f"Invitacion a competir - {competition_name}"
+    text = (
+        f"Hola {nombre},\n\n"
+        f"{invited_by_name} te invito a participar en la competencia \"{competition_name}\".\n\n"
+        f"{categoria_line}"
+        f"{nota_line}"
+        "La inscripcion es sin costo — el organizador ya la cubre.\n\n"
+        "Para aceptar o rechazar la invitacion ingresa a FinalRep:\n"
+        f"{invitation_url}\n\n"
+        "Equipo FinalRep"
+    )
+    html = _html("Invitacion a competir", f"""\
+      <p>Hola <strong>{nombre}</strong>,</p>
+      <p><strong>{invited_by_name}</strong> te invito a participar en esta competencia.</p>
+      <hr class="divider">
+      <p class="detail"><span>Competencia:</span> <strong>{competition_name}</strong></p>
+      {categoria_html}
+      {nota_html}
+      <p class="detail" style="color:#8DF1E4; font-weight:700;">La inscripcion es sin costo.</p>
+      <hr class="divider">
+      <p>Ingresa a FinalRep para aceptar o rechazar la invitacion:</p>
+      <a href="{invitation_url}" class="btn">Ver invitacion</a>
+      <p class="muted">Si no reconoces esta invitacion, puedes ignorar este correo.</p>
+    """)
+    return subject, text, html

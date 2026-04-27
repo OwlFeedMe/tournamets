@@ -19,6 +19,7 @@ const JudgeHub = lazy(() => import('./pages/JudgeHub'))
 const Login = lazy(() => import('./pages/Login'))
 const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.MyEventsPage })))
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
+const CompetitionInvitationEnrollPage = lazy(() => import('./pages/CompetitionInvitationEnrollPage'))
 const ParticipantProfile = lazy(() => import('./pages/ParticipantProfile'))
 
 function AppFallback() {
@@ -88,6 +89,7 @@ export default function App() {
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />
               <Route path="/competitions/:competitionId/tickets" element={<CompetitionTicketsPage />} />
               <Route path="/competitions/:competitionId/tickets/payment-result" element={<CompetitionTicketsPaymentResultPage />} />
+              <Route path="/competitions/:competitionId/invitation/:invitationId" element={<CompetitionInvitationEnrollPage />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/leaderboard/:competitionId" element={<Leaderboard />} />

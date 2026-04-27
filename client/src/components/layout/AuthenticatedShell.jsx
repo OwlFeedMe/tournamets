@@ -260,6 +260,11 @@ export function AuthenticatedShell() {
         .then(({ data }) => ({ kind: 'judge', data }))
         .catch(() => ({ kind: 'judge', data: [] }))
     )
+    requests.push(
+      api.get('/me/competitor-invitations')
+        .then(({ data }) => ({ kind: 'competitor', data }))
+        .catch(() => ({ kind: 'competitor', data: [] }))
+    )
 
     Promise.all(requests).then((results) => {
       if (!active) return
@@ -322,6 +327,23 @@ export function AuthenticatedShell() {
         unread += pendingInvites.length
       }
 
+      const competitorResult = results.find((item) => item.kind === 'competitor')
+      if (competitorResult) {
+        const pendingCompetitorInvites = (Array.isArray(competitorResult.data) ? competitorResult.data : []).filter((item) => item.status === 'pending')
+        for (const invite of pendingCompetitorInvites) {
+          dynamicItems.unshift({
+            title: `Invitacion a competencia: ${invite.competition_name}`,
+            text: `Te invitaron a competir${invite.categoria ? ` en la categoria ${invite.categoria}` : ''}. Completa tu inscripcion o rechaza la invitacion.`,
+            tone: 'neutral',
+            actions: [
+              { id: `competitor-enroll-${invite.id}`, label: 'Completar inscripción', tone: 'primary', invitationId: invite.id, competitionId: invite.competition_id, actionType: 'competitor-enroll' },
+              { id: `competitor-reject-${invite.id}`, label: 'Rechazar', tone: 'danger', invitationId: invite.id, actionType: 'competitor-reject' },
+            ],
+          })
+        }
+        unread += pendingCompetitorInvites.length
+      }
+
       setNotificationItems(dynamicItems)
       setUnreadCount(unread)
     })
@@ -347,20 +369,27 @@ export function AuthenticatedShell() {
   }, [isAthlete, notificationsOpen, userId, role, session])
 
   const handleNotificationAction = async (action) => {
-    if (!action?.assignmentId || !action?.actionType) return
+    if (!action?.actionType) return
     setNotificationActionBusyId(action.id)
     try {
       if (action.actionType === 'accept') {
         await api.post(`/judge-assignments/${action.assignmentId}/accept`)
+        const me = await api.get('/auth/me')
+        persistAuthSession({ ...me.data, access_token: session?.token })
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'reject') {
         await api.post(`/judge-assignments/${action.assignmentId}/reject`)
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'competitor-enroll') {
+        setNotificationsOpen(false)
+        navigate(`/competitions/${action.competitionId}/invitation/${action.invitationId}`)
+      } else if (action.actionType === 'competitor-reject') {
+        await api.post(`/competitor-invitations/${action.invitationId}/reject`)
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.invitationId === action.invitationId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
       }
-      const me = await api.get('/auth/me')
-      persistAuthSession({ ...me.data, access_token: session?.token })
-      const judgeAssignments = await api.get('/me/judge-assignments')
-      const pendingInvites = (Array.isArray(judgeAssignments.data) ? judgeAssignments.data : []).filter((item) => item.status === 'pending')
-      setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
-      setUnreadCount((current) => Math.max(0, current - (pendingInvites.length >= 0 ? 1 : 0)))
     } catch {
     } finally {
       setNotificationActionBusyId('')

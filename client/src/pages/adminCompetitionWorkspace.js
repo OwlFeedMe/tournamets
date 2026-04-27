@@ -40,6 +40,14 @@ export const COMPETITION_WORKSPACE_SECTIONS = [
     primaryAction: 'Gestionar descuentos',
   },
   {
+    id: 'invitations',
+    label: 'Invitaciones',
+    shortLabel: 'Invitaciones',
+    group: 'operacion',
+    description: 'Invita competidores por email sin pasarela de pago.',
+    primaryAction: 'Gestionar invitaciones',
+  },
+  {
     id: 'prep',
     label: 'Preparación',
     shortLabel: 'Preparación',

@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
 import CompetitionDiscountsPage from './CompetitionDiscountsPage'
+import CompetitorInvitationsPage from './CompetitorInvitationsPage'
 
 function SuccessToast({ text, onDone }) {
   useEffect(() => {
@@ -11473,6 +11474,45 @@ function CompetitionsTab() {
           {selectedTab === 'discounts' && (
             <div className="card">
               <CompetitionDiscountsPage competition={selectedCompetition} />
+            </div>
+          )}
+
+          {selectedTab === 'invitations' && (
+            <div style={{ display: 'grid', gap: 14 }}>
+              {isAdmin && (
+                <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Habilitar invitaciones (Admin)</div>
+                    <div style={{ fontSize: 12, color: '#7E8796', marginTop: 3 }}>
+                      {selectedCompetition?.invitations_enabled ? 'Las invitaciones estan habilitadas para esta competencia.' : 'Las invitaciones estan deshabilitadas. Solo el admin puede activarlas.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={selectedCompetition?.invitations_enabled ? 'btn-danger btn-sm' : 'btn-primary btn-sm'}
+                    onClick={async () => {
+                      const cid = selectedCompetition?.id
+                      if (!cid) return
+                      try {
+                        if (selectedCompetition.invitations_enabled) {
+                          await api.delete(`/competitions/${cid}/invitations/enable`)
+                          setSelectedCompetition(prev => ({ ...prev, invitations_enabled: 0 }))
+                        } else {
+                          await api.post(`/competitions/${cid}/invitations/enable`)
+                          setSelectedCompetition(prev => ({ ...prev, invitations_enabled: 1 }))
+                        }
+                      } catch (ex) {
+                        alert(ex.response?.data?.detail || 'Error al cambiar estado')
+                      }
+                    }}
+                  >
+                    {selectedCompetition?.invitations_enabled ? 'Deshabilitar invitaciones' : 'Habilitar invitaciones'}
+                  </button>
+                </div>
+              )}
+              <div className="card">
+                <CompetitorInvitationsPage competition={selectedCompetition} />
+              </div>
             </div>
           )}
 

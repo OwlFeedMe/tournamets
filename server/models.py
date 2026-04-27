@@ -169,6 +169,7 @@ class Competition(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
+    invitations_enabled: int = Field(default=0)
     slug: Optional[str] = Field(default=None, sa_column=Column(String, unique=True, index=True, nullable=True))
     created_at: Optional[datetime] = Field(
         default=None,
@@ -691,6 +692,44 @@ class CompetitionPaymentIntent(SQLModel, table=True):
     payment_updated_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class CompetitionCompetitorInvitation(SQLModel, table=True):
+    __tablename__ = "competition_competitor_invitations"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "invited_email", name="uq_comp_competitor_invitation_email"),
+        Index("ix_comp_competitor_invitation_competition", "competition_id"),
+        Index("ix_comp_competitor_invitation_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    invited_email: str = Field(index=True)
+    categoria: Optional[str] = None
+    note: Optional[str] = None
+    status: str = Field(default="pending", index=True)  # pending | accepted | rejected | revoked
+    invited_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    accepted_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    rejected_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
     created_at: Optional[datetime] = Field(
         default=None,
