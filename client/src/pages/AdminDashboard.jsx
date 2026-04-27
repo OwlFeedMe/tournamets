@@ -10497,9 +10497,10 @@ function CompetitionsTab() {
         paddingBottom: 4,
       }
     : {
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, minmax(0, max-content))',
+        display: 'flex',
         gap: 8,
+        flexWrap: 'wrap',
+        alignItems: 'flex-start',
       }
   const mobileSubSectionTabsStyle = isMobile
     ? {
