@@ -7,6 +7,9 @@ from sqlmodel import SQLModel, Field
 from constants import (
     EstadoParticipante, EstadoInscripcion, EstadoFase,
     Modalidad, FormatoFase, ReglaGanador, ModoPoints, ModoTV, ReglaMiembro, Role, UnidadRM,
+    GymStatus, GymOwnershipStatus, GymPlanTier, GymMembershipStatus, GymStaffRole,
+    GymClaimStatus, GymSubmissionStatus,
+    AthleteProfileVisibility,
 )
 
 
@@ -16,7 +19,6 @@ class User(SQLModel, table=True):
     __tablename__ = "participants"
     __table_args__ = (
         UniqueConstraint("cedula"),
-        UniqueConstraint("username"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -39,6 +41,16 @@ class User(SQLModel, table=True):
     estado: str = Field(default=EstadoParticipante.ACTIVO)
     username: Optional[str] = Field(default=None, index=True)
     display_name: Optional[str] = None
+    public_profile_enabled: int = Field(default=0)
+    public_profile_indexable: int = Field(default=1)
+    public_profile_visibility: str = Field(default=AthleteProfileVisibility.PRIVATE)
+    public_bio: Optional[str] = None
+    public_cover_url: Optional[str] = None
+    public_show_city: int = Field(default=1)
+    public_show_gym: int = Field(default=1)
+    public_show_age: int = Field(default=0)
+    public_show_results: int = Field(default=1)
+    verified_athlete: int = Field(default=0)
     role: str = Field(default=Role.USER, index=True)
     password_hash: Optional[str] = None
     organizer_enabled: int = Field(default=0)
@@ -52,6 +64,24 @@ class User(SQLModel, table=True):
 
 
 Participant = User
+
+
+class AthleteUsernameAlias(SQLModel, table=True):
+    __tablename__ = "athlete_username_aliases"
+    __table_args__ = (
+        UniqueConstraint("alias", name="uq_athlete_username_aliases_alias"),
+        Index("ix_athlete_username_aliases_user_id", "user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False)
+    )
+    alias: str = Field(sa_column=Column(String, nullable=False, index=True))
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
 
 
 class OrganizerApplication(SQLModel, table=True):
@@ -1045,6 +1075,292 @@ class Result(SQLModel, table=True):
     )
 
 
+# ── Gym domain models ─────────────────────────────────────────────────────────
+
+class Gym(SQLModel, table=True):
+    __tablename__ = "gyms"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_gyms_slug"),
+        Index("ix_gyms_status", "status"),
+        Index("ix_gyms_ownership_status", "ownership_status"),
+        Index("ix_gyms_country_city", "country", "city"),
+        Index("ix_gyms_created_by", "created_by_user_id"),
+        Index("ix_gyms_is_featured", "is_featured"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    slug: str = Field(sa_column=Column(String, unique=True, nullable=False, index=True))
+    display_name: str
+    legal_name: Optional[str] = None
+    short_description: Optional[str] = None
+    full_description: Optional[str] = None
+    status: str = Field(default=GymStatus.PENDING_REVIEW, index=True)
+    ownership_status: str = Field(default=GymOwnershipStatus.UNCLAIMED, index=True)
+    plan_tier: str = Field(default=GymPlanTier.FREE)
+    verification_badge: int = Field(default=0)
+    founded_year: Optional[int] = None
+    logo_url: Optional[str] = None
+    cover_image_url: Optional[str] = None
+    primary_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    country: Optional[str] = Field(default=None, index=True)
+    state_region: Optional[str] = None
+    city: Optional[str] = Field(default=None, index=True)
+    address_line: Optional[str] = None
+    geo_lat: Optional[float] = None
+    geo_lng: Optional[float] = None
+    website_url: Optional[str] = None
+    instagram_url: Optional[str] = None
+    whatsapp_url: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    head_coach_name: Optional[str] = None
+    is_franchise: int = Field(default=0)
+    is_featured: int = Field(default=0)
+    created_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    claimed_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    published_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class GymLocation(SQLModel, table=True):
+    __tablename__ = "gym_locations"
+    __table_args__ = (
+        Index("ix_gym_locations_gym", "gym_id"),
+        Index("ix_gym_locations_country_city", "country", "city"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    name: Optional[str] = None
+    country: Optional[str] = None
+    state_region: Optional[str] = None
+    city: Optional[str] = None
+    address_line: Optional[str] = None
+    geo_lat: Optional[float] = None
+    geo_lng: Optional[float] = None
+    contact_phone: Optional[str] = None
+    schedule_summary: Optional[str] = None
+    is_primary: int = Field(default=0)
+    status: str = Field(default="active")  # active | inactive
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class GymSubmission(SQLModel, table=True):
+    __tablename__ = "gym_submissions"
+    __table_args__ = (
+        Index("ix_gym_submissions_status", "status"),
+        Index("ix_gym_submissions_submitted_by", "submitted_by_user_id"),
+        Index("ix_gym_submissions_matched_gym", "matched_gym_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    submitted_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True, index=True),
+    )
+    proposed_name: str
+    country: Optional[str] = None
+    state_region: Optional[str] = None
+    city: Optional[str] = None
+    instagram_url: Optional[str] = None
+    website_url: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    submission_type: str = Field(default="suggest")  # suggest | claim_intent
+    notes: Optional[str] = None
+    status: str = Field(default=GymSubmissionStatus.PENDING, index=True)
+    matched_gym_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="SET NULL"), nullable=True),
+    )
+    reviewed_by_admin_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    reviewed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class GymClaim(SQLModel, table=True):
+    __tablename__ = "gym_claims"
+    __table_args__ = (
+        Index("ix_gym_claims_gym", "gym_id"),
+        Index("ix_gym_claims_status", "status"),
+        Index("ix_gym_claims_requester", "requested_by_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    requested_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    role_requested: str = Field(default=GymStaffRole.OWNER)  # owner | manager
+    evidence_type: Optional[str] = None  # email_domain | instagram_dm | document | manual
+    evidence_url: Optional[str] = None
+    notes: Optional[str] = None
+    status: str = Field(default=GymClaimStatus.PENDING, index=True)
+    reviewed_by_admin_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    reviewed_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class GymMembership(SQLModel, table=True):
+    __tablename__ = "gym_memberships"
+    __table_args__ = (
+        Index("ix_gym_memberships_gym", "gym_id"),
+        Index("ix_gym_memberships_user", "user_id"),
+        Index("ix_gym_memberships_status", "status"),
+        Index("ix_gym_memberships_gym_user", "gym_id", "user_id"),
+        Index("ix_gym_memberships_is_primary", "user_id", "is_primary"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    membership_type: str = Field(default="athlete")  # athlete | coach | staff
+    status: str = Field(default=GymMembershipStatus.DECLARED, index=True)
+    requested_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    approved_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    approved_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    ended_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    is_primary: int = Field(default=0)
+    visibility: str = Field(default="public")  # public | private
+
+
+class GymStaff(SQLModel, table=True):
+    __tablename__ = "gym_staff"
+    __table_args__ = (
+        UniqueConstraint("gym_id", "user_id", name="uq_gym_staff_gym_user"),
+        Index("ix_gym_staff_gym", "gym_id"),
+        Index("ix_gym_staff_user", "user_id"),
+        Index("ix_gym_staff_role", "role"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    role: str = Field(default=GymStaffRole.STAFF, index=True)  # owner | manager | coach | staff
+    status: str = Field(default="active")  # active | inactive | invited
+    permissions_scope: Optional[str] = None  # JSON
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class GymAuditLog(SQLModel, table=True):
+    __tablename__ = "gym_audit_log"
+    __table_args__ = (
+        Index("ix_gym_audit_log_gym", "gym_id"),
+        Index("ix_gym_audit_log_actor", "actor_user_id"),
+        Index("ix_gym_audit_log_action", "action_type"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    actor_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    action_type: str = Field(index=True)
+    before_snapshot: Optional[str] = None  # JSON
+    after_snapshot: Optional[str] = None   # JSON
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class GymReport(SQLModel, table=True):
+    __tablename__ = "gym_reports"
+    __table_args__ = (
+        Index("ix_gym_reports_gym", "gym_id"),
+        Index("ix_gym_reports_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    gym_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("gyms.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    reported_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    category: str = Field(default="wrong_info")  # wrong_info | closed | duplicate | other
+    details: Optional[str] = None
+    status: str = Field(default="pending")  # pending | resolved | dismissed
+    resolved_by_admin_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    resolved_at: Optional[datetime] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 # ── Auth schemas ───────────────────────────────────────────────────────────────
 
 class LoginRequest(SQLModel):
@@ -1141,6 +1457,18 @@ class ParticipantProfile(SQLModel):
     fecha_nacimiento: Optional[date] = None
     ciudad_pais: Optional[str] = None
     estado: str = EstadoParticipante.ACTIVO
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    public_profile_enabled: int = 0
+    public_profile_indexable: int = 1
+    public_profile_visibility: str = AthleteProfileVisibility.PRIVATE
+    public_bio: Optional[str] = None
+    public_cover_url: Optional[str] = None
+    public_show_city: int = 1
+    public_show_gym: int = 1
+    public_show_age: int = 0
+    public_show_results: int = 1
+    verified_athlete: int = 0
     created_at: Optional[datetime] = None
 
 
@@ -1158,6 +1486,17 @@ class ParticipantSelfUpdate(SQLModel):
     profile_photo_url: Optional[str] = None
     fecha_nacimiento: Optional[date] = None
     ciudad_pais: Optional[str] = None
+    username: Optional[str] = None
+    display_name: Optional[str] = None
+    public_profile_enabled: Optional[int] = None
+    public_profile_indexable: Optional[int] = None
+    public_profile_visibility: Optional[str] = None
+    public_bio: Optional[str] = None
+    public_cover_url: Optional[str] = None
+    public_show_city: Optional[int] = None
+    public_show_gym: Optional[int] = None
+    public_show_age: Optional[int] = None
+    public_show_results: Optional[int] = None
 
 
 # ── Organizer application schemas ─────────────────────────────────────────────

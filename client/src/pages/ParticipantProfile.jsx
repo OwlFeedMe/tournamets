@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { useAuth } from '../context/AuthContext'
 import { cedulaInputValue, formatCedula, formatMissingParticipantProfileFields } from '../utils/participantProfile'
+import GymSelector from '../components/gyms/GymSelector'
 import {
-  Trophy, PlusCircle, Medal,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff,
+  Trophy, PlusCircle, Medal, Dumbbell,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck,
 } from 'lucide-react'
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -123,6 +124,51 @@ function organizerApplicationBadge(status) {
 
 // â”€â”€ Competition Detail Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+const PUBLIC_PROFILE_TOGGLES = [
+  ['public_profile_enabled', 'Perfil publico', 'Activa tu ficha para compartir tu presencia competitiva.'],
+  ['public_profile_indexable', 'Indexacion', 'Permite que tu URL aparezca en busquedas externas.'],
+  ['public_show_city', 'Ciudad', 'Muestra tu ciudad y pais en la ficha publica.'],
+  ['public_show_gym', 'Gym', 'Muestra el gym que representas actualmente.'],
+  ['public_show_age', 'Edad', 'Deja visible tu edad competitiva.'],
+  ['public_show_results', 'Resultados', 'Comparte tus marcas y resultados publicados.'],
+]
+
+const PUBLIC_PROFILE_COVER_PRESETS = [
+  { id: 'ember', label: 'Ember', background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' },
+  { id: 'carbon', label: 'Carbon', background: 'linear-gradient(135deg, #090B0E 0%, #171B21 52%, #252A33 100%)' },
+  { id: 'surge', label: 'Surge', background: 'linear-gradient(135deg, #00C2A8 0%, #0D0F12 100%)' },
+  { id: 'ignite', label: 'Ignite', background: 'linear-gradient(135deg, #FF6B00 0%, #171B21 58%, #0D0F12 100%)' },
+  { id: 'podium', label: 'Podium', background: 'linear-gradient(135deg, #D4A537 0%, #A16207 42%, #090B0E 100%)' },
+]
+
+function normalizePublicCoverPreset(value) {
+  const normalized = String(value || '').trim().toLowerCase()
+  if (PUBLIC_PROFILE_COVER_PRESETS.some((preset) => preset.id === normalized)) return normalized
+  return PUBLIC_PROFILE_COVER_PRESETS[0].id
+}
+
+function PublicProfileToggle({ label, description, checked, onChange }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`fr-toggle-card${checked ? ' is-active' : ''}`}
+      onClick={() => onChange(!checked)}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, lineHeight: 1.2 }}>{label}</div>
+        <div style={{ color: checked ? '#D7DEE8' : '#8B94A3', fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+          {description}
+        </div>
+      </div>
+      <span className={`fr-toggle-switch${checked ? ' is-active' : ''}`} aria-hidden="true">
+        <span className="fr-toggle-switch-thumb" />
+      </span>
+    </button>
+  )
+}
+
 function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm }) {
   if (!competition) return null
   const paymentStatus = String(competition.payment_status || '').trim().toLowerCase()
@@ -178,6 +224,57 @@ function ConfirmCancelEnrollmentModal({ competition, busy, onClose, onConfirm })
                 {busy ? 'Cancelando...' : 'Confirmar cancelacion'}
               </button>
             ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
+  if (!membership) return null
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.68)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 440,
+        borderRadius: 22,
+        background: '#171B21',
+        border: '1px solid #252A33',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.35)',
+        overflow: 'hidden',
+      }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #252A33', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+          <div>
+            <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 18 }}>Dejar de representar gym</div>
+            <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{membership.gym_display_name || `Gym #${membership.gym_id}`}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ width: 34, height: 34, borderRadius: 12, border: '1px solid #252A33', background: 'transparent', color: '#F5F7FA', display: 'grid', placeItems: 'center' }}>
+            <X size={16} />
+          </button>
+        </div>
+        <div style={{ padding: 20 }}>
+          <div style={{ color: '#AAB2C0', fontSize: 14, lineHeight: 1.6 }}>
+            Esta acción quitará este gym de tu representación actual. El vínculo pasará a historial.
+          </div>
+          <div style={{ marginTop: 12, padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(214,217,224,0.24)', background: 'linear-gradient(135deg, rgba(214,217,224,0.12), rgba(241,244,248,0.04))', color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
+            {membership.gym_display_name || `Gym #${membership.gym_id}`}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>Volver</button>
+            <button type="button" className="btn-danger" onClick={() => onConfirm(membership)} disabled={busy}>
+              {busy ? 'Guardando...' : 'Confirmar'}
+            </button>
           </div>
         </div>
       </div>
@@ -543,6 +640,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 // â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function ParticipantProfile() {
+  const navigate = useNavigate()
   const location = useLocation()
   const { userId, displayName, organizerEnabled } = useAuth()
   const nombre = displayName || 'Participante'
@@ -597,6 +695,16 @@ export default function ParticipantProfile() {
     prior_events_summary: '',
     why_finalrep: '',
   })
+  // Gym affiliations
+  const [gymMemberships, setGymMemberships] = useState([])
+  const [gymSelectorOpen, setGymSelectorOpen] = useState(false)
+  const [gymSelectorValue, setGymSelectorValue] = useState(null)
+  const [gymJoinBusy, setGymJoinBusy] = useState(false)
+  const [gymMsg, setGymMsg] = useState(null)
+  const [gymLeaveBusy, setGymLeaveBusy] = useState(null)
+  const [gymLeaveTarget, setGymLeaveTarget] = useState(null)
+  const [showGymHistory, setShowGymHistory] = useState(false)
+
   const displayGenero = myProfile?.genero || myProfile?.sexo || '-'
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
@@ -626,7 +734,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-    const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen)
+  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -652,7 +760,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -693,9 +801,19 @@ export default function ParticipantProfile() {
         celular: res.data.celular || '',
         genero: res.data.genero || res.data.sexo || '',
         categoria: res.data.categoria || '',
-        box: res.data.box || '',
         fecha_nacimiento: res.data.fecha_nacimiento || '',
         ciudad_pais: res.data.ciudad_pais || '',
+        username: res.data.username || '',
+        display_name: res.data.display_name || '',
+        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_indexable: !!res.data.public_profile_indexable,
+        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_bio: res.data.public_bio || '',
+        public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
+        public_show_city: !!res.data.public_show_city,
+        public_show_gym: !!res.data.public_show_gym,
+        public_show_age: !!res.data.public_show_age,
+        public_show_results: !!res.data.public_show_results,
         ...(() => {
           const parsed = parseCityCountry(res.data.ciudad_pais || '')
           return { city: parsed.city }
@@ -703,6 +821,13 @@ export default function ParticipantProfile() {
       })
     } catch { /* silent */ }
   }
+  const loadGymMemberships = async () => {
+    try {
+      const res = await api.get('/me/gym-memberships')
+      setGymMemberships(res.data || [])
+    } catch { setGymMemberships([]) }
+  }
+
   const loadOrganizerApplication = async () => {
     try {
       const res = await api.get('/organizer-applications/me')
@@ -727,6 +852,7 @@ export default function ParticipantProfile() {
   useEffect(() => {
     loadMyProfile().catch(() => {})
     loadOrganizerApplication().catch(() => {})
+    loadGymMemberships().catch(() => {})
     if (!userId) {
       setMyComps([])
       setPendingInvitations([])
@@ -783,11 +909,23 @@ export default function ParticipantProfile() {
     setEditBusy(true)
     setEditMsg(null)
     const payload = {}
+    const publicPayload = {}
     for (const [k, v] of Object.entries(editForm)) {
-      if (['city', 'countryCode', 'ciudad_pais'].includes(k)) continue
+      if (['city', 'countryCode', 'ciudad_pais', 'username', 'display_name', 'public_profile_enabled', 'public_profile_indexable', 'public_profile_visibility', 'public_bio', 'public_cover_url', 'public_show_city', 'public_show_gym', 'public_show_age', 'public_show_results'].includes(k)) continue
       const trimmed = typeof v === 'string' ? v.trim() : v
       if (trimmed) payload[k] = trimmed
     }
+    publicPayload.username = (editForm.username || '').trim()
+    publicPayload.display_name = (editForm.display_name || '').trim()
+    publicPayload.public_profile_enabled = editForm.public_profile_enabled ? 1 : 0
+    publicPayload.public_profile_indexable = editForm.public_profile_indexable ? 1 : 0
+    publicPayload.public_profile_visibility = editForm.public_profile_visibility || 'private'
+    publicPayload.public_bio = (editForm.public_bio || '').trim() || null
+    publicPayload.public_cover_url = normalizePublicCoverPreset(editForm.public_cover_url)
+    publicPayload.public_show_city = editForm.public_show_city ? 1 : 0
+    publicPayload.public_show_gym = editForm.public_show_gym ? 1 : 0
+    publicPayload.public_show_age = editForm.public_show_age ? 1 : 0
+    publicPayload.public_show_results = editForm.public_show_results ? 1 : 0
     const city = (editForm.city || '').trim()
     const countryCode = (editForm.countryCode || '').trim()
     const countryName = countryNameByCode[countryCode] || ''
@@ -803,7 +941,8 @@ export default function ParticipantProfile() {
     }
     if (city && countryName) payload.ciudad_pais = buildCityCountry(city, countryName)
     try {
-    const res = await api.patch('/users/me', payload)
+      await api.patch('/users/me', payload)
+      const res = await api.patch('/users/me/public-profile', publicPayload)
       setMyProfile(res.data)
       localStorage.setItem('nombre', `${res.data.nombre} ${res.data.apellido}`)
       setEditForm((current) => ({
@@ -815,9 +954,19 @@ export default function ParticipantProfile() {
         celular: res.data.celular || '',
         genero: res.data.genero || res.data.sexo || '',
         categoria: res.data.categoria || '',
-        box: res.data.box || '',
         fecha_nacimiento: res.data.fecha_nacimiento || '',
         ciudad_pais: res.data.ciudad_pais || '',
+        username: res.data.username || '',
+        display_name: res.data.display_name || '',
+        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_indexable: !!res.data.public_profile_indexable,
+        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_bio: res.data.public_bio || '',
+        public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
+        public_show_city: !!res.data.public_show_city,
+        public_show_gym: !!res.data.public_show_gym,
+        public_show_age: !!res.data.public_show_age,
+        public_show_results: !!res.data.public_show_results,
       }))
       setEditMsg({ type: 'success', text: 'Datos actualizados correctamente' })
       loadOrganizerApplication()
@@ -1005,11 +1154,49 @@ export default function ParticipantProfile() {
     } finally { setInvBusy(null) }
   }
 
+  const joinGym = async () => {
+    if (!gymSelectorValue) return
+    setGymJoinBusy(true)
+    setGymMsg(null)
+    const hasPrimary = gymMemberships.some(m => m.is_primary && ['declared','pending_approval','approved'].includes(m.status))
+    try {
+      await api.post(`/gyms/${gymSelectorValue.gym_id}/memberships`, { is_primary: !hasPrimary })
+      setGymMsg({ type: 'success', text: 'Solicitud enviada al gym' })
+      setGymSelectorOpen(false)
+      setGymSelectorValue(null)
+      await loadGymMemberships()
+    } catch (err) {
+      setGymMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la solicitud' })
+    } finally {
+      setGymJoinBusy(false)
+    }
+  }
+
+  const leaveGym = async (membership) => {
+    setGymLeaveBusy(membership.id)
+    setGymMsg(null)
+    try {
+      await api.delete(`/gyms/${membership.gym_id}/memberships/${membership.id}`)
+      await loadGymMemberships()
+      setGymLeaveTarget(null)
+    } catch (err) {
+      setGymMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar la afiliacion' })
+    } finally {
+      setGymLeaveBusy(null)
+    }
+  }
+
   const totalPuntos = results.reduce((acc, r) => acc + (r.puntos || 0), 0)
   const initial = nombre.trim().charAt(0).toUpperCase() || 'P'
   const profilePhotoUrl = resolveProfilePhoto(myProfile?.profile_photo_url)
   const organizerBadge = organizerApplication ? organizerApplicationBadge(organizerApplication.status) : null
+  const primaryGymMembership = gymMemberships.find(m => m.is_primary && ['declared', 'pending_approval', 'approved'].includes(m.status))
+    || gymMemberships.find(m => ['approved', 'pending_approval', 'declared'].includes(m.status))
+  const gymHistory = gymMemberships.filter(m => m.id !== primaryGymMembership?.id)
   const canOpenOrganizerRequest = !organizerApplication || organizerApplication.status === 'rejected'
+  const publicProfilePath = myProfile?.username ? `/a/${myProfile.username}` : ''
+  const isPublicProfileLive = Boolean(myProfile?.public_profile_enabled) && (myProfile?.public_profile_visibility || 'private') === 'public'
+  const canPreviewPublicProfile = Boolean(myProfile?.username)
   const profileRequirementNotice = location.state?.profileRequiredForEnrollment
     ? `Completa tu perfil antes de participar${location.state?.competitionName ? ` en ${location.state.competitionName}` : ''}. Faltan: ${formatMissingParticipantProfileFields(location.state?.missingFields || [])}.`
     : ''
@@ -1060,6 +1247,15 @@ export default function ParticipantProfile() {
           busy={cancelEnrollmentBusy === cancelEnrollmentTarget.id}
           onClose={() => !cancelEnrollmentBusy && setCancelEnrollmentTarget(null)}
           onConfirm={cancelEnrollment}
+        />
+      )}
+
+      {gymLeaveTarget && (
+        <ConfirmLeaveGymModal
+          membership={gymLeaveTarget}
+          busy={gymLeaveBusy === gymLeaveTarget.id}
+          onClose={() => !gymLeaveBusy && setGymLeaveTarget(null)}
+          onConfirm={leaveGym}
         />
       )}
 
@@ -1214,7 +1410,7 @@ export default function ParticipantProfile() {
             <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Participante{myProfile?.cedula ? ` · ${formatCedula(myProfile?.cedula)}` : ''}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {myProfile?.categoria && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.categoria}</span>}
-              {myProfile?.box && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.box}</span>}
+              {primaryGymMembership?.gym_display_name && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{primaryGymMembership.gym_display_name}</span>}
               {myProfile?.ciudad_pais && <span style={{ fontSize: 11, color: 'var(--oa-text)', background: 'rgba(13,15,18,0.58)', border: '1px solid rgba(214,217,224,0.14)', borderRadius: 999, padding: '3px 8px' }}>{myProfile.ciudad_pais}</span>}
             </div>
           </div>
@@ -1229,18 +1425,113 @@ export default function ParticipantProfile() {
             >
               <UserCog size={13} /> {showEditProfile ? 'Cerrar' : 'Editar datos'}
             </button>
+            {canPreviewPublicProfile && publicProfilePath ? (
+              <Link
+                to={publicProfilePath}
+                style={{ background: 'rgba(255,107,0,0.18)', border: '1px solid rgba(255,107,0,0.32)', borderRadius: 6, padding: '5px 10px', color: '#F5F7FA', fontSize: 12, fontWeight: 700, textDecoration: 'none' }}
+              >
+                {isPublicProfileLive ? 'Ver perfil publico' : 'Ver vista previa'}
+              </Link>
+            ) : null}
           </div>
         </div>
 
         <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Ficha del atleta</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Box</div><div style={{ fontWeight: 600 }}>{myProfile?.box || '-'}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Gym principal</div><div style={{ fontWeight: 600 }}>{primaryGymMembership?.gym_display_name || '-'}</div></div>
             <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
             <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
             <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
             <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
           </div>
+        </div>
+
+        {/* Gym affiliations */}
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}>
+              <Dumbbell size={16} color="#5eead4" /> Gym que representas
+            </h3>
+            {!gymSelectorOpen && !primaryGymMembership && (
+              <button type="button" className="btn-secondary btn-sm" onClick={() => { setGymSelectorOpen(true); setGymMsg(null) }}>
+                Elegir gym
+              </button>
+            )}
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, marginBottom: 12 }}>
+            Solo puedes representar un gym a la vez. Si cambias de box, tu afiliacion anterior queda guardada en el historial.
+          </div>
+          {gymMsg && <div className={`alert alert-${gymMsg.type}`} style={{ marginBottom: 10, fontSize: 13 }}>{gymMsg.text}</div>}
+          {gymSelectorOpen && (
+            <div style={{ marginBottom: 14 }}>
+              <GymSelector value={gymSelectorValue} onChange={setGymSelectorValue} placeholder="Busca tu gym..." />
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/gyms/suggest')}>
+                  No aparece mi gym
+                </button>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => { setGymSelectorOpen(false); setGymSelectorValue(null); setGymMsg(null) }}>Cancelar</button>
+                <button type="button" className="btn-primary btn-sm" onClick={joinGym} disabled={gymJoinBusy || !gymSelectorValue}>
+                  {gymJoinBusy ? 'Enviando...' : 'Solicitar afiliacion'}
+                </button>
+              </div>
+            </div>
+          )}
+          {!primaryGymMembership && !gymSelectorOpen && (
+            <div style={{ color: '#AAB2C0', fontSize: 13, textAlign: 'center', padding: '10px 0' }}>
+              Aun no has elegido el gym que te representa.
+            </div>
+          )}
+          {primaryGymMembership && (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {(() => {
+                const m = primaryGymMembership
+                const statusColor = m.status === 'approved' ? '#22C55E' : m.status === 'rejected' ? '#EF4444' : '#F59E0B'
+                const statusLabel = { declared: 'Declarado', pending_approval: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', removed: 'Eliminado', inactive: 'Inactivo' }[m.status] || m.status
+                return (
+                  <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 12px', borderRadius: 12, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.06)' }}>
+                    <Dumbbell size={16} color="#5eead4" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <Link to={`/gyms/${m.gym_slug}`} style={{ fontWeight: 700, fontSize: 14, color: '#F5F7FA', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.gym_display_name || `Gym #${m.gym_id}`}
+                        </Link>
+                        {m.gym_ownership_status === 'verified' && <ShieldCheck size={12} color="#5eead4" />}
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#5eead4', background: 'rgba(94,234,212,0.14)', borderRadius: 999, padding: '2px 7px' }}>Representas este gym</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                        {m.gym_city && <span style={{ fontSize: 12, color: '#AAB2C0' }}>{m.gym_city}</span>}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      onClick={() => setGymLeaveTarget(m)}
+                      disabled={gymLeaveBusy === m.id}
+                      style={{ flexShrink: 0, fontSize: 11, padding: '4px 10px' }}
+                    >
+                      {gymLeaveBusy === m.id ? '...' : 'Quitar'}
+                    </button>
+                  </div>
+                )
+              })()}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                {gymHistory.length > 0 && (
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setShowGymHistory(true)}>
+                    Ver historial
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {!primaryGymMembership && gymHistory.length > 0 && !gymSelectorOpen && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setShowGymHistory(true)}>
+                Ver historial
+              </button>
+            </div>
+          )}
         </div>
 
         {msg && <div className={`alert alert-${msg.type}`} style={{ marginBottom: 12 }}>{msg.text}</div>}
@@ -1305,10 +1596,6 @@ export default function ParticipantProfile() {
                     <option value="F">Femenino</option>
                     <option value="Otro">Otro</option>
                   </select>
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Box</label>
-                  <input value={editForm.box || ''} onChange={e => setEditForm(f => ({ ...f, box: e.target.value }))} placeholder="Lugar donde entrenas" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Fecha nacimiento</label>
@@ -1381,6 +1668,92 @@ export default function ParticipantProfile() {
                   <label>Categoría</label>
                   <input value={editForm.categoria || ''} onChange={e => setEditForm(f => ({ ...f, categoria: e.target.value }))} placeholder="Ej: Rx, Scaled, Masters..." />
                 </div>
+                <div style={{ gridColumn: isMobile ? undefined : 'span 2', marginTop: 8, padding: isMobile ? '16px 14px' : '18px', borderRadius: 18, border: '1px solid rgba(255,107,0,0.18)', background: 'linear-gradient(180deg, rgba(255,107,0,0.10) 0%, rgba(23,27,33,0.98) 28%, rgba(13,15,18,0.92) 100%)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#F5F7FA', marginBottom: 6 }}>Perfil publico</div>
+                      <div style={{ fontSize: 12, color: '#AAB2C0', lineHeight: 1.5 }}>
+                        Define tu identidad visible y la URL de tu ficha competitiva.
+                      </div>
+                    </div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 999, border: `1px solid ${editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.34)' : editForm.username ? 'rgba(0,194,168,0.28)' : 'rgba(37,42,51,1)'}`, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.12)' : editForm.username ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.72)' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#FF6B00' : editForm.username ? '#00C2A8' : '#6B7280', boxShadow: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '0 0 14px rgba(255,107,0,0.45)' : editForm.username ? '0 0 12px rgba(0,194,168,0.34)' : 'none' }} />
+                      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#F5F7FA' : editForm.username ? '#D7DEE8' : '#8B94A3' }}>
+                        {editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public'
+                          ? 'Visible'
+                          : editForm.username
+                            ? 'Vista previa'
+                            : 'Sin publicar'}
+                      </span>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Username publico</label>
+                      <input value={editForm.username || ''} onChange={e => setEditForm(f => ({ ...f, username: e.target.value.toLowerCase() }))} placeholder="Ej: santi.torres" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Nombre visible</label>
+                      <input value={editForm.display_name || ''} onChange={e => setEditForm(f => ({ ...f, display_name: e.target.value }))} placeholder="Ej: Santiago Torres" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                      <label>Bio publica</label>
+                      <textarea value={editForm.public_bio || ''} onChange={e => setEditForm(f => ({ ...f, public_bio: e.target.value }))} placeholder="Tu enfoque, division o estado competitivo." rows={3} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                      <label>Color de portada</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+                        {PUBLIC_PROFILE_COVER_PRESETS.map((preset) => {
+                          const selected = normalizePublicCoverPreset(editForm.public_cover_url) === preset.id
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => setEditForm((f) => ({ ...f, public_cover_url: preset.id }))}
+                              style={{
+                                padding: 0,
+                                minHeight: 96,
+                                borderRadius: 16,
+                                border: selected ? '1px solid rgba(255,107,0,0.72)' : '1px solid #252A33',
+                                background: '#0D0F12',
+                                overflow: 'hidden',
+                                boxShadow: selected ? '0 0 0 3px rgba(255,107,0,0.14)' : 'none',
+                              }}
+                            >
+                              <div style={{ height: 64, background: preset.background }} />
+                              <div style={{ padding: '10px 10px 12px', textAlign: 'left', background: selected ? 'rgba(255,107,0,0.10)' : 'rgba(9,11,14,0.92)' }}>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: '#F5F7FA', letterSpacing: '0.04em', textTransform: 'uppercase' }}>{preset.label}</div>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Visibilidad</label>
+                      <select value={editForm.public_profile_visibility || 'private'} onChange={e => setEditForm(f => ({ ...f, public_profile_visibility: e.target.value }))}>
+                        <option value="private">Privado</option>
+                        <option value="public">Publico</option>
+                      </select>
+                    </div>
+                    <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
+                      {PUBLIC_PROFILE_TOGGLES.map(([field, label, description]) => (
+                        <PublicProfileToggle
+                          key={field}
+                          label={label}
+                          description={description}
+                          checked={!!editForm[field]}
+                          onChange={(value) => setEditForm(f => ({ ...f, [field]: value }))}
+                        />
+                      ))}
+                    </div>
+                    {editForm.username ? (
+                      <div style={{ gridColumn: isMobile ? undefined : 'span 2', padding: '12px 14px', borderRadius: 14, border: '1px solid rgba(37,42,51,1)', background: 'rgba(9,11,14,0.72)', fontSize: 12, color: '#AAB2C0' }}>
+                        URL publica: <span style={{ color: '#F5F7FA', fontWeight: 700, overflowWrap: 'anywhere' }}>{`${window.location.origin}/a/${editForm.username}`}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
                     <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowEditProfile(false); setEditMsg(null) }}>Cancelar</button>
@@ -1389,6 +1762,53 @@ export default function ParticipantProfile() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showGymHistory && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+            <div style={{ width: '100%', maxWidth: 640, maxHeight: 'min(82dvh, 82vh)', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '16px 18px', background: 'rgba(23,27,33,0.98)', borderBottom: '1px solid #252A33' }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#F5F7FA' }}>Historial de gyms</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Tus afiliaciones anteriores y solicitudes pasadas.</div>
+                </div>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setShowGymHistory(false)}>Cerrar</button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
+                {!gymHistory.length ? (
+                  <div style={{ color: '#AAB2C0', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
+                    Aun no tienes movimientos en tu historial.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: 8 }}>
+                    {gymHistory.map((m) => {
+                      const statusColor = m.status === 'approved' ? '#22C55E' : m.status === 'rejected' ? '#EF4444' : m.status === 'removed' || m.status === 'inactive' ? '#8B94A3' : '#F59E0B'
+                      const statusLabel = { declared: 'Declarado', pending_approval: 'Pendiente', approved: 'Aprobado', rejected: 'Rechazado', removed: 'Saliste', inactive: 'Inactivo' }[m.status] || m.status
+                      const movementDate = m.ended_at || m.approved_at || m.requested_at
+                      return (
+                        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)' }}>
+                          <Dumbbell size={15} color="#AAB2C0" style={{ flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <Link to={`/gyms/${m.gym_slug}`} style={{ fontWeight: 600, fontSize: 14, color: '#F5F7FA', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {m.gym_display_name || `Gym #${m.gym_id}`}
+                              </Link>
+                              {m.gym_ownership_status === 'verified' && <ShieldCheck size={12} color="#5eead4" />}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 3, flexWrap: 'wrap' }}>
+                              {m.gym_city && <span style={{ fontSize: 12, color: '#AAB2C0' }}>{m.gym_city}</span>}
+                              <span style={{ fontSize: 11, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+                              {movementDate && <span style={{ fontSize: 11, color: '#6B7280' }}>{formatDate(movementDate)}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>

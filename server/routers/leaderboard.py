@@ -83,7 +83,7 @@ def _competition_has_categories(session: Session, competition_id: int) -> bool:
 
 def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict]:
     rows = session.execute(text("""
-        SELECT p.id, p.nombre, p.apellido, cp.categoria, COALESCE(p.genero, p.sexo) AS sexo
+        SELECT p.id, p.nombre, p.apellido, p.username, cp.categoria, COALESCE(p.genero, p.sexo) AS sexo
         FROM participants p
         JOIN competition_participants cp
           ON cp.user_id = p.id
@@ -95,6 +95,7 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
             "id": int(r["id"]),
             "nombre": r["nombre"],
             "apellido": r["apellido"],
+            "username": r["username"],
             "categoria": r["categoria"],
             "sexo": r["sexo"],
         }
@@ -193,6 +194,7 @@ def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list
             p.id AS user_id,
             p.nombre,
             p.apellido,
+            p.username,
             cp.categoria,
             COALESCE(p.genero, p.sexo) AS sexo
         FROM team_members tm
@@ -209,6 +211,7 @@ def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list
             "id": int(r["user_id"]),
             "nombre": r["nombre"],
             "apellido": r["apellido"],
+            "username": r["username"],
             "categoria": r["categoria"],
             "sexo": r["sexo"],
         })
@@ -245,6 +248,7 @@ def _build_ind_rows(
                 "id": p["id"],
                 "nombre": p["nombre"],
                 "apellido": p["apellido"],
+                "username": p.get("username"),
                 "categoria": p["categoria"],
                 "sexo": p["sexo"],
                 "total_puntos": int(agg["sum"]),
@@ -266,6 +270,7 @@ def _build_ind_rows(
                 "id": p["id"],
                 "nombre": p["nombre"],
                 "apellido": p["apellido"],
+                "username": p.get("username"),
                 "categoria": p["categoria"],
                 "sexo": p["sexo"],
                 "total_puntos": total,
@@ -297,6 +302,7 @@ def _team_members_for_phase(
             "id": pid,
             "nombre": member["nombre"],
             "apellido": member["apellido"],
+            "username": member.get("username"),
             "categoria": member["categoria"],
             "sexo": member["sexo"],
             "puntos_propios": int(sum_pts),
@@ -321,6 +327,7 @@ def _team_global_members(
             "id": pid,
             "nombre": member["nombre"],
             "apellido": member["apellido"],
+            "username": member.get("username"),
             "categoria": member["categoria"],
             "sexo": member["sexo"],
             "puntos_propios": int(ind_agg["sum"] + tm_agg["sum"]),

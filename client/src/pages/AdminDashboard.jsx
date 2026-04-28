@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
@@ -11,6 +12,39 @@ import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
 import CompetitionDiscountsPage from './CompetitionDiscountsPage'
 import CompetitorInvitationsPage from './CompetitorInvitationsPage'
+import AdminGymsPanel from './AdminGymsPanel'
+
+function buildAthleteProfilePath(username) {
+  const value = String(username || '').trim()
+  return value ? `/a/${value}` : ''
+}
+
+function AthleteNameLink({ username, children, style }) {
+  const profilePath = buildAthleteProfilePath(username)
+  if (!profilePath) return <span style={style}>{children}</span>
+  return (
+    <Link
+      to={profilePath}
+      style={{
+        color: 'inherit',
+        textDecoration: 'none',
+        borderBottom: '1px solid rgba(255,107,0,0.45)',
+        transition: 'border-color 0.18s ease, color 0.18s ease',
+        ...style,
+      }}
+      onMouseEnter={(event) => {
+        event.currentTarget.style.color = '#FF9A3D'
+        event.currentTarget.style.borderBottomColor = '#FF9A3D'
+      }}
+      onMouseLeave={(event) => {
+        event.currentTarget.style.color = 'inherit'
+        event.currentTarget.style.borderBottomColor = 'rgba(255,107,0,0.45)'
+      }}
+    >
+      {children}
+    </Link>
+  )
+}
 
 function SuccessToast({ text, onDone }) {
   useEffect(() => {
@@ -11282,7 +11316,9 @@ function CompetitionsTab() {
                                     <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 14, padding: '12px 14px', background: '#171B21', display: 'grid', gap: 10 }}>
                                       <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                                         <div style={{ minWidth: 0 }}>
-                                          <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>{p.nombre} {p.apellido}</div>
+                                          <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>
+                                            <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                          </div>
                                           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                                         </div>
                                         <span style={{
@@ -11317,7 +11353,9 @@ function CompetitionsTab() {
                           <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 16, padding: '14px', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', display: 'grid', gap: 10 }}>
                             <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>{p.nombre} {p.apellido}</div>
+                                <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>
+                                  <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                </div>
                                 <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                               </div>
                               <span style={{
@@ -11389,7 +11427,9 @@ function CompetitionsTab() {
                                         background: '#171B21',
                                       }}>
                                         <div style={{ minWidth: 0 }}>
-                                          <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>{p.nombre} {p.apellido}</div>
+                                          <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>
+                                            <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                          </div>
                                           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
                                         </div>
                                         <div style={{ display: 'grid', gap: 6 }}>
@@ -11420,7 +11460,9 @@ function CompetitionsTab() {
                               {filteredSelectedParticipants.map((p) => (
                                 <tr key={p.id}>
                                   <td>
-                                    <div style={{ color: '#F5F7FA', fontWeight: 800 }}>{p.nombre} {p.apellido}</div>
+                                    <div style={{ color: '#F5F7FA', fontWeight: 800 }}>
+                                      <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                    </div>
                                     <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
                                   </td>
                                   <td>
@@ -13175,6 +13217,11 @@ export default function AdminDashboard() {
             </button>
           )}
           {!isOrganizer && (
+            <button className={`tab ${mainTab === 'gyms' ? 'active' : ''}`} onClick={() => setMainTab('gyms')} style={{ flexShrink: 0 }}>
+              Gyms
+            </button>
+          )}
+          {!isOrganizer && (
             <button className={`tab ${mainTab === 'organizer-requests' ? 'active' : ''}`} onClick={() => setMainTab('organizer-requests')} style={{ flexShrink: 0 }}>
               Solicitudes organizador
             </button>
@@ -13184,6 +13231,7 @@ export default function AdminDashboard() {
         {mainTab === 'finance' && <FinanceTab />}
         {!isOrganizer && mainTab === 'system' && <SystemStatusTab />}
         {!isOrganizer && mainTab === 'athletes' && <ParticipantsTab />}
+        {!isOrganizer && mainTab === 'gyms' && <AdminGymsPanel />}
         {!isOrganizer && mainTab === 'organizer-requests' && <OrganizerApplicationsTab />}
       </div>
     </div>

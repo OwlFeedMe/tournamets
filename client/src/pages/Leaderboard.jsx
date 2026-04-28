@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { CheckCircle2, Clock3, Circle } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -163,6 +163,29 @@ function totalEntryFor(map, id) {
   return { puntos: entry, rank: null }
 }
 
+function athleteDisplayName(athlete) {
+  return [athlete?.nombre, athlete?.apellido].filter(Boolean).join(' ').trim() || 'Atleta'
+}
+
+function AthleteProfileLink({ athlete, children, style }) {
+  if (!athlete?.username) {
+    return <span style={style}>{children}</span>
+  }
+  return (
+    <Link
+      to={`/a/${athlete.username}`}
+      style={{
+        color: 'inherit',
+        textDecoration: 'none',
+        ...style,
+      }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {children}
+    </Link>
+  )
+}
+
 // â”€â”€ Individual leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false }) {
   const prevMap = useRef({})
@@ -202,7 +225,12 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       {/* Header: rank + name + movement */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? THEME.primary : THEME.muted }}>#{p.rank}</span>
-                        <span style={{ fontWeight: p.rank <= 3 ? 700 : 500, flex: 1, fontSize: 14 }}>{p.nombre} {p.apellido}</span>
+                        <AthleteProfileLink
+                          athlete={p}
+                          style={{ fontWeight: p.rank <= 3 ? 700 : 500, flex: 1, fontSize: 14, minWidth: 0 }}
+                        >
+                          {athleteDisplayName(p)}
+                        </AthleteProfileLink>
                         <MoveBadge delta={delta} />
                       </div>
 
@@ -260,7 +288,9 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       >
                         <td style={{ textAlign: 'center' }}><RankCell rank={p.rank} tvMode={tvMode} /></td>
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
-                          {p.nombre} {p.apellido}
+                          <AthleteProfileLink athlete={p}>
+                            {athleteDisplayName(p)}
+                          </AthleteProfileLink>
                           <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
                         </td>
                         <td style={{ color: '#6d756c' }}>{p.sexo || '-'}</td>
@@ -352,8 +382,10 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   const color = didTest ? THEME.ink : '#8a9489'
                   const weight = didTest ? 600 : 400
                   return (
-                    <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>{m.nombre} {m.apellido}</span>
+                    <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <AthleteProfileLink athlete={m} style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                        {athleteDisplayName(m)}
+                      </AthleteProfileLink>
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
                         <span style={{ color: '#6d756c', fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
                       )}
@@ -408,7 +440,9 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                     const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 700 : 400
                     return (
                       <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight }}>
-                        {m.nombre} {m.apellido}
+                        <AthleteProfileLink athlete={m}>
+                          {athleteDisplayName(m)}
+                        </AthleteProfileLink>
                         {phaseMode !== 'total' && (
                           <span style={{ marginLeft: 6, color: '#8c948b' }}>
                             {phaseInfo

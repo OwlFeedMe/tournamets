@@ -1,9 +1,128 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, X, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Dumbbell, Eye, EyeOff, Search, ShieldCheck, X, CheckCircle } from 'lucide-react'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { loadCountries } from '../utils/locations'
+
+function useDebounce(value, delay) {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
+}
+
+function GymPickerStep({ onSkip, onDone }) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [selected, setSelected] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const debouncedQuery = useDebounce(query, 280)
+
+  useEffect(() => {
+    if (!debouncedQuery.trim()) { setResults([]); return }
+    setLoading(true)
+    api.get(`/gyms?q=${encodeURIComponent(debouncedQuery)}&limit=8`)
+      .then(r => setResults(r.data?.items || r.data || []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false))
+  }, [debouncedQuery])
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  const handleConfirm = async () => {
+    if (!selected) { onDone(); return }
+    setBusy(true)
+    try {
+      await api.post(`/gyms/${selected.id}/memberships`, { is_primary: true })
+    } catch { /* silent — skip if already member */ }
+    onDone()
+  }
+
+  return (
+    <div>
+      <div style={{ textAlign: 'center', marginBottom: 18 }}>
+        <Dumbbell size={32} color="#5eead4" style={{ margin: '0 auto 10px' }} />
+        <div style={{ color: '#F4F7FB', fontWeight: 800, fontSize: 17, marginBottom: 6 }}>¿Entrenas en algún gym?</div>
+        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.55 }}>
+          Asocia tu perfil a tu box para aparecer en su roster. Puedes hacerlo despues desde tu perfil.
+        </div>
+      </div>
+
+      <div ref={wrapRef} style={{ position: 'relative', marginBottom: 14 }}>
+        <div style={{ position: 'relative' }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#AAB2C0', pointerEvents: 'none' }} />
+          <input
+            value={selected ? selected.display_name : query}
+            onChange={e => { if (selected) setSelected(null); setQuery(e.target.value); setOpen(true) }}
+            onFocus={() => { if (!selected) setOpen(true) }}
+            placeholder="Busca tu gym..."
+            style={{ paddingLeft: 36, paddingRight: selected ? 36 : 12 }}
+          />
+          {selected && (
+            <button type="button" onClick={() => { setSelected(null); setQuery('') }} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#AAB2C0', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
+              <X size={15} />
+            </button>
+          )}
+        </div>
+
+        {open && !selected && (query.trim() || results.length > 0) && (
+          <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 50, background: '#171B21', border: '1px solid #252A33', borderRadius: 10, boxShadow: '0 16px 32px rgba(0,0,0,0.32)', overflow: 'hidden', maxHeight: 220, overflowY: 'auto' }}>
+            {loading && <div style={{ padding: '12px 14px', color: '#AAB2C0', fontSize: 13 }}>Buscando...</div>}
+            {!loading && results.length === 0 && query.trim() && (
+              <div style={{ padding: '12px 14px', color: '#AAB2C0', fontSize: 13 }}>No encontramos &ldquo;{query}&rdquo;</div>
+            )}
+            {results.map(gym => (
+              <button
+                key={gym.id}
+                type="button"
+                onMouseDown={() => { setSelected(gym); setOpen(false) }}
+                style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', borderBottom: '1px solid #252A33', background: 'transparent', color: '#F5F7FA', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10 }}
+              >
+                <Dumbbell size={13} color="#5eead4" style={{ flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {gym.display_name}
+                    {gym.ownership_status === 'verified' && <ShieldCheck size={12} color="#5eead4" style={{ marginLeft: 5, verticalAlign: 'middle' }} />}
+                  </div>
+                  {gym.city && <div style={{ fontSize: 12, color: '#AAB2C0' }}>{gym.city}</div>}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selected && (
+        <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(94,234,212,0.3)', background: 'rgba(94,234,212,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Dumbbell size={15} color="#5eead4" />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, color: '#F5F7FA' }}>{selected.display_name}</div>
+            {selected.city && <div style={{ fontSize: 12, color: '#AAB2C0' }}>{selected.city}</div>}
+          </div>
+        </div>
+      )}
+
+      <button type="button" className="btn-primary" style={{ width: '100%', padding: '12px', marginBottom: 8 }} onClick={handleConfirm} disabled={busy}>
+        {busy ? 'Guardando...' : selected ? 'Confirmar gym' : 'Continuar sin gym'}
+      </button>
+      <button type="button" className="btn-secondary" style={{ width: '100%', padding: '12px' }} onClick={onSkip} disabled={busy}>
+        Omitir por ahora
+      </button>
+    </div>
+  )
+}
 
 const BASIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const TEXT_ONLY_REGEX = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]+$/
@@ -77,6 +196,8 @@ function getRegisterValidationError(form) {
 }
 
 function RegisterModal({ open, onClose, onRegistered }) {
+  const [step, setStep] = useState('form') // 'form' | 'gym'
+  const [registeredData, setRegisteredData] = useState(null)
   const [form, setForm] = useState({
     nombre: '',
     apellido: '',
@@ -143,7 +264,8 @@ function RegisterModal({ open, onClose, onRegistered }) {
         password: form.password,
       }
       const { data } = await api.post('/auth/register', payload)
-      onRegistered(data)
+      setRegisteredData(data)
+      setStep('gym')
     } catch (err) {
       setError(getApiErrorMessage(err, 'No se pudo crear la cuenta. Verifica si el correo ya esta registrado.'))
     } finally {
@@ -202,7 +324,7 @@ function RegisterModal({ open, onClose, onRegistered }) {
             <ArrowLeft size={16} />
             Volver
           </button>
-          <div style={{ color: '#F4F7FB', fontWeight: 800, fontSize: 16 }}>Crear cuenta</div>
+          <div style={{ color: '#F4F7FB', fontWeight: 800, fontSize: 16 }}>{step === 'gym' ? 'Tu gym' : 'Crear cuenta'}</div>
           <button
             type="button"
             onClick={onClose}
@@ -212,7 +334,14 @@ function RegisterModal({ open, onClose, onRegistered }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        {step === 'gym' && (
+          <GymPickerStep
+            onDone={() => onRegistered(registeredData)}
+            onSkip={() => onRegistered(registeredData)}
+          />
+        )}
+
+        {step === 'form' && <form onSubmit={handleSubmit}>
           {error && <div className="alert alert-error">{error}</div>}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -362,7 +491,7 @@ function RegisterModal({ open, onClose, onRegistered }) {
           <button type="submit" className="btn-primary" style={{ width: '100%', padding: '12px' }} disabled={loading}>
             {loading ? 'Creando cuenta...' : 'Registrarme'}
           </button>
-        </form>
+        </form>}
         </div>
       </div>
     </>

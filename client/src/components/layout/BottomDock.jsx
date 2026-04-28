@@ -1,10 +1,11 @@
-import { CalendarDays, Gavel, House, LogIn, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { CalendarDays, Dumbbell, Gavel, House, LogIn, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 const PUBLIC_ITEMS = [
   { label: 'Inicio', icon: House, to: '/' },
   { label: 'Eventos', icon: CalendarDays, to: '/events' },
+  { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
   { label: 'Ingresar', icon: LogIn, to: '/login' },
 ]
 
@@ -15,14 +16,17 @@ function buildDockItems(session) {
     return [
       { label: 'Inicio', icon: House, to: '/' },
       { label: 'Eventos', icon: CalendarDays, to: '/events' },
-      { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
+      { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
       { label: 'Perfil', icon: UserCircle2, to: '/profile' },
       { label: 'Admin', icon: ShieldCheck, to: '/admin' },
     ]
   }
 
   const hasExtra = !!(session.organizerEnabled || session.judgeEnabled)
-  const items = [{ label: 'Inicio', icon: House, to: '/' }]
+  const items = [
+    { label: 'Inicio', icon: House, to: '/' },
+    { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
+  ]
   if (!hasExtra) {
     items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })
   }
@@ -44,6 +48,7 @@ function buildDockItems(session) {
 function isActivePath(pathname, target) {
   if (!target) return false
   if (target === '/events') return pathname.startsWith('/events')
+  if (target === '/gyms') return pathname.startsWith('/gyms')
   if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')

@@ -13,6 +13,7 @@ from auth import create_access_token, get_current_user, hash_password, invalidat
 from constants import EstadoParticipante, Role
 from database import get_session
 from models import MeResponse, Participant, PasswordResetCode, TokenResponse, User
+from services.athlete_profiles import build_public_username_seed, ensure_unique_username, is_sensitive_username
 from services.emailer import send_email
 from services.email_templates import render_password_reset_code, render_welcome
 
@@ -65,7 +66,7 @@ def _session_token_payload(user: User) -> dict:
         "extra_roles": extra_roles,
         "display_name": _display_name(user),
         "nombre": _display_name(user),
-        "username": user.username or user.email or user.cedula,
+        "username": user.username,
         "organizer_enabled": bool(user.organizer_enabled),
         "judge_enabled": bool(user.judge_enabled),
         "admin_enabled": bool(user.admin_enabled),
@@ -201,7 +202,8 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
         user.nombre = nombre
         user.apellido = apellido
         user.email = email
-        user.username = email
+        if not user.username or is_sensitive_username(user.username, cedula=user.cedula):
+            user.username = ensure_unique_username(session, build_public_username_seed(user, f"{nombre} {apellido}"), exclude_user_id=user.id)
         user.display_name = f"{nombre} {apellido}".strip()
         user.celular = celular or user.celular
         user.genero = genero or user.genero
@@ -221,7 +223,7 @@ def register(body: dict = Body(...), session: Session = Depends(get_session)):
             genero=genero or None,
             sexo=genero or None,
             estado=EstadoParticipante.ACTIVO,
-            username=email,
+            username=ensure_unique_username(session, f"{nombre} {apellido}"),
             display_name=f"{nombre} {apellido}".strip(),
             role=Role.USER,
             password_hash=hash_password(password),
@@ -265,8 +267,8 @@ def login(body: dict = Body(...), session: Session = Depends(get_session)):
         raise HTTPException(status_code=401, detail="Credenciales invalidas")
 
     user.password_hash = hash_password(password)
-    if not user.username:
-        user.username = (user.email or user.cedula or "").strip().lower() or None
+    if not user.username or is_sensitive_username(user.username, cedula=user.cedula):
+        user.username = ensure_unique_username(session, build_public_username_seed(user, _display_name(user)), exclude_user_id=user.id)
     if not user.display_name:
         user.display_name = _display_name(user)
     user.role = user.role or Role.USER

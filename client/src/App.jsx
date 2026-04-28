@@ -21,6 +21,12 @@ const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => 
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
 const CompetitionInvitationEnrollPage = lazy(() => import('./pages/CompetitionInvitationEnrollPage'))
 const ParticipantProfile = lazy(() => import('./pages/ParticipantProfile'))
+const AthletePublicProfile = lazy(() => import('./pages/AthletePublicProfile'))
+const GymsPage = lazy(() => import('./pages/GymsPage'))
+const GymSuggestPage = lazy(() => import('./pages/GymSuggestPage'))
+const GymPublicProfile = lazy(() => import('./pages/GymPublicProfile'))
+const GymConsole = lazy(() => import('./pages/GymConsole'))
+const AdminGymsPanel = lazy(() => import('./pages/AdminGymsPanel'))
 
 function AppFallback() {
   return (
@@ -90,6 +96,10 @@ export default function App() {
               <Route path="/competitions/:competitionId/tickets" element={<CompetitionTicketsPage />} />
               <Route path="/competitions/:competitionId/tickets/payment-result" element={<CompetitionTicketsPaymentResultPage />} />
               <Route path="/competitions/:competitionId/invitation/:invitationId" element={<CompetitionInvitationEnrollPage />} />
+              <Route path="/gyms" element={<GymsPage />} />
+              <Route path="/gyms/:slug" element={<GymPublicProfile />} />
+              <Route path="/a/:username" element={<AthletePublicProfile />} />
+              <Route path="/gyms/:slug/manage" element={<GymConsole />} />
               <Route path="/events" element={<EventsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/leaderboard/:competitionId" element={<Leaderboard />} />
@@ -111,6 +121,14 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['user', 'admin']}>
                       <ParticipantProfile />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/gyms/suggest"
+                  element={
+                    <RoleGate allowedRoles={['user', 'admin']}>
+                      <GymSuggestPage />
                     </RoleGate>
                   }
                 />
@@ -159,6 +177,14 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['organizer', 'admin']}>
                       <AdminDashboard />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin/gyms"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminGymsPanel />
                     </RoleGate>
                   }
                 />

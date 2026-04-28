@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, Gavel, House, LogIn, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { Bell, CalendarDays, Dumbbell, Gavel, House, LogIn, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
@@ -6,6 +6,7 @@ import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
 const PUBLIC_NAV = [
   { label: 'Inicio', icon: House, to: '/' },
   { label: 'Eventos', icon: CalendarDays, to: '/events' },
+  { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
 ]
 
 function buildNavItems(session) {
@@ -15,6 +16,7 @@ function buildNavItems(session) {
     return [
       { label: 'Inicio', icon: House, to: '/' },
       { label: 'Eventos', icon: CalendarDays, to: '/events' },
+      { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
       { label: 'Mis eventos', icon: CalendarDays, to: '/my-events' },
       { label: 'Perfil', icon: UserCircle2, to: '/profile' },
       { label: 'Admin', icon: ShieldCheck, to: '/admin' },
@@ -24,6 +26,7 @@ function buildNavItems(session) {
   const items = [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Eventos', icon: CalendarDays, to: '/events' },
+    { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
   ]
   if (session.userId) {
     items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
@@ -42,6 +45,7 @@ function isActivePath(pathname, target) {
   if (!target) return false
   if (target === '/') return pathname === '/'
   if (target === '/events') return pathname.startsWith('/events')
+  if (target === '/gyms') return pathname.startsWith('/gyms')
   if (target === '/my-events') return pathname.startsWith('/my-events')
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')

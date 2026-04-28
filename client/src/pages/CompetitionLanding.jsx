@@ -1,7 +1,8 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
+import CompetitionRosterPanel from '../components/competition/CompetitionRosterPanel'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -418,6 +419,7 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
 export default function CompetitionLanding() {
   const { competitionId } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { session, role, userId, isAthlete } = useAuth()
   const [ctaBusy, setCtaBusy] = useState(false)
   const [payload, setPayload] = useState(null)
@@ -432,6 +434,9 @@ export default function CompetitionLanding() {
   const [interestMsg, setInterestMsg] = useState(null)
   const [pricingCfg, setPricingCfg] = useState(null)
   const [spectatorTicketing, setSpectatorTicketing] = useState(null)
+  const [publicRosterPayload, setPublicRosterPayload] = useState(null)
+  const contentSwitchRef = useRef(null)
+  const pendingSwitchAnchorRef = useRef(null)
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -454,6 +459,7 @@ export default function CompetitionLanding() {
     setLoading(true)
     setError('')
     setExpandedCategoryKey('')
+    setPublicRosterPayload(null)
     api.get(`/competitions/${competitionId}/public`)
       .then(({ data }) => {
         if (!active) return
@@ -563,8 +569,29 @@ export default function CompetitionLanding() {
   const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
-  const publicRosterHref = competition ? `/competitions/${competition.id}/inscritos` : '/events'
   const canShowPublicRoster = !!competition?.show_public_category_roster
+  const activeContent = canShowPublicRoster && searchParams.get('view') === 'inscritos' ? 'roster' : 'overview'
+  useEffect(() => {
+    let active = true
+    if (!canShowPublicRoster || !competition?.id) {
+      setPublicRosterPayload(null)
+      return () => {
+        active = false
+      }
+    }
+    api.get(`/competitions/${competition.id}/public-roster`)
+      .then(({ data }) => {
+        if (!active) return
+        setPublicRosterPayload(data || null)
+      })
+      .catch(() => {
+        if (!active) return
+        setPublicRosterPayload(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [canShowPublicRoster, competition?.id])
   const competitionStartDate = useMemo(
     () => parseDateValue(competition?.competition_start || competition?.enrollment_start),
     [competition]
@@ -641,6 +668,48 @@ export default function CompetitionLanding() {
     event.preventDefault()
     await saveInterestNotification(interestEmail)
   }
+
+  const rememberSwitchAnchor = () => {
+    if (typeof window === 'undefined') return
+    const top = contentSwitchRef.current?.getBoundingClientRect?.().top
+    if (typeof top !== 'number') return
+    pendingSwitchAnchorRef.current = top
+  }
+
+  const openRosterView = () => {
+    if (!canShowPublicRoster) return
+    rememberSwitchAnchor()
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('view', 'inscritos')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  const openOverviewView = () => {
+    rememberSwitchAnchor()
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('view')
+    setSearchParams(nextParams, { replace: true })
+  }
+
+  useEffect(() => {
+    if (canShowPublicRoster) return
+    if (searchParams.get('view') !== 'inscritos') return
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('view')
+    setSearchParams(nextParams, { replace: true })
+  }, [canShowPublicRoster, searchParams, setSearchParams])
+
+  useLayoutEffect(() => {
+    if (typeof window === 'undefined') return
+    const previousTop = pendingSwitchAnchorRef.current
+    if (typeof previousTop !== 'number') return
+    const currentTop = contentSwitchRef.current?.getBoundingClientRect?.().top
+    pendingSwitchAnchorRef.current = null
+    if (typeof currentTop !== 'number') return
+    const delta = currentTop - previousTop
+    if (Math.abs(delta) < 1) return
+    window.scrollBy({ top: delta, left: 0, behavior: 'auto' })
+  }, [activeContent])
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
@@ -1068,148 +1137,177 @@ export default function CompetitionLanding() {
               </section>
             ) : null}
 
-            <section style={{ display: 'grid', gap: 18 }}>
-              {scheduleItems.length ? (
-                <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22 }}>
-                  <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Calendario
-                  </div>
-                  <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Fechas clave</h2>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-                    <Link to={scheduleHref} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 6, border: `1px solid ${hexToRgba(theme.accent, 0.22)}`, background: hexToRgba(theme.background, 0.58), color: theme.text, fontWeight: 700 }}>
-                      Abrir cronograma completo
-                    </Link>
-                    {canSeeMySchedule ? (
-                      <Link to={myScheduleHref} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 6, border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, background: hexToRgba(theme.background, 0.58), color: theme.text, fontWeight: 700 }}>
-                        Ver mi cronograma
-                      </Link>
-                    ) : null}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14 }}>
-                    {scheduleItems.map((item) => (
-                      <div key={item.id} className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: isMobile ? 14 : 16 }}>
-                        {item.linked_phase_name ? <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Fase enlazada: {item.linked_phase_name}</div> : null}
-                        <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>{item.label || 'Fecha'}</div>
-                        <div style={{ marginTop: 6, color: theme.text, fontSize: 14, lineHeight: 1.6 }}>
-                          {formatDateRange(item.start_at, item.end_at)}
-                        </div>
-                        {item.note ? <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.note}</div> : null}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
+            {canShowPublicRoster ? (
+              <section ref={contentSwitchRef} className="fr-cut-card" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', border: `1px solid ${theme.border}`, background: theme.surface, padding: 10, marginBottom: 18 }}>
+                <button
+                  type="button"
+                  onClick={openOverviewView}
+                  style={{
+                    minHeight: 42,
+                    borderRadius: 999,
+                    border: activeContent === 'overview' ? '1px solid rgba(255,107,0,0.28)' : `1px solid ${theme.border}`,
+                    background: activeContent === 'overview' ? 'linear-gradient(135deg, rgba(255,107,0,0.20) 0%, rgba(228,94,0,0.08) 100%)' : 'rgba(13,15,18,0.56)',
+                    color: '#F5F7FA',
+                    padding: '0 16px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Resumen
+                </button>
+                <button
+                  type="button"
+                  onClick={openRosterView}
+                  style={{
+                    minHeight: 42,
+                    borderRadius: 999,
+                    border: activeContent === 'roster' ? '1px solid rgba(255,107,0,0.28)' : `1px solid ${theme.border}`,
+                    background: activeContent === 'roster' ? 'linear-gradient(135deg, rgba(255,107,0,0.20) 0%, rgba(228,94,0,0.08) 100%)' : 'rgba(13,15,18,0.56)',
+                    color: '#F5F7FA',
+                    padding: '0 16px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Ver inscritos
+                </button>
+              </section>
+            ) : null}
 
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
-                <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22, height: '100%' }}>
-                  <PhasesbyDay phases={phases} categories={categories} theme={theme} hexToRgba={hexToRgba} isMobile={isMobile} />
-                </div>
-
-                <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22, height: '100%' }}>
-                  <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-                    Categorias
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
-                    <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Divisiones de la competencia</h2>
-                    {canShowPublicRoster ? (
-                      <Link
-                        to={publicRosterHref}
-                        style={{
-                          textDecoration: 'none',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          padding: '10px 14px',
-                          borderRadius: 999,
-                          border: `1px solid ${hexToRgba(theme.accent, 0.34)}`,
-                          background: hexToRgba(theme.accent, 0.12),
-                          color: theme.text,
-                          fontSize: 12,
-                          fontWeight: 800,
-                        }}
-                      >
-                        <Users size={15} />
-                        Ver inscritos
-                        <ArrowRight size={15} />
+            {activeContent === 'roster' ? (
+              <CompetitionRosterPanel
+                competitionId={competitionId}
+                competition={competition}
+                initialRosterPayload={publicRosterPayload}
+                embedded
+              />
+            ) : (
+              <section style={{ display: 'grid', gap: 18 }}>
+                {scheduleItems.length ? (
+                  <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22 }}>
+                    <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Calendario
+                    </div>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Fechas clave</h2>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                      <Link to={scheduleHref} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 6, border: `1px solid ${hexToRgba(theme.accent, 0.22)}`, background: hexToRgba(theme.background, 0.58), color: theme.text, fontWeight: 700 }}>
+                        Abrir cronograma completo
                       </Link>
-                    ) : null}
-                  </div>
-                  <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-                    {categories.length ? Object.entries(categoriesByModality)
-                      .filter(([, items]) => Array.isArray(items) && items.length)
-                      .map(([modality, items]) => (
-                        <div key={`group-${modality}`} style={{ display: 'grid', gap: 8 }}>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: modality === 'teams' ? theme.primary : theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                            <Users size={14} />
-                            {modalityLabel(modality)}
+                      {canSeeMySchedule ? (
+                        <Link to={myScheduleHref} style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 6, border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, background: hexToRgba(theme.background, 0.58), color: theme.text, fontWeight: 700 }}>
+                          Ver mi cronograma
+                        </Link>
+                      ) : null}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14 }}>
+                      {scheduleItems.map((item) => (
+                        <div key={item.id} className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: hexToRgba(theme.background, 0.58), padding: isMobile ? 14 : 16 }}>
+                          {item.linked_phase_name ? <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Fase enlazada: {item.linked_phase_name}</div> : null}
+                          <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>{item.label || 'Fecha'}</div>
+                          <div style={{ marginTop: 6, color: theme.text, fontSize: 14, lineHeight: 1.6 }}>
+                            {formatDateRange(item.start_at, item.end_at)}
                           </div>
-                          {items.map((category) => {
-                            const categoryKey = `${modality}-${category.id || category.nombre}`
-                            const isExpanded = expandedCategoryKey === categoryKey
-                            const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee)
-                            const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
-                            const hasAnyDescription = !!(shortDescription || longDescription)
-                            const hasPricing = pricing.totalPrice > 0
-                            const canExpand = hasAnyDescription || hasPricing
-                            const CardTag = canExpand ? 'button' : 'div'
-                            return (
-                              <CardTag
-                                key={category.id}
-                                type={canExpand ? 'button' : undefined}
-                                onClick={canExpand ? () => setExpandedCategoryKey(prev => (prev === categoryKey ? '' : categoryKey)) : undefined}
-                                style={{ padding: isMobile ? '12px' : '13px 14px', borderRadius: 6, background: 'rgba(13,15,18,0.62)', border: `1px solid ${theme.border}`, textAlign: 'left', cursor: canExpand ? 'pointer' : 'default', color: 'inherit' }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
-                                    <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
-                                      {category.nombre}
-                                    </div>
-                                    <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                                      {modalityLabel(modality)}
-                                    </span>
-                                  </div>
-                                  {canExpand ? (
-                                    <span style={{ color: theme.textSecondary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                      {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                {isExpanded && canExpand ? (
-                                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, lineHeight: 1.6 }}>
-                                    {hasAnyDescription ? (
-                                      <div style={{ color: theme.text, fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
-                                        {[shortDescription, longDescription].filter(Boolean).join('\n\n')}
-                                      </div>
-                                    ) : null}
-                                    {hasPricing ? (
-                                      <div style={{ marginTop: 12, display: 'grid', gap: 4, justifyItems: 'end', textAlign: 'right' }}>
-                                        <div style={{ color: '#D4A537', fontSize: 15, fontWeight: 800 }}>
-                                          Inscripcion total: {formatCop(pricing.totalPrice)}
-                                        </div>
-                                        <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'end', gap: 6, flexWrap: 'wrap' }}>
-                                          <span>
-                                          Base {formatCop(pricing.organizerPrice)} + plataforma {formatCop(pricing.platformFee)}
-                                          </span>
-                                          <span title="El total incluye la comision de plataforma aplicada al valor base de esta categoria." style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
-                                            <Info size={11} />
-                                          </span>
-                                        </div>
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                              </CardTag>
-                            )
-                          })}
+                          {item.note ? <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.note}</div> : null}
                         </div>
-                      )) : (
-                      <div style={{ color: theme.textSecondary, fontSize: 14 }}>Sin categorias definidas.</div>
-                    )}
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
+                  <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22, height: '100%' }}>
+                    <PhasesbyDay phases={phases} categories={categories} theme={theme} hexToRgba={hexToRgba} isMobile={isMobile} />
+                  </div>
+
+                  <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 22, height: '100%' }}>
+                    <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                      Categorias
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+                      <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 28, lineHeight: 1.05 }}>Divisiones de la competencia</h2>
+                    </div>
+                    <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+                      {categories.length ? Object.entries(categoriesByModality)
+                        .filter(([, items]) => Array.isArray(items) && items.length)
+                        .map(([modality, items]) => (
+                          <div key={`group-${modality}`} style={{ display: 'grid', gap: 8 }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: modality === 'teams' ? theme.primary : theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                              <Users size={14} />
+                              {modalityLabel(modality)}
+                            </div>
+                            {items.map((category) => {
+                              const categoryKey = `${modality}-${category.id || category.nombre}`
+                              const isExpanded = expandedCategoryKey === categoryKey
+                              const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee)
+                              const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
+                              const hasAnyDescription = !!(shortDescription || longDescription)
+                              const hasPricing = pricing.totalPrice > 0
+                              const canExpand = hasAnyDescription || hasPricing
+                              const CardTag = canExpand ? 'button' : 'div'
+                              return (
+                                <CardTag
+                                  key={category.id}
+                                  type={canExpand ? 'button' : undefined}
+                                  onClick={canExpand ? () => setExpandedCategoryKey(prev => (prev === categoryKey ? '' : categoryKey)) : undefined}
+                                  style={{ padding: isMobile ? '12px' : '13px 14px', borderRadius: 6, background: 'rgba(13,15,18,0.62)', border: `1px solid ${theme.border}`, textAlign: 'left', cursor: canExpand ? 'pointer' : 'default', color: 'inherit' }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+                                      <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 800 }}>
+                                        {category.nombre}
+                                      </div>
+                                      <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                        {modalityLabel(modality)}
+                                      </span>
+                                    </div>
+                                    {canExpand ? (
+                                      <span style={{ color: theme.textSecondary, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  {isExpanded && canExpand ? (
+                                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: 12, lineHeight: 1.6 }}>
+                                      {hasAnyDescription ? (
+                                        <div style={{ color: theme.text, fontSize: 13, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+                                          {[shortDescription, longDescription].filter(Boolean).join('\n\n')}
+                                        </div>
+                                      ) : null}
+                                      {hasPricing ? (
+                                        <div style={{ marginTop: 12, display: 'grid', gap: 4, justifyItems: 'end', textAlign: 'right' }}>
+                                          <div style={{ color: '#D4A537', fontSize: 15, fontWeight: 800 }}>
+                                            Inscripcion total: {formatCop(pricing.totalPrice)}
+                                          </div>
+                                          <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'end', gap: 6, flexWrap: 'wrap' }}>
+                                            <span>
+                                            Base {formatCop(pricing.organizerPrice)} + plataforma {formatCop(pricing.platformFee)}
+                                            </span>
+                                            <span title="El total incluye la comision de plataforma aplicada al valor base de esta categoria." style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 999, border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
+                                              <Info size={11} />
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </CardTag>
+                              )
+                            })}
+                          </div>
+                        )) : (
+                        <div style={{ color: theme.textSecondary, fontSize: 14 }}>Sin categorias definidas.</div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-
-            </section>
+              </section>
+            )}
           </>
         ) : null}
       </div>
@@ -1228,4 +1326,5 @@ export default function CompetitionLanding() {
     </div>
   )
 }
+
 

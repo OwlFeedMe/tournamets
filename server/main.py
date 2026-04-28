@@ -27,6 +27,7 @@ from routers import (
     ticketing,
     discounts,
     competitor_invitations,
+    gyms,
 )
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
@@ -67,6 +68,7 @@ app.include_router(judge_cards.router)
 app.include_router(ticketing.router)
 app.include_router(discounts.router)
 app.include_router(competitor_invitations.router)
+app.include_router(gyms.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 

@@ -181,7 +181,7 @@ def _refresh_user_access(payload: dict, session: Session) -> dict:
 
     refreshed["sub"] = str(user.id)
     refreshed["user_id"] = user.id
-    refreshed["username"] = user.username or user.email or user.cedula
+    refreshed["username"] = user.username
     refreshed["display_name"] = user.display_name or f"{(user.nombre or '').strip()} {(user.apellido or '').strip()}".strip()
     refreshed["base_role"] = user.role
     refreshed["extra_roles"] = extra_roles

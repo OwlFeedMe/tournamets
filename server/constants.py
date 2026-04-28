@@ -118,3 +118,116 @@ class UnidadRM:
     LB = "lb"
 
     ALL = {KG, LB}
+
+
+class GymStatus:
+    DRAFT = "draft"
+    PENDING_REVIEW = "pending_review"
+    PUBLISHED = "published"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
+    SUSPENDED = "suspended"
+
+    ALL = {DRAFT, PENDING_REVIEW, PUBLISHED, REJECTED, ARCHIVED, SUSPENDED}
+    PUBLIC = {PUBLISHED}
+
+
+class GymOwnershipStatus:
+    UNCLAIMED = "unclaimed"
+    CLAIM_PENDING = "claim_pending"
+    CLAIMED = "claimed"
+    VERIFIED = "verified"
+
+    ALL = {UNCLAIMED, CLAIM_PENDING, CLAIMED, VERIFIED}
+
+
+class GymPlanTier:
+    FREE = "free"
+    PRO = "pro"
+    PARTNER = "partner"
+
+    ALL = {FREE, PRO, PARTNER}
+
+
+class GymMembershipStatus:
+    DECLARED = "declared"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REMOVED = "removed"
+    INACTIVE = "inactive"
+
+    ALL = {DECLARED, PENDING_APPROVAL, APPROVED, REJECTED, REMOVED, INACTIVE}
+    ACTIVE = {DECLARED, PENDING_APPROVAL, APPROVED}
+
+
+class GymStaffRole:
+    OWNER = "owner"
+    MANAGER = "manager"
+    COACH = "coach"
+    STAFF = "staff"
+
+    ALL = {OWNER, MANAGER, COACH, STAFF}
+
+
+class GymClaimStatus:
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+    ALL = {PENDING, APPROVED, REJECTED, WITHDRAWN}
+
+
+class GymSubmissionStatus:
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    MATCHED = "matched"
+
+    ALL = {PENDING, APPROVED, REJECTED, MATCHED}
+
+
+class AthleteProfileVisibility:
+    PUBLIC = "public"
+    PRIVATE = "private"
+
+    ALL = {PUBLIC, PRIVATE}
+
+
+ATHLETE_USERNAME_RESERVED = {
+    "a",
+    "admin",
+    "api",
+    "app",
+    "auth",
+    "athlete",
+    "athletes",
+    "competition",
+    "competitions",
+    "event",
+    "events",
+    "explore",
+    "finalrep",
+    "gym",
+    "gyms",
+    "home",
+    "judge",
+    "leaderboard",
+    "login",
+    "notifications",
+    "organizer",
+    "profile",
+    "rankings",
+    "register",
+    "results",
+    "schedule",
+    "signup",
+    "system",
+    "teams",
+    "tv",
+    "user",
+    "users",
+    "workout",
+    "workouts",
+}

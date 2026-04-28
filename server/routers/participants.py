@@ -11,12 +11,15 @@ import pandas as pd
 from PIL import Image, UnidentifiedImageError
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_effective_user_id, invalidate_user, is_end_user, require_admin, require_auth
+from auth import get_current_user_optional, get_effective_user_id, has_admin_access, invalidate_user, is_end_user, require_admin, require_auth
+from constants import AthleteProfileVisibility
 from database import get_session
-from models import Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, CompetitionParticipant
+from models import AthleteUsernameAlias, Competition, CompetitionParticipant, CompetitionPhase, Gym, GymMembership, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, Result
+from services.athlete_profiles import build_default_display_name, build_public_username_seed, ensure_unique_username, find_user_by_alias, find_user_by_username, is_reserved_username, is_sensitive_username, is_username_available, is_username_format_valid, normalize_requested_username, suggest_usernames
 
 
 def _normalize(s: str) -> str:
@@ -93,14 +96,135 @@ def _validate_participant_payload(data: dict) -> None:
         raise HTTPException(400, "Selecciona un genero valido")
 
 
-def _sync_account_fields(participant: Participant) -> int | None:
-    normalized_email = (participant.email or "").strip().lower()
-    if normalized_email:
-        participant.username = normalized_email
-    elif not participant.username:
-        participant.username = None
-    participant.display_name = f"{(participant.nombre or '').strip()} {(participant.apellido or '').strip()}".strip() or participant.cedula
+def _sync_account_fields(participant: Participant, session: Session | None = None) -> int | None:
+    participant.display_name = str(participant.display_name or "").strip() or build_default_display_name(participant)
+    if participant.username and not is_sensitive_username(participant.username, cedula=participant.cedula):
+        participant.username = normalize_requested_username(participant.username)
+    elif session is not None:
+        participant.username = ensure_unique_username(
+            session,
+            build_public_username_seed(participant),
+            exclude_user_id=participant.id,
+        )
     return int(participant.id) if participant.id is not None else None
+
+
+def _validate_requested_username(session: Session, participant: Participant, raw_username: str | None) -> str:
+    normalized = normalize_requested_username(raw_username or build_public_username_seed(participant))
+    if is_reserved_username(normalized):
+        raise HTTPException(400, "Ese username no esta disponible")
+    if not is_username_format_valid(normalized):
+        raise HTTPException(400, "El username solo puede usar letras, numeros, puntos y guion bajo")
+    if not is_username_available(session, normalized, exclude_user_id=participant.id):
+        raise HTTPException(409, "Ese username ya esta en uso")
+    return normalized
+
+
+def _maybe_create_username_alias(session: Session, participant: Participant, previous_username: str | None) -> None:
+    old_value = str(previous_username or "").strip().lower()
+    new_value = str(participant.username or "").strip().lower()
+    if not old_value or old_value == new_value:
+        return
+    alias = session.exec(
+        select(AthleteUsernameAlias).where(AthleteUsernameAlias.alias == old_value)
+    ).first()
+    if alias and int(alias.user_id or 0) != int(participant.id or 0):
+        raise HTTPException(409, "Ese username historico ya esta en uso")
+    if not alias:
+        session.add(AthleteUsernameAlias(user_id=int(participant.id), alias=old_value))
+
+
+def _compute_public_age(participant: Participant) -> Optional[int]:
+    if not participant.fecha_nacimiento:
+        return None
+    today = date.today()
+    years = today.year - participant.fecha_nacimiento.year
+    if (today.month, today.day) < (participant.fecha_nacimiento.month, participant.fecha_nacimiento.day):
+        years -= 1
+    return years if years >= 0 else None
+
+
+def _resolve_primary_gym(session: Session, participant_id: int) -> Optional[dict]:
+    rows = session.exec(
+        select(GymMembership, Gym)
+        .join(Gym, Gym.id == GymMembership.gym_id)
+        .where(
+            GymMembership.user_id == participant_id,
+            GymMembership.status.in_(["declared", "pending_approval", "approved"]),
+        )
+        .order_by(GymMembership.is_primary.desc(), GymMembership.approved_at.desc(), GymMembership.requested_at.desc())
+    ).all()
+    if not rows:
+        return None
+    membership, gym = rows[0]
+    return {
+        "id": gym.id,
+        "slug": gym.slug,
+        "display_name": gym.display_name,
+        "city": gym.city,
+        "status": membership.status,
+        "is_primary": bool(membership.is_primary),
+    }
+
+
+def _public_results(session: Session, participant_id: int, limit: int = 24) -> list[dict]:
+    rows = session.exec(
+        select(Result, Competition, CompetitionPhase)
+        .join(Competition, Competition.id == Result.competition_id)
+        .join(CompetitionPhase, CompetitionPhase.id == Result.phase_id, isouter=True)
+        .where(Result.user_id == participant_id)
+        .order_by(Result.created_at.desc(), Result.id.desc())
+    ).all()
+    items: list[dict] = []
+    for result, competition, phase in rows[:limit]:
+        items.append({
+            "id": result.id,
+            "competition_id": result.competition_id,
+            "competition_name": competition.nombre if competition else "Competencia",
+            "competition_slug": competition.slug if competition else None,
+            "phase_name": phase.nombre if phase else None,
+            "measurement_method": getattr(phase, "measurement_method", None) if phase else None,
+            "puntos": result.puntos,
+            "marca": result.marca,
+            "posicion": result.posicion,
+            "created_at": result.created_at.isoformat() if result.created_at else None,
+        })
+    return items
+
+
+def _serialize_public_profile(session: Session, participant: Participant, requested_username: Optional[str] = None) -> dict:
+    results = _public_results(session, int(participant.id), limit=24) if int(participant.public_show_results or 0) else []
+    enrollments = session.exec(
+        select(CompetitionParticipant).where(CompetitionParticipant.user_id == int(participant.id))
+    ).all()
+    return {
+        "id": participant.id,
+        "username": participant.username,
+        "requested_username": requested_username or participant.username,
+        "is_alias": bool(requested_username and requested_username != participant.username),
+        "canonical_path": f"/a/{participant.username}",
+        "display_name": participant.display_name or build_default_display_name(participant),
+        "avatar_url": participant.profile_photo_url,
+        "cover_url": participant.public_cover_url,
+        "bio": participant.public_bio,
+        "categoria": participant.categoria,
+        "city": participant.ciudad_pais if int(participant.public_show_city or 0) else None,
+        "age": _compute_public_age(participant) if int(participant.public_show_age or 0) else None,
+        "gym": _resolve_primary_gym(session, int(participant.id)) if int(participant.public_show_gym or 0) else None,
+        "verified_athlete": bool(participant.verified_athlete),
+        "results": results,
+        "stats": {
+            "competitions_count": len({int(item.competition_id) for item in enrollments}),
+            "results_count": len(results),
+            "total_points": int(sum(int(item.get("puntos") or 0) for item in results)),
+            "top_three_finishes": sum(1 for item in results if item.get("posicion") and int(item["posicion"]) <= 3),
+        },
+        "meta": {
+            "title": f"{participant.display_name or build_default_display_name(participant)} · FinalRep",
+            "description": participant.public_bio or f"Perfil publico de {participant.display_name or build_default_display_name(participant)} en FinalRep.",
+            "indexable": bool(participant.public_profile_indexable),
+        },
+    }
 
 
 def _parse_optional_date(value) -> Optional[date]:
@@ -161,6 +285,23 @@ def get_my_profile(session: Session = Depends(get_session), user=Depends(require
     return p
 
 
+@users_router.get("/username-availability")
+def username_availability(
+    username: str = Query(..., min_length=3),
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    exclude_user_id = get_effective_user_id(user) if user and is_end_user(user) else None
+    normalized = normalize_requested_username(username)
+    available = is_username_available(session, normalized, exclude_user_id=exclude_user_id)
+    return {
+        "requested": username,
+        "normalized": normalized,
+        "available": available,
+        "suggestions": [] if available else suggest_usernames(session, normalized, exclude_user_id=exclude_user_id),
+    }
+
+
 @users_router.patch("/me", response_model=ParticipantProfile)
 def update_my_profile(
     body: ParticipantSelfUpdate,
@@ -180,7 +321,7 @@ def update_my_profile(
     for field, value in payload.items():
         setattr(p, field, value)
 
-    changed_app_user_id = _sync_account_fields(p)
+    changed_app_user_id = _sync_account_fields(p, session)
 
     session.add(p)
     try:
@@ -214,6 +355,91 @@ def upload_my_profile_photo(
     session.refresh(participant)
     _delete_local_profile_photo(previous_photo)
     return participant
+
+
+@users_router.patch("/me/public-profile", response_model=ParticipantProfile)
+def update_my_public_profile(
+    body: ParticipantSelfUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
+        raise HTTPException(403, "Solo usuarios")
+    participant = session.get(Participant, user_id)
+    if not participant:
+        raise HTTPException(404, "Participante no encontrado")
+
+    payload = body.model_dump(exclude_unset=True)
+    previous_username = participant.username
+    if "public_profile_visibility" in payload and payload["public_profile_visibility"] not in AthleteProfileVisibility.ALL:
+        raise HTTPException(400, "La visibilidad del perfil no es valida")
+    if "display_name" in payload:
+        payload["display_name"] = str(payload["display_name"] or "").strip() or build_default_display_name(participant)
+    if "username" in payload:
+        payload["username"] = _validate_requested_username(session, participant, payload.get("username"))
+
+    for field in (
+        "username",
+        "display_name",
+        "public_profile_enabled",
+        "public_profile_indexable",
+        "public_profile_visibility",
+        "public_bio",
+        "public_cover_url",
+        "public_show_city",
+        "public_show_gym",
+        "public_show_age",
+        "public_show_results",
+    ):
+        if field in payload:
+            setattr(participant, field, payload[field])
+
+    if int(participant.public_profile_enabled or 0) and not participant.username:
+        participant.username = _validate_requested_username(
+            session,
+            participant,
+            build_public_username_seed(participant),
+        )
+
+    changed_app_user_id = _sync_account_fields(participant, session)
+    session.add(participant)
+    try:
+        session.flush()
+        _maybe_create_username_alias(session, participant, previous_username)
+        session.commit()
+        session.refresh(participant)
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(409, "Ya existe una cuenta con ese username")
+    invalidate_user(changed_app_user_id)
+    return participant
+
+
+@users_router.get("/public/{username}")
+def get_public_profile(
+    username: str,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user_optional),
+):
+    normalized = normalize_requested_username(username)
+    participant = find_user_by_username(session, normalized)
+    if not participant:
+        participant = find_user_by_alias(session, normalized)
+    if not participant:
+        raise HTTPException(404, "Atleta no encontrado")
+
+    requester_user_id = get_effective_user_id(user) if user and is_end_user(user) else None
+    is_owner_preview = requester_user_id == int(participant.id or 0)
+    is_admin_preview = has_admin_access(user)
+    is_public = bool(
+        int(participant.public_profile_enabled or 0)
+        and participant.public_profile_visibility == AthleteProfileVisibility.PUBLIC
+    )
+    if not is_public and not is_owner_preview and not is_admin_preview:
+        raise HTTPException(404, "Atleta no encontrado")
+
+    return _serialize_public_profile(session, participant, requested_username=normalized)
 
 
 @users_router.get("", response_model=List[Participant])
@@ -291,8 +517,8 @@ def get_participant(user_id: int, session: Session = Depends(get_session), _=Dep
 def create_participant(body: ParticipantCreate, session: Session = Depends(get_session), _=Depends(require_admin)):
     payload = _sync_genero_fields(body.model_dump())
     _validate_participant_payload(payload)
-    payload["display_name"] = f"{str(payload.get('nombre') or '').strip()} {str(payload.get('apellido') or '').strip()}".strip() or payload.get("cedula")
-    payload["username"] = str(payload.get("email") or "").strip().lower() or None
+    payload["display_name"] = f"{str(payload.get('nombre') or '').strip()} {str(payload.get('apellido') or '').strip()}".strip() or "Atleta"
+    payload["username"] = ensure_unique_username(session, payload["display_name"])
     participant = Participant.model_validate(payload)
     session.add(participant)
     try:
@@ -317,7 +543,7 @@ def update_participant(user_id: int, body: ParticipantUpdate,
     for field, value in payload.items():
         setattr(p, field, value)
 
-    changed_app_user_id = _sync_account_fields(p)
+    changed_app_user_id = _sync_account_fields(p, session)
 
     session.add(p)
     try:
