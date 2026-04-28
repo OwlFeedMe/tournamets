@@ -418,3 +418,35 @@ def render_competitor_invitation(
       <p class="muted">Si no reconoces esta invitacion, puedes ignorar este correo.</p>
     """)
     return subject, text, html
+
+
+# ---------------------------------------------------------------------------
+# Invitacion de juez
+# ---------------------------------------------------------------------------
+
+def render_judge_invitation(
+    *,
+    nombre: str,
+    competition_name: str,
+    invited_by_name: str,
+    invitation_url: str,
+) -> tuple[str, str, str]:
+    subject = f"Invitacion como juez - {competition_name}"
+    text = (
+        f"Hola {nombre},\n\n"
+        f"{invited_by_name} te invito a ser juez en la competencia \"{competition_name}\".\n\n"
+        "Para aceptar o rechazar la invitacion ingresa a FinalRep:\n"
+        f"{invitation_url}\n\n"
+        "Equipo FinalRep"
+    )
+    html = _html("Invitacion como juez", f"""\
+      <p>Hola <strong>{nombre}</strong>,</p>
+      <p><strong>{invited_by_name}</strong> te invito a participar como <strong>juez</strong> en esta competencia.</p>
+      <hr class="divider">
+      <p class="detail"><span>Competencia:</span> <strong>{competition_name}</strong></p>
+      <hr class="divider">
+      <p>Ingresa a FinalRep para aceptar o rechazar la invitacion:</p>
+      <a href="{invitation_url}" class="btn">Ver invitacion</a>
+      <p class="muted">Si no reconoces esta invitacion, puedes ignorar este correo.</p>
+    """)
+    return subject, text, html

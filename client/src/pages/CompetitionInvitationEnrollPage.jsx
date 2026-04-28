@@ -90,7 +90,7 @@ export default function CompetitionInvitationEnrollPage() {
         return { data: inv }
       }),
       api.get(`/competitions/${cid}`),
-      api.get('/auth/me'),
+      api.get('/users/me'),
     ]).then(([invRes, compRes, profileRes]) => {
       const inv = invRes.data
       if (!inv || inv.competition_id !== cid) { setLoadErr('Invitacion no encontrada'); return }
@@ -101,7 +101,13 @@ export default function CompetitionInvitationEnrollPage() {
       setCompetition(compRes.data)
       const p = profileRes.data
       setProfile(p)
-      setProfileDraft(normalizeProfileDraft(p))
+      const draft = normalizeProfileDraft(p)
+      setProfileDraft(draft)
+      const missing = getMissingParticipantProfileFields(draft)
+      if (missing.length === 0) {
+        const qs = parseEnrollmentQuestions(compRes.data?.enrollment_questions)
+        setStep(qs.length ? 2 : 3)
+      }
     }).catch(ex => {
       setLoadErr(ex.message === 'not_found' ? 'Invitacion no encontrada' : 'No se pudo cargar la informacion')
     }).finally(() => setLoading(false))
@@ -122,7 +128,7 @@ export default function CompetitionInvitationEnrollPage() {
   const setP = (k, v) => setProfileDraft(prev => ({ ...prev, [k]: v }))
 
   const handleProfileNext = () => {
-    if (missingFields.length) { setSubmitErr(`Completa: ${missingFields.map(f => f.label).join(', ')}`); return }
+    if (missingFields.length) { setSubmitErr(`Completa: ${missingFields.join(', ')}`); return }
     setSubmitErr('')
     setStep(questions.length ? 2 : 3)
   }
@@ -283,8 +289,8 @@ export default function CompetitionInvitationEnrollPage() {
                     <input
                       style={inputStyle}
                       type={type}
-                      value={profileDraft[k]}
-                      onChange={e => setP(k, k === 'cedula' ? formatCedula(e.target.value) : e.target.value)}
+                      value={k === 'cedula' ? cedulaInputValue(profileDraft[k]) : profileDraft[k]}
+                      onChange={e => setP(k, e.target.value)}
                     />
                   </div>
                 ))}
@@ -319,17 +325,6 @@ export default function CompetitionInvitationEnrollPage() {
                   ) : (
                     <input style={inputStyle} type="text" value={profileDraft._city} onChange={e => setP('_city', e.target.value)} placeholder="Ciudad" />
                   )}
-                </div>
-                <div>
-                  <label style={labelStyle}>Box / Gym (opcional)</label>
-                  <input style={inputStyle} type="text" value={profileDraft.box} onChange={e => setP('box', e.target.value)} placeholder="Nombre del gym" />
-                </div>
-                <div>
-                  <label style={labelStyle}>Talla camiseta (opcional)</label>
-                  <select style={inputStyle} value={profileDraft.talla_camiseta} onChange={e => setP('talla_camiseta', e.target.value)}>
-                    <option value="">Sin especificar</option>
-                    {SHIRT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
                 </div>
               </div>
             </>

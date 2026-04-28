@@ -14,6 +14,8 @@ from sqlmodel import Session, select
 
 from access import get_active_judge_assignment, get_user_id, require_competition_access, require_competition_operator_access
 from auth import invalidate_user, require_auth, require_staff
+from services.emailer import send_email
+from services.email_templates import render_judge_invitation
 from competition_rules import normalize_phase_measurement_method
 from database import get_session
 from models import (
@@ -657,6 +659,21 @@ def invite_judge(
         session.rollback()
         raise HTTPException(409, "Ya existe una invitacion para este correo en esta competencia")
     session.refresh(assignment)
+
+    inviter = session.get(Participant, inviter_user_id)
+    inviter_name = (inviter.display_name or inviter.nombre or invited_email) if inviter else "El organizador"
+    invitation_url = f"https://app.finalrep.com/judge-assignments/{assignment.id}"
+    try:
+        subject, text_body, html_body = render_judge_invitation(
+            nombre=invited_email,
+            competition_name=competition.nombre,
+            invited_by_name=inviter_name,
+            invitation_url=invitation_url,
+        )
+        send_email(to_email=invited_email, subject=subject, text_body=text_body, html_body=html_body)
+    except Exception:
+        pass
+
     return _assignment_payload(session, assignment)
 
 

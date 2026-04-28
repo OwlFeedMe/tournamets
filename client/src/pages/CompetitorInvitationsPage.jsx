@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, Trash2, MailCheck, MailX, Clock, X } from 'lucide-react'
 import api from '../api/axios'
 
@@ -44,6 +45,7 @@ function InviteFormModal({ competition, onSave, onClose }) {
     e.preventDefault()
     setErr('')
     if (!form.invited_email.trim()) { setErr('Ingresa un email'); return }
+    if (!form.categoria) { setErr('Selecciona una categoria'); return }
     setBusy(true)
     try {
       const { data } = await api.post(`/competitions/${competition.id}/competitor-invitations`, {
@@ -80,9 +82,9 @@ function InviteFormModal({ competition, onSave, onClose }) {
             <input style={inputStyle} type="email" value={form.invited_email} onChange={e => set('invited_email', e.target.value)} placeholder="competidor@email.com" required />
           </div>
           <div>
-            <label style={labelStyle}>Categoria (opcional)</label>
-            <select style={inputStyle} value={form.categoria} onChange={e => set('categoria', e.target.value)}>
-              <option value="">Sin categoría asignada</option>
+            <label style={labelStyle}>Categoria *</label>
+            <select style={inputStyle} value={form.categoria} onChange={e => set('categoria', e.target.value)} required>
+              <option value="">Selecciona una categoria...</option>
               {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
             </select>
           </div>
@@ -202,11 +204,12 @@ export default function CompetitorInvitationsPage({ competition }) {
         </div>
       )}
 
-      {showForm && (
-        <InviteFormModal competition={competition} onSave={handleSaved} onClose={() => setShowForm(false)} />
+      {showForm && createPortal(
+        <InviteFormModal competition={competition} onSave={handleSaved} onClose={() => setShowForm(false)} />,
+        document.body
       )}
 
-      {revokeTarget && (
+      {revokeTarget && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.76)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setRevokeTarget(null)}>
           <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 20, padding: 24, maxWidth: 420, width: '100%', display: 'grid', gap: 16 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontWeight: 800, fontSize: 16 }}>Revocar invitacion</div>
@@ -218,7 +221,8 @@ export default function CompetitorInvitationsPage({ competition }) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
