@@ -226,7 +226,7 @@ def create_gym_submission(
         country=str(body.get("country") or "").strip() or None,
         state_region=str(body.get("state_region") or "").strip() or None,
         city=city,
-        instagram_url=_normalize_url(str(body.get("instagram_url") or "").strip()) or None,
+        instagram_url=_normalize_instagram(str(body.get("instagram_url") or "").strip()) or None,
         website_url=_normalize_url(str(body.get("website_url") or "").strip()) or None,
         contact_name=str(body.get("contact_name") or "").strip() or None,
         contact_email=str(body.get("contact_email") or "").strip() or None,
@@ -643,6 +643,14 @@ def _normalize_url(value):
         return f"https://{value}"
     return value
 
+def _normalize_instagram(value):
+    if not value:
+        return value
+    if re.match(r'^https?://', value, re.IGNORECASE):
+        return value
+    handle = value.lstrip('@').strip()
+    return f"https://instagram.com/{handle}"
+
 
 _MANAGER_EDITABLE = {
     "short_description", "full_description", "logo_url", "cover_image_url",
@@ -686,7 +694,9 @@ def update_gym(
     changed = False
     for field, value in body.items():
         if field in allowed and hasattr(gym, field):
-            if field in _URL_FIELDS and isinstance(value, str) and value.strip():
+            if field == "instagram_url" and isinstance(value, str) and value.strip():
+                value = _normalize_instagram(value.strip())
+            elif field in _URL_FIELDS and isinstance(value, str) and value.strip():
                 value = _normalize_url(value.strip())
             setattr(gym, field, value)
             changed = True

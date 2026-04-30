@@ -24,6 +24,13 @@ const toExternalUrl = (url) => {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`
 }
 
+const toInstagramUrl = (value) => {
+  if (!value) return value
+  if (/^https?:\/\//i.test(value)) return value
+  const handle = value.replace(/^@/, '').trim()
+  return `https://instagram.com/${handle}`
+}
+
 const OWNERSHIP_LABELS = {
   verified: { label: 'Verificado', color: '#5eead4' },
   claimed: { label: 'Reclamado', color: '#cdaa6b' },
@@ -970,7 +977,7 @@ export default function GymPublicProfile() {
               )}
               {gym.instagram_url && (
                 <a
-                  href={toExternalUrl(gym.instagram_url)}
+                  href={toInstagramUrl(gym.instagram_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--oa-text-secondary)', fontSize: 13, textDecoration: 'none' }}
