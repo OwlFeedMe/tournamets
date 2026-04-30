@@ -10282,6 +10282,8 @@ function CompetitionsTab() {
   const [competitionTab, setCompetitionTab] = useState('phases')
   const [selectedParticipants, setSelectedParticipants] = useState([])
   const [participantDetail, setParticipantDetail] = useState(null)
+  const [deleteEnrollmentTarget, setDeleteEnrollmentTarget] = useState(null)
+  const [deleteEnrollmentBusy, setDeleteEnrollmentBusy] = useState(false)
   const [enrollmentListMenuOpen, setEnrollmentListMenuOpen] = useState(false)
   const [enrollmentListGroupByCategory, setEnrollmentListGroupByCategory] = useState(false)
   const [enrollmentCategoryFilter, setEnrollmentCategoryFilter] = useState('')
@@ -10489,6 +10491,25 @@ function CompetitionsTab() {
       setSelectedParticipants(items)
     } catch {
       setSelectedParticipants([])
+    }
+  }
+
+  const deleteEnrollmentFromDetail = async () => {
+    if (!selectedCompetition?.id || !deleteEnrollmentTarget) return
+    const participantId = deleteEnrollmentTarget.user_id ?? deleteEnrollmentTarget.id
+    if (!participantId) return
+    setDeleteEnrollmentBusy(true)
+    try {
+      await api.delete(`/competitions/${selectedCompetition.id}/users/${participantId}`)
+      const items = await syncCompetitionParticipants(selectedCompetition.id)
+      setSelectedParticipants(items)
+      setParticipantDetail(null)
+      setDeleteEnrollmentTarget(null)
+      setMsg({ type: 'success', text: 'Inscripcion eliminada' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo eliminar la inscripcion' })
+    } finally {
+      setDeleteEnrollmentBusy(false)
     }
   }
 
@@ -10716,6 +10737,73 @@ function CompetitionsTab() {
             <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Preguntas del registro</div>
               <EnrollmentAnswersBlock raw={participantDetail.enrollment_answers} onPreviewImage={setPreviewImage} />
+            </div>
+            <div style={{ border: '1px solid rgba(239,68,68,0.28)', borderRadius: 16, background: 'rgba(239,68,68,0.08)', padding: 16, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gap: 4 }}>
+                <div style={{ color: '#FCA5A5', fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.5 }}>Zona de riesgo</div>
+                <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+                  Elimina esta inscripcion de la competencia. Esta accion no se puede deshacer.
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  className="btn-danger btn-sm"
+                  onClick={() => setDeleteEnrollmentTarget(participantDetail)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <Trash2 size={14} />
+                  Eliminar inscrito
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {deleteEnrollmentTarget && (
+        <Modal
+          title="Confirmar eliminacion"
+          onClose={() => {
+            if (!deleteEnrollmentBusy) setDeleteEnrollmentTarget(null)
+          }}
+          width={520}
+        >
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ border: '1px solid rgba(239,68,68,0.28)', borderRadius: 16, background: 'rgba(239,68,68,0.08)', padding: 16, display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 12, background: 'rgba(239,68,68,0.14)', border: '1px solid rgba(239,68,68,0.38)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <Trash2 size={18} color="#EF4444" />
+                </div>
+                <div>
+                  <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 900 }}>Eliminar inscrito</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 2 }}>
+                    {deleteEnrollmentTarget.nombre} {deleteEnrollmentTarget.apellido}
+                  </div>
+                </div>
+              </div>
+              <div style={{ color: '#FCA5A5', fontSize: 13, lineHeight: 1.55 }}>
+                Esta accion retirara al atleta de la competencia y de la lista de inscritos. No se puede deshacer desde esta pantalla.
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setDeleteEnrollmentTarget(null)}
+                disabled={deleteEnrollmentBusy}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-danger btn-sm"
+                onClick={deleteEnrollmentFromDetail}
+                disabled={deleteEnrollmentBusy}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Trash2 size={14} />
+                {deleteEnrollmentBusy ? 'Eliminando...' : 'Eliminar inscrito'}
+              </button>
             </div>
           </div>
         </Modal>
@@ -11191,7 +11279,7 @@ function CompetitionsTab() {
                         </div>
                         <div style={{
                           display: 'grid',
-                          gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : 'repeat(3, auto)',
+                          gridTemplateColumns: isMobile ? 'minmax(0, 1fr) auto' : 'repeat(2, auto)',
                           gap: 8,
                           alignItems: 'center',
                           justifyContent: isMobile ? 'stretch' : 'end',
@@ -11205,13 +11293,6 @@ function CompetitionsTab() {
                             style={isMobile ? { gridColumn: '1 / -1', width: '100%', minWidth: 0 } : undefined}
                           >
                           Descargar Excel
-                        </button>
-                          <button
-                            className="btn-primary btn-sm"
-                            onClick={() => setEnrollingComp(selectedCompetition)}
-                            style={isMobile ? { width: '100%', minWidth: 0 } : undefined}
-                          >
-                          Ver inscritos
                         </button>
                           <div
                             ref={enrollmentListMenuRef}
