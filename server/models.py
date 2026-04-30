@@ -1629,6 +1629,7 @@ class CompetitionUpdate(SQLModel):
     platform_fee_rate: Optional[float] = None
     scoring_mode: Optional[str] = None
     rm_unit: Optional[str] = None
+    allow_free_categories: Optional[int] = None
 
 
 # ── Team schemas ───────────────────────────────────────────────────────────────

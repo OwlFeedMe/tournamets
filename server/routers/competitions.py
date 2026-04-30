@@ -968,6 +968,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     if user.get("role") != "admin":
         data.pop("organizer_user_id", None)
+        data.pop("allow_free_categories", None)
     merged = c.model_dump()
     merged.update(data)
     _normalize_competition_team_settings(merged)
