@@ -456,6 +456,7 @@ export default function CompetitionEnrollmentPage() {
       discountAmount,
     }
   }, [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee, appliedDiscount])
+  const isFreeEnrollment = pricing.totalPrice === 0
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
@@ -688,7 +689,7 @@ export default function CompetitionEnrollmentPage() {
       return false
     }
     if (pricing.totalPrice <= 0) {
-      setMsg({ type: 'error', text: 'Esta categoria no tiene un precio de inscripcion valido.' })
+      setMsg({ type: 'error', text: 'Esta categoria es gratuita. Usa el boton de inscripcion gratuita.' })
       return false
     }
     setCheckoutLoading(true)
@@ -719,6 +720,26 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const confirmFreeEnrollment = async () => {
+    if (!competition) return
+    const validationError = validateBeforeConfirmation()
+    if (validationError) {
+      setMsg({ type: 'error', text: validationError })
+      return
+    }
+    setCheckoutLoading(true)
+    setMsg(null)
+    try {
+      await api.post(`/competitions/${competition.id}/free-enroll`, buildEnrollmentPayload())
+      setEnrollmentState('confirmado')
+      setMsg({ type: 'success', text: 'Tu inscripcion gratuita ha sido confirmada.' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo confirmar la inscripcion gratuita.' })
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
+
   const handleNextStep = async () => {
     const validationError = validateStep(currentStep)
     if (validationError) {
@@ -729,7 +750,7 @@ export default function CompetitionEnrollmentPage() {
       const saved = await saveMissingProfileFields()
       if (!saved) return
     }
-    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig) {
+    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment) {
       const ready = await prepareBoldCheckout()
       if (!ready) return
     }
@@ -1053,7 +1074,7 @@ export default function CompetitionEnrollmentPage() {
           ) : null}
 
           {currentStep === 4 ? (
-            <StepCard number="4" title="Pago de inscripcion" hint="FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.">
+            <StepCard number="4" title={isFreeEnrollment ? 'Confirmar inscripcion' : 'Pago de inscripcion'} hint={isFreeEnrollment ? 'Esta categoria es gratuita. Confirma tu inscripcion con el boton de abajo.' : 'FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.'}>
               <div style={{ display: 'grid', gap: 14 }}>
                 {!selectedCategoryData ? (
                   <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
@@ -1064,7 +1085,7 @@ export default function CompetitionEnrollmentPage() {
                     <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 16, display: 'grid', gap: 12 }}>
                       <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 16 }}>{selectedCategoryData.nombre}</div>
 
-                      {!boldButtonConfig && !paymentInProgress ? (
+                      {!boldButtonConfig && !paymentInProgress && !isFreeEnrollment ? (
                         <div>
                           <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Codigo de descuento (opcional)</div>
                           <DiscountInput
@@ -1077,30 +1098,40 @@ export default function CompetitionEnrollmentPage() {
                         </div>
                       ) : null}
 
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${pricing.discountAmount > 0 ? 4 : 3}, minmax(0, 1fr))`, gap: 10 }}>
-                        <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
-                          <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Precio inscripcion</div>
-                          <div style={{ color: pricing.discountAmount > 0 ? '#7E8796' : '#F5F7FA', fontSize: 16, fontWeight: 800, textDecoration: pricing.discountAmount > 0 ? 'line-through' : 'none' }}>{formatCop(pricing.originalBasePrice)}</div>
-                          {pricing.discountAmount > 0 ? <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{formatCop(pricing.organizerPrice)}</div> : null}
-                        </div>
-                        {pricing.discountAmount > 0 ? (
-                          <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.06)', padding: 12 }}>
-                            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Descuento ({appliedDiscount?.code})</div>
-                            <div style={{ color: '#8DF1E4', fontSize: 16, fontWeight: 800 }}>-{formatCop(pricing.discountAmount)}</div>
-                          </div>
-                        ) : null}
-                        <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
-                          <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
-                          <div style={{ color: '#FFB36F', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.platformFee)}</div>
-                        </div>
+                      {isFreeEnrollment ? (
                         <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.24)', background: 'rgba(94,234,212,0.08)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Total a pagar</div>
-                          <div style={{ color: '#8DF1E4', fontSize: 18, fontWeight: 900 }}>{formatCop(pricing.totalPrice)}</div>
+                          <div style={{ color: '#8DF1E4', fontSize: 18, fontWeight: 900 }}>Gratis</div>
                         </div>
-                      </div>
-                      <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
-                        El pago se procesa en Bold. FinalRep calcula automaticamente la comision de plataforma sobre el valor base de la categoria.
-                      </div>
+                      ) : (
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${pricing.discountAmount > 0 ? 4 : 3}, minmax(0, 1fr))`, gap: 10 }}>
+                          <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Precio inscripcion</div>
+                            <div style={{ color: pricing.discountAmount > 0 ? '#7E8796' : '#F5F7FA', fontSize: 16, fontWeight: 800, textDecoration: pricing.discountAmount > 0 ? 'line-through' : 'none' }}>{formatCop(pricing.originalBasePrice)}</div>
+                            {pricing.discountAmount > 0 ? <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{formatCop(pricing.organizerPrice)}</div> : null}
+                          </div>
+                          {pricing.discountAmount > 0 ? (
+                            <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.06)', padding: 12 }}>
+                              <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Descuento ({appliedDiscount?.code})</div>
+                              <div style={{ color: '#8DF1E4', fontSize: 16, fontWeight: 800 }}>-{formatCop(pricing.discountAmount)}</div>
+                            </div>
+                          ) : null}
+                          <div style={{ borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Comision FinalRep</div>
+                            <div style={{ color: '#FFB36F', fontSize: 16, fontWeight: 800 }}>{formatCop(pricing.platformFee)}</div>
+                          </div>
+                          <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.24)', background: 'rgba(94,234,212,0.08)', padding: 12 }}>
+                            <div style={{ color: '#AAB2C0', fontSize: 11, marginBottom: 4 }}>Total a pagar</div>
+                            <div style={{ color: '#8DF1E4', fontSize: 18, fontWeight: 900 }}>{formatCop(pricing.totalPrice)}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {!isFreeEnrollment ? (
+                        <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
+                          El pago se procesa en Bold. FinalRep calcula automaticamente la comision de plataforma sobre el valor base de la categoria.
+                        </div>
+                      ) : null}
                       {paymentReference && paymentInProgress ? (
                         <div style={{ display: 'grid', gap: 6, borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11 }}>Referencia</div>
@@ -1108,7 +1139,16 @@ export default function CompetitionEnrollmentPage() {
                           {paymentTransactionId ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Transaccion Bold: {paymentTransactionId}</div> : null}
                         </div>
                       ) : null}
-                      {boldButtonConfig ? (
+                      {isFreeEnrollment ? (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={checkoutLoading || submissionBlocked}
+                          onClick={confirmFreeEnrollment}
+                        >
+                          {checkoutLoading ? 'Confirmando...' : 'Confirmar inscripcion gratuita'}
+                        </button>
+                      ) : boldButtonConfig ? (
                         <div style={{ display: 'grid', gap: 10 }}>
                           <BoldPaymentButton
                             config={boldButtonConfig}

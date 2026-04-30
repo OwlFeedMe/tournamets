@@ -200,6 +200,7 @@ class Competition(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
     )
     invitations_enabled: int = Field(default=0)
+    allow_free_categories: int = Field(default=0)
     slug: Optional[str] = Field(default=None, sa_column=Column(String, unique=True, index=True, nullable=True))
     created_at: Optional[datetime] = Field(
         default=None,

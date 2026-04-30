@@ -392,7 +392,7 @@ function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, compact = false }
         event.currentTarget.style.boxShadow = '0 10px 28px rgba(0,0,0,0.24)'
       }}
     >
-      <div style={{ width: '100%', aspectRatio: compact ? '1 / 1.28' : '3 / 3.5', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: buildPhotoGradient(itemIndex) }}>
+      <div style={{ width: '100%', aspectRatio: compact ? '1 / 1.28' : '3 / 3.5', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: item.profile_photo_url ? `linear-gradient(0deg, rgba(8,9,13,0.72), rgba(8,9,13,0.18)), url("${item.profile_photo_url}") center/cover` : buildPhotoGradient(itemIndex) }}>
         <div style={{ position: 'absolute', top: 0, right: 0, width: compact ? 44 : 64, height: compact ? 44 : 64, background: `linear-gradient(225deg, ${hexToRgba(tone.text, 0.18)} 0%, transparent 65%)` }} />
         <div style={{ position: 'absolute', top: compact ? 8 : 10, left: compact ? 8 : 10, zIndex: 2, background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 4, padding: compact ? '2px 6px' : '3px 7px', fontFamily: '"Barlow Condensed", sans-serif', fontSize: compact ? 9 : 10, fontWeight: 800, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.52)' }}>
           #{String(itemIndex + 1).padStart(3, '0')}
@@ -405,9 +405,11 @@ function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, compact = false }
           />
         ) : null}
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(0deg, rgba(8,9,13,0.94) 0%, transparent 55%)', opacity: 0.5 }} />
-        <div style={{ position: 'relative', zIndex: 1, fontFamily: '"Bebas Neue", sans-serif', fontSize: compact ? 54 : 78, letterSpacing: '0.02em', opacity: 0.24, color: tone.text, textShadow: '0 4px 24px rgba(0,0,0,0.8)' }}>
-          {getInitials(displayName)}
-        </div>
+        {!item.profile_photo_url && (
+          <div style={{ position: 'relative', zIndex: 1, fontFamily: '"Bebas Neue", sans-serif', fontSize: compact ? 54 : 78, letterSpacing: '0.02em', opacity: 0.24, color: tone.text, textShadow: '0 4px 24px rgba(0,0,0,0.8)' }}>
+            {getInitials(displayName)}
+          </div>
+        )}
       </div>
       <div style={{ padding: compact ? '11px 11px 12px' : '14px 14px 16px' }}>
         <div style={{ fontFamily: '"Bebas Neue", sans-serif', fontSize: compact ? 20 : 26, lineHeight: 1.02, letterSpacing: '0.04em', marginBottom: compact ? 6 : 8, overflowWrap: 'anywhere' }}>
@@ -470,7 +472,7 @@ function AthleteListRow({ item, tone, flagUrl, onOpen }) {
           width: 44,
           height: 44,
           borderRadius: 12,
-          background: buildPhotoGradient(0),
+          background: item.profile_photo_url ? `url("${item.profile_photo_url}") center/cover no-repeat` : buildPhotoGradient(0),
           border: `1px solid ${hexToRgba(tone.text, 0.18)}`,
           display: 'inline-flex',
           alignItems: 'center',
@@ -480,7 +482,7 @@ function AthleteListRow({ item, tone, flagUrl, onOpen }) {
           fontSize: 24,
           flexShrink: 0,
         }}>
-          {getInitials(displayName)}
+          {!item.profile_photo_url && getInitials(displayName)}
         </div>
         <div style={{ minWidth: 0, display: 'grid', gap: 5 }}>
           <div style={{ fontFamily: '"Bebas Neue", sans-serif', fontSize: 22, lineHeight: 1, letterSpacing: '0.03em', color: '#F5F7FA', overflowWrap: 'anywhere' }}>

@@ -10921,6 +10921,39 @@ function CompetitionsTab() {
 
                 <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
 
+                {/* Inscripciones gratuitas (solo admin) */}
+                {isAdmin ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#D7DEE8' }}>Inscripciones gratuitas (Admin)</div>
+                      <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>
+                        {selectedCompetition?.allow_free_categories
+                          ? 'Habilitado. Esta competencia puede tener categorias con precio $0.'
+                          : 'Deshabilitado. Las categorias con precio $0 bloquearan la publicacion.'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={selectedCompetition?.allow_free_categories ? 'btn-danger btn-sm' : 'btn-primary btn-sm'}
+                      onClick={async () => {
+                        const cid = selectedCompetition?.id
+                        if (!cid) return
+                        const next = selectedCompetition.allow_free_categories ? 0 : 1
+                        try {
+                          const { data } = await api.put(`/competitions/${cid}`, { allow_free_categories: next })
+                          setSelectedCompetition(prev => ({ ...prev, ...data }))
+                        } catch (ex) {
+                          alert(ex.response?.data?.detail || 'Error al cambiar estado')
+                        }
+                      }}
+                    >
+                      {selectedCompetition?.allow_free_categories ? 'Deshabilitar gratuitas' : 'Habilitar gratuitas'}
+                    </button>
+                  </div>
+                ) : null}
+
+                <div style={{ height: 1, background: 'rgba(255,255,255,0.06)' }} />
+
                 {/* Link para compartir */}
                 {selectedCompetition?.slug && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -10989,53 +11022,66 @@ function CompetitionsTab() {
               </div>
 
                 {/* Modal confirmación publicar */}
-              {showConfirmPublish && (
-                <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowConfirmPublish(false)}>
-                  <div style={{ background: '#0D1117', border: '1px solid #252A33', borderRadius: 18, padding: 28, maxWidth: 420, width: '100%', display: 'grid', gap: 18 }} onClick={e => e.stopPropagation()}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
-                      <div style={{ width: 52, height: 52, borderRadius: '50%', background: selectedCompetition.activa ? 'rgba(255,107,0,0.12)' : 'rgba(255,107,0,0.12)', border: `2px solid #FF6B00`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          {selectedCompetition.activa
-                            ? <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>
-                            : <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>
-                          }
-                        </svg>
+              {showConfirmPublish && (() => {
+                const hasUnauthorizedFreeCategories = !selectedCompetition.activa
+                  && !selectedCompetition.allow_free_categories
+                  && selectedCompetitionCategories.some(cat => (cat.enrollment_price ?? 0) === 0)
+                return (
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowConfirmPublish(false)}>
+                    <div style={{ background: '#0D1117', border: '1px solid #252A33', borderRadius: 18, padding: 28, maxWidth: 420, width: '100%', display: 'grid', gap: 18 }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+                        <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'rgba(255,107,0,0.12)', border: `2px solid #FF6B00`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF6B00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            {selectedCompetition.activa
+                              ? <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>
+                              : <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>
+                            }
+                          </svg>
+                        </div>
+                        <div style={{ fontWeight: 700, fontSize: 16, color: '#F5F7FA' }}>
+                          {selectedCompetition.activa ? '¿Despublicar competencia?' : '¿Publicar competencia?'}
+                        </div>
+                        {hasUnauthorizedFreeCategories ? (
+                          <div style={{ fontSize: 13, color: '#FFB36F', lineHeight: 1.6, background: 'rgba(255,179,111,0.08)', border: '1px solid rgba(255,179,111,0.25)', borderRadius: 12, padding: '10px 14px' }}>
+                            Esta competencia tiene categorias con precio <strong>$0</strong>. Para publicarla, el administrador debe habilitar las inscripciones gratuitas. Por favor contacta al admin.
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 13, color: '#AAB2C0', lineHeight: 1.6 }}>
+                            {selectedCompetition.activa
+                              ? 'La competencia dejará de ser visible para el público y las inscripciones se cerrarán automáticamente.'
+                              : '¿Estás seguro de que deseas hacer pública esta competencia? Será visible para todos los usuarios de la plataforma.'}
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontWeight: 700, fontSize: 16, color: '#F5F7FA' }}>
-                        {selectedCompetition.activa ? '¿Despublicar competencia?' : '¿Publicar competencia?'}
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => setShowConfirmPublish(false)}>Cancelar</button>
+                        {!hasUnauthorizedFreeCategories && (
+                          <button
+                            type="button"
+                            className="btn-primary btn-sm"
+                            onClick={async () => {
+                              try {
+                                const nextActive = selectedCompetition.activa ? 0 : 1
+                                const payload = nextActive ? { activa: 1 } : { activa: 0, enrollment_open: 0 }
+                                const { data } = await api.put(`/competitions/${selectedCompetition.id}`, payload)
+                                setSelectedCompetition(prev => ({ ...prev, ...data }))
+                                setShowConfirmPublish(false)
+                                load()
+                                if (nextActive) setSuccessToast('¡Competencia publicada exitosamente!')
+                              } catch (err) {
+                                setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
+                                setShowConfirmPublish(false)
+                              }
+                            }}
+                          >
+                            {selectedCompetition.activa ? 'Sí, despublicar' : 'Sí, publicar'}
+                          </button>
+                        )}
                       </div>
-                      <div style={{ fontSize: 13, color: '#AAB2C0', lineHeight: 1.6 }}>
-                        {selectedCompetition.activa
-                          ? 'La competencia dejará de ser visible para el público y las inscripciones se cerrarán automáticamente.'
-                          : '¿Estás seguro de que deseas hacer pública esta competencia? Será visible para todos los usuarios de la plataforma.'}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => setShowConfirmPublish(false)}>Cancelar</button>
-                      <button
-                        type="button"
-                        className="btn-primary btn-sm"
-                        onClick={async () => {
-                          try {
-                            const nextActive = selectedCompetition.activa ? 0 : 1
-                            const payload = nextActive ? { activa: 1 } : { activa: 0, enrollment_open: 0 }
-                            const { data } = await api.put(`/competitions/${selectedCompetition.id}`, payload)
-                            setSelectedCompetition(prev => ({ ...prev, ...data }))
-                            setShowConfirmPublish(false)
-                            load()
-                    if (nextActive) setSuccessToast('¡Competencia publicada exitosamente!')
-                          } catch (err) {
-                            setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo actualizar la competencia' })
-                            setShowConfirmPublish(false)
-                          }
-                        }}
-                      >
-                        {selectedCompetition.activa ? 'Sí, despublicar' : 'Sí, publicar'}
-                      </button>
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
             </div>
           )}
