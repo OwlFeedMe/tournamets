@@ -19,6 +19,11 @@ import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
+const toExternalUrl = (url) => {
+  if (!url) return url
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`
+}
+
 const OWNERSHIP_LABELS = {
   verified: { label: 'Verificado', color: '#5eead4' },
   claimed: { label: 'Reclamado', color: '#cdaa6b' },
@@ -955,7 +960,7 @@ export default function GymPublicProfile() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {gym.website_url && (
                 <a
-                  href={gym.website_url}
+                  href={toExternalUrl(gym.website_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--oa-accent)', fontSize: 13, textDecoration: 'none' }}
@@ -965,7 +970,7 @@ export default function GymPublicProfile() {
               )}
               {gym.instagram_url && (
                 <a
-                  href={gym.instagram_url}
+                  href={toExternalUrl(gym.instagram_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--oa-text-secondary)', fontSize: 13, textDecoration: 'none' }}
@@ -975,7 +980,7 @@ export default function GymPublicProfile() {
               )}
               {gym.whatsapp_url && (
                 <a
-                  href={gym.whatsapp_url}
+                  href={toExternalUrl(gym.whatsapp_url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#25d366', fontSize: 13, textDecoration: 'none' }}

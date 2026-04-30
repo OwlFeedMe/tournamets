@@ -1,4 +1,5 @@
 import io
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -225,8 +226,8 @@ def create_gym_submission(
         country=str(body.get("country") or "").strip() or None,
         state_region=str(body.get("state_region") or "").strip() or None,
         city=city,
-        instagram_url=str(body.get("instagram_url") or "").strip() or None,
-        website_url=str(body.get("website_url") or "").strip() or None,
+        instagram_url=_normalize_url(str(body.get("instagram_url") or "").strip()) or None,
+        website_url=_normalize_url(str(body.get("website_url") or "").strip()) or None,
         contact_name=str(body.get("contact_name") or "").strip() or None,
         contact_email=str(body.get("contact_email") or "").strip() or None,
         submission_type=str(body.get("submission_type") or "suggest"),
@@ -633,6 +634,16 @@ def remove_gym_membership(
 
 # ── Gym manager: edit profile ─────────────────────────────────────────────────
 
+_URL_FIELDS = {"website_url", "instagram_url", "whatsapp_url"}
+
+def _normalize_url(value):
+    if not value:
+        return value
+    if not re.match(r'^https?://', value, re.IGNORECASE):
+        return f"https://{value}"
+    return value
+
+
 _MANAGER_EDITABLE = {
     "short_description", "full_description", "logo_url", "cover_image_url",
     "primary_color", "accent_color", "website_url", "instagram_url",
@@ -675,6 +686,8 @@ def update_gym(
     changed = False
     for field, value in body.items():
         if field in allowed and hasattr(gym, field):
+            if field in _URL_FIELDS and isinstance(value, str) and value.strip():
+                value = _normalize_url(value.strip())
             setattr(gym, field, value)
             changed = True
 
