@@ -3430,6 +3430,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const [enrollMap, setEnrollMap] = useState({})   // confirmed: pid -> { selected, categoria }
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  const [removingParticipantId, setRemovingParticipantId] = useState(null)
 
   const load = () => {
     const requests = [
@@ -3517,7 +3518,6 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     [competitionParticipants]
   )
   const selectedCount = Object.values(enrollMap).filter(v => v.selected).length
-  const currentOrganizerList = confirmedList
 
   const organizerDetailView = viewedParticipant && (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -3538,6 +3538,20 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
     </div>
   )
 
+  const removeFromCompetition = async (p) => {
+    if (!confirm(`Eliminar a ${p.nombre} ${p.apellido} de esta competencia?`)) return
+    setRemovingParticipantId(p.user_id ?? p.id)
+    try {
+      await api.delete(`/competitions/${competition.id}/users/${p.user_id ?? p.id}`)
+      await load()
+      onSaved()
+    } catch (err) {
+      alert(err.response?.data?.detail || 'No se pudo eliminar la inscripcion')
+    } finally {
+      setRemovingParticipantId(null)
+    }
+  }
+
   const organizerListView = (
     <div style={{ overflowY: 'auto', flex: 1, display: 'grid', gap: 10 }}>
       <div style={{
@@ -3553,34 +3567,51 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
       }}>
         <div style={{ display: 'grid', gap: 4 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>Listado de inscritos</div>
-          <div style={{ fontSize: 12, color: '#AAB2C0' }}>{currentOrganizerList.length} inscritos confirmados</div>
+          <div style={{ fontSize: 12, color: '#AAB2C0' }}>{competitionParticipants.length} participantes</div>
         </div>
       </div>
-      {!confirmedList.length && (
+      {!competitionParticipants.length && (
         <div style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>
           No hay inscritos
         </div>
       )}
-      {currentOrganizerList.map((p) => (
-        <div key={p.id} style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '12px 14px',
-          borderRadius: 12,
-          border: '1px solid #252A33',
-          background: 'rgba(13,15,18,0.72)',
-        }}>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</div>
-            <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>
-              Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia || '-'}</b>
+      {competitionParticipants.map((p) => {
+        const uid = p.user_id ?? p.id
+        const isBusy = removingParticipantId === uid
+        const estadoBadge = p.estado === 'confirmado'
+          ? { label: 'Confirmado', color: '#8DF1E4', border: 'rgba(94,234,212,0.3)' }
+          : p.estado === 'pendiente'
+          ? { label: 'Pendiente', color: '#FFB36F', border: 'rgba(255,179,111,0.3)' }
+          : { label: p.estado || 'Desconocido', color: '#AAB2C0', border: '#252A33' }
+        return (
+          <div key={uid} style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: '1px solid #252A33',
+            background: 'rgba(13,15,18,0.72)',
+          }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--oa-text)' }}>{p.nombre} {p.apellido}</span>
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1px solid ${estadoBadge.border}`, color: estadoBadge.color }}>{estadoBadge.label}</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>
+                Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia || '-'}</b>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setViewedParticipant(p)} disabled={isBusy}>Ver</button>
+              <button type="button" className="btn-danger btn-sm" onClick={() => removeFromCompetition(p)} disabled={isBusy} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 34 }}>
+                {isBusy ? '...' : <Trash2 size={13} />}
+              </button>
             </div>
           </div>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setViewedParticipant(p)}>Ver</button>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 

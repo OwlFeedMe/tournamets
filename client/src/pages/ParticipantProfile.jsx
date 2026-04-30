@@ -1270,7 +1270,7 @@ export default function ParticipantProfile() {
       )}
 
       {photoEditorOpen && photoDraftUrl && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.68)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
           <div style={{ width: '100%', maxWidth: 420, maxHeight: '100%', overflowY: 'auto', borderRadius: 22, background: '#171B21', border: '1px solid #252A33', padding: 18, boxShadow: '0 24px 80px rgba(0,0,0,0.35)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <div>

@@ -256,6 +256,8 @@ def _payment_status_label(value: str | None) -> str:
         return "prepared"
     if normalized in {"created", "processing", "pending"}:
         return normalized
+    if normalized == "free":
+        return "free"
     return "unknown"
 
 
@@ -1239,7 +1241,7 @@ def cancel_self_enroll(
     if not cp:
         return
     payment_state = _payment_status_label(cp.payment_status)
-    if payment_state not in {"unknown", "rejected", "failed", "voided", "void_rejected"}:
+    if payment_state not in {"unknown", "free", "rejected", "failed", "voided", "void_rejected"}:
         raise HTTPException(
             409,
             "No puedes cancelar esta inscripcion porque el pago ya fue procesado o esta en curso. Si deseas devolucion, debes solicitarla directamente al organizador despues del cierre de inscripciones.",
