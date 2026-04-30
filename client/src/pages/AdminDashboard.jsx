@@ -3431,13 +3431,15 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [removingParticipantId, setRemovingParticipantId] = useState(null)
+  const [loadError, setLoadError] = useState(null)
 
   const load = () => {
+    setLoadError(null)
     const requests = [
       api.get(`/competitions/${competition.id}/participants`),
-      api.get(`/competitions/${competition.id}/categories`),
+      api.get(`/competitions/${competition.id}/categories`).catch(() => ({ data: [] })),
     ]
-    if (!isOrganizer) requests.unshift(api.get('/participants'))
+    if (!isOrganizer) requests.unshift(api.get('/participants').catch(() => ({ data: [] })))
     return Promise.all(requests).then((responses) => {
       const pRes = isOrganizer ? { data: [] } : responses[0]
       const eRes = isOrganizer ? responses[0] : responses[1]
@@ -3452,6 +3454,8 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
       setEnrollMap(map)
       setModalTab(isOrganizer ? 'confirmados' : 'gestion')
       setViewedParticipant(null)
+    }).catch((err) => {
+      setLoadError(err?.response?.data?.detail || 'No se pudo cargar la lista de inscritos')
     })
   }
 
@@ -3618,6 +3622,11 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   return (
     <Modal title={`Inscripciones - ${competition.nombre}`} onClose={onClose} width={640}>
       {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
+      {loadError && (
+        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, color: '#FCA5A5', fontSize: 13 }}>
+          {loadError}
+        </div>
+      )}
       <div className="tabs" style={{ margin: '0 0 14px', border: 'none', gap: 4 }}>
         {isOrganizer ? (
           <button className={`tab ${modalTab === 'confirmados' ? 'active' : ''}`} onClick={() => { setModalTab('confirmados'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>

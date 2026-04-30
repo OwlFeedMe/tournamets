@@ -40,6 +40,14 @@ function buildAthleteProfilePath(username) {
   return value ? `/a/${value}` : ''
 }
 
+function resolveProfilePhoto(url) {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+    return url
+  }
+  return url
+}
+
 function AthleteNameLink({ username, children, style }) {
   const profilePath = buildAthleteProfilePath(username)
   if (!profilePath) return children
@@ -138,7 +146,7 @@ function buildRosterItems(sections) {
           apellido: '',
           box: representative?.box || '',
           ciudad_pais: representative?.ciudad_pais || '',
-          profile_photo_url: '',
+          profile_photo_url: representative?.profile_photo_url || '',
           searchText: normalizeText([
             team.nombre,
             ...members.map((member) => [member?.nombre, member?.apellido, member?.ciudad_pais, member?.box].filter(Boolean).join(' ')),
@@ -514,6 +522,7 @@ function AthleteModal({ item, onClose, tone, countryCodeByName }) {
   if (!item) return null
   const displayName = getDisplayName(item)
   const info = getCountryInfo(item.ciudad_pais, countryCodeByName)
+  const photoUrl = resolveProfilePhoto(item.profile_photo_url)
   const fields = item.type === 'team'
     ? [
         ['Categoria', item.categoryName],
@@ -545,28 +554,31 @@ function AthleteModal({ item, onClose, tone, countryCodeByName }) {
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className="fr-cut-card"
         style={{
           width: 'min(460px, 100%)',
           maxHeight: 'min(88vh, 760px)',
           overflow: 'auto',
           background: '#0F1118',
           border: `1px solid ${hexToRgba(tone.text, 0.24)}`,
+          borderRadius: 18,
           boxShadow: `0 40px 80px rgba(0,0,0,0.8), 0 0 60px ${tone.glow}`,
         }}
       >
-        <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'flex-end', padding: 12, background: 'linear-gradient(180deg, rgba(15,17,24,0.94) 0%, rgba(15,17,24,0.66) 100%)', backdropFilter: 'blur(8px)' }}>
-          <button type="button" onClick={onClose} style={{ width: 38, height: 38, borderRadius: 999, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', color: '#F5F7FA', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 3, display: 'flex', justifyContent: 'flex-end', padding: 12, background: 'rgba(9,11,14,0.92)', borderBottom: '1px solid rgba(37,42,51,0.92)', backdropFilter: 'blur(10px)' }}>
+          <button type="button" aria-label="Cerrar ficha" onClick={onClose} style={{ width: 40, height: 40, borderRadius: 12, border: '1px solid #252A33', background: '#171B21', color: '#F5F7FA', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
             <X size={16} />
           </button>
         </div>
-        <div style={{ marginTop: -62 }}>
-          <div style={{ height: 220, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: buildPhotoGradient(0) }}>
-            <div style={{ fontFamily: '"Bebas Neue", sans-serif', fontSize: 120, opacity: 0.18, color: tone.text }}>
-              {getInitials(displayName)}
-            </div>
+        <div>
+          <div style={{ height: 220, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: photoUrl ? `linear-gradient(0deg, rgba(8,9,13,0.84), rgba(8,9,13,0.18)), url("${photoUrl}") center/cover no-repeat` : buildPhotoGradient(0) }}>
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(8,9,13,0.12) 0%, rgba(8,9,13,0.64) 100%)' }} />
+            {!photoUrl ? (
+              <div style={{ position: 'relative', zIndex: 1, fontFamily: '"Bebas Neue", sans-serif', fontSize: 120, opacity: 0.18, color: tone.text }}>
+                {getInitials(displayName)}
+              </div>
+            ) : null}
             {info.flagUrl ? (
-              <img src={`https://flagcdn.com/w80/${info.countryCode}.png`} alt={info.parsed.countryName || info.countryCode.toUpperCase()} style={{ position: 'absolute', bottom: 14, left: 16, width: 52, height: 36, borderRadius: 3, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.12)' }} />
+              <img src={`https://flagcdn.com/w80/${info.countryCode}.png`} alt={info.parsed.countryName || info.countryCode.toUpperCase()} style={{ position: 'absolute', bottom: 14, left: 16, width: 52, height: 36, borderRadius: 3, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.12)', zIndex: 1 }} />
             ) : null}
           </div>
           <div style={{ padding: '20px 24px 28px', display: 'grid', gap: 18 }}>
@@ -847,14 +859,14 @@ export function CompetitionRosterPanel({
         ) : (
           <>
             <section
-              className="fr-cut-card"
               style={{
                 border: '1px solid #252A33',
+                borderRadius: 18,
                 background: embedded
                   ? 'linear-gradient(135deg, rgba(255,107,0,0.10) 0%, rgba(255,154,61,0.05) 24%, rgba(23,27,33,0.98) 54%, rgba(13,15,18,0.98) 100%)'
                   : 'linear-gradient(180deg, rgba(0,194,168,0.03) 0%, rgba(13,15,18,0.96) 100%)',
                 padding: embedded ? (isMobile ? 18 : 24) : 0,
-                overflow: 'hidden',
+                overflow: 'visible',
               }}
             >
               <div style={{
