@@ -1887,6 +1887,10 @@ class EnrollStatusUpdate(SQLModel):
     estado: str  # confirmado / rechazado
 
 
+class EnrollCategoriaUpdate(SQLModel):
+    categoria: Optional[str] = None
+
+
 # ── Platform config schemas ────────────────────────────────────────────────────
 
 class PlatformConfigUpdate(SQLModel):

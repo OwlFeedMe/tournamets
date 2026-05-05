@@ -3430,6 +3430,10 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const [enrollMap, setEnrollMap] = useState({})   // confirmed: pid -> { selected, categoria }
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState('cronologico')
+  const [editingCategoriaId, setEditingCategoriaId] = useState(null)
+  const [editingCategoriaValue, setEditingCategoriaValue] = useState('')
+  const [savingCategoriaId, setSavingCategoriaId] = useState(null)
   const [removingParticipantId, setRemovingParticipantId] = useState(null)
   const [loadError, setLoadError] = useState(null)
 
@@ -3523,9 +3527,47 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   )
   const selectedCount = Object.values(enrollMap).filter(v => v.selected).length
 
+  const sortedParticipants = useMemo(() => {
+    const list = [...competitionParticipants]
+    if (sortBy === 'nombre') {
+      list.sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+    } else if (sortBy === 'categoria') {
+      list.sort((a, b) => (a.categoria_competencia || '').localeCompare(b.categoria_competencia || '') || `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+    } else {
+      // cronologico: inscrito_at es el server_default al momento de inserción, siempre existe
+      list.sort((a, b) => {
+        const ta = a.inscrito_at ? new Date(a.inscrito_at).getTime() : Infinity
+        const tb = b.inscrito_at ? new Date(b.inscrito_at).getTime() : Infinity
+        return ta - tb
+      })
+    }
+    return list
+  }, [competitionParticipants, sortBy])
+
+  const saveCategoria = async (p, newCategoria) => {
+    const uid = p.user_id ?? p.id
+    setSavingCategoriaId(uid)
+    try {
+      await api.patch(`/competitions/${competition.id}/users/${uid}/categoria`, { categoria: newCategoria })
+      setCompetitionParticipants(prev => prev.map(x => (x.user_id ?? x.id) === uid ? { ...x, categoria_competencia: newCategoria } : x))
+      if (viewedParticipant && (viewedParticipant.user_id ?? viewedParticipant.id) === uid) {
+        setViewedParticipant(v => ({ ...v, categoria_competencia: newCategoria }))
+      }
+      setEditingCategoriaId(null)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'No se pudo actualizar la categoria')
+    } finally {
+      setSavingCategoriaId(null)
+    }
+  }
+
+  const detailUid = viewedParticipant ? (viewedParticipant.user_id ?? viewedParticipant.id) : null
+  const isDetailEditingCat = detailUid !== null && editingCategoriaId === detailUid
+  const isDetailSavingCat = detailUid !== null && savingCategoriaId === detailUid
+
   const organizerDetailView = viewedParticipant && (
     <div style={{ display: 'grid', gap: 14 }}>
-      <button type="button" className="btn-secondary btn-sm" onClick={() => setViewedParticipant(null)} style={{ justifySelf: 'flex-start' }}>
+      <button type="button" className="btn-secondary btn-sm" onClick={() => { setViewedParticipant(null); setEditingCategoriaId(null) }} style={{ justifySelf: 'flex-start' }}>
         Volver
       </button>
       <div style={{ border: '1px solid #252A33', borderRadius: 14, background: 'rgba(13,15,18,0.72)', padding: 16, display: 'grid', gap: 10 }}>
@@ -3534,7 +3576,37 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
         </div>
         <div style={{ display: 'grid', gap: 6, color: 'var(--oa-text-secondary)', fontSize: 13 }}>
           <div><b style={{ color: 'var(--oa-text)' }}>Cedula:</b> {formatCedula(viewedParticipant.cedula)}</div>
-          <div><b style={{ color: 'var(--oa-text)' }}>Categoria:</b> {viewedParticipant.categoria_competencia || '-'}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <b style={{ color: 'var(--oa-text)' }}>Categoria:</b>
+            {isDetailEditingCat ? (
+              <>
+                <select
+                  value={editingCategoriaValue}
+                  onChange={e => setEditingCategoriaValue(e.target.value)}
+                  style={{ fontSize: 12, background: '#0D0F12', border: '1px solid #252A33', borderRadius: 8, padding: '4px 8px', color: 'var(--oa-text)' }}
+                >
+                  {categories.length === 0 && <option value="">Sin categorías</option>}
+                  {categories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                  {editingCategoriaValue && !categories.find(c => c.nombre === editingCategoriaValue) && (
+                    <option value={editingCategoriaValue}>{editingCategoriaValue}</option>
+                  )}
+                </select>
+                <button type="button" className="btn-primary btn-sm" disabled={isDetailSavingCat} onClick={() => saveCategoria(viewedParticipant, editingCategoriaValue)} style={{ fontSize: 11, padding: '3px 10px' }}>
+                  {isDetailSavingCat ? '...' : 'Guardar'}
+                </button>
+                <button type="button" className="btn-secondary btn-sm" disabled={isDetailSavingCat} onClick={() => setEditingCategoriaId(null)} style={{ fontSize: 11, padding: '3px 10px' }}>
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <>
+                <span>{viewedParticipant.categoria_competencia || '-'}</span>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => { setEditingCategoriaId(detailUid); setEditingCategoriaValue(viewedParticipant.categoria_competencia || categories[0]?.nombre || '') }} style={{ fontSize: 11, padding: '2px 8px' }}>
+                  Cambiar
+                </button>
+              </>
+            )}
+          </div>
           <div><b style={{ color: 'var(--oa-text)' }}>Estado:</b> {viewedParticipant.estado || '-'}</div>
         </div>
         <EnrollmentAnswersBlock raw={viewedParticipant.enrollment_answers} onPreviewImage={setPreviewImage} />
@@ -3573,13 +3645,34 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
           <div style={{ fontSize: 13, fontWeight: 800, color: '#F5F7FA' }}>Listado de inscritos</div>
           <div style={{ fontSize: 12, color: '#AAB2C0' }}>{competitionParticipants.length} participantes</div>
         </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: '#AAB2C0' }}>Ordenar:</span>
+          {[
+            { key: 'cronologico', label: 'Inscripción' },
+            { key: 'categoria', label: 'Categoría' },
+            { key: 'nombre', label: 'Nombre' },
+          ].map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setSortBy(opt.key)}
+              style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1px solid',
+                borderColor: sortBy === opt.key ? 'rgba(94,234,212,0.5)' : '#252A33',
+                background: sortBy === opt.key ? 'rgba(94,234,212,0.1)' : 'transparent',
+                color: sortBy === opt.key ? '#8DF1E4' : '#AAB2C0',
+                cursor: 'pointer',
+              }}
+            >{opt.label}</button>
+          ))}
+        </div>
       </div>
       {!competitionParticipants.length && (
         <div style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 40 }}>
           No hay inscritos
         </div>
       )}
-      {competitionParticipants.map((p) => {
+      {sortedParticipants.map((p) => {
         const uid = p.user_id ?? p.id
         const isBusy = removingParticipantId === uid
         const estadoBadge = p.estado === 'confirmado'
@@ -3604,7 +3697,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1px solid ${estadoBadge.border}`, color: estadoBadge.color }}>{estadoBadge.label}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 4 }}>
-                Categoria: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia || '-'}</b>
+                Categoría: <b style={{ color: 'var(--oa-text)' }}>{p.categoria_competencia || '-'}</b>
               </div>
             </div>
             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>

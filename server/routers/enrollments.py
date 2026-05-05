@@ -24,7 +24,7 @@ from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
-    CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
+    EnrollCategoriaUpdate, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
 )
 from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
@@ -132,6 +132,8 @@ def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datet
                 "payment_processor_fee": cp.payment_processor_fee,
                 "payment_platform_net": cp.payment_platform_net,
                 "payment_amount_total": cp.payment_amount_total,
+                "payment_processed_at": cp.payment_processed_at,
+                "inscrito_at": cp.inscrito_at,
                 "check_in_done": bool(checkin_used_at),
                 "check_in_used_at": checkin_used_at,
             }
@@ -730,6 +732,25 @@ def update_enrollment_status(
         logger.exception("Failed to send enrollment status email (user_id=%s, estado=%s)", user_id, body.estado)
 
     return {"ok": True, "estado": cp.estado, "user_id": user_id}
+
+
+@router.patch("/api/competitions/{competition_id}/users/{user_id}/categoria")
+def update_participant_categoria(
+    competition_id: int,
+    user_id: int,
+    body: EnrollCategoriaUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    cp = session.get(CompetitionParticipant, (competition_id, user_id))
+    if not cp:
+        raise HTTPException(404, "Inscripción no encontrada")
+    cp.categoria = str(body.categoria or "").strip() or None
+    session.add(cp)
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    return {"ok": True, "categoria": cp.categoria, "user_id": user_id}
 
 
 @router.delete("/api/competitions/{competition_id}/users/{user_id}", status_code=204)
