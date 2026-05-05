@@ -10377,6 +10377,9 @@ function CompetitionsTab() {
   const [participantDetail, setParticipantDetail] = useState(null)
   const [deleteEnrollmentTarget, setDeleteEnrollmentTarget] = useState(null)
   const [deleteEnrollmentBusy, setDeleteEnrollmentBusy] = useState(false)
+  const [detailCategoriaEditing, setDetailCategoriaEditing] = useState(false)
+  const [detailCategoriaValue, setDetailCategoriaValue] = useState('')
+  const [detailCategoriaSaving, setDetailCategoriaSaving] = useState(false)
   const [enrollmentListMenuOpen, setEnrollmentListMenuOpen] = useState(false)
   const [enrollmentListGroupByCategory, setEnrollmentListGroupByCategory] = useState(false)
   const [enrollmentCategoryFilter, setEnrollmentCategoryFilter] = useState('')
@@ -10604,6 +10607,22 @@ function CompetitionsTab() {
     }
   }
 
+  const saveDetailCategoria = async () => {
+    if (!selectedCompetition?.id || !participantDetail) return
+    const uid = participantDetail.user_id ?? participantDetail.id
+    setDetailCategoriaSaving(true)
+    try {
+      await api.patch(`/competitions/${selectedCompetition.id}/users/${uid}/categoria`, { categoria: detailCategoriaValue })
+      setParticipantDetail(prev => ({ ...prev, categoria_competencia: detailCategoriaValue }))
+      setSelectedParticipants(prev => prev.map(p => (p.user_id ?? p.id) === uid ? { ...p, categoria_competencia: detailCategoriaValue } : p))
+      setDetailCategoriaEditing(false)
+    } catch (err) {
+      alert(err.response?.data?.detail || 'No se pudo actualizar la categoria')
+    } finally {
+      setDetailCategoriaSaving(false)
+    }
+  }
+
   const deleteEnrollmentFromDetail = async () => {
     if (!selectedCompetition?.id || !deleteEnrollmentTarget) return
     const participantId = deleteEnrollmentTarget.user_id ?? deleteEnrollmentTarget.id
@@ -10808,7 +10827,7 @@ function CompetitionsTab() {
     <div>
       {previewImage && <ImagePreviewModal item={previewImage} onClose={() => setPreviewImage(null)} />}
       {participantDetail && (
-        <Modal title={participantDetailName || 'Participante'} onClose={() => setParticipantDetail(null)} width={760}>
+        <Modal title={participantDetailName || 'Participante'} onClose={() => { setParticipantDetail(null); setDetailCategoriaEditing(false) }} width={760}>
           <div style={{ display: 'grid', gap: 14, overflowY: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <div style={setupInfoCardStyle}>
@@ -10817,7 +10836,34 @@ function CompetitionsTab() {
               </div>
               <div style={setupInfoCardStyle}>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>Categoria</div>
-                <div style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.categoria_competencia || '-'}</div>
+                {detailCategoriaEditing ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 4 }}>
+                    <select
+                      value={detailCategoriaValue}
+                      onChange={e => setDetailCategoriaValue(e.target.value)}
+                      style={{ fontSize: 13, background: '#0D0F12', border: '1px solid #252A33', borderRadius: 8, padding: '4px 8px', color: '#F5F7FA', flex: 1, minWidth: 0 }}
+                    >
+                      {selectedCompetitionCategories.length === 0 && <option value="">Sin categorias</option>}
+                      {selectedCompetitionCategories.map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}
+                      {detailCategoriaValue && !selectedCompetitionCategories.find(c => c.nombre === detailCategoriaValue) && (
+                        <option value={detailCategoriaValue}>{detailCategoriaValue}</option>
+                      )}
+                    </select>
+                    <button type="button" className="btn-primary btn-sm" disabled={detailCategoriaSaving} onClick={saveDetailCategoria} style={{ fontSize: 12 }}>
+                      {detailCategoriaSaving ? '...' : 'Guardar'}
+                    </button>
+                    <button type="button" className="btn-secondary btn-sm" disabled={detailCategoriaSaving} onClick={() => setDetailCategoriaEditing(false)} style={{ fontSize: 12 }}>
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{participantDetail.categoria_competencia || '-'}</span>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => { setDetailCategoriaEditing(true); setDetailCategoriaValue(participantDetail.categoria_competencia || selectedCompetitionCategories[0]?.nombre || '') }} style={{ fontSize: 11, padding: '2px 8px' }}>
+                      Cambiar
+                    </button>
+                  </div>
+                )}
               </div>
               <div style={setupInfoCardStyle}>
                 <div style={{ color: '#AAB2C0', fontSize: 12 }}>Email</div>
@@ -11616,7 +11662,7 @@ function CompetitionsTab() {
                                       <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                                         <div style={{ minWidth: 0 }}>
                                           <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>
-                                            <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                            <AthleteNameLink username={p.username}>{p.apellido}, {p.nombre}</AthleteNameLink>
                                           </div>
                                           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                                         </div>
@@ -11653,7 +11699,7 @@ function CompetitionsTab() {
                             <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 800, color: '#F5F7FA', fontSize: 15, overflowWrap: 'anywhere' }}>
-                                  <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                  <AthleteNameLink username={p.username}>{p.apellido}, {p.nombre}</AthleteNameLink>
                                 </div>
                                 <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>{p.email || formatCedula(p.cedula)}</div>
                               </div>
@@ -11727,7 +11773,7 @@ function CompetitionsTab() {
                                       }}>
                                         <div style={{ minWidth: 0 }}>
                                           <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>
-                                            <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                            <AthleteNameLink username={p.username}>{p.apellido}, {p.nombre}</AthleteNameLink>
                                           </div>
                                           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
                                         </div>
@@ -11760,7 +11806,7 @@ function CompetitionsTab() {
                                 <tr key={p.id}>
                                   <td>
                                     <div style={{ color: '#F5F7FA', fontWeight: 800 }}>
-                                      <AthleteNameLink username={p.username}>{p.nombre} {p.apellido}</AthleteNameLink>
+                                      <AthleteNameLink username={p.username}>{p.apellido}, {p.nombre}</AthleteNameLink>
                                     </div>
                                     <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{p.email || formatCedula(p.cedula)}</div>
                                   </td>
