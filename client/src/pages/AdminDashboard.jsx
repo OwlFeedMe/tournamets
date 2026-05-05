@@ -10380,6 +10380,7 @@ function CompetitionsTab() {
   const [enrollmentListMenuOpen, setEnrollmentListMenuOpen] = useState(false)
   const [enrollmentListGroupByCategory, setEnrollmentListGroupByCategory] = useState(false)
   const [enrollmentCategoryFilter, setEnrollmentCategoryFilter] = useState('')
+  const [enrollmentSortBy, setEnrollmentSortBy] = useState('cronologico')
   const [enrollmentExpandedGroups, setEnrollmentExpandedGroups] = useState({})
   const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
@@ -10449,9 +10450,24 @@ function CompetitionsTab() {
       return categoryName === enrollmentCategoryFilter
     })
   }, [selectedParticipants, enrollmentCategoryFilter])
+  const sortedFilteredParticipants = useMemo(() => {
+    const list = [...filteredSelectedParticipants]
+    if (enrollmentSortBy === 'nombre') {
+      list.sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+    } else if (enrollmentSortBy === 'categoria') {
+      list.sort((a, b) => (a.categoria_competencia || '').localeCompare(b.categoria_competencia || '') || `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+    } else {
+      list.sort((a, b) => {
+        const ta = a.inscrito_at ? new Date(a.inscrito_at).getTime() : Infinity
+        const tb = b.inscrito_at ? new Date(b.inscrito_at).getTime() : Infinity
+        return ta - tb
+      })
+    }
+    return list
+  }, [filteredSelectedParticipants, enrollmentSortBy])
   const groupedSelectedParticipants = useMemo(() => {
     const groups = {}
-    filteredSelectedParticipants.forEach((participant) => {
+    sortedFilteredParticipants.forEach((participant) => {
       const categoryName = String(participant?.categoria_competencia || '').trim() || 'Sin categoria'
       if (!groups[categoryName]) groups[categoryName] = []
       groups[categoryName].push(participant)
@@ -10460,7 +10476,7 @@ function CompetitionsTab() {
       categoryName,
       participants: groups[categoryName] || [],
     }))
-  }, [filteredSelectedParticipants])
+  }, [sortedFilteredParticipants])
   const enrollmentSummary = useMemo(() => {
     const total = selectedParticipants.length
     const categoriesCount = new Set(
@@ -10491,6 +10507,7 @@ function CompetitionsTab() {
     setEnrollmentListMenuOpen(false)
     setEnrollmentListGroupByCategory(false)
     setEnrollmentCategoryFilter('')
+    setEnrollmentSortBy('cronologico')
     setEnrollmentExpandedGroups({})
   }, [selectedCompetition?.id])
 
@@ -11480,6 +11497,28 @@ function CompetitionsTab() {
                         minWidth: 0,
                         maxWidth: '100%',
                       }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700 }}>Ordenar:</span>
+                          {[
+                            { key: 'cronologico', label: 'Inscripción' },
+                            { key: 'categoria', label: 'Categoría' },
+                            { key: 'nombre', label: 'Nombre' },
+                          ].map(opt => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => setEnrollmentSortBy(opt.key)}
+                              style={{
+                                fontSize: 12, padding: '4px 12px', borderRadius: 20, border: '1px solid',
+                                borderColor: enrollmentSortBy === opt.key ? 'rgba(94,234,212,0.5)' : '#252A33',
+                                background: enrollmentSortBy === opt.key ? 'rgba(94,234,212,0.1)' : 'transparent',
+                                color: enrollmentSortBy === opt.key ? '#8DF1E4' : '#AAB2C0',
+                                cursor: 'pointer',
+                                fontWeight: enrollmentSortBy === opt.key ? 700 : 400,
+                              }}
+                            >{opt.label}</button>
+                          ))}
+                        </div>
                         <div style={{
                           display: 'grid',
                           gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 320px) minmax(0, 1fr)',
@@ -11543,7 +11582,7 @@ function CompetitionsTab() {
                     </div>
                     {isMobile ? (
                       <div style={{ display: 'grid', gap: 10 }}>
-                        {!filteredSelectedParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</p>}
+                        {!sortedFilteredParticipants.length && <p style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</p>}
                         {enrollmentListGroupByCategory ? groupedSelectedParticipants.map((group) => {
                           const isExpanded = enrollmentExpandedGroups[group.categoryName] ?? true
                           return (
@@ -11609,7 +11648,7 @@ function CompetitionsTab() {
                               )}
                             </div>
                           )
-                        }) : filteredSelectedParticipants.map((p) => (
+                        }) : sortedFilteredParticipants.map((p) => (
                           <div key={p.id} style={{ border: '1px solid #252A33', borderRadius: 16, padding: '14px', background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(13,15,18,0.92))', display: 'grid', gap: 10 }}>
                             <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
                               <div style={{ minWidth: 0 }}>
@@ -11717,7 +11756,7 @@ function CompetitionsTab() {
                               <tr><th>Participante</th><th>Categoria</th><th>Inscripcion</th><th>Accion</th></tr>
                             </thead>
                             <tbody>
-                              {filteredSelectedParticipants.map((p) => (
+                              {sortedFilteredParticipants.map((p) => (
                                 <tr key={p.id}>
                                   <td>
                                     <div style={{ color: '#F5F7FA', fontWeight: 800 }}>
@@ -11736,7 +11775,7 @@ function CompetitionsTab() {
                                   </td>
                                 </tr>
                               ))}
-                              {!filteredSelectedParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</td></tr>}
+                              {!sortedFilteredParticipants.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>{enrollmentEmptyMessage}</td></tr>}
                             </tbody>
                           </table>
                         </div>
