@@ -10384,6 +10384,7 @@ function CompetitionsTab() {
   const [enrollmentListGroupByCategory, setEnrollmentListGroupByCategory] = useState(false)
   const [enrollmentCategoryFilter, setEnrollmentCategoryFilter] = useState('')
   const [enrollmentSortBy, setEnrollmentSortBy] = useState('cronologico')
+  const [enrollmentSortDir, setEnrollmentSortDir] = useState('asc')
   const [enrollmentExpandedGroups, setEnrollmentExpandedGroups] = useState({})
   const [previewImage, setPreviewImage] = useState(null)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
@@ -10455,19 +10456,20 @@ function CompetitionsTab() {
   }, [selectedParticipants, enrollmentCategoryFilter])
   const sortedFilteredParticipants = useMemo(() => {
     const list = [...filteredSelectedParticipants]
+    const dir = enrollmentSortDir === 'desc' ? -1 : 1
     if (enrollmentSortBy === 'nombre') {
-      list.sort((a, b) => `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+      list.sort((a, b) => dir * `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
     } else if (enrollmentSortBy === 'categoria') {
-      list.sort((a, b) => (a.categoria_competencia || '').localeCompare(b.categoria_competencia || '') || `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`))
+      list.sort((a, b) => dir * ((a.categoria_competencia || '').localeCompare(b.categoria_competencia || '') || `${a.apellido} ${a.nombre}`.localeCompare(`${b.apellido} ${b.nombre}`)))
     } else {
       list.sort((a, b) => {
         const ta = a.inscrito_at ? new Date(a.inscrito_at).getTime() : Infinity
         const tb = b.inscrito_at ? new Date(b.inscrito_at).getTime() : Infinity
-        return ta - tb
+        return dir * (ta - tb)
       })
     }
     return list
-  }, [filteredSelectedParticipants, enrollmentSortBy])
+  }, [filteredSelectedParticipants, enrollmentSortBy, enrollmentSortDir])
   const groupedSelectedParticipants = useMemo(() => {
     const groups = {}
     sortedFilteredParticipants.forEach((participant) => {
@@ -10511,6 +10513,7 @@ function CompetitionsTab() {
     setEnrollmentListGroupByCategory(false)
     setEnrollmentCategoryFilter('')
     setEnrollmentSortBy('cronologico')
+    setEnrollmentSortDir('asc')
     setEnrollmentExpandedGroups({})
   }, [selectedCompetition?.id])
 
@@ -11564,6 +11567,16 @@ function CompetitionsTab() {
                               }}
                             >{opt.label}</button>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => setEnrollmentSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                            title={enrollmentSortDir === 'asc' ? 'Ascendente' : 'Descendente'}
+                            style={{
+                              fontSize: 14, width: 30, height: 30, borderRadius: 20, border: '1px solid #252A33',
+                              background: 'transparent', color: '#AAB2C0', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            }}
+                          >{enrollmentSortDir === 'asc' ? '↑' : '↓'}</button>
                         </div>
                         <div style={{
                           display: 'grid',
