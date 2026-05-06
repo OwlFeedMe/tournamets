@@ -3431,6 +3431,7 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('cronologico')
+  const [statsField, setStatsField] = useState('box')
   const [editingCategoriaId, setEditingCategoriaId] = useState(null)
   const [editingCategoriaValue, setEditingCategoriaValue] = useState('')
   const [savingCategoriaId, setSavingCategoriaId] = useState(null)
@@ -3730,7 +3731,87 @@ function EnrollmentModal({ competition, onClose, onSaved }) {
             Gestionar inscritos
           </button>
         )}
+        <button className={`tab ${modalTab === 'estadisticas' ? 'active' : ''}`} onClick={() => { setModalTab('estadisticas'); setViewedParticipant(null) }} style={{ padding: '4px 14px', fontSize: 13 }}>
+          Estadísticas
+        </button>
       </div>
+
+      {modalTab === 'estadisticas' && (() => {
+        const STAT_FIELDS = [
+          { key: 'box', label: 'Box' },
+          { key: 'categoria_competencia', label: 'Categoría' },
+          { key: 'ciudad_pais', label: 'País / Ciudad' },
+          { key: 'estado', label: 'Estado' },
+          { key: 'sexo', label: 'Sexo' },
+        ]
+        const total = competitionParticipants.length
+        const counts = {}
+        competitionParticipants.forEach(p => {
+          const raw = p[statsField]
+          const val = raw && String(raw).trim() ? String(raw).trim() : null
+          const key = val || '__empty__'
+          counts[key] = (counts[key] || 0) + 1
+        })
+        const rows = Object.entries(counts)
+          .map(([key, count]) => ({ label: key === '__empty__' ? `Sin ${STAT_FIELDS.find(f => f.key === statsField)?.label?.toLowerCase() || statsField}` : key, count, empty: key === '__empty__' }))
+          .sort((a, b) => {
+            if (a.empty && !b.empty) return 1
+            if (!a.empty && b.empty) return -1
+            return b.count - a.count
+          })
+        return (
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: '#AAB2C0' }}>Ver por:</span>
+              {STAT_FIELDS.map(f => (
+                <button key={f.key} type="button" onClick={() => setStatsField(f.key)} style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1px solid',
+                  borderColor: statsField === f.key ? 'rgba(94,234,212,0.5)' : '#252A33',
+                  background: statsField === f.key ? 'rgba(94,234,212,0.1)' : 'transparent',
+                  color: statsField === f.key ? '#8DF1E4' : '#AAB2C0',
+                  cursor: 'pointer',
+                }}>{f.label}</button>
+              ))}
+            </div>
+            <div style={{ border: '1px solid #252A33', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 56px 56px', gap: 0, background: 'rgba(13,15,18,0.9)', borderBottom: '1px solid #252A33', padding: '8px 14px' }}>
+                <span style={{ fontSize: 11, color: '#AAB2C0', fontWeight: 700 }}>{STAT_FIELDS.find(f => f.key === statsField)?.label}</span>
+                <span style={{ fontSize: 11, color: '#AAB2C0', fontWeight: 700, textAlign: 'right' }}>Cant.</span>
+                <span style={{ fontSize: 11, color: '#AAB2C0', fontWeight: 700, textAlign: 'right' }}>%</span>
+              </div>
+              {rows.length === 0 && (
+                <div style={{ padding: '20px 14px', color: '#AAB2C0', fontSize: 13, textAlign: 'center' }}>Sin datos</div>
+              )}
+              {rows.map((row, i) => {
+                const pct = total > 0 ? Math.round((row.count / total) * 100) : 0
+                return (
+                  <div key={row.label} style={{
+                    display: 'grid', gridTemplateColumns: '1fr 56px 56px', alignItems: 'center',
+                    padding: '10px 14px', borderBottom: i < rows.length - 1 ? '1px solid #1A1D22' : 'none',
+                    background: i % 2 === 0 ? 'rgba(13,15,18,0.72)' : 'rgba(18,21,26,0.72)',
+                    position: 'relative', overflow: 'hidden',
+                  }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'rgba(94,234,212,0.05)', pointerEvents: 'none' }} />
+                    <span style={{ fontSize: 13, color: row.empty ? '#AAB2C0' : 'var(--oa-text)', fontStyle: row.empty ? 'italic' : 'normal', position: 'relative' }}>{row.label}</span>
+                    <span style={{ fontSize: 13, color: 'var(--oa-text)', fontWeight: 700, textAlign: 'right', position: 'relative' }}>{row.count}</span>
+                    <span style={{ fontSize: 12, color: '#AAB2C0', textAlign: 'right', position: 'relative' }}>{pct}%</span>
+                  </div>
+                )
+              })}
+              {total > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 56px 56px', padding: '8px 14px', borderTop: '1px solid #252A33', background: 'rgba(13,15,18,0.9)' }}>
+                  <span style={{ fontSize: 12, color: '#AAB2C0', fontWeight: 700 }}>Total</span>
+                  <span style={{ fontSize: 12, color: '#8DF1E4', fontWeight: 700, textAlign: 'right' }}>{total}</span>
+                  <span style={{ fontSize: 12, color: '#AAB2C0', textAlign: 'right' }}>100%</span>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn-secondary" onClick={onClose}>Cerrar</button>
+            </div>
+          </div>
+        )
+      })()}
 
       {((isOrganizer && modalTab === 'confirmados') || (!isOrganizer && modalTab === 'gestion')) && (
         <>
