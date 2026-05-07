@@ -144,6 +144,10 @@ function ProfileTab({ gym, gymId, myRole, onUpdated }) {
       contact_phone: gym.contact_phone || '',
       head_coach_name: gym.head_coach_name || '',
       founded_year: gym.founded_year || '',
+      country: gym.country || '',
+      state_region: gym.state_region || '',
+      city: gym.city || '',
+      address_line: gym.address_line || '',
     })
     setDirty(false)
   }, [gym])
@@ -256,6 +260,20 @@ function ProfileTab({ gym, gymId, myRole, onUpdated }) {
         <Field label="Head Coach" value={form.head_coach_name} onChange={set('head_coach_name')} />
       </div>
       <Field label="Año de fundación" value={form.founded_year} onChange={set('founded_year')} type="number" placeholder="2018" />
+
+      <div style={{ borderTop: '1px solid var(--oa-border)', paddingTop: 14 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--oa-text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <MapPin size={13} /> Ubicación
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="País" value={form.country} onChange={set('country')} placeholder="Colombia" />
+          <Field label="Ciudad" value={form.city} onChange={set('city')} placeholder="Bogotá" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+          <Field label="Región / Estado" value={form.state_region} onChange={set('state_region')} placeholder="Cundinamarca" />
+          <Field label="Dirección" value={form.address_line} onChange={set('address_line')} placeholder="Calle 123 #45-67" />
+        </div>
+      </div>
 
       {error && <p style={{ fontSize: 13, color: 'var(--oa-error)' }}>{error}</p>}
       <SaveBar dirty={dirty} saving={saving} onSave={save} />
@@ -659,7 +677,7 @@ function LocationsTab({ gymId }) {
   useEffect(() => { load() }, [gymId])
 
   const addLocation = async () => {
-    if (!newLoc.city.trim()) { setAddError('Ingresa la ciudad'); return }
+    if (!newLoc.name.trim() && !newLoc.city.trim()) { setAddError('Ingresa al menos un nombre o ciudad'); return }
     setActing('add')
     setAddError('')
     try {
@@ -714,7 +732,7 @@ function LocationsTab({ gymId }) {
           display: 'flex', flexDirection: 'column', gap: 10,
         }}>
           <Field label="Nombre de la sede" value={newLoc.name} onChange={setField('name')} placeholder="Sede Norte" />
-          <Field label="Ciudad *" value={newLoc.city} onChange={setField('city')} placeholder="Bogotá" />
+          <Field label="Ciudad" value={newLoc.city} onChange={setField('city')} placeholder="Bogotá" />
           <Field label="Dirección" value={newLoc.address_line} onChange={setField('address_line')} />
           <Field label="Teléfono" value={newLoc.contact_phone} onChange={setField('contact_phone')} />
           <Field label="Horarios" value={newLoc.schedule_summary} onChange={setField('schedule_summary')} placeholder="Lun-Vie 6am-9pm" />

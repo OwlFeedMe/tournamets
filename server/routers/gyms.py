@@ -658,9 +658,8 @@ _MANAGER_EDITABLE = {
     "whatsapp_url", "contact_email", "contact_phone", "head_coach_name",
     "founded_year",
 }
-_OWNER_EDITABLE = _MANAGER_EDITABLE | {"display_name", "legal_name"}
+_OWNER_EDITABLE = _MANAGER_EDITABLE | {"display_name", "legal_name", "country", "state_region", "city", "address_line"}
 _ADMIN_EDITABLE = _OWNER_EDITABLE | {
-    "country", "state_region", "city", "address_line",
     "is_featured", "is_franchise", "verification_badge", "plan_tier",
 }
 
@@ -694,10 +693,13 @@ def update_gym(
     changed = False
     for field, value in body.items():
         if field in allowed and hasattr(gym, field):
-            if field == "instagram_url" and isinstance(value, str) and value.strip():
-                value = _normalize_instagram(value.strip())
-            elif field in _URL_FIELDS and isinstance(value, str) and value.strip():
-                value = _normalize_url(value.strip())
+            if isinstance(value, str):
+                value = value.strip() or None
+            if value is not None:
+                if field == "instagram_url":
+                    value = _normalize_instagram(value)
+                elif field in _URL_FIELDS:
+                    value = _normalize_url(value)
             setattr(gym, field, value)
             changed = True
 
