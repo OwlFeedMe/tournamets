@@ -1891,6 +1891,10 @@ class EnrollCategoriaUpdate(SQLModel):
     categoria: Optional[str] = None
 
 
+class EnrollmentReplaceRequest(SQLModel):
+    email: str
+
+
 # ── Platform config schemas ────────────────────────────────────────────────────
 
 class PlatformConfigUpdate(SQLModel):

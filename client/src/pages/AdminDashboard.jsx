@@ -10008,6 +10008,9 @@ function CompetitionsTab() {
   const [participantDetail, setParticipantDetail] = useState(null)
   const [deleteEnrollmentTarget, setDeleteEnrollmentTarget] = useState(null)
   const [deleteEnrollmentBusy, setDeleteEnrollmentBusy] = useState(false)
+  const [replaceEnrollmentTarget, setReplaceEnrollmentTarget] = useState(null)
+  const [replaceEnrollmentBusy, setReplaceEnrollmentBusy] = useState(false)
+  const [replacementEmail, setReplacementEmail] = useState('')
   const [detailCategoriaEditing, setDetailCategoriaEditing] = useState(false)
   const [detailCategoriaValue, setDetailCategoriaValue] = useState('')
   const [detailCategoriaSaving, setDetailCategoriaSaving] = useState(false)
@@ -10277,6 +10280,31 @@ function CompetitionsTab() {
     }
   }
 
+  const replaceEnrollmentFromDetail = async () => {
+    if (!selectedCompetition?.id || !replaceEnrollmentTarget) return
+    const participantId = replaceEnrollmentTarget.user_id ?? replaceEnrollmentTarget.id
+    const normalizedEmail = String(replacementEmail || '').trim().toLowerCase()
+    if (!participantId || !normalizedEmail) {
+      setMsg({ type: 'error', text: 'Ingresa el correo del nuevo participante' })
+      return
+    }
+    setReplaceEnrollmentBusy(true)
+    try {
+      await api.post(`/competitions/${selectedCompetition.id}/users/${participantId}/replace`, { email: normalizedEmail })
+      const items = await syncCompetitionParticipants(selectedCompetition.id)
+      setSelectedParticipants(items)
+      const updated = items.find(p => String(p.user_id ?? p.id) !== String(participantId) && String((p.email || '').trim().toLowerCase()) === normalizedEmail)
+      setParticipantDetail(updated || null)
+      setReplaceEnrollmentTarget(null)
+      setReplacementEmail('')
+      setMsg({ type: 'success', text: 'Participante reemplazado correctamente' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo reemplazar el participante' })
+    } finally {
+      setReplaceEnrollmentBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (selectedCompetition?.id) {
       refreshSelectedParticipants()
@@ -10537,7 +10565,17 @@ function CompetitionsTab() {
                   Elimina esta inscripcion de la competencia. Esta accion no se puede deshacer.
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  onClick={() => {
+                    setReplaceEnrollmentTarget(participantDetail)
+                    setReplacementEmail('')
+                  }}
+                >
+                  Cambiar participante
+                </button>
                 <button
                   type="button"
                   className="btn-danger btn-sm"
@@ -10595,6 +10633,58 @@ function CompetitionsTab() {
               >
                 <Trash2 size={14} />
                 {deleteEnrollmentBusy ? 'Eliminando...' : 'Eliminar inscrito'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {replaceEnrollmentTarget && (
+        <Modal
+          title="Cambiar participante"
+          onClose={() => {
+            if (!replaceEnrollmentBusy) {
+              setReplaceEnrollmentTarget(null)
+              setReplacementEmail('')
+            }
+          }}
+          width={560}
+        >
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.5 }}>
+              Reemplaza a <span style={{ color: '#F5F7FA', fontWeight: 800 }}>{replaceEnrollmentTarget.nombre} {replaceEnrollmentTarget.apellido}</span> por otro usuario registrado en FinalRep.
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <label style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700 }}>Correo del nuevo participante</label>
+              <input
+                type="email"
+                value={replacementEmail}
+                onChange={(event) => setReplacementEmail(event.target.value)}
+                placeholder="correo@dominio.com"
+                autoFocus
+              />
+              <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                Ambos participantes recibiran una notificacion por correo.
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => {
+                  setReplaceEnrollmentTarget(null)
+                  setReplacementEmail('')
+                }}
+                disabled={replaceEnrollmentBusy}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-primary btn-sm"
+                onClick={replaceEnrollmentFromDetail}
+                disabled={replaceEnrollmentBusy || !String(replacementEmail || '').trim()}
+              >
+                {replaceEnrollmentBusy ? 'Cambiando...' : 'Confirmar cambio'}
               </button>
             </div>
           </div>

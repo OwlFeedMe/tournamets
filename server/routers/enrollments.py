@@ -24,7 +24,8 @@ from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
-    EnrollCategoriaUpdate, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
+    EnrollCategoriaUpdate, EnrollmentReplaceRequest, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
+    CompetitionHeat, CompetitionHeatAssignment, Result, Team, TeamMember,
 )
 from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
@@ -33,6 +34,7 @@ from services.email_templates import (
     render_payment_approved,
     render_payment_rejected,
     render_enrollment_confirmed,
+    render_enrollment_transferred_out,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from routers.ticketing import apply_spectator_bold_notification
@@ -766,6 +768,153 @@ def unenroll(
         session.delete(cp)
         session.commit()
         invalidate_leaderboard_results_snapshot(competition_id)
+
+
+@router.post("/api/competitions/{competition_id}/users/{user_id}/replace")
+def replace_enrolled_participant(
+    competition_id: int,
+    user_id: int,
+    body: EnrollmentReplaceRequest,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    source_enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
+    if not source_enrollment:
+        raise HTTPException(404, "Inscripcion no encontrada")
+    source_participant = session.get(Participant, user_id)
+
+    target_email = str(body.email or "").strip().lower()
+    if not target_email:
+        raise HTTPException(400, "Ingresa el correo del participante de reemplazo")
+
+    target_participant = session.exec(
+        select(Participant).where(func.lower(Participant.email) == target_email)
+    ).first()
+    if not target_participant:
+        raise HTTPException(404, "El correo no pertenece a un usuario registrado en FinalRep")
+    if int(target_participant.id) == int(user_id):
+        raise HTTPException(400, "El correo corresponde al mismo participante inscrito")
+
+    existing_target = session.get(CompetitionParticipant, (competition_id, int(target_participant.id)))
+    if existing_target:
+        raise HTTPException(409, "El participante de reemplazo ya tiene inscripcion en esta competencia")
+
+    has_results = session.exec(
+        select(Result.id)
+        .where(Result.competition_id == competition_id)
+        .where(Result.user_id == user_id)
+    ).first()
+    if has_results:
+        raise HTTPException(409, "No se puede reemplazar un participante con resultados registrados")
+
+    has_checkin = session.exec(
+        select(CompetitionCheckinUsage.id)
+        .where(CompetitionCheckinUsage.competition_id == competition_id)
+        .where(CompetitionCheckinUsage.user_id == user_id)
+    ).first()
+    if has_checkin:
+        raise HTTPException(409, "No se puede reemplazar un participante con check-in registrado")
+
+    target_has_heat_assignment = session.exec(
+        select(CompetitionHeatAssignment.id)
+        .join(CompetitionHeat, CompetitionHeat.id == CompetitionHeatAssignment.heat_id)
+        .where(CompetitionHeat.competition_id == competition_id)
+        .where(CompetitionHeatAssignment.user_id == int(target_participant.id))
+    ).first()
+    if target_has_heat_assignment:
+        raise HTTPException(409, "El participante de reemplazo ya esta asignado a un heat de esta competencia")
+
+    target_has_team = session.exec(
+        select(TeamMember.team_id)
+        .join(Team, Team.id == TeamMember.team_id)
+        .where(Team.competition_id == competition_id)
+        .where(TeamMember.user_id == int(target_participant.id))
+    ).first()
+    if target_has_team:
+        raise HTTPException(409, "El participante de reemplazo ya esta en un equipo de esta competencia")
+
+    new_enrollment = CompetitionParticipant(
+        competition_id=source_enrollment.competition_id,
+        user_id=int(target_participant.id),
+        categoria=source_enrollment.categoria,
+        estado=source_enrollment.estado,
+        enrollment_answers=source_enrollment.enrollment_answers,
+        payment_provider=source_enrollment.payment_provider,
+        payment_status=source_enrollment.payment_status,
+        payment_reference=source_enrollment.payment_reference,
+        payment_order_id=source_enrollment.payment_order_id,
+        payment_transaction_id=source_enrollment.payment_transaction_id,
+        payment_base_amount=source_enrollment.payment_base_amount,
+        payment_platform_fee=source_enrollment.payment_platform_fee,
+        payment_platform_fee_rate=source_enrollment.payment_platform_fee_rate,
+        payment_processor_fee=source_enrollment.payment_processor_fee,
+        payment_platform_net=source_enrollment.payment_platform_net,
+        payment_amount_total=source_enrollment.payment_amount_total,
+        payment_processed_at=source_enrollment.payment_processed_at,
+        discount_id=source_enrollment.discount_id,
+        discount_amount=source_enrollment.discount_amount,
+        payment_updated_at=source_enrollment.payment_updated_at,
+        inscrito_at=source_enrollment.inscrito_at,
+    )
+
+    heat_assignments = session.exec(
+        select(CompetitionHeatAssignment)
+        .join(CompetitionHeat, CompetitionHeat.id == CompetitionHeatAssignment.heat_id)
+        .where(CompetitionHeat.competition_id == competition_id)
+        .where(CompetitionHeatAssignment.user_id == user_id)
+    ).all()
+    for assignment in heat_assignments:
+        assignment.user_id = int(target_participant.id)
+        session.add(assignment)
+
+    team_memberships = session.exec(
+        select(TeamMember)
+        .join(Team, Team.id == TeamMember.team_id)
+        .where(Team.competition_id == competition_id)
+        .where(TeamMember.user_id == user_id)
+    ).all()
+    for membership in team_memberships:
+        session.delete(membership)
+        session.add(TeamMember(team_id=membership.team_id, user_id=int(target_participant.id)))
+
+    session.add(new_enrollment)
+    session.delete(source_enrollment)
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+
+    try:
+        competition = session.get(Competition, competition_id)
+        competition_name = str(getattr(competition, "nombre", "") or competition_id)
+
+        email = str(getattr(target_participant, "email", "") or "").strip()
+        if email:
+            nombre = f"{str(getattr(target_participant, 'nombre', '') or '').strip()} {str(getattr(target_participant, 'apellido', '') or '').strip()}".strip()
+            subject, mail_body, html = render_enrollment_confirmed(
+                nombre=nombre,
+                competition_name=competition_name,
+                category_name=str(new_enrollment.categoria or ""),
+            )
+            send_email(to_email=email, subject=subject, body=mail_body, html_body=html)
+
+        previous_email = str(getattr(source_participant, "email", "") or "").strip()
+        if previous_email:
+            previous_name = f"{str(getattr(source_participant, 'nombre', '') or '').strip()} {str(getattr(source_participant, 'apellido', '') or '').strip()}".strip()
+            subject, mail_body, html = render_enrollment_transferred_out(
+                nombre=previous_name,
+                competition_name=competition_name,
+                category_name=str(new_enrollment.categoria or ""),
+            )
+            send_email(to_email=previous_email, subject=subject, body=mail_body, html_body=html)
+    except Exception:
+        logger.exception("Failed to send enrollment replacement email (competition_id=%s, user_id=%s)", competition_id, target_participant.id)
+
+    return {
+        "ok": True,
+        "competition_id": competition_id,
+        "replaced_user_id": user_id,
+        "new_user_id": int(target_participant.id),
+    }
 
 
 @router.post("/api/competitions/{competition_id}/free-enroll", status_code=201)

@@ -222,7 +222,38 @@ def render_enrollment_confirmed(
 
 
 # ---------------------------------------------------------------------------
-# 5. Solicitud de organizador recibida (al usuario)
+# 5. Inscripcion transferida por el organizador
+# ---------------------------------------------------------------------------
+
+def render_enrollment_transferred_out(
+    *,
+    nombre: str,
+    competition_name: str,
+    category_name: str,
+) -> tuple[str, str, str]:
+    subject = f"Actualizacion de inscripcion - {competition_name}"
+    text = (
+        f"Hola {nombre},\n\n"
+        f"Tu inscripcion en la competencia \"{competition_name}\" fue transferida por el organizador.\n\n"
+        f"Categoria: {category_name}\n\n"
+        "Si no reconoces este cambio o necesitas ayuda, contacta al organizador del evento.\n\n"
+        "Equipo FinalRep"
+    )
+    html = _html("Actualizacion de inscripcion", f"""\
+      <p>Hola <strong>{nombre}</strong>,</p>
+      <p>Tu inscripcion en esta competencia fue transferida por el organizador.</p>
+      <hr class="divider">
+      <p class="detail"><span>Competencia:</span> <strong>{competition_name}</strong></p>
+      <p class="detail"><span>Categoria:</span> {category_name}</p>
+      <hr class="divider">
+      <p>Si no reconoces este cambio o necesitas ayuda, contacta al organizador del evento.</p>
+      <p class="muted">Consultas: <a href="mailto:support@finalrep.co" style="color:#e63946;">support@finalrep.co</a></p>
+    """)
+    return subject, text, html
+
+
+# ---------------------------------------------------------------------------
+# 6. Solicitud de organizador recibida (al usuario)
 # ---------------------------------------------------------------------------
 
 def render_organizer_application_received(*, nombre: str) -> tuple[str, str, str]:
