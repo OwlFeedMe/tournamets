@@ -61,6 +61,30 @@ class EnrollmentProfileStepTwoContractTest(unittest.TestCase):
         self.assertNotIn("Completa tu perfil antes de continuar con esta inscripcion.", source)
         self.assertNotIn(">Completar perfil<", source)
 
+    def test_discount_is_applied_before_bold_checkout_and_validated_against_bold_amount(self):
+        source = ENROLLMENT_PAGE_PATH.read_text(encoding="utf-8")
+
+        discount_position = source.index("Codigo de descuento")
+        category_list_position = source.index("categories.map((category)")
+        step_four_position = source.index("title={isFreeEnrollment ? 'Confirmar inscripcion' : 'Pago de inscripcion'}")
+        bold_request_position = source.index("api.post(`/competitions/${competition.id}/bold-checkout`")
+        bold_validation_position = source.index("if (!validateBoldCheckoutPricing(data))")
+        bold_config_position = source.index("setBoldButtonConfig(data || null)", bold_request_position)
+
+        self.assertLess(discount_position, category_list_position)
+        self.assertLess(discount_position, step_four_position)
+        self.assertLess(bold_request_position, bold_validation_position)
+        self.assertLess(bold_validation_position, bold_config_position)
+        self.assertIn("categoryDiscountAmount = isSelected ? (appliedDiscount?.discount_amount ?? 0) : 0", source)
+        self.assertIn("Math.max(0, categoryBasePrice - categoryDiscountAmount)", source)
+        self.assertIn("discount_code: appliedDiscount?.code || null", source)
+        self.assertIn("const validateBoldCheckoutPricing = (checkout) =>", source)
+        self.assertIn("checkoutAmount === pricing.totalPrice", source)
+        self.assertIn("checkoutDiscountAmount === pricing.discountAmount", source)
+        self.assertIn("checkoutDiscountCode === expectedDiscountCode", source)
+        self.assertIn("if (!validateBoldCheckoutPricing(data))", source)
+        self.assertIn("El total de pago cambio. Revisa el descuento y vuelve a preparar el pago.", source)
+
 
 if __name__ == "__main__":
     unittest.main()

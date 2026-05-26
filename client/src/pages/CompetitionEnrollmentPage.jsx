@@ -498,8 +498,11 @@ export default function CompetitionEnrollmentPage() {
 
   useEffect(() => {
     setBoldButtonConfig(null)
-    setAppliedDiscount(null)
   }, [selectedCategory, competitionTermsAccepted, appTermsAccepted, JSON.stringify(answers)])
+
+  useEffect(() => {
+    setAppliedDiscount(null)
+  }, [selectedCategory])
 
   const uploadEnrollmentImage = async (file, onSuccess, onState) => {
     if (!file) return ''
@@ -641,6 +644,20 @@ export default function CompetitionEnrollmentPage() {
     discount_code: appliedDiscount?.code || null,
   })
 
+  const validateBoldCheckoutPricing = (checkout) => {
+    const checkoutAmount = Number(checkout?.amount)
+    const checkoutPricing = checkout?.pricing || {}
+    const checkoutDiscountAmount = Number(checkoutPricing.discount_amount || 0)
+    const checkoutDiscountCode = checkoutPricing.discount_code || null
+    const expectedDiscountCode = appliedDiscount?.code || null
+
+    return (
+      checkoutAmount === pricing.totalPrice
+      && checkoutDiscountAmount === pricing.discountAmount
+      && checkoutDiscountCode === expectedDiscountCode
+    )
+  }
+
   const syncPaymentStatus = async ({ silent = false } = {}) => {
     if (!competition) return null
     setSyncingPayment(true)
@@ -696,6 +713,11 @@ export default function CompetitionEnrollmentPage() {
     setMsg(null)
     try {
       const { data } = await api.post(`/competitions/${competition.id}/bold-checkout`, buildEnrollmentPayload())
+      if (!validateBoldCheckoutPricing(data)) {
+        setBoldButtonConfig(null)
+        setMsg({ type: 'error', text: 'El total de pago cambio. Revisa el descuento y vuelve a preparar el pago.' })
+        return false
+      }
       setPaymentStatus(null)
       setPaymentReference('')
       setPaymentTransactionId('')
@@ -847,10 +869,28 @@ export default function CompetitionEnrollmentPage() {
           {currentStep === 1 ? (
             <StepCard number="1" title="Elegir categoria" hint="Revisa cada descripcion y selecciona la categoria que mejor corresponda a tu inscripcion.">
               {categories.length ? (
-                <div style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 14 }}>
+                  <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14, display: 'grid', gap: 10 }}>
+                    <div style={{ display: 'grid', gap: 4 }}>
+                      <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>Codigo de descuento</div>
+                      <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5 }}>
+                        Aplica tu codigo antes de continuar. El total actualizado aparece en la categoria seleccionada.
+                      </div>
+                    </div>
+                    <DiscountInput
+                      competitionId={competition.id}
+                      categoria={selectedCategory}
+                      applied={appliedDiscount}
+                      onApply={(result) => { setAppliedDiscount(result); setBoldButtonConfig(null) }}
+                      onClear={() => { setAppliedDiscount(null); setBoldButtonConfig(null) }}
+                    />
+                  </div>
                   {categories.map((category) => {
                     const isSelected = selectedCategory === category.nombre
                     const isExpanded = expandedCategoryId === category.id
+                    const categoryBasePrice = normalizeEnrollmentPrice(category.enrollment_price)
+                    const categoryDiscountAmount = isSelected ? (appliedDiscount?.discount_amount ?? 0) : 0
+                    const categoryPricing = calculateEnrollmentPricing(Math.max(0, categoryBasePrice - categoryDiscountAmount), platformFeeRate, minPlatformFee)
                     return (
                       <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(94,234,212,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden' }}>
                         <button type="button" onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: 'pointer', display: 'grid', gap: 8 }}>
@@ -859,9 +899,15 @@ export default function CompetitionEnrollmentPage() {
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(214,217,224,0.14)', color: '#FFB36F', fontSize: 11, fontWeight: 800 }}>
-                                  {formatCop(calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee).totalPrice)}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: categoryDiscountAmount > 0 ? 'rgba(94,234,212,0.14)' : 'rgba(214,217,224,0.14)', color: categoryDiscountAmount > 0 ? '#8DF1E4' : '#FFB36F', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
+                                  {categoryDiscountAmount > 0 ? (
+                                    <span style={{ color: '#7E8796', textDecoration: 'line-through' }}>
+                                      {formatCop(calculateEnrollmentPricing(categoryBasePrice, platformFeeRate, minPlatformFee).totalPrice)}
+                                    </span>
+                                  ) : null}
+                                  {formatCop(categoryPricing.totalPrice)}
                                 </span>
+                                {categoryDiscountAmount > 0 ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.10)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}>-{formatCop(categoryDiscountAmount)}</span> : null}
                               </div>
                               <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
                                 {category.descripcion?.trim() ? (category.descripcion.length > 120 ? `${category.descripcion.slice(0, 119)}...` : category.descripcion) : 'Sin descripcion adicional.'}
@@ -1084,19 +1130,6 @@ export default function CompetitionEnrollmentPage() {
                   <div style={{ display: 'grid', gap: 10 }}>
                     <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 16, display: 'grid', gap: 12 }}>
                       <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 16 }}>{selectedCategoryData.nombre}</div>
-
-                      {!boldButtonConfig && !paymentInProgress && !isFreeEnrollment ? (
-                        <div>
-                          <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Codigo de descuento (opcional)</div>
-                          <DiscountInput
-                            competitionId={competition.id}
-                            categoria={selectedCategory}
-                            applied={appliedDiscount}
-                            onApply={(result) => { setAppliedDiscount(result); setBoldButtonConfig(null) }}
-                            onClear={() => { setAppliedDiscount(null); setBoldButtonConfig(null) }}
-                          />
-                        </div>
-                      ) : null}
 
                       {isFreeEnrollment ? (
                         <div style={{ borderRadius: 14, border: '1px solid rgba(94,234,212,0.24)', background: 'rgba(94,234,212,0.08)', padding: 12 }}>
