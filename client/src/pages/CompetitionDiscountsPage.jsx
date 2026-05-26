@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, Trash2, ToggleLeft, ToggleRight, Eye, X, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/axios'
 
@@ -135,7 +136,7 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
   }
   const labelStyle = { color: '#AAB2C0', fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }
 
-  return (
+  const modalNode = (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
       <div style={{ width: '100%', maxWidth: 520, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
@@ -226,6 +227,9 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modalNode
+  return createPortal(modalNode, document.body)
 }
 
 function UsageLogModal({ discount, competitionId, onClose }) {
@@ -241,7 +245,7 @@ function UsageLogModal({ discount, competitionId, onClose }) {
       .finally(() => setLoading(false))
   }, [competitionId, discount.id])
 
-  return (
+  const modalNode = (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
       <div style={{ width: '100%', maxWidth: 680, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
@@ -288,6 +292,9 @@ function UsageLogModal({ discount, competitionId, onClose }) {
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return modalNode
+  return createPortal(modalNode, document.body)
 }
 
 export default function CompetitionDiscountsPage({ competition }) {
