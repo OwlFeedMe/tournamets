@@ -137,7 +137,7 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
-      <div style={{ width: '100%', maxWidth: 520, height: 'min(100%, 720px)', background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '100%', maxWidth: 520, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>Nuevo codigo de descuento</div>
           <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex', padding: 6, flexShrink: 0 }}><X size={20} /></button>
@@ -243,7 +243,7 @@ function UsageLogModal({ discount, competitionId, onClose }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
-      <div style={{ width: '100%', maxWidth: 680, height: 'min(100%, 640px)', background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '100%', maxWidth: 680, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div>
             <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Log de usos — {discount.code}</div>
