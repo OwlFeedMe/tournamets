@@ -4,6 +4,45 @@ import api from '../api/axios'
 
 const MAX_DISCOUNT_PERCENTAGE = 80
 
+function useModalBodyLock() {
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+
+    const { body, documentElement } = document
+    const currentCount = Number(body.dataset.frModalLockCount || 0)
+
+    if (currentCount === 0) {
+      body.dataset.frPreviousOverflow = body.style.overflow
+      body.dataset.frPreviousTouchAction = body.style.touchAction
+      documentElement.dataset.frPreviousOverflow = documentElement.style.overflow
+    }
+
+    body.dataset.frModalLockCount = String(currentCount + 1)
+    body.classList.add('fr-modal-open')
+    body.style.overflow = 'hidden'
+    body.style.touchAction = 'none'
+    documentElement.style.overflow = 'hidden'
+    window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: true } }))
+
+    return () => {
+      const nextCount = Math.max(0, Number(body.dataset.frModalLockCount || 1) - 1)
+      body.dataset.frModalLockCount = String(nextCount)
+
+      if (nextCount === 0) {
+        body.classList.remove('fr-modal-open')
+        body.style.overflow = body.dataset.frPreviousOverflow || ''
+        body.style.touchAction = body.dataset.frPreviousTouchAction || ''
+        documentElement.style.overflow = documentElement.dataset.frPreviousOverflow || ''
+        delete body.dataset.frModalLockCount
+        delete body.dataset.frPreviousOverflow
+        delete body.dataset.frPreviousTouchAction
+        delete documentElement.dataset.frPreviousOverflow
+        window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+      }
+    }
+  }, [])
+}
+
 function formatCop(value) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(Number(value || 0))
 }
@@ -44,6 +83,8 @@ function UsageBar({ uses_count, max_uses }) {
 }
 
 function DiscountFormModal({ competition, categories, onSave, onClose }) {
+  useModalBodyLock()
+
   const [form, setForm] = useState({
     code: '',
     description: '',
@@ -99,14 +140,14 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
   const labelStyle = { color: '#AAB2C0', fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ width: '100%', maxWidth: 520, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #252A33' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden' }}>
+      <div style={{ width: '100%', maxWidth: 520, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>Nuevo codigo de descuento</div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex' }}><X size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex', padding: 6, flexShrink: 0 }}><X size={20} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ flex: 1, overflowY: 'auto', padding: 20, display: 'grid', gap: 14 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 20, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             <div>
               <label style={labelStyle}>Codigo *</label>
               <input style={inputStyle} value={form.code} onChange={e => set('code', e.target.value.toUpperCase().replace(/[^A-Z0-9_\-]/g, ''))} placeholder="PROMO20" maxLength={50} required />
@@ -145,7 +186,7 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
             <input style={inputStyle} value={form.description} onChange={e => set('description', e.target.value)} placeholder="Para atletas early-bird" maxLength={200} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             <div>
               <label style={labelStyle}>Limite de usos total</label>
               <input style={inputStyle} type="number" min={1} value={form.max_uses} onChange={e => set('max_uses', e.target.value)} placeholder="Sin limite" />
@@ -166,7 +207,7 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
             </select>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             <div>
               <label style={labelStyle}>Vigente desde</label>
               <input style={inputStyle} type="datetime-local" value={form.valid_from} onChange={e => set('valid_from', e.target.value)} />
@@ -179,7 +220,7 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
 
           {error ? <div style={{ color: '#FFB36F', fontSize: 13, padding: '10px 12px', borderRadius: 10, background: 'rgba(255,107,0,0.08)', border: '1px solid rgba(255,107,0,0.3)' }}>{error}</div> : null}
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', paddingTop: 4 }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap', paddingTop: 4 }}>
             <button type="button" onClick={onClose} style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid #252A33', background: 'transparent', color: '#AAB2C0', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>Cancelar</button>
             <button type="submit" disabled={saving} style={{ padding: '9px 22px', borderRadius: 10, border: 'none', background: saving ? 'rgba(214,217,224,0.08)' : 'linear-gradient(135deg,#D6D9E0,#F1F4F8)', color: '#0D0F12', fontSize: 13, fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer' }}>
               {saving ? 'Creando...' : 'Crear codigo'}
@@ -192,6 +233,8 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
 }
 
 function UsageLogModal({ discount, competitionId, onClose }) {
+  useModalBodyLock()
+
   const [usages, setUsages] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -203,16 +246,16 @@ function UsageLogModal({ discount, competitionId, onClose }) {
   }, [competitionId, discount.id])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ width: '100%', maxWidth: 680, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #252A33' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden' }}>
+      <div style={{ width: '100%', maxWidth: 680, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div>
             <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Log de usos — {discount.code}</div>
             <div style={{ color: '#7E8796', fontSize: 12, marginTop: 2 }}>{discount.uses_count} uso{discount.uses_count !== 1 ? 's' : ''} registrado{discount.uses_count !== 1 ? 's' : ''}</div>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex' }}><X size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex', padding: 6, flexShrink: 0 }}><X size={20} /></button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 20 }}>
           {loading ? (
             <div style={{ color: '#7E8796', fontSize: 14 }}>Cargando...</div>
           ) : !usages.length ? (
