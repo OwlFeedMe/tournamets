@@ -13,14 +13,12 @@ function useModalBodyLock() {
 
     if (currentCount === 0) {
       body.dataset.frPreviousOverflow = body.style.overflow
-      body.dataset.frPreviousTouchAction = body.style.touchAction
       documentElement.dataset.frPreviousOverflow = documentElement.style.overflow
     }
 
     body.dataset.frModalLockCount = String(currentCount + 1)
     body.classList.add('fr-modal-open')
     body.style.overflow = 'hidden'
-    body.style.touchAction = 'none'
     documentElement.style.overflow = 'hidden'
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: true } }))
 
@@ -31,11 +29,9 @@ function useModalBodyLock() {
       if (nextCount === 0) {
         body.classList.remove('fr-modal-open')
         body.style.overflow = body.dataset.frPreviousOverflow || ''
-        body.style.touchAction = body.dataset.frPreviousTouchAction || ''
         documentElement.style.overflow = documentElement.dataset.frPreviousOverflow || ''
         delete body.dataset.frModalLockCount
         delete body.dataset.frPreviousOverflow
-        delete body.dataset.frPreviousTouchAction
         delete documentElement.dataset.frPreviousOverflow
         window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
       }
@@ -140,13 +136,13 @@ function DiscountFormModal({ competition, categories, onSave, onClose }) {
   const labelStyle = { color: '#AAB2C0', fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 5 }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden' }}>
-      <div style={{ width: '100%', maxWidth: 520, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
+      <div style={{ width: '100%', maxWidth: 520, height: 'min(100%, 720px)', background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>Nuevo codigo de descuento</div>
           <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex', padding: 6, flexShrink: 0 }}><X size={20} /></button>
         </div>
-        <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 20, display: 'grid', gap: 14 }}>
+        <form onSubmit={handleSubmit} style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: 20, display: 'grid', gap: 14 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             <div>
               <label style={labelStyle}>Codigo *</label>
@@ -246,8 +242,8 @@ function UsageLogModal({ discount, competitionId, onClose }) {
   }, [competitionId, discount.id])
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden' }}>
-      <div style={{ width: '100%', maxWidth: 680, background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(12px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px))', overflow: 'hidden', overscrollBehavior: 'contain' }}>
+      <div style={{ width: '100%', maxWidth: 680, height: 'min(100%, 640px)', background: '#171B21', border: '1px solid #252A33', borderRadius: 20, overflow: 'hidden', maxHeight: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '16px 20px', borderBottom: '1px solid #252A33', flexShrink: 0 }}>
           <div>
             <div style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>Log de usos — {discount.code}</div>
@@ -255,7 +251,7 @@ function UsageLogModal({ discount, competitionId, onClose }) {
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7E8796', display: 'flex', padding: 6, flexShrink: 0 }}><X size={20} /></button>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 20 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: 20 }}>
           {loading ? (
             <div style={{ color: '#7E8796', fontSize: 14 }}>Cargando...</div>
           ) : !usages.length ? (
