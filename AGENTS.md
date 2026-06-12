@@ -58,6 +58,14 @@ Este proyecto ya no se llama `Loyalty Race` ni `OpenArena`. La marca correcta es
 - Si una pantalla necesita un header destacado, usar el gradiente de marca
 - Si hay una decisión entre color decorativo y legibilidad, priorizar legibilidad
 
+## Flujo de ramas y deploy
+- Todo cambio de codigo, configuracion o infraestructura debe ir primero y siempre a `staging`.
+- Nunca hacer push, commit operativo, deploy ni cambios directos sobre `main` salvo autorizacion explicita.
+- `staging` despliega en `stage.finalrep.co` y debe usarse para validar antes de produccion.
+- El merge de `staging` a `main` debe ser pedido de forma explicita y escrita por el usuario.
+- Si el usuario no escribe claramente que se haga merge/deploy a produccion, no se toca `main`.
+- Produccion es `finalrep.co`; stage es `stage.finalrep.co`.
+
 ## Produccion
 - Servidor: `157.230.89.205`
 - SSH: `ssh -i ~/.ssh/finalrep root@157.230.89.205`
