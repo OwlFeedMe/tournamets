@@ -57,3 +57,9 @@ Este proyecto ya no se llama `Loyalty Race` ni `OpenArena`. La marca correcta es
 - Preferir variables CSS o constantes compartidas para colores
 - Si una pantalla necesita un header destacado, usar el gradiente de marca
 - Si hay una decisión entre color decorativo y legibilidad, priorizar legibilidad
+
+## Produccion
+- Servidor: `157.230.89.205`
+- SSH: `ssh -i ~/.ssh/finalrep root@157.230.89.205`
+- Ruta del proyecto: `/opt/finalrep`
+- Deploy automatico: `ops/finalrep-autodeploy.service` ejecuta `/opt/finalrep/deploy.auto.sh`

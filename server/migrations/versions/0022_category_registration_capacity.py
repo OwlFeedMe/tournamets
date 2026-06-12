@@ -1,13 +1,13 @@
 """add category registration capacity controls
 
-Revision ID: 0022_category_registration_capacity
+Revision ID: 0022_category_capacity
 Revises: 0020_allow_free_categories
 Create Date: 2026-06-12
 """
 from alembic import op
 
 
-revision = "0022_category_registration_capacity"
+revision = "0022_category_capacity"
 down_revision = "0020_allow_free_categories"
 branch_labels = None
 depends_on = None
