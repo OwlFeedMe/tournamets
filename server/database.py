@@ -6,6 +6,7 @@ from typing import Generator
 from alembic import command
 from alembic.config import Config
 from dotenv import load_dotenv
+from sqlalchemy import text
 from sqlmodel import Session, create_engine
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,11 @@ def get_session() -> Generator[Session, None, None]:
 
 
 def run_db_migrations() -> None:
-    alembic_config = Config(str(ALEMBIC_INI_PATH))
-    alembic_config.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
-    command.upgrade(alembic_config, "head")
+    with engine.connect() as lock_connection:
+        lock_connection.execute(text("SELECT pg_advisory_lock(91304022)"))
+        try:
+            alembic_config = Config(str(ALEMBIC_INI_PATH))
+            alembic_config.set_main_option("script_location", str(ALEMBIC_SCRIPT_LOCATION))
+            command.upgrade(alembic_config, "head")
+        finally:
+            lock_connection.execute(text("SELECT pg_advisory_unlock(91304022)"))
