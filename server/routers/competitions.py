@@ -33,6 +33,7 @@ from models import (
 from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.category_registration import get_category_usage, serialize_category_with_registration
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -656,7 +657,7 @@ def get_public_competition_detail(
 
     categories = session.execute(
         text("""
-            SELECT id, nombre, descripcion, orden, modality, enrollment_price
+            SELECT id, nombre, descripcion, orden, modality, enrollment_price, max_capacity, registration_enabled
             FROM competition_categories
             WHERE competition_id = :cid
             ORDER BY modality, orden, nombre
@@ -727,8 +728,9 @@ def get_public_competition_detail(
     normalized_phases = filter_visible_phases(normalized_phases)
 
     normalized_categories = []
+    category_usage = get_category_usage(session, competition_id_int)
     for category in categories:
-        item = dict(category)
+        item = serialize_category_with_registration(dict(category), category_usage)
         item["modality"] = _normalize_modality(item.get("modality"))
         item["enrollment_price"] = max(0, int(item.get("enrollment_price") or 0))
         normalized_categories.append(item)

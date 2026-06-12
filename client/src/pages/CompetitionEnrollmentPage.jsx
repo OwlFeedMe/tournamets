@@ -58,6 +58,34 @@ function formatCop(value) {
   }).format(Number(value || 0))
 }
 
+function categoryRegistrationStatus(category) {
+  const status = String(category?.registration_status || '').trim()
+  if (status) return status
+  if (category?.registration_enabled === false || Number(category?.registration_enabled) === 0) return 'closed_by_organizer'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const reservedCount = Number(category?.reserved_count ?? category?.registered_count ?? 0)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0 && reservedCount >= maxCapacity) return 'full'
+  return 'open'
+}
+
+function categoryIsOpen(category) {
+  return categoryRegistrationStatus(category) === 'open'
+}
+
+function categoryCapacityLabel(category) {
+  const status = categoryRegistrationStatus(category)
+  if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
+  if (status === 'full') return 'Cupo lleno'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const registeredCount = Number(category?.registered_count || 0)
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
+    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    return `${registeredCount} / ${maxCapacity} inscritos`
+  }
+  return 'Sin limite de cupos'
+}
+
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
 const BOLD_BUTTON_LIBRARY_ID = 'bold-payment-button-library'
 const ENROLLMENT_INTRO_COPY = 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'
@@ -414,8 +442,14 @@ export default function CompetitionEnrollmentPage() {
       const missingFields = isAthlete ? getMissingParticipantProfileFields(profile) : []
       setPayload(publicPayload)
       setCategories(categoryItems)
-      setSelectedCategory(mineRecord?.enrollment_categoria || categoryItems[0]?.nombre || '')
-      setExpandedCategoryId(categoryItems[0]?.id ?? null)
+      const firstOpenCategory = categoryItems.find(categoryIsOpen)
+      const selectedFromMine = mineRecord?.enrollment_categoria || ''
+      const selectedFromList = categoryItems.find(category => category.nombre === selectedFromMine)
+      const nextSelectedCategory = selectedFromList
+        ? selectedFromMine
+        : (firstOpenCategory?.nombre || '')
+      setSelectedCategory(nextSelectedCategory)
+      setExpandedCategoryId((selectedFromList || firstOpenCategory || categoryItems[0])?.id ?? null)
       setEnrollmentState(mineRecord?.enrollment_estado || null)
       setPaymentStatus(mineRecord?.payment_status || null)
       setPaymentReference(mineRecord?.payment_reference || '')
@@ -439,6 +473,7 @@ export default function CompetitionEnrollmentPage() {
   const bannerUrl = resolveCompetitionAsset(competition, 'banner')
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   const selectedCategoryData = useMemo(() => categories.find(category => category.nombre === selectedCategory) || null, [categories, selectedCategory])
+  const selectedCategoryUnavailable = !!selectedCategoryData && !categoryIsOpen(selectedCategoryData)
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
   const countryNameByCode = useMemo(() => Object.fromEntries(countries.map((country) => [country.code, country.name])), [countries])
@@ -460,7 +495,7 @@ export default function CompetitionEnrollmentPage() {
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
-  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || !userCanSubmit
+  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || selectedCategoryUnavailable || !userCanSubmit
   const outstandingProfileMissingFields = useMemo(() => profileMissingFields.filter((fieldKey) => {
     if (fieldKey === 'perfil') return true
     if (fieldKey === 'ciudad_pais') return !cityCountryComplete
@@ -600,6 +635,7 @@ export default function CompetitionEnrollmentPage() {
 
   const validateBeforeConfirmation = () => {
     if (categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
+    if (selectedCategoryUnavailable) return 'Esta categoria no recibe mas inscripciones.'
     if (outstandingProfileMissingFields.length) return 'Completa los datos obligatorios del atleta antes de continuar.'
     for (const question of questions) {
       const value = String(answers[question.id] || '').trim()
@@ -612,6 +648,7 @@ export default function CompetitionEnrollmentPage() {
 
   const validateStep = (step) => {
     if (step === 1 && categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
+    if (step === 1 && selectedCategoryUnavailable) return 'Esta categoria no recibe mas inscripciones.'
     if (step === 2) {
       const profileError = validateMissingProfileFields()
       if (profileError) return profileError
@@ -870,6 +907,11 @@ export default function CompetitionEnrollmentPage() {
             <StepCard number="1" title="Elegir categoria" hint="Revisa cada descripcion y selecciona la categoria que mejor corresponda a tu inscripcion.">
               {categories.length ? (
                 <div style={{ display: 'grid', gap: 14 }}>
+                  {!categories.some(categoryIsOpen) ? (
+                    <div style={{ borderRadius: 16, border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
+                      No hay categorias disponibles para inscripcion en este momento.
+                    </div>
+                  ) : null}
                   <div style={{ borderRadius: 18, border: '1px solid #252A33', background: 'rgba(13,15,18,0.58)', padding: 14, display: 'grid', gap: 10 }}>
                     <div style={{ display: 'grid', gap: 4 }}>
                       <div style={{ color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>Codigo de descuento</div>
@@ -888,17 +930,22 @@ export default function CompetitionEnrollmentPage() {
                   {categories.map((category) => {
                     const isSelected = selectedCategory === category.nombre
                     const isExpanded = expandedCategoryId === category.id
+                    const isOpen = categoryIsOpen(category)
+                    const capacityLabel = categoryCapacityLabel(category)
                     const categoryBasePrice = normalizeEnrollmentPrice(category.enrollment_price)
                     const categoryDiscountAmount = isSelected ? (appliedDiscount?.discount_amount ?? 0) : 0
                     const categoryPricing = calculateEnrollmentPricing(Math.max(0, categoryBasePrice - categoryDiscountAmount), platformFeeRate, minPlatformFee)
                     return (
-                      <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(94,234,212,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden' }}>
-                        <button type="button" onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: 'pointer', display: 'grid', gap: 8 }}>
+                      <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(94,234,212,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden', opacity: isOpen ? 1 : 0.72 }}>
+                        <button type="button" disabled={!isOpen} onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: isOpen ? 'pointer' : 'not-allowed', display: 'grid', gap: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                             <div>
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: isOpen ? 'rgba(0,194,168,0.14)' : 'rgba(107,114,128,0.16)', color: isOpen ? '#8DF1E4' : '#D7DEE8', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
+                                  {capacityLabel}
+                                </span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: categoryDiscountAmount > 0 ? 'rgba(94,234,212,0.14)' : 'rgba(214,217,224,0.14)', color: categoryDiscountAmount > 0 ? '#8DF1E4' : '#FFB36F', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
                                   {categoryDiscountAmount > 0 ? (
                                     <span style={{ color: '#7E8796', textDecoration: 'line-through' }}>

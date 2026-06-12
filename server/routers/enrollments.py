@@ -37,6 +37,7 @@ from services.email_templates import (
     render_enrollment_transferred_out,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.category_registration import ensure_category_registration_available
 from routers.ticketing import apply_spectator_bold_notification
 
 logger = logging.getLogger(__name__)
@@ -947,6 +948,7 @@ def free_enroll(
     ).first()
     if not category:
         raise HTTPException(404, "Categoria no encontrada")
+    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     applied_discount = None
     discount_id = None
@@ -1056,6 +1058,18 @@ def self_enroll(
     if existing.estado in ("confirmado", "pendiente"):
         raise HTTPException(409, f"Ya tienes una inscripcion con estado: {existing.estado}")
 
+    category_name = str(body.categoria or existing.categoria or "").strip()
+    if not category_name:
+        raise HTTPException(400, "Selecciona una categoria para continuar")
+    category = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .where(CompetitionCategory.nombre == category_name)
+    ).first()
+    if not category:
+        raise HTTPException(404, "Categoria no encontrada")
+    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
+
     questions = _parse_enrollment_questions(comp.enrollment_questions)
     extra_items = []
     if comp.enrollment_terms_text and not body.terms_accepted:
@@ -1069,7 +1083,7 @@ def self_enroll(
         })
     serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
 
-    existing.categoria = body.categoria
+    existing.categoria = category_name
     existing.estado = "confirmado"
     existing.enrollment_answers = serialized_answers
     existing.payment_processed_at = existing.payment_processed_at or datetime.now(timezone.utc)
@@ -1106,6 +1120,7 @@ def create_bold_checkout(
     ).first()
     if not category:
         raise HTTPException(404, "Categoria no encontrada")
+    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     questions = _parse_enrollment_questions(comp.enrollment_questions)
     extra_items = []
@@ -1295,6 +1310,16 @@ def activate_bold_intent(
         return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
     if status != "prepared":
         return _with_user_id({"ok": True, "payment_status": intent.payment_status, "reference": reference}, user_id)
+
+    category_name = str(intent.categoria or "").strip()
+    category = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .where(CompetitionCategory.nombre == category_name)
+    ).first()
+    if not category:
+        raise HTTPException(404, "Categoria no encontrada")
+    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     intent.payment_status = "created"
     intent.payment_updated_at = datetime.now(timezone.utc)

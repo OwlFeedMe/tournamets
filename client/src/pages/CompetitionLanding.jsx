@@ -54,6 +54,34 @@ function splitCategoryDescription(raw) {
   }
 }
 
+function categoryRegistrationStatus(category) {
+  const status = String(category?.registration_status || '').trim()
+  if (status) return status
+  if (category?.registration_enabled === false || Number(category?.registration_enabled) === 0) return 'closed_by_organizer'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const reservedCount = Number(category?.reserved_count ?? category?.registered_count ?? 0)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0 && reservedCount >= maxCapacity) return 'full'
+  return 'open'
+}
+
+function categoryIsOpen(category) {
+  return categoryRegistrationStatus(category) === 'open'
+}
+
+function categoryCapacityLabel(category) {
+  const status = categoryRegistrationStatus(category)
+  if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
+  if (status === 'full') return 'Cupo lleno'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const registeredCount = Number(category?.registered_count || 0)
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
+    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    return `${registeredCount} / ${maxCapacity} inscritos`
+  }
+  return 'Sin limite de cupos'
+}
+
 function parseLandingSections(raw) {
   if (!raw) return null
   try {
@@ -598,7 +626,15 @@ export default function CompetitionLanding() {
   )
   const isUpcomingCompetition = !!(competitionStartDate && competitionStartDate.getTime() > Date.now())
   const canSeeMySchedule = !!(session && userId && myEnrollmentState === 'confirmado')
-  const enrollmentButton = enrollmentButtonState(competition, isAthlete, myEnrollmentState)
+  const individualRegistrationCategories = Array.isArray(categoriesByModality.individual) && categoriesByModality.individual.length
+    ? categoriesByModality.individual
+    : categories.filter(category => String(category?.modality || 'individual').trim().toLowerCase() === 'individual')
+  const categoryEnrollmentBlocked = competition?.enrollment_open
+    && individualRegistrationCategories.length > 0
+    && !individualRegistrationCategories.some(categoryIsOpen)
+  const enrollmentButton = categoryEnrollmentBlocked
+    ? { label: 'Sin cupos disponibles', disabled: true }
+    : enrollmentButtonState(competition, isAthlete, myEnrollmentState)
   const secondaryCtaHref = !session ? '/login' : isAthlete ? registerHref : getHomePath(role)
   const secondaryCtaLabel = enrollmentButton.label
   const ticketingActive = !!spectatorTicketing?.enabled || !!(Array.isArray(spectatorTicketing?.ticket_products) && spectatorTicketing.ticket_products.length)
@@ -1248,6 +1284,8 @@ export default function CompetitionLanding() {
                               const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
                               const hasAnyDescription = !!(shortDescription || longDescription)
                               const hasPricing = pricing.totalPrice > 0
+                              const registrationStatus = categoryRegistrationStatus(category)
+                              const capacityLabel = categoryCapacityLabel(category)
                               const canExpand = hasAnyDescription || hasPricing
                               const CardTag = canExpand ? 'button' : 'div'
                               return (
@@ -1264,6 +1302,9 @@ export default function CompetitionLanding() {
                                       </div>
                                       <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                                         {modalityLabel(modality)}
+                                      </span>
+                                      <span style={{ padding: '5px 8px', borderRadius: 999, background: registrationStatus === 'open' ? hexToRgba(theme.accent, 0.12) : 'rgba(107,114,128,0.16)', border: `1px solid ${registrationStatus === 'open' ? hexToRgba(theme.accent, 0.24) : 'rgba(107,114,128,0.28)'}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                        {capacityLabel}
                                       </span>
                                     </div>
                                     {canExpand ? (

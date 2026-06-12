@@ -470,6 +470,8 @@ class CompetitionCategory(SQLModel, table=True):
     descripcion: Optional[str] = None
     modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
     enrollment_price: int = Field(default=0)
+    max_capacity: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    registration_enabled: int = Field(default=1)
     orden: int = Field(default=0)
 
 
@@ -1711,6 +1713,8 @@ class CategoryCreate(SQLModel):
     descripcion: Optional[str] = None
     modality: str = Modalidad.INDIVIDUAL
     enrollment_price: int = 0
+    max_capacity: Optional[int] = None
+    registration_enabled: int = 1
     orden: int = 0
 
 
@@ -1719,6 +1723,8 @@ class CategoryUpdate(SQLModel):
     descripcion: Optional[str] = None
     modality: Optional[str] = None
     enrollment_price: Optional[int] = None
+    max_capacity: Optional[int] = None
+    registration_enabled: Optional[int] = None
     orden: Optional[int] = None
 
 

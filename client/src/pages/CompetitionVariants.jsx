@@ -462,6 +462,30 @@ function splitCategoryDescription(raw) {
   }
 }
 
+function categoryRegistrationStatus(category) {
+  const status = String(category?.registration_status || '').trim()
+  if (status) return status
+  if (category?.registration_enabled === false || Number(category?.registration_enabled) === 0) return 'closed_by_organizer'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const reservedCount = Number(category?.reserved_count ?? category?.registered_count ?? 0)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0 && reservedCount >= maxCapacity) return 'full'
+  return 'open'
+}
+
+function categoryCapacityLabel(category) {
+  const status = categoryRegistrationStatus(category)
+  if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
+  if (status === 'full') return 'Cupo lleno'
+  const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
+  const registeredCount = Number(category?.registered_count || 0)
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
+    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    return `${registeredCount} / ${maxCapacity} inscritos`
+  }
+  return 'Sin limite de cupos'
+}
+
 function phaseStateLabel(state) {
   if (state === 'finalizada') return 'Finalizada'
   if (state === 'en_progreso') return 'En progreso'
@@ -550,11 +574,15 @@ function VariantThreeBody({ competition, payload, landingSections, scheduleItems
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                 {items.map((category) => {
                   const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
+                  const registrationStatus = categoryRegistrationStatus(category)
                   return (
                     <div key={category.id} className="fr-cut-card" style={{ border: '1px solid rgba(214,217,224,0.14)', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
                         <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>{category.nombre}</div>
-                        <span style={chipStyle()}>{modality === 'teams' ? 'Equipos' : 'Individual'}</span>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <span style={chipStyle()}>{modality === 'teams' ? 'Equipos' : 'Individual'}</span>
+                          <span style={{ ...chipStyle(), background: registrationStatus === 'open' ? 'rgba(0,194,168,0.12)' : 'rgba(107,114,128,0.16)' }}>{categoryCapacityLabel(category)}</span>
+                        </div>
                       </div>
                       <div style={{ marginTop: 8, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6 }}>
                         {shortDescription || 'Categoria pendiente por detallar.'}

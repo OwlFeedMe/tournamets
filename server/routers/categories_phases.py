@@ -23,6 +23,12 @@ from models import (
     CompetitionHeat,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.category_registration import (
+    get_category_usage,
+    normalize_capacity,
+    normalize_registration_enabled,
+    serialize_category_with_registration,
+)
 
 router = APIRouter(tags=["categories_phases"])
 PHASE_FORMATS_VALIDOS = {"activity", "wod"}
@@ -116,6 +122,13 @@ def _normalize_enrollment_price(raw: object) -> int:
     except Exception:
         value = 0
     return max(0, value)
+
+
+def _category_response(cat: CompetitionCategory, usage: dict[str, dict[str, int]] | None = None) -> dict:
+    payload = serialize_category_with_registration(cat, usage or {})
+    payload["modality"] = _normalize_modality(getattr(cat, "modality", None))
+    payload["enrollment_price"] = _normalize_enrollment_price(getattr(cat, "enrollment_price", 0))
+    return payload
 
 
 def _normalize_block_name(raw: str | None) -> str | None:
@@ -327,14 +340,8 @@ def list_categories(
     if modality:
         normalized = _normalize_modality(modality)
         items = [cat for cat in items if _normalize_modality(getattr(cat, "modality", None)) == normalized]
-    return [
-        {
-            **cat.model_dump(),
-            "modality": _normalize_modality(getattr(cat, "modality", None)),
-            "enrollment_price": _normalize_enrollment_price(getattr(cat, "enrollment_price", 0)),
-        }
-        for cat in items
-    ]
+    usage = get_category_usage(session, competition_id)
+    return [_category_response(cat, usage) for cat in items]
 
 
 @router.post("/api/competitions/{competition_id}/categories", status_code=201)
@@ -347,13 +354,16 @@ def create_category(competition_id: int, body: CategoryCreate,
         descripcion=body.descripcion,
         modality=_normalize_modality(body.modality),
         enrollment_price=_normalize_enrollment_price(body.enrollment_price),
+        max_capacity=normalize_capacity(body.max_capacity),
+        registration_enabled=normalize_registration_enabled(body.registration_enabled),
         orden=body.orden,
     )
     session.add(cat)
     session.commit()
     session.refresh(cat)
     invalidate_leaderboard_results_snapshot(competition_id)
-    return cat
+    usage = get_category_usage(session, competition_id)
+    return _category_response(cat, usage)
 
 
 @router.put("/api/competitions/{competition_id}/categories/{cat_id}")
@@ -373,16 +383,18 @@ def update_category(
         data["modality"] = _normalize_modality(data["modality"])
     if "enrollment_price" in data:
         data["enrollment_price"] = _normalize_enrollment_price(data["enrollment_price"])
+    if "max_capacity" in data:
+        data["max_capacity"] = normalize_capacity(data["max_capacity"])
+    if "registration_enabled" in data:
+        data["registration_enabled"] = normalize_registration_enabled(data["registration_enabled"])
     for key, value in data.items():
         setattr(cat, key, value)
     session.add(cat)
     session.commit()
     session.refresh(cat)
     invalidate_leaderboard_results_snapshot(competition_id)
-    payload = cat.model_dump()
-    payload["modality"] = _normalize_modality(getattr(cat, "modality", None))
-    payload["enrollment_price"] = _normalize_enrollment_price(getattr(cat, "enrollment_price", 0))
-    return payload
+    usage = get_category_usage(session, competition_id)
+    return _category_response(cat, usage)
 
 
 @router.delete("/api/competitions/{competition_id}/categories/{cat_id}", status_code=204)

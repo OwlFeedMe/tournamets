@@ -4190,7 +4190,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     rm_unit: 'kg',
   })
   const [cats, setCats] = useState([])
-  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0 })
+  const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0, max_capacity: '', registration_enabled: 1 })
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
   const [questions, setQuestions] = useState([])
@@ -4285,6 +4285,12 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         descripcion: c.descripcion || '',
         modality: c.modality || 'individual',
         enrollment_price: normalizeEnrollmentPrice(c.enrollment_price),
+        max_capacity: c.max_capacity == null ? '' : Number(c.max_capacity),
+        registration_enabled: c.registration_enabled === false || Number(c.registration_enabled) === 0 ? 0 : 1,
+        registered_count: Number(c.registered_count || 0),
+        reserved_count: Number(c.reserved_count || c.registered_count || 0),
+        available_spots: c.available_spots,
+        registration_status: c.registration_status || 'open',
       })))
       setPhases(phRes.data.map(p => {
         const activities = Array.isArray(p.activities) ? p.activities : []
@@ -4368,8 +4374,19 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     const nombre = newCat.nombre.trim()
     const descripcion = (newCat.descripcion || '').trim()
     if (!nombre) return false
-    setCats(prev => [...prev, { id: `new-cat-${Date.now()}`, nombre, descripcion, modality: newCat.modality || 'individual', enrollment_price: normalizeEnrollmentPrice(newCat.enrollment_price) }])
-    setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual', enrollment_price: 0 })
+    setCats(prev => [...prev, {
+      id: `new-cat-${Date.now()}`,
+      nombre,
+      descripcion,
+      modality: newCat.modality || 'individual',
+      enrollment_price: normalizeEnrollmentPrice(newCat.enrollment_price),
+      max_capacity: newCat.max_capacity === '' ? '' : Math.max(1, Number(newCat.max_capacity || 1)),
+      registration_enabled: newCat.registration_enabled ? 1 : 0,
+      registered_count: 0,
+      reserved_count: 0,
+      registration_status: newCat.registration_enabled ? 'open' : 'closed_by_organizer',
+    }])
+    setNewCat({ nombre: '', descripcion: '', modality: newCat.modality || 'individual', enrollment_price: 0, max_capacity: '', registration_enabled: 1 })
     return true
   }
 
@@ -4391,6 +4408,14 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   const updateCategoryPrice = (id, value) => {
     setCats(prev => prev.map(c => (c.id === id ? { ...c, enrollment_price: value } : c)))
+  }
+
+  const updateCategoryCapacity = (id, value) => {
+    setCats(prev => prev.map(c => (c.id === id ? { ...c, max_capacity: value === '' ? '' : Math.max(1, Number(value || 1)) } : c)))
+  }
+
+  const updateCategoryRegistrationEnabled = (id, value) => {
+    setCats(prev => prev.map(c => (c.id === id ? { ...c, registration_enabled: value ? 1 : 0 } : c)))
   }
 
   const updateLandingSectionField = (field, value) => {
@@ -4474,6 +4499,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         descripcion: String(c.descripcion || '').trim(),
         modality: c.modality === 'teams' ? 'teams' : 'individual',
         enrollment_price: normalizeEnrollmentPrice(c.enrollment_price),
+        max_capacity: c.max_capacity === '' || c.max_capacity == null ? null : Math.max(1, Number(c.max_capacity || 1)),
+        registration_enabled: c.registration_enabled === false || Number(c.registration_enabled) === 0 ? 0 : 1,
       }))
       .filter(c => c.nombre)
     const cleanPhases = phases
@@ -4628,6 +4655,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             descripcion: localCat.descripcion || null,
             modality: localCat.modality,
             enrollment_price: localCat.enrollment_price,
+            max_capacity: localCat.max_capacity,
+            registration_enabled: localCat.registration_enabled,
             orden: i,
           }
           if (persistedCatsById.has(String(localCat.id))) {
@@ -5658,6 +5687,18 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
                       <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Precio base</div>
                       <div style={{ color: '#F5F7FA', fontSize: 13 }}>{formatCop(normalizeEnrollmentPrice(cat.enrollment_price))}</div>
                     </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Cupos</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {cat.max_capacity ? `${Number(cat.registered_count || 0)} / ${cat.max_capacity} inscritos` : 'Sin limite'}
+                      </div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Inscripciones</div>
+                      <div style={{ color: cat.registration_enabled ? '#8DF1E4' : '#FCA5A5', fontSize: 13, fontWeight: 800 }}>
+                        {cat.registration_enabled ? 'Abiertas' : 'Cerradas'}
+                      </div>
+                    </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
                     <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: '10px 12px' }}>
@@ -6209,6 +6250,20 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <label>Precio base</label>
             <input type="number" min="0" step="1" value={newCat.enrollment_price === '' ? '' : (newCat.enrollment_price || 0)} onChange={e => setNewCat(prev => ({ ...prev, enrollment_price: e.target.value === '' ? '' : (Number(e.target.value) === 0 && prev.enrollment_price !== '' ? '' : e.target.value) }))} onFocus={e => { if (Number(e.target.value) === 0) setNewCat(prev => ({ ...prev, enrollment_price: '' })) }} placeholder="Precio base" />
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cupo maximo</label>
+            <input type="number" min="1" step="1" value={newCat.max_capacity} onChange={e => setNewCat(prev => ({ ...prev, max_capacity: e.target.value === '' ? '' : Math.max(1, Number(e.target.value || 1)) }))} placeholder="Sin limite" />
+          </div>
+          <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            {renderToggleCard({
+              label: 'Inscripciones abiertas',
+              hint: 'Si lo cierras, esta division no aparecera disponible en el formulario aunque tenga cupos.',
+              enabled: !!newCat.registration_enabled,
+              enabledText: 'Abiertas',
+              disabledText: 'Cerradas',
+              onClick: () => setNewCat(prev => ({ ...prev, registration_enabled: prev.registration_enabled ? 0 : 1 })),
+            })}
+          </div>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
             <label>Descripcion</label>
             <textarea value={newCat.descripcion} onChange={e => setNewCat(prev => ({ ...prev, descripcion: e.target.value }))} placeholder="Descripcion de la categoria" rows={4} />
@@ -6604,6 +6659,20 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>Precio base</label>
             <input type="number" min="0" step="1" value={editingCategory.enrollment_price === '' ? '' : (editingCategory.enrollment_price || 0)} onChange={e => updateCategoryPrice(editingCategory.id, e.target.value)} onFocus={e => { if (Number(e.target.value) === 0) updateCategoryPrice(editingCategory.id, '') }} placeholder="Precio base de inscripcion" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cupo maximo</label>
+            <input type="number" min="1" step="1" value={editingCategory.max_capacity || ''} onChange={e => updateCategoryCapacity(editingCategory.id, e.target.value)} placeholder="Sin limite" />
+          </div>
+          <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
+            {renderToggleCard({
+              label: 'Inscripciones abiertas',
+              hint: 'Si lo cierras, esta division no estara disponible para nuevas inscripciones.',
+              enabled: !!editingCategory.registration_enabled,
+              enabledText: 'Abiertas',
+              disabledText: 'Cerradas',
+              onClick: () => updateCategoryRegistrationEnabled(editingCategory.id, editingCategory.registration_enabled ? 0 : 1),
+            })}
           </div>
           <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? 'auto' : '1 / -1' }}>
             <label>Descripcion</label>
