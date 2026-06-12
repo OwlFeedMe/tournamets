@@ -52,6 +52,22 @@ PENDING_VERIFICATION_STATE = "pago_en_verificacion"
 SYSTEM_CHECKIN_PHASE_CODE = "check_in"
 
 
+def _bold_payments_disabled() -> bool:
+    app_env = str(os.getenv("APP_ENV") or "").strip().lower()
+    payments_enabled = str(os.getenv("PAYMENTS_ENABLED") or "").strip().lower()
+    payment_provider = str(os.getenv("PAYMENT_PROVIDER") or "").strip().lower()
+    return (
+        app_env in {"stage", "staging"}
+        or payments_enabled in {"0", "false", "no", "off", "disabled"}
+        or payment_provider in {"disabled", "off", "none"}
+    )
+
+
+def _ensure_bold_payments_enabled() -> None:
+    if _bold_payments_disabled():
+        raise HTTPException(403, "Los pagos con Bold estan deshabilitados en stage")
+
+
 def _parse_enrollment_questions(raw: str | None) -> list[dict]:
     if not raw:
         return []
@@ -1100,6 +1116,7 @@ def create_bold_checkout(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
+    _ensure_bold_payments_enabled()
     user_id = get_current_user_id(user)
     if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
@@ -1282,6 +1299,7 @@ def activate_bold_intent(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
+    _ensure_bold_payments_enabled()
     user_id = get_current_user_id(user)
     if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")

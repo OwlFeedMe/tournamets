@@ -30,6 +30,7 @@ services:
     environment:
       APP_ENV: stage
       ENVIRONMENT: stage
+      PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-0}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       CACHE_ENABLED: ${CACHE_ENABLED:-1}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://stage.finalrep.co}
@@ -59,6 +60,10 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile.prod
+      args:
+        VITE_APP_ENV: stage
+        VITE_PWA_APP_NAME: ${VITE_PWA_APP_NAME:-Stage FinalRep}
+        VITE_PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-0}
     container_name: finalrep-stage-frontend
     restart: unless-stopped
     depends_on:

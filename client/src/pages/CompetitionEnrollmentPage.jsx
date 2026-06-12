@@ -7,6 +7,7 @@ import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
+import { paymentsDisabled } from '../utils/environment'
 import DiscountInput from '../components/enrollment/DiscountInput'
 
 const pageBg =
@@ -492,6 +493,7 @@ export default function CompetitionEnrollmentPage() {
     }
   }, [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee, appliedDiscount])
   const isFreeEnrollment = pricing.totalPrice === 0
+  const directPaymentsDisabled = paymentsDisabled && !isFreeEnrollment
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
@@ -746,6 +748,11 @@ export default function CompetitionEnrollmentPage() {
       setMsg({ type: 'error', text: 'Esta categoria es gratuita. Usa el boton de inscripcion gratuita.' })
       return false
     }
+    if (directPaymentsDisabled) {
+      setBoldButtonConfig(null)
+      setMsg({ type: 'error', text: 'Los pagos con Bold estan deshabilitados en stage.' })
+      return false
+    }
     setCheckoutLoading(true)
     setMsg(null)
     try {
@@ -809,7 +816,7 @@ export default function CompetitionEnrollmentPage() {
       const saved = await saveMissingProfileFields()
       if (!saved) return
     }
-    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment) {
+    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment && !directPaymentsDisabled) {
       const ready = await prepareBoldCheckout()
       if (!ready) return
     }
@@ -1167,7 +1174,17 @@ export default function CompetitionEnrollmentPage() {
           ) : null}
 
           {currentStep === 4 ? (
-            <StepCard number="4" title={isFreeEnrollment ? 'Confirmar inscripcion' : 'Pago de inscripcion'} hint={isFreeEnrollment ? 'Esta categoria es gratuita. Confirma tu inscripcion con el boton de abajo.' : 'FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.'}>
+            <StepCard
+              number="4"
+              title={isFreeEnrollment ? 'Confirmar inscripcion' : 'Pago de inscripcion'}
+              hint={
+                isFreeEnrollment
+                  ? 'Esta categoria es gratuita. Confirma tu inscripcion con el boton de abajo.'
+                  : directPaymentsDisabled
+                    ? 'Stage no permite pagos directos con Bold.'
+                    : 'FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.'
+              }
+            >
               <div style={{ display: 'grid', gap: 14 }}>
                 {!selectedCategoryData ? (
                   <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
@@ -1207,7 +1224,7 @@ export default function CompetitionEnrollmentPage() {
                         </div>
                       )}
 
-                      {!isFreeEnrollment ? (
+                      {!isFreeEnrollment && !directPaymentsDisabled ? (
                         <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.6 }}>
                           El pago se procesa en Bold. FinalRep calcula automaticamente la comision de plataforma sobre el valor base de la categoria.
                         </div>
@@ -1219,7 +1236,11 @@ export default function CompetitionEnrollmentPage() {
                           {paymentTransactionId ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Transaccion Bold: {paymentTransactionId}</div> : null}
                         </div>
                       ) : null}
-                      {isFreeEnrollment ? (
+                      {directPaymentsDisabled ? (
+                        <div style={{ borderRadius: 14, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', padding: 12, color: '#F5F7FA', fontSize: 13, lineHeight: 1.6, fontWeight: 800 }}>
+                          Pagos con Bold deshabilitados en stage. No se puede continuar a pago directo.
+                        </div>
+                      ) : isFreeEnrollment ? (
                         <button
                           type="button"
                           className="btn-primary"

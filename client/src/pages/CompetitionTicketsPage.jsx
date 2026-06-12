@@ -3,6 +3,7 @@ import { ArrowLeft, Ticket } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
+import { paymentsDisabled } from '../utils/environment'
 
 const pageBg = 'radial-gradient(circle at top, rgba(255,107,0,0.16), transparent 28%), radial-gradient(circle at 85% 20%, rgba(0,194,168,0.12), transparent 24%), #0D0F12'
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
@@ -169,6 +170,11 @@ export default function CompetitionTicketsPage() {
   }, [quantity, unitPrice, pricingCfg])
 
   const startCheckout = async () => {
+    if (paymentsDisabled) {
+      setCheckoutConfig(null)
+      setMsg({ type: 'error', text: 'Los pagos con Bold estan deshabilitados en stage.' })
+      return
+    }
     setCheckoutLoading(true)
     setMsg(null)
     try {
@@ -263,7 +269,11 @@ export default function CompetitionTicketsPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}><span>Total a pagar</span><span>{formatCop(estimatedTotal.total)}</span></div>
           </div>
 
-          {!checkoutConfig ? (
+          {paymentsDisabled ? (
+            <div style={{ border: '1px solid rgba(245,158,11,0.30)', borderRadius: 12, background: 'rgba(245,158,11,0.10)', padding: 12, color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>
+              Pagos con Bold deshabilitados en stage. No se puede continuar a pago directo.
+            </div>
+          ) : !checkoutConfig ? (
             <button type="button" className="btn-primary" onClick={startCheckout} disabled={checkoutLoading}>
               {checkoutLoading ? 'Preparando pago...' : 'Continuar a pago con Bold'}
             </button>

@@ -55,6 +55,22 @@ _TICKETS_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "spectat
 _TICKETS_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _bold_payments_disabled() -> bool:
+    app_env = str(os.getenv("APP_ENV") or "").strip().lower()
+    payments_enabled = str(os.getenv("PAYMENTS_ENABLED") or "").strip().lower()
+    payment_provider = str(os.getenv("PAYMENT_PROVIDER") or "").strip().lower()
+    return (
+        app_env in {"stage", "staging"}
+        or payments_enabled in {"0", "false", "no", "off", "disabled"}
+        or payment_provider in {"disabled", "off", "none"}
+    )
+
+
+def _ensure_bold_payments_enabled() -> None:
+    if _bold_payments_disabled():
+        raise HTTPException(403, "Los pagos con Bold estan deshabilitados en stage")
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -972,6 +988,7 @@ def spectator_checkout(
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
+    _ensure_bold_payments_enabled()
     _ = user
     competition = session.get(Competition, competition_id)
     if not competition:
