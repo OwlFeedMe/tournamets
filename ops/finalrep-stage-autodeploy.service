@@ -1,0 +1,12 @@
+[Unit]
+Description=FinalRep stage auto deploy check
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/finalrep-stage
+Environment=BRANCH_NAME=staging
+Environment=LOCK_FILE=/tmp/finalrep-stage-auto-deploy.lock
+Environment=DEPLOY_SCRIPT=deploy.stage.sh
+ExecStart=/opt/finalrep-stage/deploy.auto.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run FinalRep stage auto deploy check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=finalrep-stage-autodeploy.service
+
+[Install]
+WantedBy=timers.target

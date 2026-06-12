@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 REMOTE_NAME="${REMOTE_NAME:-origin}"
 BRANCH_NAME="${BRANCH_NAME:-main}"
 LOCK_FILE="${LOCK_FILE:-/tmp/finalrep-auto-deploy.lock}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT:-deploy.sh}"
 LOG_PREFIX="[finalrep-auto-deploy]"
 
 exec 9>"$LOCK_FILE"
@@ -28,5 +29,5 @@ fi
 
 echo "$LOG_PREFIX new commit $LOCAL_SHA -> $REMOTE_SHA"
 git pull --ff-only "$REMOTE_NAME" "$BRANCH_NAME"
-bash "$ROOT_DIR/deploy.sh"
+bash "$ROOT_DIR/$DEPLOY_SCRIPT"
 echo "$LOG_PREFIX deploy done"
