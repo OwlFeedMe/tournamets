@@ -61,6 +61,10 @@ class User(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
     )
+    profile_reminder_sent_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
 
 
 Participant = User
@@ -1908,3 +1912,4 @@ class PlatformConfigUpdate(SQLModel):
     bold_processor_rate: Optional[float] = None          # e.g. 0.0269
     bold_processor_fixed_fee: Optional[int] = None       # e.g. 300 (COP)
     min_platform_fee: Optional[int] = None               # e.g. 5000 (COP)
+

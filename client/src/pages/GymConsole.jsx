@@ -11,10 +11,11 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
+import { loadCitiesByCountry, loadCountries } from '../utils/locations'
 
 const TABS = ['Perfil', 'Afiliaciones', 'Staff', 'Sedes']
 
@@ -129,6 +130,28 @@ function ProfileTab({ gym, gymId, myRole, onUpdated }) {
   const [error, setError] = useState('')
   const logoInputRef = useRef(null)
   const coverInputRef = useRef(null)
+  const [countries, setCountries] = useState([])
+  const [cities, setCities] = useState([])
+  const [countryCode, setCountryCode] = useState('')
+
+  useEffect(() => { loadCountries().then(setCountries).catch(() => {}) }, [])
+
+  const countryCodeByName = useMemo(
+    () => Object.fromEntries(countries.map((c) => [c.name.toLowerCase(), c.code])),
+    [countries],
+  )
+
+  useEffect(() => {
+    if (!countryCode) { setCities([]); return }
+    loadCitiesByCountry(countryCode).then(setCities).catch(() => setCities([]))
+  }, [countryCode])
+
+  // Sync countryCode when gym loads or countries list arrives
+  useEffect(() => {
+    if (!countries.length || !gym.country) return
+    const code = countryCodeByName[gym.country.toLowerCase()] || ''
+    setCountryCode(code)
+  }, [countries, gym.country, countryCodeByName])
 
   useEffect(() => {
     setForm({
@@ -156,6 +179,11 @@ function ProfileTab({ gym, gymId, myRole, onUpdated }) {
     setForm((prev) => ({ ...prev, [field]: value }))
     setDirty(true)
   }
+
+  const cityOptions = useMemo(() => {
+    const q = (form.city || '').trim().toLowerCase()
+    return q ? cities.filter((c) => c.toLowerCase().includes(q)).slice(0, 150) : cities.slice(0, 150)
+  }, [cities, form.city])
 
   const save = async () => {
     setSaving(true)
@@ -266,8 +294,39 @@ function ProfileTab({ gym, gymId, myRole, onUpdated }) {
           <MapPin size={13} /> Ubicación
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="País" value={form.country} onChange={set('country')} placeholder="Colombia" />
-          <Field label="Ciudad" value={form.city} onChange={set('city')} placeholder="Bogotá" />
+          <label style={{ display: 'block' }}>
+            <span style={labelStyle}>País</span>
+            <select
+              value={countryCode}
+              onChange={(e) => {
+                const code = e.target.value
+                const name = countries.find((c) => c.code === code)?.name || ''
+                setCountryCode(code)
+                setForm((prev) => ({ ...prev, country: name, city: '' }))
+                setDirty(true)
+              }}
+              style={{ ...inputStyle }}
+            >
+              <option value="">Sin especificar</option>
+              {countries.map((c) => (
+                <option key={c.code} value={c.code}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'block' }}>
+            <span style={labelStyle}>Ciudad</span>
+            <input
+              list="gym-profile-city-options"
+              value={form.city || ''}
+              onChange={(e) => { setForm((prev) => ({ ...prev, city: e.target.value })); setDirty(true) }}
+              placeholder={countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un país'}
+              disabled={!countryCode}
+              style={inputStyle}
+            />
+            <datalist id="gym-profile-city-options">
+              {cityOptions.map((c) => <option key={c} value={c} />)}
+            </datalist>
+          </label>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
           <Field label="Región / Estado" value={form.state_region} onChange={set('state_region')} placeholder="Cundinamarca" />

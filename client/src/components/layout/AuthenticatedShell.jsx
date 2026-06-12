@@ -265,6 +265,13 @@ export function AuthenticatedShell() {
         .then(({ data }) => ({ kind: 'competitor', data }))
         .catch(() => ({ kind: 'competitor', data: [] }))
     )
+    if (session) {
+      requests.push(
+        api.get('/users/me/profile-completeness')
+          .then(({ data }) => ({ kind: 'profile', data }))
+          .catch(() => ({ kind: 'profile', data: { complete: true } }))
+      )
+    }
 
     Promise.all(requests).then((results) => {
       if (!active) return
@@ -344,6 +351,23 @@ export function AuthenticatedShell() {
         unread += pendingCompetitorInvites.length
       }
 
+      const profileResult = results.find((item) => item.kind === 'profile')
+      if (profileResult && !profileResult.data.complete) {
+        const { missing_fields: missing = [], total_fields: total = 6, filled_fields: filled = 0 } = profileResult.data
+        const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
+        dynamicItems.push({
+          title: 'Completa tu perfil',
+          text: `Tienes ${missing.length} campo${missing.length !== 1 ? 's' : ''} pendiente${missing.length !== 1 ? 's' : ''} (${filled}/${total} completado${filled !== 1 ? 's' : ''}). Completar tu perfil mejora tu experiencia y te permite recibir invitaciones correctamente.`,
+          tone: 'neutral',
+          actions: [
+            { id: 'go-to-profile', label: 'Ir a mi perfil', tone: 'primary', actionType: 'go-to-profile' },
+          ],
+        })
+        if (!window.localStorage.getItem(profileSeenKey)) {
+          unread += 1
+        }
+      }
+
       setNotificationItems(dynamicItems)
       setUnreadCount(unread)
     })
@@ -354,7 +378,11 @@ export function AuthenticatedShell() {
   }, [isAthlete, userId, role, session, location.pathname])
 
   useEffect(() => {
-    if (!notificationsOpen || !session || !isAthlete || !userId) return
+    if (!notificationsOpen || !session || !userId) return
+    const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
+    window.localStorage.setItem(profileSeenKey, '1')
+
+    if (!isAthlete) return
     api.get(`/users/${userId}/competitions`)
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : []
@@ -389,6 +417,11 @@ export function AuthenticatedShell() {
         await api.post(`/competitor-invitations/${action.invitationId}/reject`)
         setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.invitationId === action.invitationId)))
         setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'go-to-profile') {
+        const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
+        window.localStorage.setItem(profileSeenKey, '1')
+        setNotificationsOpen(false)
+        navigate('/profile')
       }
     } catch {
     } finally {

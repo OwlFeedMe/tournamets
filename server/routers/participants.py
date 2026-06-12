@@ -74,6 +74,25 @@ def _is_pending_cedula(value: str | None) -> bool:
     return bool(value and value.startswith(PENDING_CEDULA_PREFIX))
 
 
+PROFILE_COMPLETENESS_FIELDS = ["email", "celular", "genero", "fecha_nacimiento", "ciudad_pais", "profile_photo_url"]
+
+def _get_missing_profile_fields(p) -> list[str]:
+    missing = []
+    if not p.email:
+        missing.append("email")
+    if not p.celular:
+        missing.append("celular")
+    if not (p.genero or p.sexo):
+        missing.append("genero")
+    if not p.fecha_nacimiento:
+        missing.append("fecha_nacimiento")
+    if not p.ciudad_pais:
+        missing.append("ciudad_pais")
+    if not p.profile_photo_url:
+        missing.append("profile_photo_url")
+    return missing
+
+
 def _validate_participant_payload(data: dict) -> None:
     cedula = data.get("cedula")
     nombre = data.get("nombre")
@@ -283,6 +302,24 @@ def get_my_profile(session: Session = Depends(get_session), user=Depends(require
     if not p:
         raise HTTPException(404, "Participante no encontrado")
     return p
+
+
+@users_router.get("/me/profile-completeness")
+def get_profile_completeness(session: Session = Depends(get_session), user=Depends(require_auth)):
+    user_id = get_effective_user_id(user)
+    if not is_end_user(user) or user_id is None:
+        raise HTTPException(403, "Solo usuarios")
+    p = session.get(Participant, user_id)
+    if not p:
+        raise HTTPException(404, "Participante no encontrado")
+    missing = _get_missing_profile_fields(p)
+    total = len(PROFILE_COMPLETENESS_FIELDS)
+    return {
+        "complete": len(missing) == 0,
+        "missing_fields": missing,
+        "total_fields": total,
+        "filled_fields": total - len(missing),
+    }
 
 
 @users_router.get("/username-availability")
