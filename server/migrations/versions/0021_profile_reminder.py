@@ -1,14 +1,14 @@
 """add profile reminder tracking to participants
 
 Revision ID: 0021_profile_reminder
-Revises: 0020_allow_free_categories
+Revises: 0022_category_capacity
 Create Date: 2026-05-07
 """
 from alembic import op
 
 
 revision = "0021_profile_reminder"
-down_revision = "0020_allow_free_categories"
+down_revision = "0022_category_capacity"
 branch_labels = None
 depends_on = None
 
