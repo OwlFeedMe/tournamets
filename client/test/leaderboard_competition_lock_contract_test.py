@@ -28,8 +28,10 @@ class LeaderboardCompetitionLockContractTest(unittest.TestCase):
         self.assertIn("function AthleteIdentity", source)
         self.assertIn("function AthleteAvatar", source)
         self.assertIn("normalizeProfilePhoto(athlete?.profile_photo_url)", source)
-        self.assertIn("countryCodeFromLocation(athlete?.ciudad_pais)", source)
-        self.assertIn("flagFromCountryCode(countryCode)", source)
+        self.assertIn("countryCodeFromLocation(athlete?.ciudad_pais, countryCodeByName)", source)
+        self.assertIn("flagUrlFromCountryCode(countryCode)", source)
+        self.assertIn("https://flagcdn.com/w40/", source)
+        self.assertIn("loadCountries()", source)
 
 
 if __name__ == "__main__":

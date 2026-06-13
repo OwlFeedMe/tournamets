@@ -4,6 +4,7 @@ import { CheckCircle2, Clock3, Circle } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
+import { loadCountries, parseCityCountry } from '../utils/locations'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
@@ -232,17 +233,31 @@ function normalizeCountryName(value) {
     .toLowerCase()
 }
 
-function countryCodeFromLocation(location) {
+function countryCodeFromLocation(location, countryCodeByName = {}) {
   const raw = String(location || '').trim()
   if (!raw) return ''
-  const country = raw.split(/[\/,]/).map((part) => part.trim()).filter(Boolean).pop() || raw
-  return COUNTRY_CODES[normalizeCountryName(country)] || ''
+  if (/^[a-z]{2}$/i.test(raw)) return raw.toUpperCase()
+
+  const parsed = parseCityCountry(raw)
+  const parts = raw.split(/[\/,]/).map((part) => part.trim()).filter(Boolean)
+  const candidates = [
+    parsed.countryName,
+    ...parts.slice().reverse(),
+    raw,
+  ].filter(Boolean)
+
+  for (const candidate of candidates) {
+    const key = normalizeCountryName(candidate)
+    const code = countryCodeByName[key] || COUNTRY_CODES[key]
+    if (code) return String(code).toUpperCase()
+  }
+  return ''
 }
 
-function flagFromCountryCode(code) {
+function flagUrlFromCountryCode(code) {
   const value = String(code || '').trim().toUpperCase()
   if (!/^[A-Z]{2}$/.test(value)) return ''
-  return Array.from(value).map((char) => String.fromCodePoint(127397 + char.charCodeAt(0))).join('')
+  return `https://flagcdn.com/w40/${value.toLowerCase()}.png`
 }
 
 function AthleteAvatar({ athlete, size = 36 }) {
@@ -290,9 +305,9 @@ function AthleteProfileLink({ athlete, children, style }) {
   )
 }
 
-function AthleteIdentity({ athlete, compact = false, tvMode = false }) {
-  const countryCode = countryCodeFromLocation(athlete?.ciudad_pais)
-  const flag = flagFromCountryCode(countryCode)
+function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCodeByName = {} }) {
+  const countryCode = countryCodeFromLocation(athlete?.ciudad_pais, countryCodeByName)
+  const flagUrl = flagUrlFromCountryCode(countryCode)
   const meta = [
     athlete?.box,
     athlete?.categoria,
@@ -317,9 +332,16 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false }) {
         >
           {athleteDisplayName(athlete)}
         </AthleteProfileLink>
-        {meta.length || flag ? (
+        {meta.length || flagUrl ? (
           <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
-            {flag ? <span aria-label={countryCode} title={athlete?.ciudad_pais || countryCode}>{flag}</span> : null}
+            {flagUrl ? (
+              <img
+                src={flagUrl}
+                alt={athlete?.ciudad_pais || countryCode}
+                title={athlete?.ciudad_pais || countryCode}
+                style={{ width: tvMode ? 22 : 18, height: tvMode ? 15 : 12, borderRadius: 2, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.16)', flexShrink: 0 }}
+              />
+            ) : null}
             {meta.length ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.slice(0, 2).join(' / ')}</span> : null}
           </div>
         ) : null}
@@ -329,7 +351,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false }) {
 }
 
 // â”€â”€ Individual leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false }) {
+function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -368,7 +390,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? '#FF9A3D' : THEME.muted }}>#{p.rank}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <AthleteIdentity athlete={p} compact />
+                          <AthleteIdentity athlete={p} compact countryCodeByName={countryCodeByName} />
                         </div>
                         <MoveBadge delta={delta} />
                       </div>
@@ -428,7 +450,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         <td style={{ textAlign: 'center' }}><RankCell rank={p.rank} tvMode={tvMode} /></td>
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <AthleteIdentity athlete={p} tvMode={tvMode} />
+                            <AthleteIdentity athlete={p} tvMode={tvMode} countryCodeByName={countryCodeByName} />
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
@@ -464,7 +486,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
 }
 
 // â”€â”€ Team leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false }) {
+function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -522,7 +544,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   const weight = didTest ? 600 : 400
                   return (
                     <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <AthleteIdentity athlete={m} compact />
+                      <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
                         <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
                       )}
@@ -577,7 +599,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                     const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 700 : 400
                     return (
                       <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <AthleteIdentity athlete={m} compact tvMode={tvMode} />
+                        <AthleteIdentity athlete={m} compact tvMode={tvMode} countryCodeByName={countryCodeByName} />
                         {phaseMode !== 'total' && (
                           <span style={{ marginLeft: 6, color: THEME.muted }}>
                             {phaseInfo
@@ -732,6 +754,7 @@ export default function Leaderboard() {
   const [timerClockOffsetMs, setTimerClockOffsetMs] = useState(null)
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [tvScrollableHeight, setTvScrollableHeight] = useState(null)
+  const [countryCodeByName, setCountryCodeByName] = useState({})
   const intervalRef = useRef(null)
   const tvIntervalRef = useRef(null)
   const tvSlidesRef = useRef([])
@@ -743,6 +766,19 @@ export default function Leaderboard() {
   // Detect if user is already logged in
   const loggedRole = session?.role || null
   const loggedNombre = displayName || ''
+
+  useEffect(() => {
+    let mounted = true
+    loadCountries()
+      .then((countries) => {
+        if (!mounted) return
+        setCountryCodeByName(Object.fromEntries(
+          countries.map((country) => [normalizeCountryName(country.name), String(country.code || '').toUpperCase()])
+        ))
+      })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [])
 
   useEffect(() => {
     api.get('/competitions?scope=public').then(r => {
@@ -1593,7 +1629,7 @@ export default function Leaderboard() {
                 : null
               return Object.keys(indData).length === 0
                 ? <div style={{ color: '#555', textAlign: 'center', padding: 60 }}>No hay participantes activos con resultados</div>
-                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} />
+                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} countryCodeByName={countryCodeByName} />
             })()}
 
             {view === 'teams' && (() => {
@@ -1616,6 +1652,7 @@ export default function Leaderboard() {
                             totalScoreMap={teamTotalScoreMap}
                             phaseInfo={currentTeamPhase}
                             tvMode={tvMode}
+                            countryCodeByName={countryCodeByName}
                           />
                         </div>
                       ))}
@@ -1634,6 +1671,7 @@ export default function Leaderboard() {
                       totalScoreMap={teamTotalScoreMap}
                       phaseInfo={currentTeamPhase}
                       tvMode={tvMode}
+                      countryCodeByName={countryCodeByName}
                     />
                   )}
                 </>
