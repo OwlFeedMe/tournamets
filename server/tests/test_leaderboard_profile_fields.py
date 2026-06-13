@@ -3,6 +3,7 @@ import unittest
 
 
 LEADERBOARD_ROUTER_PATH = Path(__file__).resolve().parents[1] / "routers" / "leaderboard.py"
+LEADERBOARD_CACHE_PATH = Path(__file__).resolve().parents[1] / "services" / "leaderboard_cache.py"
 
 
 class LeaderboardProfileFieldsContractTest(unittest.TestCase):
@@ -14,6 +15,12 @@ class LeaderboardProfileFieldsContractTest(unittest.TestCase):
             self.assertIn(f'"{field}": r["{field}"]', source)
             self.assertIn(f'"{field}": p.get("{field}")', source)
             self.assertIn(f'"{field}": member.get("{field}")', source)
+
+    def test_leaderboard_snapshot_cache_is_schema_versioned(self):
+        source = LEADERBOARD_CACHE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION", source)
+        self.assertIn('return f"{base_key}:{LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION}"', source)
 
 
 if __name__ == "__main__":

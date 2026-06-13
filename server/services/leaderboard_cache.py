@@ -5,10 +5,12 @@ from cache import Cache, Keys
 LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS = int(
     os.getenv("LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS", "900")
 )
+LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION = "v2"
 
 
 def leaderboard_results_snapshot_key(competition_id: int) -> str:
-    return Keys.RESULTS_SNAPSHOT.format(competition_id=int(competition_id))
+    base_key = Keys.RESULTS_SNAPSHOT.format(competition_id=int(competition_id))
+    return f"{base_key}:{LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION}"
 
 
 def get_leaderboard_results_snapshot(competition_id: int):
