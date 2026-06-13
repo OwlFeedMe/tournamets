@@ -254,6 +254,15 @@ function countryCodeFromLocation(location, countryCodeByName = {}) {
   return ''
 }
 
+function countryLabelFromLocation(location) {
+  const raw = String(location || '').trim()
+  if (!raw) return ''
+  const parsed = parseCityCountry(raw)
+  if (parsed.countryName) return parsed.countryName
+  if (/^[a-z]{2}$/i.test(raw)) return raw.toUpperCase()
+  return ''
+}
+
 function flagUrlFromCountryCode(code) {
   const value = String(code || '').trim().toUpperCase()
   if (!/^[A-Z]{2}$/.test(value)) return ''
@@ -308,11 +317,7 @@ function AthleteProfileLink({ athlete, children, style }) {
 function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCodeByName = {} }) {
   const countryCode = countryCodeFromLocation(athlete?.ciudad_pais, countryCodeByName)
   const flagUrl = flagUrlFromCountryCode(countryCode)
-  const meta = [
-    athlete?.box,
-    athlete?.categoria,
-    athlete?.ciudad_pais,
-  ].filter(Boolean)
+  const countryLabel = countryLabelFromLocation(athlete?.ciudad_pais)
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 10, minWidth: 0 }}>
@@ -332,7 +337,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
         >
           {athleteDisplayName(athlete)}
         </AthleteProfileLink>
-        {meta.length || flagUrl ? (
+        {countryLabel || flagUrl ? (
           <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
             {flagUrl ? (
               <img
@@ -342,7 +347,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
                 style={{ width: tvMode ? 22 : 18, height: tvMode ? 15 : 12, borderRadius: 2, objectFit: 'cover', border: '1px solid rgba(255,255,255,0.16)', flexShrink: 0 }}
               />
             ) : null}
-            {meta.length ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.slice(0, 2).join(' / ')}</span> : null}
+            {countryLabel ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{countryLabel}</span> : null}
           </div>
         ) : null}
       </div>

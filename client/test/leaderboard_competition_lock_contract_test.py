@@ -32,6 +32,8 @@ class LeaderboardCompetitionLockContractTest(unittest.TestCase):
         self.assertIn("flagUrlFromCountryCode(countryCode)", source)
         self.assertIn("https://flagcdn.com/w40/", source)
         self.assertIn("loadCountries()", source)
+        self.assertIn("countryLabelFromLocation(athlete?.ciudad_pais)", source)
+        self.assertNotIn("athlete?.box,\n    athlete?.categoria,\n    athlete?.ciudad_pais", source)
 
 
 if __name__ == "__main__":
