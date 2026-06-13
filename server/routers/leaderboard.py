@@ -83,7 +83,16 @@ def _competition_has_categories(session: Session, competition_id: int) -> bool:
 
 def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict]:
     rows = session.execute(text("""
-        SELECT p.id, p.nombre, p.apellido, p.username, cp.categoria, COALESCE(p.genero, p.sexo) AS sexo
+        SELECT
+            p.id,
+            p.nombre,
+            p.apellido,
+            p.username,
+            p.profile_photo_url,
+            p.ciudad_pais,
+            p.box,
+            cp.categoria,
+            COALESCE(p.genero, p.sexo) AS sexo
         FROM participants p
         JOIN competition_participants cp
           ON cp.user_id = p.id
@@ -96,6 +105,9 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
             "nombre": r["nombre"],
             "apellido": r["apellido"],
             "username": r["username"],
+            "profile_photo_url": r["profile_photo_url"],
+            "ciudad_pais": r["ciudad_pais"],
+            "box": r["box"],
             "categoria": r["categoria"],
             "sexo": r["sexo"],
         }
@@ -195,6 +207,9 @@ def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list
             p.nombre,
             p.apellido,
             p.username,
+            p.profile_photo_url,
+            p.ciudad_pais,
+            p.box,
             cp.categoria,
             COALESCE(p.genero, p.sexo) AS sexo
         FROM team_members tm
@@ -212,6 +227,9 @@ def _fetch_team_members(session: Session, competition_id: int) -> dict[int, list
             "nombre": r["nombre"],
             "apellido": r["apellido"],
             "username": r["username"],
+            "profile_photo_url": r["profile_photo_url"],
+            "ciudad_pais": r["ciudad_pais"],
+            "box": r["box"],
             "categoria": r["categoria"],
             "sexo": r["sexo"],
         })
@@ -249,6 +267,9 @@ def _build_ind_rows(
                 "nombre": p["nombre"],
                 "apellido": p["apellido"],
                 "username": p.get("username"),
+                "profile_photo_url": p.get("profile_photo_url"),
+                "ciudad_pais": p.get("ciudad_pais"),
+                "box": p.get("box"),
                 "categoria": p["categoria"],
                 "sexo": p["sexo"],
                 "total_puntos": int(agg["sum"]),
@@ -271,6 +292,9 @@ def _build_ind_rows(
                 "nombre": p["nombre"],
                 "apellido": p["apellido"],
                 "username": p.get("username"),
+                "profile_photo_url": p.get("profile_photo_url"),
+                "ciudad_pais": p.get("ciudad_pais"),
+                "box": p.get("box"),
                 "categoria": p["categoria"],
                 "sexo": p["sexo"],
                 "total_puntos": total,
@@ -303,6 +327,9 @@ def _team_members_for_phase(
             "nombre": member["nombre"],
             "apellido": member["apellido"],
             "username": member.get("username"),
+            "profile_photo_url": member.get("profile_photo_url"),
+            "ciudad_pais": member.get("ciudad_pais"),
+            "box": member.get("box"),
             "categoria": member["categoria"],
             "sexo": member["sexo"],
             "puntos_propios": int(sum_pts),
@@ -328,6 +355,9 @@ def _team_global_members(
             "nombre": member["nombre"],
             "apellido": member["apellido"],
             "username": member.get("username"),
+            "profile_photo_url": member.get("profile_photo_url"),
+            "ciudad_pais": member.get("ciudad_pais"),
+            "box": member.get("box"),
             "categoria": member["categoria"],
             "sexo": member["sexo"],
             "puntos_propios": int(ind_agg["sum"] + tm_agg["sum"]),

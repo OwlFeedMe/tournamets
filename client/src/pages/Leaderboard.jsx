@@ -11,15 +11,34 @@ const ACTIVE_TIMER_POLL_INTERVAL_MS = 3000
 const IDLE_TIMER_POLL_INTERVAL_MS = 30000
 const CATEGORY_ORDER = ['Rx', 'Scaled', 'Masters', 'Teens', 'Otro', 'Sin categoria']
 const THEME = {
-  primary: '#D6D9E0',
-  primaryHover: '#F1F4F8',
-  accent: '#5EEAD4',
-  border: 'rgba(214, 217, 224, 0.14)',
+  primary: '#FF6B00',
+  primaryHover: '#E45E00',
+  accent: '#00C2A8',
+  border: '#252A33',
   ink: '#F5F7FA',
   paper: '#0D0F12',
-  surface: '#171A20',
-  muted: '#C7CDD6',
-  soft: '#8B94A3',
+  surface: '#171B21',
+  muted: '#AAB2C0',
+  soft: '#6B7280',
+}
+
+const mobileRankCardStyle = {
+  background: 'linear-gradient(135deg, rgba(23,26,32,0.98), rgba(13,15,18,0.96))',
+  border: '1px solid rgba(214,217,224,0.14)',
+  borderRadius: 10,
+  padding: '10px 12px',
+  boxShadow: '0 12px 28px rgba(0,0,0,0.22)',
+}
+
+function mobileScoreChipStyle(active = false) {
+  return {
+    flex: 1,
+    background: active ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.72)',
+    borderRadius: 7,
+    padding: '6px 8px',
+    textAlign: 'center',
+    border: `1px solid ${active ? 'rgba(0,194,168,0.26)' : 'rgba(214,217,224,0.12)'}`,
+  }
 }
 
 function safeServerNowMs(value) {
@@ -167,6 +186,91 @@ function athleteDisplayName(athlete) {
   return [athlete?.nombre, athlete?.apellido].filter(Boolean).join(' ').trim() || 'Atleta'
 }
 
+function athleteInitials(athlete) {
+  return athleteDisplayName(athlete)
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'FR'
+}
+
+function normalizeProfilePhoto(url) {
+  const value = String(url || '').trim()
+  if (!value) return ''
+  if (/^https?:\/\//i.test(value)) return value
+  return value.startsWith('/') ? value : `/${value}`
+}
+
+const COUNTRY_CODES = {
+  colombia: 'CO',
+  'united states': 'US',
+  usa: 'US',
+  'estados unidos': 'US',
+  mexico: 'MX',
+  argentina: 'AR',
+  chile: 'CL',
+  peru: 'PE',
+  ecuador: 'EC',
+  venezuela: 'VE',
+  panama: 'PA',
+  'costa rica': 'CR',
+  brasil: 'BR',
+  brazil: 'BR',
+  uruguay: 'UY',
+  paraguay: 'PY',
+  bolivia: 'BO',
+  espana: 'ES',
+  spain: 'ES',
+}
+
+function normalizeCountryName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+}
+
+function countryCodeFromLocation(location) {
+  const raw = String(location || '').trim()
+  if (!raw) return ''
+  const country = raw.split(/[\/,]/).map((part) => part.trim()).filter(Boolean).pop() || raw
+  return COUNTRY_CODES[normalizeCountryName(country)] || ''
+}
+
+function flagFromCountryCode(code) {
+  const value = String(code || '').trim().toUpperCase()
+  if (!/^[A-Z]{2}$/.test(value)) return ''
+  return Array.from(value).map((char) => String.fromCodePoint(127397 + char.charCodeAt(0))).join('')
+}
+
+function AthleteAvatar({ athlete, size = 36 }) {
+  const photo = normalizeProfilePhoto(athlete?.profile_photo_url)
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        overflow: 'hidden',
+        display: 'inline-grid',
+        placeItems: 'center',
+        flexShrink: 0,
+        border: '1px solid rgba(255,255,255,0.16)',
+        background: 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(0,194,168,0.14))',
+        color: THEME.ink,
+        fontWeight: 800,
+        fontSize: Math.max(11, Math.floor(size * 0.34)),
+      }}
+    >
+      {photo ? (
+        <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+      ) : athleteInitials(athlete)}
+    </span>
+  )
+}
+
 function AthleteProfileLink({ athlete, children, style }) {
   if (!athlete?.username) {
     return <span style={style}>{children}</span>
@@ -183,6 +287,44 @@ function AthleteProfileLink({ athlete, children, style }) {
     >
       {children}
     </Link>
+  )
+}
+
+function AthleteIdentity({ athlete, compact = false, tvMode = false }) {
+  const countryCode = countryCodeFromLocation(athlete?.ciudad_pais)
+  const flag = flagFromCountryCode(countryCode)
+  const meta = [
+    athlete?.box,
+    athlete?.categoria,
+    athlete?.ciudad_pais,
+  ].filter(Boolean)
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 10, minWidth: 0 }}>
+      <AthleteAvatar athlete={athlete} size={tvMode ? 48 : compact ? 34 : 38} />
+      <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
+        <AthleteProfileLink
+          athlete={athlete}
+          style={{
+            color: THEME.ink,
+            fontWeight: 800,
+            fontSize: tvMode ? 18 : compact ? 14 : 15,
+            lineHeight: 1.15,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {athleteDisplayName(athlete)}
+        </AthleteProfileLink>
+        {meta.length || flag ? (
+          <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
+            {flag ? <span aria-label={countryCode} title={athlete?.ciudad_pais || countryCode}>{flag}</span> : null}
+            {meta.length ? <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.slice(0, 2).join(' / ')}</span> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
   )
 }
 
@@ -206,7 +348,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
           <div key={cat} style={{ marginBottom: isMobile ? 20 : 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
               <CategoryBadge cat={cat} />
-              <span style={{ color: '#5f685e', fontSize: tvMode ? 18 : 13 }}>{data[cat].length} atletas</span>
+              <span style={{ color: THEME.muted, fontSize: tvMode ? 18 : 13 }}>{data[cat].length} atletas</span>
             </div>
             {isMobile ? (
               <div style={{ display: 'grid', gap: 8 }}>
@@ -220,38 +362,35 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     <div
                       key={p.id}
                       className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : isNew ? 'row-new' : ''}
-                      style={{ background: '#fff', border: '1px solid #d5ddd3', borderRadius: 10, padding: '10px 12px' }}
+                      style={mobileRankCardStyle}
                     >
                       {/* Header: rank + name + movement */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? THEME.primary : THEME.muted }}>#{p.rank}</span>
-                        <AthleteProfileLink
-                          athlete={p}
-                          style={{ fontWeight: p.rank <= 3 ? 700 : 500, flex: 1, fontSize: 14, minWidth: 0 }}
-                        >
-                          {athleteDisplayName(p)}
-                        </AthleteProfileLink>
+                        <span style={{ fontSize: p.rank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: p.rank <= 3 ? '#FF9A3D' : THEME.muted }}>#{p.rank}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <AthleteIdentity athlete={p} compact />
+                        </div>
                         <MoveBadge delta={delta} />
                       </div>
 
                       {/* Score chips */}
                       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                        <div style={{ flex: 1, background: isPhaseView ? '#f0f5ee' : '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: `1px solid ${isPhaseView ? '#c8d9c2' : '#e4eae3'}` }}>
-                          <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>{p.total_puntos}</div>
+                        <div style={mobileScoreChipStyle(isPhaseView)}>
+                          <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
+                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: p.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{p.total_puntos}</div>
                         </div>
                         {isPhaseView && (
-                          <div style={{ flex: 1, background: '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: '1px solid #e4eae3' }}>
+                          <div style={mobileScoreChipStyle(false)}>
                             <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Total · #{totalEntry?.rank ?? '-'}</div>
-                            <div style={{ fontWeight: 600, fontSize: 18, lineHeight: 1, color: '#8a9489' }}>{totalEntry?.puntos ?? '-'}</div>
+                            <div style={{ fontWeight: 700, fontSize: 18, lineHeight: 1, color: THEME.ink }}>{totalEntry?.puntos ?? '-'}</div>
                           </div>
                         )}
                       </div>
 
                       {/* Meta row */}
-                      <div style={{ display: 'flex', gap: 10, color: '#6d756c', fontSize: 12, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap' }}>
                         {phaseInfo && p.mejor_marca != null && (
-                          <span style={{ color: '#4d564b', fontWeight: 500 }}>{phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b></span>
+                          <span style={{ color: THEME.ink, fontWeight: 500 }}>{phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b></span>
                         )}
                         <span>Sexo: {p.sexo || '-'}</span>
                         {showEventCount && <span>Registros: {p.total_eventos}</span>}
@@ -270,8 +409,8 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
                     {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
-                    {totalScoreMap && <th style={{ textAlign: 'center', color: '#8a9489', borderLeft: '2px solid #d5ddd3' }}>Total</th>}
-                    {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: '#8a9489' }}>Pos Gral</th>}
+                    {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
+                    {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -288,26 +427,26 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       >
                         <td style={{ textAlign: 'center' }}><RankCell rank={p.rank} tvMode={tvMode} /></td>
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
-                          <AthleteProfileLink athlete={p}>
-                            {athleteDisplayName(p)}
-                          </AthleteProfileLink>
-                          <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <AthleteIdentity athlete={p} tvMode={tvMode} />
+                            <MoveSlot delta={delta} tvMode={tvMode} />
+                          </div>
                         </td>
-                        <td style={{ color: '#6d756c' }}>{p.sexo || '-'}</td>
-                        {showEventCount && <td style={{ textAlign: 'right', color: '#6d756c' }}>{p.total_eventos}</td>}
-                        {phaseInfo && <td style={{ textAlign: 'center', color: '#6d756c' }}>{metricValue(p.mejor_marca, phaseInfo)}</td>}
+                        <td style={{ color: THEME.muted }}>{p.sexo || '-'}</td>
+                        {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{p.total_eventos}</td>}
+                        {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(p.mejor_marca, phaseInfo)}</td>}
                         <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                           {p.total_puntos}
                         </td>
                         {totalScoreMap && (
-                          <td style={{ textAlign: 'center', fontWeight: 500, fontSize: tvMode ? 22 : 14, color: '#8a9489', borderLeft: '2px solid #e0e7df' }}>
+                          <td style={{ textAlign: 'center', fontWeight: 600, fontSize: tvMode ? 22 : 14, color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>
                             {totalEntry ? (
                               <span>{totalEntry.puntos ?? '-'}</span>
                             ) : '-'}
                           </td>
                         )}
                         {totalScoreMap && (
-                          <td style={{ textAlign: 'center', color: '#8a9489', fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
+                          <td style={{ textAlign: 'center', color: THEME.muted, fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
                             {totalEntry?.rank ?? '-'}
                           </td>
                         )}
@@ -336,7 +475,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
     }
   }, [prevData])
 
-  if (!data.length) return <p style={{ color: '#5f685e', textAlign: 'center', padding: 40 }}>No hay equipos registrados en esta competencia</p>
+  if (!data.length) return <p style={{ color: THEME.muted, textAlign: 'center', padding: 40 }}>No hay equipos registrados en esta competencia</p>
 
   if (isMobile) {
     return (
@@ -350,50 +489,48 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
           const totalEntry = totalEntryFor(totalScoreMap, t.id)
           const isPhaseView = !!totalScoreMap
           return (
-            <div key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''} style={{ background: '#fff', border: '1px solid #d5ddd3', borderRadius: 10, padding: '10px 12px' }}>
+            <div key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''} style={mobileRankCardStyle}>
               {/* Header: rank + team name + movement */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? THEME.primary : THEME.muted }}>#{visibleRank}</span>
-                <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14 }}>{teamName}</span>
+                <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? '#FF9A3D' : THEME.muted }}>#{visibleRank}</span>
+                <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14, color: THEME.ink }}>{teamName}</span>
                 <MoveBadge delta={delta} />
               </div>
 
               {/* Score chips */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <div style={{ flex: 1, background: isPhaseView ? '#f0f5ee' : '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: `1px solid ${isPhaseView ? '#c8d9c2' : '#e4eae3'}` }}>
-                  <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>{t.total_puntos}</div>
+                <div style={mobileScoreChipStyle(isPhaseView)}>
+                  <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
+                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{t.total_puntos}</div>
                   {phaseInfo && t.mejor_marca != null && (
-                    <div style={{ fontSize: 11, color: '#6d756c', marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValue(t.mejor_marca, phaseInfo)}</div>
+                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValue(t.mejor_marca, phaseInfo)}</div>
                   )}
                 </div>
                 {isPhaseView && (
-                  <div style={{ flex: 1, background: '#f8fbf8', borderRadius: 7, padding: '6px 8px', textAlign: 'center', border: '1px solid #e4eae3' }}>
+                  <div style={mobileScoreChipStyle(false)}>
                     <div style={{ fontSize: 10, color: '#8a9489', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Total · #{totalEntry?.rank ?? '-'}</div>
-                    <div style={{ fontWeight: 600, fontSize: 18, lineHeight: 1, color: '#8a9489' }}>{totalEntry?.puntos ?? '-'}</div>
+                    <div style={{ fontWeight: 700, fontSize: 18, lineHeight: 1, color: THEME.ink }}>{totalEntry?.puntos ?? '-'}</div>
                   </div>
                 )}
               </div>
 
               {/* Members */}
-              <div style={{ borderTop: '1px solid #eef2ed', paddingTop: 6, display: 'grid', gap: 3 }}>
+              <div style={{ borderTop: '1px solid rgba(214,217,224,0.12)', paddingTop: 6, display: 'grid', gap: 3 }}>
                 {members.map(m => {
                   const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
-                  const color = didTest ? THEME.ink : '#8a9489'
+                  const color = didTest ? THEME.ink : THEME.muted
                   const weight = didTest ? 600 : 400
                   return (
                     <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <AthleteProfileLink athlete={m} style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                        {athleteDisplayName(m)}
-                      </AthleteProfileLink>
+                      <AthleteIdentity athlete={m} compact />
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
-                        <span style={{ color: '#6d756c', fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
+                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
                       )}
                     </div>
                   )
                 })}
               </div>
-              {showEventCount && <div style={{ marginTop: 4, color: '#8a9489', fontSize: 12 }}>Registros: {t.total_eventos}</div>}
+              {showEventCount && <div style={{ marginTop: 4, color: THEME.muted, fontSize: 12 }}>Registros: {t.total_eventos}</div>}
             </div>
           )
         })}
@@ -411,8 +548,8 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
           {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
           {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
           <th style={{ textAlign: 'center' }}>Puntos</th>
-          {totalScoreMap && <th style={{ textAlign: 'center', color: '#8a9489', borderLeft: '2px solid #d5ddd3' }}>Total</th>}
-          {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: '#8a9489' }}>Pos Gral</th>}
+          {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
+          {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
         </tr>
       </thead>
       <tbody>
@@ -436,15 +573,13 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                 <div style={{ display: 'grid', gap: 2 }}>
                   {members.map(m => {
                     const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
-                    const color = didTest ? THEME.ink : '#687067'
+                    const color = didTest ? THEME.ink : THEME.muted
                     const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 700 : 400
                     return (
-                      <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight }}>
-                        <AthleteProfileLink athlete={m}>
-                          {athleteDisplayName(m)}
-                        </AthleteProfileLink>
+                      <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <AthleteIdentity athlete={m} compact tvMode={tvMode} />
                         {phaseMode !== 'total' && (
-                          <span style={{ marginLeft: 6, color: '#8c948b' }}>
+                          <span style={{ marginLeft: 6, color: THEME.muted }}>
                             {phaseInfo
                               ? `(${phaseMetricLabel(phaseInfo)}: ${metricValue(m.mejor_marca, phaseInfo)})`
                               : ''}
@@ -455,20 +590,20 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   })}
                 </div>
               </td>
-              {showEventCount && <td style={{ textAlign: 'right', color: '#6d756c' }}>{t.total_eventos}</td>}
-              {phaseInfo && <td style={{ textAlign: 'center', color: '#6d756c' }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
+              {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{t.total_eventos}</td>}
+              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
               <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                 {t.total_puntos}
               </td>
               {totalScoreMap && (
-                <td style={{ textAlign: 'center', fontWeight: 500, fontSize: tvMode ? 22 : 14, color: '#8a9489', borderLeft: '2px solid #e0e7df' }}>
+                <td style={{ textAlign: 'center', fontWeight: 600, fontSize: tvMode ? 22 : 14, color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>
                   {totalEntry ? (
                     <span>{totalEntry.puntos ?? '-'}</span>
                   ) : '-'}
                 </td>
               )}
               {totalScoreMap && (
-                <td style={{ textAlign: 'center', color: '#8a9489', fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
+                <td style={{ textAlign: 'center', color: THEME.muted, fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
                   {totalEntry?.rank ?? '-'}
                 </td>
               )}
@@ -576,8 +711,9 @@ function CountdownClock({ timerData, tvMode, serverOffsetMs = 0 }) {
 export default function Leaderboard() {
   const { competitionId } = useParams()
   const { session, displayName } = useAuth()
+  const lockedCompetitionId = competitionId ? String(competitionId) : ''
   const [competitions, setCompetitions] = useState([])
-  const [selectedComp, setSelectedComp] = useState(competitionId || '')
+  const [selectedComp, setSelectedComp] = useState(lockedCompetitionId)
   const [view, setView] = useState('individual') // 'individual' | 'teams'
   const [phaseView, setPhaseView] = useState('total') // 'total' | phase.id
   const [teamPhaseView, setTeamPhaseView] = useState('total') // 'total' | phase.id
@@ -611,12 +747,16 @@ export default function Leaderboard() {
   useEffect(() => {
     api.get('/competitions?scope=public').then(r => {
       setCompetitions(r.data)
+      if (lockedCompetitionId) {
+        setSelectedComp(lockedCompetitionId)
+        return
+      }
       if (!selectedComp && r.data.length) {
         const active = r.data.find(c => c.activa) || r.data[0]
         setSelectedComp(String(active.id))
       }
     })
-  }, [])
+  }, [lockedCompetitionId])
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -1104,17 +1244,19 @@ export default function Leaderboard() {
       `}</style>
 
       <div style={{ maxWidth: tvMode ? '100%' : COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: tvMode ? '24px 28px' : (isMobile ? '14px 12px' : '24px 20px') }}>
-        {/* Competition selector */}
+        {/* Competition controls */}
         {!tvMode && (
           <div style={{ marginBottom: isMobile ? 14 : 24 }}>
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 10 : 16, justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center', gap: isMobile ? 8 : 16 }}>
-                <select value={selectedComp} onChange={e => setSelectedComp(e.target.value)} style={{ width: isMobile ? '100%' : 280 }}>
-                  <option value="">Seleccionar competencia...</option>
-                  {competitions.map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}{c.activa ? ' (activa)' : ''}</option>
-                  ))}
-                </select>
+                {!lockedCompetitionId && (
+                  <select value={selectedComp} onChange={e => setSelectedComp(e.target.value)} style={{ width: isMobile ? '100%' : 280 }}>
+                    <option value="">Seleccionar competencia...</option>
+                    {competitions.map(c => (
+                      <option key={c.id} value={c.id}>{c.nombre}{c.activa ? ' (activa)' : ''}</option>
+                    ))}
+                  </select>
+                )}
 
                 {data && (
                   <div className="tabs" style={{ margin: 0, border: 'none', gap: 4 }}>
