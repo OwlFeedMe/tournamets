@@ -1,5 +1,6 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, CalendarDays, Clock3, Flame, MapPin, Medal, QrCode, X } from 'lucide-react'
 import api from '../api/axios'
 import {
   CommandStrip,
@@ -14,8 +15,15 @@ import {
   buttonStateForCompetition,
   filterCompetitionsByQuery,
   getCompetitionState,
+  getNextPersonalHeat,
+  hasCurrentOrFutureUserCompetition,
   homePageBg,
   mapCompetitionViewModel,
+  normalizeUserResults,
+  selectPrimaryUserCompetition,
+  extractUserLeaderboardSummary,
+  formatCompetitionWindow,
+  resolveCompetitionAsset,
 } from '../components/home/homeModel'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
@@ -267,6 +275,359 @@ function TickerItem({ label, value }) {
   )
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Por confirmar'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Por confirmar'
+  return new Intl.DateTimeFormat('es-CO', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function enrollmentBadge(status) {
+  const normalized = String(status || '').toLowerCase()
+  if (normalized === 'confirmado') return { label: 'Cupo confirmado', color: '#22C55E', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.32)' }
+  if (normalized === 'pago_en_verificacion') return { label: 'Pago en verificacion', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.32)' }
+  if (normalized === 'pendiente') return { label: 'Inscripcion en proceso', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.32)' }
+  if (normalized === 'rechazado') return { label: 'Registro rechazado', color: '#EF4444', bg: 'rgba(239,68,68,0.12)', border: 'rgba(239,68,68,0.32)' }
+  return { label: 'Registro pendiente', color: premium.textSoft, bg: 'rgba(170,178,192,0.08)', border: premium.border }
+}
+
+function PersonalMetric({ label, value, tone = premium.teal }) {
+  return (
+    <div className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 16 }}>
+      <div style={{ color: tone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>{label}</div>
+      <div style={{ marginTop: 8, color: premium.text, fontSize: 28, lineHeight: 1, fontWeight: 800 }}>{value}</div>
+    </div>
+  )
+}
+
+function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr }) {
+  const badge = enrollmentBadge(competition?.enrollment_estado)
+  const banner = resolveCompetitionAsset(competition, 'banner')
+  const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
+  const isConfirmed = String(competition?.enrollment_estado || '').toLowerCase() === 'confirmado'
+
+  return (
+    <section
+      className="fr-cut-card"
+      style={{
+        border: `1px solid ${premium.border}`,
+        background: banner
+          ? `linear-gradient(90deg, rgba(13,15,18,0.94), rgba(13,15,18,0.74)), url("${banner}") center/cover no-repeat`
+          : 'linear-gradient(135deg, rgba(255,107,0,0.16), rgba(23,27,33,0.96) 46%, rgba(0,194,168,0.10))',
+        padding: 22,
+        display: 'grid',
+        gap: 18,
+        minHeight: 330,
+        alignContent: 'space-between',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.bg, color: badge.color, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+          <Flame size={14} />
+          {badge.label}
+        </span>
+        {competition?.enrollment_categoria ? (
+          <span style={{ color: premium.text, border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.72)', borderRadius: 999, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+            Categoria {competition.enrollment_categoria}
+          </span>
+        ) : null}
+      </div>
+
+      <div style={{ maxWidth: 860 }}>
+        <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>Tu competencia</div>
+        <h1 style={{ margin: '10px 0 10px', color: premium.text, fontSize: 'clamp(34px, 6vw, 64px)', lineHeight: 0.96 }}>
+          {competition?.nombre || 'Tu proxima competencia'}
+        </h1>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', color: premium.textSoft, fontSize: 14 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <CalendarDays size={15} color="#00C2A8" />
+            {dateLabel}
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <MapPin size={15} color="#FF6B00" />
+            {competition?.lugar || 'Lugar por confirmar'}
+          </span>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+        <PersonalMetric label="Posicion" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
+        <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
+        <PersonalMetric label="Scores" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <Link to={`/competitions/${competition.id}/my-schedule`} style={primaryActionStyle()}>
+          Mi cronograma
+          <ArrowRight size={16} />
+        </Link>
+        <Link to={`/leaderboard/${competition.id}`} style={secondaryActionStyle()}>
+          Leaderboard completo
+        </Link>
+        <Link to={`/competitions/${competition.id}`} style={secondaryActionStyle()}>
+          Ver competencia
+        </Link>
+        {isConfirmed ? (
+          <button type="button" onClick={() => onOpenQr(competition)} style={{ ...secondaryActionStyle(), borderColor: 'rgba(255,107,0,0.42)', color: '#FFD8BC' }}>
+            <QrCode size={16} />
+            Ver mi QR
+          </button>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function primaryActionStyle() {
+  return {
+    textDecoration: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    borderRadius: 6,
+    background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
+    color: '#090B0E',
+    padding: '11px 16px',
+    fontWeight: 800,
+    border: '1px solid rgba(255,154,61,0.72)',
+  }
+}
+
+function secondaryActionStyle() {
+  return {
+    textDecoration: 'none',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 44,
+    borderRadius: 6,
+    background: 'rgba(9,11,14,0.58)',
+    color: premium.text,
+    padding: '11px 16px',
+    fontWeight: 800,
+    border: `1px solid ${premium.border}`,
+  }
+}
+
+function NextHeatPanel({ heat }) {
+  const participant = Array.isArray(heat?.participants) ? heat.participants[0] : null
+  return (
+    <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 18, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div>
+          <div style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Proximo heat</div>
+          <h2 style={{ margin: '6px 0 0', color: premium.text, fontSize: 24, lineHeight: 1.1 }}>{heat?.heat_label || heat?.title || 'Tus heats aun no estan publicados'}</h2>
+        </div>
+        <Clock3 size={20} color="#FF6B00" />
+      </div>
+      {heat ? (
+        <div style={{ display: 'grid', gap: 8, color: premium.textSoft, fontSize: 14, lineHeight: 1.55 }}>
+          <div>{heat.phase_name || heat.phaseName || 'Bloque por confirmar'}</div>
+          <div>{formatDateTime(heat.start_at || heat.startAt)}{heat.end_at ? ` - ${formatDateTime(heat.end_at)}` : ''}</div>
+          {(heat.location_name || heat.locationName) ? <div>{heat.location_name || heat.locationName}</div> : null}
+          {participant?.lane_number || participant?.lane ? <div style={{ color: premium.text, fontWeight: 800 }}>Lane {participant.lane_number || participant.lane}</div> : null}
+        </div>
+      ) : (
+        <div style={{ color: premium.textSoft, fontSize: 14, lineHeight: 1.6 }}>
+          Cuando el staff publique tus salidas, apareceran aqui sin que tengas que buscar en todo el cronograma.
+        </div>
+      )}
+    </section>
+  )
+}
+
+function ScorePanel({ leaderboard, results }) {
+  const phaseRows = leaderboard?.phases?.length ? leaderboard.phases : []
+  const rows = phaseRows.length
+    ? phaseRows.slice(0, 4).map((item) => ({
+      key: item.phaseId,
+      name: item.phaseName,
+      rank: item.rank,
+      points: item.points,
+      mark: item.mark,
+      status: item.status,
+    }))
+    : results.slice(0, 4).map((item) => ({
+      key: item.id,
+      name: item.phaseName,
+      rank: item.position,
+      points: item.points,
+      mark: item.mark,
+      status: '',
+    }))
+
+  return (
+    <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 18, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <div style={{ color: '#FF6B00', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Mi puntuacion</div>
+          <h2 style={{ margin: '6px 0 0', color: premium.text, fontSize: 24, lineHeight: 1.1 }}>Asi vas en el evento</h2>
+        </div>
+        <Medal size={20} color="#D4A537" />
+      </div>
+      {rows.length ? (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {rows.map((item) => (
+            <div key={item.key} style={{ borderRadius: 6, border: `1px solid ${premium.border}`, background: 'rgba(13,15,18,0.54)', padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'center' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: premium.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
+                <div style={{ marginTop: 4, color: premium.textSoft, fontSize: 12 }}>
+                  Marca {item.mark ?? '--'} {item.status ? `· ${item.status}` : ''}
+                </div>
+              </div>
+              <div style={{ color: premium.text, textAlign: 'right', fontSize: 13, fontWeight: 800 }}>
+                <div>{item.rank ? `#${item.rank}` : '--'}</div>
+                <div style={{ color: '#00C2A8' }}>{item.points ?? 0} pts</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ color: premium.textSoft, fontSize: 14, lineHeight: 1.6 }}>
+          Aun no tienes scores publicados en esta competencia.
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CompactEventList({ items, primaryId }) {
+  const rows = (Array.isArray(items) ? items : []).filter((item) => String(item.id) !== String(primaryId)).slice(0, 3)
+  if (!rows.length) return null
+  return (
+    <section style={{ display: 'grid', gap: 12 }}>
+      <h2 style={{ margin: 0, color: premium.text, fontSize: 22 }}>Tus otras competencias</h2>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {rows.map((competition) => {
+          const badge = enrollmentBadge(competition.enrollment_estado)
+          return (
+            <Link key={competition.id} to={`/competitions/${competition.id}`} style={{ textDecoration: 'none', borderRadius: 6, border: `1px solid ${premium.border}`, background: premium.surface, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: premium.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{competition.nombre}</div>
+                <div style={{ color: premium.textSoft, marginTop: 4, fontSize: 12 }}>{formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fecha por confirmar' })}</div>
+              </div>
+              <span style={{ color: badge.color, fontSize: 12, fontWeight: 800 }}>{badge.label}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function AvailableCompetitionsPanel({ competitions, onParticipate, enrollmentByComp, isAthlete }) {
+  const openItems = (Array.isArray(competitions) ? competitions : []).filter((item) => item.enrollment_open).slice(0, 3)
+  if (!openItems.length) return null
+  return (
+    <section style={{ display: 'grid', gap: 12 }}>
+      <div>
+        <h2 style={{ margin: 0, color: premium.text, fontSize: 24 }}>Elige tu proxima competencia</h2>
+        <p style={{ margin: '6px 0 0', color: premium.textSoft, fontSize: 14 }}>Estas son las inscripciones abiertas ahora.</p>
+      </div>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {openItems.map((competition) => (
+          <div key={competition.id} className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 16, display: 'grid', gap: 10 }}>
+            <div style={{ color: premium.text, fontWeight: 800, fontSize: 18 }}>{competition.nombre}</div>
+            <div style={{ color: premium.textSoft, fontSize: 13 }}>{formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fecha por confirmar' })}</div>
+            <button type="button" onClick={() => onParticipate(competition)} disabled={buttonStateForCompetition(competition, isAthlete, enrollmentByComp[competition.id]).disabled} style={primaryActionStyle()}>
+              Inscribirme
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function QrModal({ open, loading, error, payload, competitionName, onClose }) {
+  if (!open) return null
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Mi QR de check-in" style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'grid', placeItems: 'center', padding: 16 }}>
+      <button type="button" aria-label="Cerrar QR" onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.64)', border: 'none' }} />
+      <div style={{ position: 'relative', width: 'min(100%, 480px)', maxHeight: '90dvh', overflow: 'hidden', borderRadius: 6, border: `1px solid ${premium.border}`, background: premium.surface, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'sticky', top: 0, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: 16, borderBottom: `1px solid ${premium.border}`, background: premium.surface }}>
+          <div>
+            <div style={{ color: premium.text, fontWeight: 800 }}>Mi QR de check-in</div>
+            <div style={{ color: premium.textSoft, fontSize: 12, marginTop: 4 }}>{competitionName || 'Competencia'}</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ width: 38, height: 38, borderRadius: 6, border: `1px solid ${premium.border}`, background: '#0D0F12', color: premium.text, display: 'grid', placeItems: 'center', padding: 0 }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
+          {loading ? <div style={{ color: premium.textSoft }}>Cargando QR...</div> : null}
+          {!loading && error ? <div style={{ color: '#EF4444' }}>{error}</div> : null}
+          {!loading && payload?.qr_image_data_url ? (
+            <>
+              <div style={{ borderRadius: 6, background: '#0D0F12', border: `1px solid ${premium.border}`, padding: 16, display: 'grid', placeItems: 'center' }}>
+                <img src={payload.qr_image_data_url} alt="QR de check-in" style={{ width: '100%', maxWidth: 320, background: '#F5F7FA', borderRadius: 6, padding: 8 }} />
+              </div>
+              <div style={{ color: premium.textSoft, fontSize: 13 }}>Codigo: <strong style={{ color: '#00C2A8' }}>{payload.short_code || '--'}</strong></div>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PersonalHome({
+  isMobile,
+  myComps,
+  publicCompetitions,
+  primaryCompetition,
+  hasCurrentOrFuture,
+  leaderboard,
+  results,
+  nextHeat,
+  loading,
+  detailsLoading,
+  onOpenQr,
+  onParticipate,
+  enrollmentByComp,
+  isAthlete,
+}) {
+  if (loading) {
+    return <div style={{ color: premium.textSoft, padding: '20px 0' }}>Cargando tu inicio...</div>
+  }
+
+  if (!primaryCompetition || !hasCurrentOrFuture) {
+    return (
+      <div style={{ display: 'grid', gap: 20 }}>
+        <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(23,27,33,0.96))', padding: 22 }}>
+          <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>Inicio</div>
+          <h1 style={{ margin: '10px 0', color: premium.text, fontSize: isMobile ? 36 : 58, lineHeight: 1 }}>Elige tu proxima competencia</h1>
+          <p style={{ margin: 0, color: premium.textSoft, maxWidth: 700, lineHeight: 1.6 }}>Si ya llegaste a FinalRep, lo importante es competir. Entra a una inscripcion abierta y deja tu evento listo en pocos pasos.</p>
+        </section>
+        <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} />
+        <CompactEventList items={myComps} primaryId={null} />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} onOpenQr={onOpenQr} />
+      {detailsLoading ? <div style={{ color: premium.textSoft }}>Actualizando tu cronograma y puntuacion...</div> : null}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
+        <NextHeatPanel heat={nextHeat} />
+        <ScorePanel leaderboard={leaderboard} results={results} />
+      </div>
+      <CompactEventList items={myComps} primaryId={primaryCompetition.id} />
+      <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} />
+    </div>
+  )
+}
+
 export default function HomeVariants({ variant = 1 }) {
   const navigate = useNavigate()
   const { session, role, userId, isAthlete } = useAuth()
@@ -274,6 +635,15 @@ export default function HomeVariants({ variant = 1 }) {
   const [myComps, setMyComps] = useState([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [detailsLoading, setDetailsLoading] = useState(false)
+  const [schedulePayload, setSchedulePayload] = useState(null)
+  const [leaderboardPayload, setLeaderboardPayload] = useState(null)
+  const [resultItems, setResultItems] = useState([])
+  const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [qrLoading, setQrLoading] = useState(false)
+  const [qrError, setQrError] = useState('')
+  const [qrPayload, setQrPayload] = useState(null)
+  const [qrCompetitionName, setQrCompetitionName] = useState('')
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
   useEffect(() => {
@@ -312,6 +682,65 @@ export default function HomeVariants({ variant = 1 }) {
     return map
   }, [myComps])
 
+  const primaryCompetition = useMemo(
+    () => selectPrimaryUserCompetition(myComps),
+    [myComps]
+  )
+  const hasCurrentOrFuture = useMemo(
+    () => hasCurrentOrFutureUserCompetition(myComps),
+    [myComps]
+  )
+  const leaderboardSummary = useMemo(
+    () => extractUserLeaderboardSummary(leaderboardPayload, userId),
+    [leaderboardPayload, userId]
+  )
+  const myResults = useMemo(
+    () => normalizeUserResults(resultItems),
+    [resultItems]
+  )
+  const nextHeat = useMemo(
+    () => getNextPersonalHeat(schedulePayload),
+    [schedulePayload]
+  )
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined
+    document.body.classList.toggle('fr-modal-open', qrModalOpen)
+    return () => document.body.classList.remove('fr-modal-open')
+  }, [qrModalOpen])
+
+  useEffect(() => {
+    if (!session || !isAthlete || !userId || !primaryCompetition?.id || !hasCurrentOrFuture) {
+      setSchedulePayload(null)
+      setLeaderboardPayload(null)
+      setResultItems([])
+      setDetailsLoading(false)
+      return
+    }
+
+    let active = true
+    setDetailsLoading(true)
+    Promise.all([
+      api.get(`/competitions/${primaryCompetition.id}/my-schedule`).catch(() => ({ data: null })),
+      api.get(`/leaderboard/${primaryCompetition.id}`).catch(() => ({ data: null })),
+      api.get(`/results?competition_id=${primaryCompetition.id}`).catch(() => ({ data: [] })),
+    ])
+      .then(([scheduleResponse, leaderboardResponse, resultsResponse]) => {
+        if (!active) return
+        setSchedulePayload(scheduleResponse.data || null)
+        setLeaderboardPayload(leaderboardResponse.data || null)
+        setResultItems(Array.isArray(resultsResponse.data) ? resultsResponse.data : [])
+      })
+      .finally(() => {
+        if (!active) return
+        setDetailsLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [session, isAthlete, userId, primaryCompetition?.id, hasCurrentOrFuture])
+
   const featuredCompetitions = useMemo(() => {
     return [...competitions]
       .sort((a, b) => {
@@ -348,9 +777,45 @@ export default function HomeVariants({ variant = 1 }) {
     navigate(target)
   }
 
+  const openQrModal = async (competition) => {
+    if (!competition?.id) return
+    setQrModalOpen(true)
+    setQrCompetitionName(competition.nombre || '')
+    setQrLoading(true)
+    setQrError('')
+    setQrPayload(null)
+    try {
+      const { data } = await api.get(`/competitions/${competition.id}/my-checkin-qr`)
+      setQrPayload(data || null)
+    } catch (err) {
+      setQrError(err.response?.data?.detail || 'No se pudo cargar tu QR ahora.')
+    } finally {
+      setQrLoading(false)
+    }
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: homePageBg, color: premium.text }}>
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '18px 14px 112px' : '24px 18px 72px' }}>
+        {session && isAthlete && userId ? (
+          <PersonalHome
+            isMobile={isMobile}
+            myComps={myComps}
+            publicCompetitions={featuredCompetitions}
+            primaryCompetition={primaryCompetition}
+            hasCurrentOrFuture={hasCurrentOrFuture}
+            leaderboard={leaderboardSummary}
+            results={myResults}
+            nextHeat={nextHeat}
+            loading={loading}
+            detailsLoading={detailsLoading}
+            onOpenQr={openQrModal}
+            onParticipate={handleParticipate}
+            enrollmentByComp={enrollmentByComp}
+            isAthlete={isAthlete}
+          />
+        ) : (
+        <>
         <HomeVariantTop
           variant={variant}
           isMobile={isMobile}
@@ -386,7 +851,17 @@ export default function HomeVariants({ variant = 1 }) {
             <HomeEmptyState hasCompetitions={featuredCompetitions.length > 0} />
           )}
         </section>
+        </>
+        )}
       </div>
+      <QrModal
+        open={qrModalOpen}
+        loading={qrLoading}
+        error={qrError}
+        payload={qrPayload}
+        competitionName={qrCompetitionName}
+        onClose={() => setQrModalOpen(false)}
+      />
     </div>
   )
 }

@@ -89,7 +89,7 @@ export function getHomePath(role) {
   if (normalized === 'admin') return '/admin'
   if (normalized === 'organizer') return '/organizer'
   if (normalized === 'judge') return '/judge'
-  return '/profile'
+  return '/'
 }
 
 function storeSessionPayload(payload, token) {

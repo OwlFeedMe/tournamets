@@ -205,3 +205,171 @@ export function mapCompetitionViewModel(competition, index) {
     initials: (competition.nombre || 'FR').slice(0, 2).toUpperCase(),
   }
 }
+
+function dateMs(value) {
+  if (!value) return null
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function competitionStartMs(competition) {
+  return dateMs(competition?.competition_start) || dateMs(competition?.enrollment_start) || dateMs(competition?.created_at) || 0
+}
+
+function competitionEndMs(competition) {
+  return dateMs(competition?.competition_end) || dateMs(competition?.competition_start) || dateMs(competition?.enrollment_end) || 0
+}
+
+function isConfirmedEnrollment(competition) {
+  return String(competition?.enrollment_estado || '').toLowerCase() === 'confirmado'
+}
+
+function isRejectedEnrollment(competition) {
+  return String(competition?.enrollment_estado || '').toLowerCase() === 'rechazado'
+}
+
+function enrollmentPriority(competition) {
+  if (isConfirmedEnrollment(competition)) return 0
+  const state = String(competition?.enrollment_estado || '').toLowerCase()
+  if (state === 'pendiente' || state === 'pago_en_verificacion') return 1
+  return 2
+}
+
+function isCurrentCompetition(competition, nowMs) {
+  const start = dateMs(competition?.competition_start)
+  const end = dateMs(competition?.competition_end) || start
+  if (start && end && start <= nowMs && end >= nowMs) return true
+  return Boolean(competition?.activa && (!end || end >= nowMs))
+}
+
+function isFutureCompetition(competition, nowMs) {
+  const start = dateMs(competition?.competition_start) || dateMs(competition?.enrollment_start)
+  return Boolean(start && start >= nowMs)
+}
+
+export function selectPrimaryUserCompetition(competitions = [], nowValue = Date.now()) {
+  const nowMs = typeof nowValue === 'number' ? nowValue : dateMs(nowValue) || Date.now()
+  const items = Array.isArray(competitions) ? competitions.filter(Boolean) : []
+  const pool = items.filter((competition) => !isRejectedEnrollment(competition))
+  const candidates = pool.length ? pool : items
+
+  const current = candidates
+    .filter((competition) => isCurrentCompetition(competition, nowMs))
+    .sort((a, b) => {
+      const stateDiff = enrollmentPriority(a) - enrollmentPriority(b)
+      if (stateDiff !== 0) return stateDiff
+      return competitionEndMs(a) - competitionEndMs(b)
+    })
+  if (current.length) return current[0]
+
+  const upcoming = candidates
+    .filter((competition) => isFutureCompetition(competition, nowMs))
+    .sort((a, b) => {
+      const stateDiff = enrollmentPriority(a) - enrollmentPriority(b)
+      if (stateDiff !== 0) return stateDiff
+      return competitionStartMs(a) - competitionStartMs(b)
+    })
+  if (upcoming.length) return upcoming[0]
+
+  return [...candidates].sort((a, b) => {
+    const aTime = competitionEndMs(a) || competitionStartMs(a)
+    const bTime = competitionEndMs(b) || competitionStartMs(b)
+    return bTime - aTime
+  })[0] || null
+}
+
+export function hasCurrentOrFutureUserCompetition(competitions = [], nowValue = Date.now()) {
+  const nowMs = typeof nowValue === 'number' ? nowValue : dateMs(nowValue) || Date.now()
+  return (Array.isArray(competitions) ? competitions : []).some((competition) => (
+    !isRejectedEnrollment(competition) && (isCurrentCompetition(competition, nowMs) || isFutureCompetition(competition, nowMs))
+  ))
+}
+
+function flattenIndividualLeaderboard(individual = {}) {
+  return Object.entries(individual || {}).flatMap(([category, rows]) => (
+    Array.isArray(rows) ? rows.map((row) => ({ ...row, category })) : []
+  ))
+}
+
+export function extractUserLeaderboardSummary(payload, userId) {
+  if (!payload || userId == null) return null
+  const targetId = Number(userId)
+  const totalRows = flattenIndividualLeaderboard(payload.individual)
+  const total = totalRows.find((row) => Number(row.id) === targetId) || null
+  const totalTeam = (Array.isArray(payload.teams) ? payload.teams : []).find((team) => (
+    Array.isArray(team.members) && team.members.some((member) => Number(member.id) === targetId)
+  )) || null
+  const phases = Array.isArray(payload.phases) ? payload.phases : []
+  const phaseRows = phases
+    .map((phase) => {
+      const individualRow = flattenIndividualLeaderboard(phase.individual).find((row) => Number(row.id) === targetId)
+      if (individualRow) {
+        return {
+          phaseId: phase.id,
+          phaseName: phase.nombre || 'Workout',
+          rank: individualRow.rank ?? null,
+          points: individualRow.total_puntos ?? 0,
+          mark: individualRow.mejor_marca ?? null,
+          events: individualRow.total_eventos ?? 0,
+          status: phase.estado || null,
+          category: individualRow.category || individualRow.categoria || null,
+        }
+      }
+
+      const teamRow = (Array.isArray(phase.teams) ? phase.teams : []).find((team) => (
+        Array.isArray(team.members) && team.members.some((member) => Number(member.id) === targetId)
+      ))
+      if (!teamRow) return null
+      const member = teamRow.members.find((item) => Number(item.id) === targetId) || {}
+      return {
+        phaseId: phase.id,
+        phaseName: phase.nombre || 'Workout',
+        rank: teamRow.rank ?? null,
+        points: teamRow.total_puntos ?? member.puntos_propios ?? 0,
+        mark: teamRow.mejor_marca ?? member.mejor_marca ?? null,
+        events: teamRow.total_eventos ?? member.intentos ?? 0,
+        status: phase.estado || null,
+        category: teamRow.team_category || member.categoria || null,
+        teamName: teamRow.nombre || null,
+      }
+    })
+    .filter(Boolean)
+
+  return {
+    rank: total?.rank ?? totalTeam?.rank ?? null,
+    points: total?.total_puntos ?? totalTeam?.total_puntos ?? 0,
+    events: total?.total_eventos ?? totalTeam?.total_eventos ?? 0,
+    category: total?.category || total?.categoria || totalTeam?.team_category || null,
+    teamName: totalTeam?.nombre || null,
+    phases: phaseRows,
+  }
+}
+
+export function normalizeUserResults(results = []) {
+  return (Array.isArray(results) ? results : []).map((result) => ({
+    id: result.id,
+    phaseId: result.phase_id,
+    phaseName: result.fase || 'Workout',
+    mark: result.marca ?? null,
+    points: result.puntos ?? 0,
+    position: result.posicion ?? null,
+    createdAt: result.created_at || null,
+  }))
+}
+
+function heatStartMs(item) {
+  return dateMs(item?.start_at || item?.startAt) || Number.MAX_SAFE_INTEGER
+}
+
+export function getNextPersonalHeat(schedulePayload, nowValue = Date.now()) {
+  const nowMs = typeof nowValue === 'number' ? nowValue : dateMs(nowValue) || Date.now()
+  const items = Array.isArray(schedulePayload?.items)
+    ? schedulePayload.items
+    : Array.isArray(schedulePayload?.schedule?.items)
+      ? schedulePayload.schedule.items
+      : []
+  const upcoming = items
+    .filter((item) => heatStartMs(item) >= nowMs)
+    .sort((a, b) => heatStartMs(a) - heatStartMs(b))
+  return upcoming[0] || items.sort((a, b) => heatStartMs(b) - heatStartMs(a))[0] || null
+}
