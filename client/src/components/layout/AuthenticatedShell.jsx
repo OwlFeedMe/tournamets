@@ -326,6 +326,7 @@ export function AuthenticatedShell() {
   const [pendingQuestionSaving, setPendingQuestionSaving] = useState(false)
   const [pendingQuestionUploadId, setPendingQuestionUploadId] = useState('')
   const [pendingQuestionError, setPendingQuestionError] = useState('')
+  const [notificationsRefreshTick, setNotificationsRefreshTick] = useState(0)
   const isLoginRoute = location.pathname === '/login'
   const topInset = isMobile
     ? 'calc(68px + env(safe-area-inset-top, 0px))'
@@ -373,6 +374,14 @@ export function AuthenticatedShell() {
       body.style.overflow = previousOverflow
     }
   }, [notificationsOpen])
+
+  useEffect(() => {
+    if (!session) return undefined
+    const intervalId = window.setInterval(() => {
+      setNotificationsRefreshTick((current) => current + 1)
+    }, 60000)
+    return () => window.clearInterval(intervalId)
+  }, [session])
 
   useEffect(() => {
     if (!session) {
@@ -540,7 +549,12 @@ export function AuthenticatedShell() {
     return () => {
       active = false
     }
-  }, [isAthlete, userId, role, session, location.pathname])
+  }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick])
+
+  const openNotifications = () => {
+    setNotificationsRefreshTick((current) => current + 1)
+    setNotificationsOpen(true)
+  }
 
   useEffect(() => {
     if (!notificationsOpen || !session || !userId) return
@@ -685,7 +699,7 @@ export function AuthenticatedShell() {
       }}
     >
       {!isMobile && (
-        <DesktopHeader onOpenNotifications={() => setNotificationsOpen(true)} unreadCount={unreadCount} />
+        <DesktopHeader onOpenNotifications={openNotifications} unreadCount={unreadCount} />
       )}
       {isMobile && (
         <header
@@ -719,7 +733,7 @@ export function AuthenticatedShell() {
               <button
                 type="button"
                 aria-label="Abrir notificaciones"
-                onClick={() => setNotificationsOpen(true)}
+                onClick={openNotifications}
                 style={{
                   position: 'relative',
                   width: 42,
