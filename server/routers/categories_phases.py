@@ -185,6 +185,26 @@ def _competition_category_count(session: Session, competition_id: int) -> int:
     ).one() or 0)
 
 
+def _ensure_category_audit_table(session: Session) -> None:
+    session.execute(text("""
+        CREATE TABLE IF NOT EXISTS competition_category_audit (
+            id SERIAL PRIMARY KEY,
+            competition_id INTEGER NOT NULL REFERENCES competitions(id) ON DELETE CASCADE,
+            category_id INTEGER,
+            action VARCHAR NOT NULL,
+            actor_user_id INTEGER REFERENCES participants(id) ON DELETE SET NULL,
+            before_data JSONB,
+            after_data JSONB,
+            reason TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+    """))
+    session.execute(text("CREATE INDEX IF NOT EXISTS ix_competition_category_audit_competition ON competition_category_audit (competition_id)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS ix_competition_category_audit_category ON competition_category_audit (category_id)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS ix_competition_category_audit_actor ON competition_category_audit (actor_user_id)"))
+    session.execute(text("CREATE INDEX IF NOT EXISTS ix_competition_category_audit_created ON competition_category_audit (created_at)"))
+
+
 def _audit_category_change(
     session: Session,
     *,
@@ -196,6 +216,7 @@ def _audit_category_change(
     after: dict | None = None,
     reason: str | None = None,
 ) -> None:
+    _ensure_category_audit_table(session)
     session.execute(
         text("""
             INSERT INTO competition_category_audit
