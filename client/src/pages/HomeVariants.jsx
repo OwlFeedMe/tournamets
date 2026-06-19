@@ -297,6 +297,102 @@ function enrollmentBadge(status) {
   return { label: 'Registro pendiente', color: premium.textSoft, bg: 'rgba(170,178,192,0.08)', border: premium.border }
 }
 
+function parseTime(value) {
+  if (!value) return null
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function getCompetitionCountdown(competition, nowMs) {
+  const startMs = parseTime(competition?.competition_start)
+  const endMs = parseTime(competition?.competition_end)
+  const enrollmentEndMs = parseTime(competition?.enrollment_end)
+
+  if (startMs && startMs > nowMs) {
+    return {
+      targetMs: startMs,
+      label: 'Arranca en',
+      tone: '#FF6B00',
+    }
+  }
+
+  if (endMs && endMs > nowMs) {
+    return {
+      targetMs: endMs,
+      label: 'Termina en',
+      tone: '#00C2A8',
+    }
+  }
+
+  if (!startMs && enrollmentEndMs && enrollmentEndMs > nowMs) {
+    return {
+      targetMs: enrollmentEndMs,
+      label: 'Cierra en',
+      tone: '#F59E0B',
+    }
+  }
+
+  return null
+}
+
+function splitDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return { days, hours, minutes, seconds }
+}
+
+function CountdownTile({ value, label, tone }) {
+  return (
+    <div style={{ minWidth: 0, border: '1px solid rgba(245,247,250,0.10)', background: 'rgba(9,11,14,0.62)', borderRadius: 6, padding: '9px 8px', textAlign: 'center' }}>
+      <div style={{ color: tone, fontSize: 23, lineHeight: 1, fontWeight: 900, fontVariantNumeric: 'tabular-nums' }}>{String(value).padStart(2, '0')}</div>
+      <div style={{ color: premium.textMuted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8, marginTop: 5 }}>{label}</div>
+    </div>
+  )
+}
+
+function CompetitionCountdown({ competition, isMobile }) {
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const countdown = getCompetitionCountdown(competition, nowMs)
+  if (!countdown) return null
+
+  const duration = splitDuration(countdown.targetMs - nowMs)
+
+  return (
+    <aside
+      aria-label={`${countdown.label} ${duration.days} dias ${duration.hours} horas ${duration.minutes} minutos`}
+      style={{
+        justifySelf: isMobile ? 'stretch' : 'end',
+        width: isMobile ? '100%' : 280,
+        border: `1px solid ${premium.border}`,
+        background: 'linear-gradient(135deg, rgba(9,11,14,0.86), rgba(23,27,33,0.76))',
+        borderRadius: 8,
+        padding: 14,
+        boxShadow: '0 18px 42px rgba(0,0,0,0.24)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+        <div style={{ color: countdown.tone, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1 }}>{countdown.label}</div>
+        <Clock3 size={17} color={countdown.tone} />
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8 }}>
+        <CountdownTile value={duration.days} label="Dias" tone={countdown.tone} />
+        <CountdownTile value={duration.hours} label="Horas" tone={countdown.tone} />
+        <CountdownTile value={duration.minutes} label="Min" tone={countdown.tone} />
+        <CountdownTile value={duration.seconds} label="Seg" tone={countdown.tone} />
+      </div>
+    </aside>
+  )
+}
+
 function PersonalMetric({ label, value, tone = premium.teal }) {
   return (
     <div className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 16 }}>
@@ -306,7 +402,7 @@ function PersonalMetric({ label, value, tone = premium.teal }) {
   )
 }
 
-function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr }) {
+function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr, isMobile }) {
   const badge = enrollmentBadge(competition?.enrollment_estado)
   const banner = resolveCompetitionAsset(competition, 'banner')
   const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
@@ -327,33 +423,39 @@ function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr }) {
         alignContent: 'space-between',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.bg, color: badge.color, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
-          <Flame size={14} />
-          {badge.label}
-        </span>
-        {competition?.enrollment_categoria ? (
-          <span style={{ color: premium.text, border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.72)', borderRadius: 999, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
-            Categoria {competition.enrollment_categoria}
-          </span>
-        ) : null}
-      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 18, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.bg, color: badge.color, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+              <Flame size={14} />
+              {badge.label}
+            </span>
+            {competition?.enrollment_categoria ? (
+              <span style={{ color: premium.text, border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.72)', borderRadius: 999, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+                Categoria {competition.enrollment_categoria}
+              </span>
+            ) : null}
+          </div>
 
-      <div style={{ maxWidth: 860 }}>
-        <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>Tu competencia</div>
-        <h1 style={{ margin: '10px 0 10px', color: premium.text, fontSize: 'clamp(34px, 6vw, 64px)', lineHeight: 0.96 }}>
-          {competition?.nombre || 'Tu proxima competencia'}
-        </h1>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', color: premium.textSoft, fontSize: 14 }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <CalendarDays size={15} color="#00C2A8" />
-            {dateLabel}
-          </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <MapPin size={15} color="#FF6B00" />
-            {competition?.lugar || 'Lugar por confirmar'}
-          </span>
+          <div style={{ maxWidth: 860 }}>
+            <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>Tu competencia</div>
+            <h1 style={{ margin: '10px 0 10px', color: premium.text, fontSize: 'clamp(34px, 6vw, 64px)', lineHeight: 0.96, overflowWrap: 'anywhere' }}>
+              {competition?.nombre || 'Tu proxima competencia'}
+            </h1>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', color: premium.textSoft, fontSize: 14 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <CalendarDays size={15} color="#00C2A8" />
+                {dateLabel}
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <MapPin size={15} color="#FF6B00" />
+                {competition?.lugar || 'Lugar por confirmar'}
+              </span>
+            </div>
+          </div>
         </div>
+
+        <CompetitionCountdown competition={competition} isMobile={isMobile} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
@@ -383,7 +485,6 @@ function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr }) {
     </section>
   )
 }
-
 function primaryActionStyle() {
   return {
     textDecoration: 'none',
@@ -616,7 +717,7 @@ function PersonalHome({
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} onOpenQr={onOpenQr} />
+      <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} onOpenQr={onOpenQr} isMobile={isMobile} />
       {detailsLoading ? <div style={{ color: premium.textSoft }}>Actualizando tu cronograma y puntuacion...</div> : null}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
         <NextHeatPanel heat={nextHeat} />
