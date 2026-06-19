@@ -7,7 +7,7 @@ import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
-import { paymentsDisabled } from '../utils/environment'
+import { isStageEnvironment, paymentsDisabled } from '../utils/environment'
 import DiscountInput from '../components/enrollment/DiscountInput'
 
 const pageBg =
@@ -493,6 +493,7 @@ export default function CompetitionEnrollmentPage() {
     }
   }, [selectedCategoryData?.enrollment_price, platformFeeRate, minPlatformFee, appliedDiscount])
   const isFreeEnrollment = pricing.totalPrice === 0
+  const stageTestPaymentEnabled = isStageEnvironment && !isFreeEnrollment
   const directPaymentsDisabled = paymentsDisabled && !isFreeEnrollment
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
@@ -806,6 +807,29 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const confirmStageTestPayment = async () => {
+    if (!competition) return
+    const validationError = validateBeforeConfirmation()
+    if (validationError) {
+      setMsg({ type: 'error', text: validationError })
+      return
+    }
+    setCheckoutLoading(true)
+    setMsg(null)
+    try {
+      const { data } = await api.post(`/competitions/${competition.id}/stage-test-payment`, buildEnrollmentPayload())
+      setEnrollmentState('confirmado')
+      setPaymentStatus(data?.payment_status || 'approved')
+      setPaymentReference(data?.payment_reference || '')
+      setPaymentTransactionId(data?.payment_transaction_id || '')
+      setMsg({ type: 'success', text: 'Pago de prueba aprobado. Tu inscripcion quedo confirmada en stage.' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo confirmar el pago de prueba.' })
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
+
   const handleNextStep = async () => {
     const validationError = validateStep(currentStep)
     if (validationError) {
@@ -872,7 +896,7 @@ export default function CompetitionEnrollmentPage() {
                 Tu inscripcion quedo confirmada.
               </div>
               <div style={{ color: '#D7DEE8', fontSize: 14, lineHeight: 1.7 }}>
-                Bold aprobo el pago y FinalRep activo tu cupo en esta competencia.
+                El pago quedo aprobado y FinalRep activo tu cupo en esta competencia.
               </div>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
                 <button type="button" className="btn-secondary" onClick={() => navigate('/profile')}>
@@ -1180,9 +1204,11 @@ export default function CompetitionEnrollmentPage() {
               hint={
                 isFreeEnrollment
                   ? 'Esta categoria es gratuita. Confirma tu inscripcion con el boton de abajo.'
-                  : directPaymentsDisabled
-                    ? 'Stage no permite pagos directos con Bold.'
-                    : 'FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.'
+                    : stageTestPaymentEnabled
+                      ? 'Stage usa pago ficticio para validar el flujo completo sin cobrar.'
+                      : directPaymentsDisabled
+                        ? 'Los pagos directos con Bold no estan disponibles ahora.'
+                        : 'FinalRep te redirige al checkout seguro de Bold. Cuando el pago quede aprobado, tu inscripcion se confirma automaticamente.'
               }
             >
               <div style={{ display: 'grid', gap: 14 }}>
@@ -1233,12 +1259,26 @@ export default function CompetitionEnrollmentPage() {
                         <div style={{ display: 'grid', gap: 6, borderRadius: 14, border: '1px solid #252A33', background: 'rgba(255,255,255,0.02)', padding: 12 }}>
                           <div style={{ color: '#AAB2C0', fontSize: 11 }}>Referencia</div>
                           <div style={{ color: '#F5F7FA', fontSize: 13, fontWeight: 700, wordBreak: 'break-word' }}>{paymentReference}</div>
-                          {paymentTransactionId ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Transaccion Bold: {paymentTransactionId}</div> : null}
+                          {paymentTransactionId ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>Transaccion: {paymentTransactionId}</div> : null}
                         </div>
                       ) : null}
-                      {directPaymentsDisabled ? (
+                      {stageTestPaymentEnabled ? (
+                        <div style={{ display: 'grid', gap: 10 }}>
+                          <div style={{ borderRadius: 14, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', padding: 12, color: '#F5F7FA', fontSize: 13, lineHeight: 1.6, fontWeight: 800 }}>
+                            Pago ficticio de stage. Confirma la inscripcion sin abrir Bold ni cobrar dinero real.
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            disabled={checkoutLoading || submissionBlocked}
+                            onClick={confirmStageTestPayment}
+                          >
+                            {checkoutLoading ? 'Confirmando pago...' : 'Confirmar pago de prueba'}
+                          </button>
+                        </div>
+                      ) : directPaymentsDisabled ? (
                         <div style={{ borderRadius: 14, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', padding: 12, color: '#F5F7FA', fontSize: 13, lineHeight: 1.6, fontWeight: 800 }}>
-                          Pagos con Bold deshabilitados en stage. No se puede continuar a pago directo.
+                          Los pagos directos con Bold no estan disponibles ahora.
                         </div>
                       ) : isFreeEnrollment ? (
                         <button

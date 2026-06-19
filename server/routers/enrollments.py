@@ -73,6 +73,16 @@ def _ensure_bold_payments_enabled() -> None:
         raise HTTPException(403, "Los pagos con Bold estan deshabilitados en stage")
 
 
+def _stage_test_payments_enabled() -> bool:
+    app_env = str(os.getenv("APP_ENV") or "").strip().lower()
+    return app_env in {"stage", "staging"}
+
+
+def _ensure_stage_test_payments_enabled() -> None:
+    if not _stage_test_payments_enabled():
+        raise HTTPException(403, "Los pagos de prueba solo estan habilitados en stage")
+
+
 def _parse_enrollment_questions(raw: str | None) -> list[dict]:
     if not raw:
         return []
@@ -1389,6 +1399,145 @@ def free_enroll(
     session.commit()
     invalidate_leaderboard_results_snapshot(competition_id)
     return {"ok": True, "estado": "confirmado", "user_id": user_id}
+
+
+@router.post("/api/competitions/{competition_id}/stage-test-payment", status_code=201)
+def stage_test_payment_enroll(
+    competition_id: int,
+    body: SelfEnrollRequest,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    _ensure_stage_test_payments_enabled()
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
+        raise HTTPException(403, "Solo usuarios")
+
+    comp = session.get(Competition, competition_id)
+    if not comp:
+        raise HTTPException(404, "Competencia no encontrada")
+    _ensure_competition_open(comp)
+
+    category_name = str(body.categoria or "").strip()
+    if not category_name:
+        raise HTTPException(400, "Selecciona una categoria para continuar")
+
+    category = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .where(CompetitionCategory.nombre == category_name)
+    ).first()
+    if not category:
+        raise HTTPException(404, "Categoria no encontrada")
+    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
+
+    existing = session.get(CompetitionParticipant, (competition_id, user_id))
+    if existing and existing.estado in ("confirmado", "pendiente", PAYMENT_PENDING_STATE, PENDING_VERIFICATION_STATE):
+        raise HTTPException(409, f"Ya tienes una inscripcion con estado: {existing.estado}")
+
+    questions = _parse_enrollment_questions(comp.enrollment_questions)
+    extra_items = []
+    if comp.enrollment_terms_text and not body.terms_accepted:
+        raise HTTPException(400, "Debes aceptar los terminos y condiciones del evento")
+    if comp.enrollment_terms_text:
+        extra_items.append({
+            "question_id": "__terms_acceptance__",
+            "question_label": "Aceptacion de terminos y condiciones",
+            "question_type": "text",
+            "answer": "Aceptado",
+        })
+    serialized_answers = _serialize_enrollment_answers(questions, body.answers, extra_items)
+
+    applied_discount = None
+    discount_amount = 0
+    raw_discount_code = str(body.discount_code or "").strip()
+    if raw_discount_code:
+        applied_discount, discount_amount = validate_discount_for_checkout(
+            raw_discount_code, competition_id, user_id, category, session
+        )
+
+    pricing_cfg = get_pricing_config(session)
+    fee_rate = _normalize_platform_fee_rate(pricing_cfg["default_platform_fee_rate"])
+    base_price = getattr(category, "enrollment_price", 0)
+    effective_base = max(0, base_price - discount_amount)
+    breakdown = _price_breakdown(
+        effective_base,
+        fee_rate,
+        pricing_cfg["bold_processor_rate"],
+        pricing_cfg["bold_processor_fixed_fee"],
+        pricing_cfg["min_platform_fee"],
+    )
+    if breakdown["total_price"] <= 0:
+        raise HTTPException(400, "Esta categoria no tiene valor de pago. Usa el flujo de inscripcion gratuita.")
+
+    now = datetime.now(timezone.utc)
+    reference = f"FR-STAGE-C{competition_id}-U{user_id}-{int(now.timestamp())}"
+    transaction_id = f"stage-test-{uuid.uuid4().hex[:12]}"
+
+    if existing:
+        enrollment = existing
+        enrollment.categoria = category_name
+        enrollment.estado = "confirmado"
+        enrollment.enrollment_answers = serialized_answers
+    else:
+        enrollment = CompetitionParticipant(
+            competition_id=competition_id,
+            user_id=user_id,
+            categoria=category_name,
+            estado="confirmado",
+            enrollment_answers=serialized_answers,
+        )
+
+    enrollment.payment_provider = "stage_test"
+    enrollment.payment_reference = reference
+    enrollment.payment_order_id = reference
+    enrollment.payment_status = "approved"
+    enrollment.payment_transaction_id = transaction_id
+    enrollment.payment_base_amount = breakdown["organizer_price"]
+    enrollment.payment_platform_fee = breakdown["platform_fee"]
+    enrollment.payment_platform_fee_rate = breakdown["fee_rate"]
+    enrollment.payment_processor_fee = 0
+    enrollment.payment_platform_net = breakdown["platform_fee"]
+    enrollment.payment_amount_total = breakdown["total_price"]
+    enrollment.discount_id = applied_discount.id if applied_discount else None
+    enrollment.discount_amount = discount_amount
+    enrollment.payment_processed_at = now
+    enrollment.payment_updated_at = now
+    session.add(enrollment)
+
+    if applied_discount:
+        usage = CompetitionDiscountUsage(
+            discount_id=applied_discount.id,
+            competition_id=competition_id,
+            user_id=user_id,
+            discount_code=applied_discount.code,
+            discount_type=applied_discount.discount_type,
+            discount_value=applied_discount.discount_value,
+            base_price_before=base_price,
+            discount_amount_applied=discount_amount,
+            final_base_price=effective_base,
+            enrollment_status="confirmed",
+        )
+        session.add(usage)
+        from sqlalchemy import update as sa_update
+        from models import CompetitionDiscount
+        session.execute(
+            sa_update(CompetitionDiscount)
+            .where(CompetitionDiscount.id == applied_discount.id)
+            .values(uses_count=CompetitionDiscount.uses_count + 1)
+        )
+
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    return {
+        "ok": True,
+        "estado": "confirmado",
+        "payment_status": "approved",
+        "payment_provider": "stage_test",
+        "payment_reference": reference,
+        "payment_transaction_id": transaction_id,
+        "user_id": user_id,
+    }
 
 
 @router.post("/api/competitions/{competition_id}/enroll", status_code=201)
