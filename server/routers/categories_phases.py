@@ -3,10 +3,11 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, text
 from sqlmodel import Session, select
 
 from access import require_competition_access
-from auth import get_current_user_optional, require_staff
+from auth import get_current_user_id, get_current_user_optional, require_staff
 from database import get_session
 from phase_status import compute_phase_status_map
 from constants import MedicionFase
@@ -18,7 +19,7 @@ from competition_rules import (
     type_from_measurement_method,
 )
 from models import (
-    CompetitionCategory, CompetitionPhase,
+    CompetitionCategory, CompetitionParticipant, CompetitionPhase,
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
     CompetitionHeat,
 )
@@ -63,6 +64,13 @@ MODALITY_ALIAS = {
     "equipo": "teams",
     "equipos": "teams",
     "por_equipo": "teams",
+}
+
+ACTIVE_CATEGORY_ENROLLMENT_STATES = {
+    "confirmado",
+    "pendiente",
+    "pago_pendiente",
+    "pago_en_verificacion",
 }
 
 
@@ -129,6 +137,82 @@ def _category_response(cat: CompetitionCategory, usage: dict[str, dict[str, int]
     payload["modality"] = _normalize_modality(getattr(cat, "modality", None))
     payload["enrollment_price"] = _normalize_enrollment_price(getattr(cat, "enrollment_price", 0))
     return payload
+
+
+def _category_snapshot(cat: CompetitionCategory | None) -> dict | None:
+    if not cat:
+        return None
+    return {
+        "id": cat.id,
+        "competition_id": cat.competition_id,
+        "nombre": cat.nombre,
+        "descripcion": cat.descripcion,
+        "modality": cat.modality,
+        "enrollment_price": cat.enrollment_price,
+        "max_capacity": cat.max_capacity,
+        "registration_enabled": cat.registration_enabled,
+        "orden": cat.orden,
+    }
+
+
+def _active_category_enrollment_count(session: Session, competition_id: int, category_name: str) -> int:
+    normalized = str(category_name or "").strip()
+    if not normalized:
+        return 0
+    return int(session.exec(
+        select(func.count())
+        .select_from(CompetitionParticipant)
+        .where(CompetitionParticipant.competition_id == competition_id)
+        .where(CompetitionParticipant.categoria == normalized)
+        .where(CompetitionParticipant.estado.in_(ACTIVE_CATEGORY_ENROLLMENT_STATES))
+    ).one() or 0)
+
+
+def _active_competition_enrollment_count(session: Session, competition_id: int) -> int:
+    return int(session.exec(
+        select(func.count())
+        .select_from(CompetitionParticipant)
+        .where(CompetitionParticipant.competition_id == competition_id)
+        .where(CompetitionParticipant.estado.in_(ACTIVE_CATEGORY_ENROLLMENT_STATES))
+    ).one() or 0)
+
+
+def _competition_category_count(session: Session, competition_id: int) -> int:
+    return int(session.exec(
+        select(func.count())
+        .select_from(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+    ).one() or 0)
+
+
+def _audit_category_change(
+    session: Session,
+    *,
+    competition_id: int,
+    category_id: int | None,
+    action: str,
+    actor_user_id: int | None,
+    before: dict | None = None,
+    after: dict | None = None,
+    reason: str | None = None,
+) -> None:
+    session.execute(
+        text("""
+            INSERT INTO competition_category_audit
+                (competition_id, category_id, action, actor_user_id, before_data, after_data, reason)
+            VALUES
+                (:competition_id, :category_id, :action, :actor_user_id, CAST(:before_data AS JSONB), CAST(:after_data AS JSONB), :reason)
+        """),
+        {
+            "competition_id": competition_id,
+            "category_id": category_id,
+            "action": action,
+            "actor_user_id": actor_user_id,
+            "before_data": json.dumps(before, ensure_ascii=False) if before is not None else None,
+            "after_data": json.dumps(after, ensure_ascii=False) if after is not None else None,
+            "reason": reason,
+        },
+    )
 
 
 def _normalize_block_name(raw: str | None) -> str | None:
@@ -348,6 +432,7 @@ def list_categories(
 def create_category(competition_id: int, body: CategoryCreate,
                     session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, competition_id, user)
+    actor_user_id = get_current_user_id(user)
     cat = CompetitionCategory(
         competition_id=competition_id,
         nombre=body.nombre,
@@ -359,6 +444,15 @@ def create_category(competition_id: int, body: CategoryCreate,
         orden=body.orden,
     )
     session.add(cat)
+    session.flush()
+    _audit_category_change(
+        session,
+        competition_id=competition_id,
+        category_id=cat.id,
+        action="create",
+        actor_user_id=actor_user_id,
+        after=_category_snapshot(cat),
+    )
     session.commit()
     session.refresh(cat)
     invalidate_leaderboard_results_snapshot(competition_id)
@@ -375,9 +469,11 @@ def update_category(
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
+    actor_user_id = get_current_user_id(user)
     cat = session.get(CompetitionCategory, cat_id)
     if not cat or cat.competition_id != competition_id:
         raise HTTPException(404, "Categoria no encontrada")
+    before = _category_snapshot(cat)
     data = body.model_dump(exclude_unset=True)
     if "modality" in data:
         data["modality"] = _normalize_modality(data["modality"])
@@ -387,9 +483,42 @@ def update_category(
         data["max_capacity"] = normalize_capacity(data["max_capacity"])
     if "registration_enabled" in data:
         data["registration_enabled"] = normalize_registration_enabled(data["registration_enabled"])
+    next_name = str(data.get("nombre", cat.nombre) or "").strip()
+    next_modality = _normalize_modality(data.get("modality", cat.modality))
+    current_name = str(cat.nombre or "").strip()
+    current_modality = _normalize_modality(getattr(cat, "modality", None))
+    if (next_name != current_name or next_modality != current_modality):
+        active_count = _active_competition_enrollment_count(session, competition_id)
+        if active_count > 0:
+            reason = f"competition_has_active_enrollments:{active_count}"
+            _audit_category_change(
+                session,
+                competition_id=competition_id,
+                category_id=cat.id,
+                action="update_blocked",
+                actor_user_id=actor_user_id,
+                before=before,
+                after={**(before or {}), **data},
+                reason=reason,
+            )
+            session.commit()
+            raise HTTPException(
+                409,
+                "No se puede renombrar o cambiar la modalidad de categorias cuando la competencia ya tiene inscritos. Cierra la categoria o crea una nueva.",
+            )
     for key, value in data.items():
         setattr(cat, key, value)
     session.add(cat)
+    session.flush()
+    _audit_category_change(
+        session,
+        competition_id=competition_id,
+        category_id=cat.id,
+        action="update",
+        actor_user_id=actor_user_id,
+        before=before,
+        after=_category_snapshot(cat),
+    )
     session.commit()
     session.refresh(cat)
     invalidate_leaderboard_results_snapshot(competition_id)
@@ -401,8 +530,34 @@ def update_category(
 def delete_category(competition_id: int, cat_id: int,
                     session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, competition_id, user)
+    actor_user_id = get_current_user_id(user)
     cat = session.get(CompetitionCategory, cat_id)
     if cat and cat.competition_id == competition_id:
+        before = _category_snapshot(cat)
+        active_count = _active_competition_enrollment_count(session, competition_id)
+        if active_count > 0:
+            _audit_category_change(
+                session,
+                competition_id=competition_id,
+                category_id=cat.id,
+                action="delete_blocked",
+                actor_user_id=actor_user_id,
+                before=before,
+                reason=f"competition_has_active_enrollments:{active_count}",
+            )
+            session.commit()
+            raise HTTPException(
+                409,
+                "No se pueden eliminar categorias cuando la competencia ya tiene inscritos. Cierra la categoria para nuevas inscripciones.",
+            )
+        _audit_category_change(
+            session,
+            competition_id=competition_id,
+            category_id=cat.id,
+            action="delete",
+            actor_user_id=actor_user_id,
+            before=before,
+        )
         session.delete(cat)
         session.commit()
         invalidate_leaderboard_results_snapshot(competition_id)
