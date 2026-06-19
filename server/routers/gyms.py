@@ -27,6 +27,7 @@ from services.gyms import (
     make_unique_slug,
     reject_gym_claim,
     require_gym_manager,
+    sync_participant_box_from_membership,
     transition_gym_status,
     transition_membership_status,
     utcnow,
@@ -540,6 +541,8 @@ def request_gym_membership(
         visibility=str(body.get("visibility") or "public"),
     )
     session.add(membership)
+    session.flush()
+    sync_participant_box_from_membership(session, user_id)
     log_gym_action(session, gym_id, user_id, "membership:requested")
     session.commit()
     session.refresh(membership)

@@ -83,7 +83,7 @@ class EnrollmentQuestionTaskTests(unittest.TestCase):
 
         self.assertEqual(rows[0]["box"], "FinalRep Box")
 
-    def test_serialized_rows_keep_legacy_box_over_membership(self):
+    def test_serialized_rows_use_membership_over_legacy_box(self):
         enrollment = SimpleNamespace(
             categoria="RX",
             estado="confirmado",
@@ -105,7 +105,7 @@ class EnrollmentQuestionTaskTests(unittest.TestCase):
             {7: "FinalRep Box"},
         )
 
-        self.assertEqual(rows[0]["box"], "Legacy Box")
+        self.assertEqual(rows[0]["box"], "FinalRep Box")
 
 
 if __name__ == "__main__":

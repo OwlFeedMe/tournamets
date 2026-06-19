@@ -173,7 +173,7 @@ def _serialize_enrolled_rows(
             _parse_enrollment_answers(cp.enrollment_answers),
         )
         participant_payload = p.model_dump()
-        participant_payload["box"] = participant_payload.get("box") or represented_gym_by_user.get(int(p.id), "")
+        participant_payload["box"] = represented_gym_by_user.get(int(p.id), "")
         items.append(
             {
                 **participant_payload,
@@ -911,7 +911,7 @@ def export_enrolled_xlsx(competition_id: int, session: Session = Depends(get_ses
             participant.email or "",
             participant.celular or "",
             participant.genero or participant.sexo or "",
-            participant.box or represented_gym_by_user.get(int(participant.id), ""),
+            represented_gym_by_user.get(int(participant.id), ""),
             participant.ciudad_pais or "",
             _format_export_datetime(enrollment.inscrito_at),
             len(missing_questions) or "",

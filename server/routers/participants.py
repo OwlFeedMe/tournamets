@@ -20,6 +20,7 @@ from constants import AthleteProfileVisibility, GymMembershipStatus
 from database import get_session
 from models import AthleteUsernameAlias, Competition, CompetitionParticipant, CompetitionPhase, Gym, GymMembership, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, Result
 from services.athlete_profiles import build_default_display_name, build_public_username_seed, ensure_unique_username, find_user_by_alias, find_user_by_username, is_reserved_username, is_sensitive_username, is_username_available, is_username_format_valid, normalize_requested_username, suggest_usernames
+from services.gyms import sync_participant_box_from_membership
 
 
 def _normalize(s: str) -> str:
@@ -99,7 +100,7 @@ def _get_missing_profile_fields(p, session: Session | None = None) -> list[str]:
         missing.append("ciudad_pais")
     if not p.profile_photo_url:
         missing.append("profile_photo_url")
-    if not p.box and (session is None or not _has_active_gym_membership(session, int(p.id))):
+    if session is None or not _has_active_gym_membership(session, int(p.id)):
         missing.append("gym")
     return missing
 
@@ -312,6 +313,9 @@ def get_my_profile(session: Session = Depends(get_session), user=Depends(require
     p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
+    sync_participant_box_from_membership(session, int(user_id))
+    session.commit()
+    session.refresh(p)
     return p
 
 
@@ -323,6 +327,9 @@ def get_profile_completeness(session: Session = Depends(get_session), user=Depen
     p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
+    sync_participant_box_from_membership(session, int(user_id))
+    session.commit()
+    session.refresh(p)
     missing = _get_missing_profile_fields(p, session)
     total = len(PROFILE_COMPLETENESS_FIELDS)
     return {

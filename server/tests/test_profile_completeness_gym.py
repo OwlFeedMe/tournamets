@@ -22,11 +22,11 @@ def _profile(**extra):
 
 
 class ProfileCompletenessGymTests(unittest.TestCase):
-    def test_missing_gym_when_box_and_membership_are_absent(self):
+    def test_missing_gym_when_membership_is_absent(self):
         self.assertIn("gym", _get_missing_profile_fields(_profile()))
 
-    def test_legacy_box_completes_gym_requirement(self):
-        self.assertNotIn("gym", _get_missing_profile_fields(_profile(box="FinalRep Box")))
+    def test_legacy_box_does_not_complete_gym_requirement(self):
+        self.assertIn("gym", _get_missing_profile_fields(_profile(box="FinalRep Box")))
 
     def test_active_gym_membership_completes_gym_requirement(self):
         with patch("routers.participants._has_active_gym_membership", return_value=True):

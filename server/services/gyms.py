@@ -11,7 +11,7 @@ from constants import (
     GymStatus, GymOwnershipStatus, GymClaimStatus,
     GymMembershipStatus, GymStaffRole,
 )
-from models import Gym, GymAuditLog, GymClaim, GymMembership, GymStaff
+from models import Gym, GymAuditLog, GymClaim, GymMembership, GymStaff, Participant
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -142,11 +142,33 @@ def transition_membership_status(
     elif new_status in {GymMembershipStatus.REMOVED, GymMembershipStatus.INACTIVE}:
         membership.ended_at = now
     session.add(membership)
+    sync_participant_box_from_membership(session, int(membership.user_id))
     log_gym_action(
         session, membership.gym_id, actor_user_id,
         f"membership:{new_status}",
         before, {"status": new_status, "user_id": membership.user_id},
     )
+
+
+def sync_participant_box_from_membership(session: Session, user_id: int) -> Optional[str]:
+    participant = session.get(Participant, user_id)
+    if not participant:
+        return None
+    row = session.exec(
+        select(GymMembership, Gym)
+        .join(Gym, Gym.id == GymMembership.gym_id)
+        .where(GymMembership.user_id == user_id)
+        .where(GymMembership.status.in_(list(GymMembershipStatus.ACTIVE)))
+        .order_by(GymMembership.is_primary.desc(), GymMembership.requested_at.desc())
+    ).first()
+    next_box = None
+    if row:
+        _membership, gym = row
+        next_box = gym.display_name or None
+    if (participant.box or None) != next_box:
+        participant.box = next_box
+        session.add(participant)
+    return next_box
 
 
 # ── Claim flow ─────────────────────────────────────────────────────────────────
