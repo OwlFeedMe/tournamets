@@ -5662,6 +5662,71 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         </div>
 
+        <div style={sectionStyle}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.08)', color: '#D7FFFA', fontSize: 11, fontWeight: 700 }}>
+                <Info size={12} />
+                No agregues preguntas con informacion que ya existe en el perfil del atleta.
+              </span>
+            </div>
+            <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen para validar informacion del atleta.</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
+              {questions.length ? `${questions.length} pregunta${questions.length === 1 ? '' : 's'} configurada${questions.length === 1 ? '' : 's'}.` : 'Todavia no has agregado preguntas.'}
+            </div>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddQuestionModal(true)}>
+              + Agregar pregunta
+            </button>
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {questions.map((question, idx) => (
+              <div key={question.id} style={{ ...listItemStyle, gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#5EEAD4', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
+                        PREGUNTA {String(idx + 1).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, lineHeight: 1.2, marginTop: 6 }}>
+                      {question.label || `Pregunta ${idx + 1}`}
+                    </div>
+                  </div>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingQuestionId(question.id)} style={{ flexShrink: 0 }}>
+                    Editar
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Tipo</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {question.field_type === 'image' ? 'Imagen' : question.field_type === 'number' ? 'Solo numeros' : 'Solo texto'}
+                      </div>
+                    </div>
+                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Estado</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
+                        {question.required ? 'Obligatoria' : 'Opcional'}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
+                    <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Ayuda</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
+                      {question.placeholder || 'Sin ayuda adicional'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!questions.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin preguntas configuradas.</div>}
+          </div>
+        </div>
+
         </div>
         )}
 
@@ -5760,70 +5825,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
         </div>
 
-        <div style={sectionStyle}>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <h4 style={sectionTitleStyle}>Preguntas de participacion</h4>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, border: '1px solid rgba(94,234,212,0.28)', background: 'rgba(94,234,212,0.08)', color: '#D7FFFA', fontSize: 11, fontWeight: 700 }}>
-                <Info size={12} />
-                No agregues preguntas con informacion que ya existe en el perfil del atleta.
-              </span>
-            </div>
-            <div style={sectionHintStyle}>Se muestran en el formulario que abre el boton "Quiero participar". Puedes pedir texto o una imagen para validar informacion del atleta.</div>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>
-              {questions.length ? `${questions.length} pregunta${questions.length === 1 ? '' : 's'} configurada${questions.length === 1 ? '' : 's'}.` : 'Todavia no has agregado preguntas.'}
-            </div>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setShowAddQuestionModal(true)}>
-              + Agregar pregunta
-            </button>
-          </div>
-          <div style={{ display: 'grid', gap: 6 }}>
-            {questions.map((question, idx) => (
-              <div key={question.id} style={{ ...listItemStyle, gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#5EEAD4', fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>
-                        PREGUNTA {String(idx + 1).padStart(2, '0')}
-                      </span>
-                    </div>
-                    <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 800, lineHeight: 1.2, marginTop: 6 }}>
-                      {question.label || `Pregunta ${idx + 1}`}
-                    </div>
-                  </div>
-                  <button type="button" className="btn-secondary btn-sm" onClick={() => setEditingQuestionId(question.id)} style={{ flexShrink: 0 }}>
-                    Editar
-                  </button>
-                </div>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
-                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
-                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Tipo</div>
-                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
-                        {question.field_type === 'image' ? 'Imagen' : question.field_type === 'number' ? 'Solo numeros' : 'Solo texto'}
-                      </div>
-                    </div>
-                    <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
-                      <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Estado</div>
-                      <div style={{ color: '#F5F7FA', fontSize: 13 }}>
-                        {question.required ? 'Obligatoria' : 'Opcional'}
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.45)', padding: '10px 12px' }}>
-                    <div style={{ color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Ayuda</div>
-                    <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>
-                      {question.placeholder || 'Sin ayuda adicional'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {!questions.length && <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12 }}>Sin preguntas configuradas.</div>}
-          </div>
-        </div>
         </div>
         )}
 
