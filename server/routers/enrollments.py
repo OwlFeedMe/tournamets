@@ -134,10 +134,14 @@ def _get_checkin_usage_by_participant(session: Session, competition_id: int) -> 
     }
 
 
-def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datetime]) -> list[dict]:
+def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datetime], questions: list[dict] | None = None) -> list[dict]:
     items = []
     for cp, p in rows:
         checkin_used_at = checkin_usage_by_participant.get(int(p.id))
+        missing_questions = _missing_required_enrollment_questions(
+            questions or [],
+            _parse_enrollment_answers(cp.enrollment_answers),
+        )
         items.append(
             {
                 **p.model_dump(),
@@ -145,6 +149,8 @@ def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datet
                 "categoria_competencia": cp.categoria,
                 "estado": cp.estado,
                 "enrollment_answers": cp.enrollment_answers,
+                "pending_enrollment_questions": missing_questions,
+                "pending_enrollment_question_count": len(missing_questions),
                 "payment_status": cp.payment_status,
                 "payment_reference": cp.payment_reference,
                 "payment_transaction_id": cp.payment_transaction_id,
@@ -158,6 +164,97 @@ def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datet
             }
         )
     return items
+
+
+def _parse_enrollment_answers(raw: str | None) -> list[dict]:
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        question_id = str(item.get("question_id") or "").strip()
+        label = str(item.get("question_label") or "").strip()
+        answer = str(item.get("answer") or "").strip()
+        if not question_id and not label and not answer:
+            continue
+        out.append({
+            "question_id": question_id,
+            "question_label": label,
+            "question_type": str(item.get("question_type") or "text").strip().lower() or "text",
+            "answer": answer,
+        })
+    return out
+
+
+def _missing_required_enrollment_questions(questions: list[dict], answers: list[dict]) -> list[dict]:
+    answer_by_id = {
+        str(item.get("question_id") or "").strip(): str(item.get("answer") or "").strip()
+        for item in answers
+        if str(item.get("question_id") or "").strip()
+    }
+    missing = []
+    for question in questions:
+        question_id = str(question.get("id") or "").strip()
+        if question.get("required") and question_id and not answer_by_id.get(question_id):
+            missing.append(question)
+    return missing
+
+
+def _merge_enrollment_answers(questions: list[dict], existing_answers: list[dict], incoming_answers: list | None) -> str | None:
+    incoming_by_id = {}
+    for item in incoming_answers or []:
+        if item is None:
+            continue
+        question_id = str(getattr(item, "question_id", None) or "").strip()
+        if question_id:
+            incoming_by_id[question_id] = str(getattr(item, "answer", "") or "").strip()
+
+    existing_by_id = {
+        str(item.get("question_id") or "").strip(): item
+        for item in existing_answers
+        if str(item.get("question_id") or "").strip()
+    }
+    current_question_ids = {str(question.get("id") or "").strip() for question in questions}
+    normalized = []
+    missing_required = []
+    for question in questions:
+        question_id = str(question["id"])
+        previous = existing_by_id.get(question_id) or {}
+        value = incoming_by_id.get(question_id, str(previous.get("answer") or "").strip()).strip()
+        if question.get("required") and not value:
+            missing_required.append(question["label"])
+        normalized.append({
+            "question_id": question_id,
+            "question_label": question["label"],
+            "question_type": question.get("field_type") or "text",
+            "answer": value,
+        })
+
+    for item in existing_answers:
+        question_id = str(item.get("question_id") or "").strip()
+        if question_id in current_question_ids:
+            continue
+        label = str(item.get("question_label") or "").strip()
+        value = str(item.get("answer") or "").strip()
+        if not question_id and not label and not value:
+            continue
+        normalized.append({
+            "question_id": question_id or f"extra_{len(normalized) + 1}",
+            "question_label": label,
+            "question_type": str(item.get("question_type") or "text").strip().lower() or "text",
+            "answer": value,
+        })
+
+    if missing_required:
+        raise HTTPException(400, f"Responde las preguntas obligatorias: {', '.join(missing_required)}")
+    return json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
 def _serialize_enrollment_answers(questions: list[dict], answers: list | None, extra_items: list[dict] | None = None) -> str | None:
@@ -663,7 +760,7 @@ def upload_enrollment_answer_image(
 
 @router.get("/api/competitions/{competition_id}/participants")
 def list_enrolled(competition_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
 
     rows = session.exec(
         select(CompetitionParticipant, Participant)
@@ -672,7 +769,81 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
         .order_by(CompetitionParticipant.estado, Participant.apellido, Participant.nombre)
     ).all()
     checkin_usage_by_participant = _get_checkin_usage_by_participant(session, competition_id)
-    return _serialize_enrolled_rows(rows, checkin_usage_by_participant)
+    questions = _parse_enrollment_questions(competition.enrollment_questions)
+    return _serialize_enrolled_rows(rows, checkin_usage_by_participant, questions)
+
+
+@router.get("/api/me/enrollment-question-tasks")
+def list_my_enrollment_question_tasks(session: Session = Depends(get_session), user=Depends(require_auth)):
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
+        raise HTTPException(403, "Solo usuarios")
+
+    rows = session.exec(
+        select(CompetitionParticipant, Competition)
+        .join(Competition, Competition.id == CompetitionParticipant.competition_id)
+        .where(CompetitionParticipant.user_id == user_id)
+        .where(CompetitionParticipant.estado.in_(["confirmado", "pendiente"]))
+        .order_by(CompetitionParticipant.inscrito_at.desc(), Competition.id.desc())
+    ).all()
+    tasks = []
+    for enrollment, competition in rows:
+        questions = _parse_enrollment_questions(competition.enrollment_questions)
+        if not questions:
+            continue
+        existing_answers = _parse_enrollment_answers(enrollment.enrollment_answers)
+        missing_questions = _missing_required_enrollment_questions(questions, existing_answers)
+        if not missing_questions:
+            continue
+        tasks.append({
+            "competition_id": competition.id,
+            "competition_name": competition.nombre,
+            "competition_slug": competition.slug,
+            "category": enrollment.categoria,
+            "estado": enrollment.estado,
+            "missing_count": len(missing_questions),
+            "questions": missing_questions,
+        })
+    return tasks
+
+
+@router.post("/api/competitions/{competition_id}/enrollment-answers")
+def update_my_enrollment_answers(
+    competition_id: int,
+    body: SelfEnrollRequest,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    user_id = get_current_user_id(user)
+    if not is_end_user(user) or user_id is None:
+        raise HTTPException(403, "Solo usuarios")
+
+    comp = session.get(Competition, competition_id)
+    if not comp:
+        raise HTTPException(404, "Competencia no encontrada")
+    enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
+    if not enrollment or enrollment.estado not in ("confirmado", "pendiente"):
+        raise HTTPException(404, "Inscripcion no encontrada")
+
+    questions = _parse_enrollment_questions(comp.enrollment_questions)
+    if not questions:
+        raise HTTPException(400, "Esta competencia no tiene preguntas pendientes")
+
+    existing_answers = _parse_enrollment_answers(enrollment.enrollment_answers)
+    enrollment.enrollment_answers = _merge_enrollment_answers(questions, existing_answers, body.answers)
+    session.add(enrollment)
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+
+    missing_questions = _missing_required_enrollment_questions(
+        questions,
+        _parse_enrollment_answers(enrollment.enrollment_answers),
+    )
+    return {
+        "ok": True,
+        "competition_id": competition_id,
+        "missing_count": len(missing_questions),
+    }
 
 
 @router.post("/api/competitions/{competition_id}/participants", status_code=201)

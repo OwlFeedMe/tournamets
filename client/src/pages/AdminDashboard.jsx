@@ -437,10 +437,34 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;')
 }
 
-function downloadEnrollmentWorkbook(participants, competitionName) {
-  const answerLabels = Array.from(new Set(
-    participants.flatMap(participant => parseEnrollmentAnswers(participant.enrollment_answers).map(item => item.question_label || 'Respuesta'))
-  ))
+function downloadEnrollmentWorkbook(participants, competition) {
+  const currentQuestions = parseEnrollmentQuestions(competition?.enrollment_questions)
+  const answerColumns = []
+  const seenColumnKeys = new Set()
+  currentQuestions.forEach((question) => {
+    const key = question.id || question.label
+    if (!key || seenColumnKeys.has(key)) return
+    seenColumnKeys.add(key)
+    answerColumns.push({
+      key,
+      questionId: question.id,
+      label: question.label,
+      required: !!question.required,
+    })
+  })
+  participants.forEach((participant) => {
+    parseEnrollmentAnswers(participant.enrollment_answers).forEach((item) => {
+      const key = item.question_id || item.question_label || 'Respuesta'
+      if (!key || seenColumnKeys.has(key)) return
+      seenColumnKeys.add(key)
+      answerColumns.push({
+        key,
+        questionId: item.question_id,
+        label: item.question_label || 'Respuesta',
+        required: false,
+      })
+    })
+  })
   const headers = [
     'Participante',
     'Cedula',
@@ -451,15 +475,19 @@ function downloadEnrollmentWorkbook(participants, competitionName) {
     'Genero',
     'Box',
     'Ciudad / Pais',
-    ...answerLabels,
+    'Fecha de inscripcion',
+    'Check-in',
+    'Preguntas pendientes',
+    ...answerColumns.map(column => column.label),
   ]
   const rows = participants.map(participant => {
-    const answers = Object.fromEntries(
-      parseEnrollmentAnswers(participant.enrollment_answers).map(item => [
-        item.question_label || 'Respuesta',
-        item.question_type === 'image' && item.answer ? item.answer : (item.answer || ''),
-      ])
-    )
+    const answersById = {}
+    const answersByLabel = {}
+    parseEnrollmentAnswers(participant.enrollment_answers).forEach((item) => {
+      const value = item.question_type === 'image' && item.answer ? item.answer : (item.answer || '')
+      if (item.question_id) answersById[item.question_id] = value
+      if (item.question_label) answersByLabel[item.question_label] = value
+    })
     return [
       `${participant.nombre || ''} ${participant.apellido || ''}`.trim(),
       formatCedula(participant.cedula),
@@ -470,7 +498,13 @@ function downloadEnrollmentWorkbook(participants, competitionName) {
       participant.genero || participant.sexo || '',
       participant.box || '',
       participant.ciudad_pais || '',
-      ...answerLabels.map(label => answers[label] || ''),
+      participant.inscrito_at ? formatDate(participant.inscrito_at) : '',
+      participant.check_in_done ? 'Realizado' : 'Pendiente',
+      Number(participant.pending_enrollment_question_count || 0) || '',
+      ...answerColumns.map(column => {
+        const value = (column.questionId ? answersById[column.questionId] : '') || answersByLabel[column.label] || ''
+        return value || (column.required ? 'Pendiente' : '')
+      }),
     ]
   })
   const workbookXml = `<?xml version="1.0"?>
@@ -499,7 +533,7 @@ function downloadEnrollmentWorkbook(participants, competitionName) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${String(competitionName || 'inscripciones').trim().replace(/[\\/:*?"<>|]+/g, '_') || 'inscripciones'}.xls`
+  anchor.download = `${String(competition?.nombre || 'inscripciones').trim().replace(/[\\/:*?"<>|]+/g, '_') || 'inscripciones'}.xls`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -10625,6 +10659,11 @@ function CompetitionsTab() {
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
               <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Preguntas del registro</div>
+              {Number(participantDetail.pending_enrollment_question_count || 0) > 0 ? (
+                <div style={{ borderRadius: 14, border: '1px solid rgba(245,158,11,0.32)', background: 'rgba(245,158,11,0.10)', color: '#FBBF24', padding: 12, fontSize: 13, lineHeight: 1.5, fontWeight: 700 }}>
+                  Pendiente: {(participantDetail.pending_enrollment_questions || []).map(question => question.label).filter(Boolean).join(', ') || `${participantDetail.pending_enrollment_question_count} pregunta(s)`}
+                </div>
+              ) : null}
               <EnrollmentAnswersBlock raw={participantDetail.enrollment_answers} onPreviewImage={setPreviewImage} />
             </div>
             <div style={{ border: '1px solid rgba(239,68,68,0.28)', borderRadius: 16, background: 'rgba(239,68,68,0.08)', padding: 16, display: 'grid', gap: 12 }}>
@@ -11313,7 +11352,7 @@ function CompetitionsTab() {
                         }}>
                           <button
                             className="btn-secondary btn-sm"
-                            onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition?.nombre || 'inscripciones')}
+                            onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition)}
                             style={isMobile ? { gridColumn: '1 / -1', width: '100%', minWidth: 0 } : undefined}
                           >
                           Descargar Excel
