@@ -24,12 +24,13 @@ from sqlmodel import Session, select
 
 from access import require_competition_access
 from auth import get_current_user, get_current_user_id, is_end_user, require_admin, require_auth, require_staff
+from constants import GymMembershipStatus
 from database import get_session
 from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
     EnrollCategoriaUpdate, EnrollmentReplaceRequest, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
-    CompetitionHeat, CompetitionHeatAssignment, Result, Team, TeamMember,
+    CompetitionHeat, CompetitionHeatAssignment, Gym, GymMembership, Result, Team, TeamMember,
 )
 from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
@@ -138,17 +139,44 @@ def _get_checkin_usage_by_participant(session: Session, competition_id: int) -> 
     }
 
 
-def _serialize_enrolled_rows(rows, checkin_usage_by_participant: dict[int, datetime], questions: list[dict] | None = None) -> list[dict]:
+def _get_represented_gym_by_user(session: Session, user_ids: list[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    rows = session.exec(
+        select(GymMembership, Gym)
+        .join(Gym, Gym.id == GymMembership.gym_id)
+        .where(GymMembership.user_id.in_(user_ids))
+        .where(GymMembership.status.in_(list(GymMembershipStatus.ACTIVE)))
+        .order_by(GymMembership.user_id, GymMembership.is_primary.desc(), GymMembership.requested_at.desc())
+    ).all()
+    represented = {}
+    for membership, gym in rows:
+        user_id = int(membership.user_id)
+        if user_id in represented:
+            continue
+        represented[user_id] = gym.display_name or ""
+    return represented
+
+
+def _serialize_enrolled_rows(
+    rows,
+    checkin_usage_by_participant: dict[int, datetime],
+    questions: list[dict] | None = None,
+    represented_gym_by_user: dict[int, str] | None = None,
+) -> list[dict]:
     items = []
+    represented_gym_by_user = represented_gym_by_user or {}
     for cp, p in rows:
         checkin_used_at = checkin_usage_by_participant.get(int(p.id))
         missing_questions = _missing_required_enrollment_questions(
             questions or [],
             _parse_enrollment_answers(cp.enrollment_answers),
         )
+        participant_payload = p.model_dump()
+        participant_payload["box"] = participant_payload.get("box") or represented_gym_by_user.get(int(p.id), "")
         items.append(
             {
-                **p.model_dump(),
+                **participant_payload,
                 "user_id": p.id,
                 "categoria_competencia": cp.categoria,
                 "estado": cp.estado,
@@ -819,7 +847,8 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
     ).all()
     checkin_usage_by_participant = _get_checkin_usage_by_participant(session, competition_id)
     questions = _parse_enrollment_questions(competition.enrollment_questions)
-    return _serialize_enrolled_rows(rows, checkin_usage_by_participant, questions)
+    represented_gym_by_user = _get_represented_gym_by_user(session, [int(p.id) for _cp, p in rows if p.id is not None])
+    return _serialize_enrolled_rows(rows, checkin_usage_by_participant, questions, represented_gym_by_user)
 
 
 @router.get("/api/competitions/{competition_id}/participants/export.xlsx")
@@ -834,6 +863,7 @@ def export_enrolled_xlsx(competition_id: int, session: Session = Depends(get_ses
     ).all()
     questions = _parse_enrollment_questions(competition.enrollment_questions)
     answer_columns = _build_enrollment_answer_columns(questions, rows)
+    represented_gym_by_user = _get_represented_gym_by_user(session, [int(p.id) for _cp, p in rows if p.id is not None])
 
     wb = Workbook()
     ws = wb.active
@@ -881,7 +911,7 @@ def export_enrolled_xlsx(competition_id: int, session: Session = Depends(get_ses
             participant.email or "",
             participant.celular or "",
             participant.genero or participant.sexo or "",
-            participant.box or "",
+            participant.box or represented_gym_by_user.get(int(participant.id), ""),
             participant.ciudad_pais or "",
             _format_export_datetime(enrollment.inscrito_at),
             len(missing_questions) or "",

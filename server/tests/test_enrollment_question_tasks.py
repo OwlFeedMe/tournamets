@@ -8,7 +8,17 @@ from routers.enrollments import (
     _merge_enrollment_answers,
     _missing_required_enrollment_questions,
     _parse_enrollment_answers,
+    _serialize_enrolled_rows,
 )
+
+
+class ParticipantStub:
+    def __init__(self, user_id, box=""):
+        self.id = user_id
+        self.box = box
+
+    def model_dump(self):
+        return {"id": self.id, "box": self.box, "nombre": "Ana", "apellido": "Rojas"}
 
 
 class EnrollmentQuestionTaskTests(unittest.TestCase):
@@ -48,6 +58,54 @@ class EnrollmentQuestionTaskTests(unittest.TestCase):
 
         with self.assertRaises(HTTPException):
             _merge_enrollment_answers(questions, [], [])
+
+    def test_serialized_rows_use_represented_gym_when_box_is_empty(self):
+        enrollment = SimpleNamespace(
+            categoria="RX",
+            estado="confirmado",
+            enrollment_answers=None,
+            payment_status=None,
+            payment_reference=None,
+            payment_transaction_id=None,
+            payment_processor_fee=0,
+            payment_platform_net=0,
+            payment_amount_total=0,
+            payment_processed_at=None,
+            inscrito_at=None,
+        )
+
+        rows = _serialize_enrolled_rows(
+            [(enrollment, ParticipantStub(7, box=""))],
+            {},
+            [],
+            {7: "FinalRep Box"},
+        )
+
+        self.assertEqual(rows[0]["box"], "FinalRep Box")
+
+    def test_serialized_rows_keep_legacy_box_over_membership(self):
+        enrollment = SimpleNamespace(
+            categoria="RX",
+            estado="confirmado",
+            enrollment_answers=None,
+            payment_status=None,
+            payment_reference=None,
+            payment_transaction_id=None,
+            payment_processor_fee=0,
+            payment_platform_net=0,
+            payment_amount_total=0,
+            payment_processed_at=None,
+            inscrito_at=None,
+        )
+
+        rows = _serialize_enrolled_rows(
+            [(enrollment, ParticipantStub(7, box="Legacy Box"))],
+            {},
+            [],
+            {7: "FinalRep Box"},
+        )
+
+        self.assertEqual(rows[0]["box"], "Legacy Box")
 
 
 if __name__ == "__main__":
