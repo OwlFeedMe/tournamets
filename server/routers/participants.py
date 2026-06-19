@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from auth import get_current_user_optional, get_effective_user_id, has_admin_access, invalidate_user, is_end_user, require_admin, require_auth
-from constants import AthleteProfileVisibility
+from constants import AthleteProfileVisibility, GymMembershipStatus
 from database import get_session
 from models import AthleteUsernameAlias, Competition, CompetitionParticipant, CompetitionPhase, Gym, GymMembership, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, Result
 from services.athlete_profiles import build_default_display_name, build_public_username_seed, ensure_unique_username, find_user_by_alias, find_user_by_username, is_reserved_username, is_sensitive_username, is_username_available, is_username_format_valid, normalize_requested_username, suggest_usernames
@@ -74,9 +74,18 @@ def _is_pending_cedula(value: str | None) -> bool:
     return bool(value and value.startswith(PENDING_CEDULA_PREFIX))
 
 
-PROFILE_COMPLETENESS_FIELDS = ["email", "celular", "genero", "fecha_nacimiento", "ciudad_pais", "profile_photo_url"]
+PROFILE_COMPLETENESS_FIELDS = ["email", "celular", "genero", "fecha_nacimiento", "ciudad_pais", "profile_photo_url", "gym"]
 
-def _get_missing_profile_fields(p) -> list[str]:
+def _has_active_gym_membership(session: Session, user_id: int) -> bool:
+    return session.exec(
+        select(GymMembership.id)
+        .where(GymMembership.user_id == user_id)
+        .where(GymMembership.status.in_(list(GymMembershipStatus.ACTIVE)))
+        .limit(1)
+    ).first() is not None
+
+
+def _get_missing_profile_fields(p, session: Session | None = None) -> list[str]:
     missing = []
     if not p.email:
         missing.append("email")
@@ -90,6 +99,8 @@ def _get_missing_profile_fields(p) -> list[str]:
         missing.append("ciudad_pais")
     if not p.profile_photo_url:
         missing.append("profile_photo_url")
+    if not p.box and (session is None or not _has_active_gym_membership(session, int(p.id))):
+        missing.append("gym")
     return missing
 
 
@@ -312,7 +323,7 @@ def get_profile_completeness(session: Session = Depends(get_session), user=Depen
     p = session.get(Participant, user_id)
     if not p:
         raise HTTPException(404, "Participante no encontrado")
-    missing = _get_missing_profile_fields(p)
+    missing = _get_missing_profile_fields(p, session)
     total = len(PROFILE_COMPLETENESS_FIELDS)
     return {
         "complete": len(missing) == 0,

@@ -6,6 +6,8 @@ const PARTICIPANT_PROFILE_FIELD_LABELS = {
   apellido: 'apellido',
   email: 'email',
   celular: 'celular',
+  gym: 'gym',
+  box: 'box',
   genero: 'género',
   fecha_nacimiento: 'fecha nacimiento',
   ciudad_pais: 'ciudad / país',

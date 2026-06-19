@@ -494,13 +494,14 @@ export function AuthenticatedShell() {
       const profileResult = results.find((item) => item.kind === 'profile')
       if (profileResult && !profileResult.data.complete) {
         const { missing_fields: missing = [], total_fields: total = 6, filled_fields: filled = 0 } = profileResult.data
-        const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
+        const profileMissingKey = [...missing].sort().join(',') || 'profile'
+        const profileSeenKey = `finalrep:profile-notif-seen:${userId}:${profileMissingKey}`
         dynamicItems.push({
           title: 'Completa tu perfil',
           text: `Tienes ${missing.length} campo${missing.length !== 1 ? 's' : ''} pendiente${missing.length !== 1 ? 's' : ''} (${filled}/${total} completado${filled !== 1 ? 's' : ''}). Completar tu perfil mejora tu experiencia y te permite recibir invitaciones correctamente.`,
           tone: 'neutral',
           actions: [
-            { id: 'go-to-profile', label: 'Ir a mi perfil', tone: 'primary', actionType: 'go-to-profile' },
+            { id: 'go-to-profile', label: 'Ir a mi perfil', tone: 'primary', actionType: 'go-to-profile', profileSeenKey },
           ],
         })
         if (!window.localStorage.getItem(profileSeenKey)) {
@@ -543,8 +544,13 @@ export function AuthenticatedShell() {
 
   useEffect(() => {
     if (!notificationsOpen || !session || !userId) return
-    const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
-    window.localStorage.setItem(profileSeenKey, '1')
+    notificationItems.forEach((item) => {
+      ;(item.actions || []).forEach((action) => {
+        if (action.actionType === 'go-to-profile' && action.profileSeenKey) {
+          window.localStorage.setItem(action.profileSeenKey, '1')
+        }
+      })
+    })
     const questionSeenKey = `finalrep:enrollment-question-tasks-seen:${userId}`
     const questionSeenMap = {}
     notificationItems.forEach((item) => {
@@ -594,8 +600,9 @@ export function AuthenticatedShell() {
         setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.invitationId === action.invitationId)))
         setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'go-to-profile') {
-        const profileSeenKey = `finalrep:profile-notif-seen:${userId}`
-        window.localStorage.setItem(profileSeenKey, '1')
+        if (action.profileSeenKey) {
+          window.localStorage.setItem(action.profileSeenKey, '1')
+        }
         setNotificationsOpen(false)
         navigate('/profile')
       } else if (action.actionType === 'answer-enrollment-questions') {
