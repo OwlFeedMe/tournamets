@@ -4126,6 +4126,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     rm_unit: 'kg',
   })
   const [cats, setCats] = useState([])
+  const [categoriesLoaded, setCategoriesLoaded] = useState(!isEdit)
   const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0, max_capacity: '', registration_enabled: 1 })
   const [phases, setPhases] = useState([])
   const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
@@ -4163,6 +4164,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
   useEffect(() => {
     if (!isEdit || !competition) return
+    setCategoriesLoaded(false)
     const applyCompetitionData = (source) => {
       setForm({
         nombre: source.nombre || '',
@@ -4228,6 +4230,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         available_spots: c.available_spots,
         registration_status: c.registration_status || 'open',
       })))
+      setCategoriesLoaded(true)
       setPhases(phRes.data.map(p => {
         const activities = Array.isArray(p.activities) ? p.activities : []
         const baseActivities = normalizePhaseActivities(activities, p)
@@ -4266,6 +4269,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         }
       }))
     }).catch(() => {
+      setCategoriesLoaded(false)
       setMsg({ type: 'error', text: 'No se pudo cargar la configuracion actual' })
     })
   }, [isEdit, competition?.id])
@@ -4439,6 +4443,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         registration_enabled: c.registration_enabled === false || Number(c.registration_enabled) === 0 ? 0 : 1,
       }))
       .filter(c => c.nombre)
+    if (isEdit && !categoriesLoaded) {
+      setMsg({ type: 'error', text: 'No se guardo: las categorias no terminaron de cargar. Recarga la competencia antes de guardar cambios.' })
+      return
+    }
     const cleanPhases = phases
       .map((p, idx) => ({
         ...p,
@@ -4576,6 +4584,9 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
 
       try {
         const existingCats = isEdit ? (await api.get(`/competitions/${competitionId}/categories`)).data : []
+        if (isEdit && existingCats.length > 0 && cleanCats.length === 0) {
+          throw new Error('No se guardo: el formulario quedo sin categorias aunque la competencia tiene categorias en base de datos. Recarga antes de guardar.')
+        }
         const persistedCatsById = new Map(existingCats.map(cat => [String(cat.id), cat]))
         const nextCategoryIdByLocalId = {}
 
