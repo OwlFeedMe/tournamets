@@ -305,8 +305,6 @@ function parseTime(value) {
 
 function getCompetitionCountdown(competition, nowMs) {
   const startMs = parseTime(competition?.competition_start)
-  const endMs = parseTime(competition?.competition_end)
-  const enrollmentEndMs = parseTime(competition?.enrollment_end)
 
   if (startMs && startMs > nowMs) {
     return {
@@ -316,23 +314,13 @@ function getCompetitionCountdown(competition, nowMs) {
     }
   }
 
-  if (endMs && endMs > nowMs) {
-    return {
-      targetMs: endMs,
-      label: 'Termina en',
-      tone: '#00C2A8',
-    }
-  }
-
-  if (!startMs && enrollmentEndMs && enrollmentEndMs > nowMs) {
-    return {
-      targetMs: enrollmentEndMs,
-      label: 'Cierra en',
-      tone: '#F59E0B',
-    }
-  }
-
   return null
+}
+
+function hasCompetitionStarted(competition, nowMs = Date.now()) {
+  const startMs = parseTime(competition?.competition_start)
+  if (startMs) return startMs <= nowMs
+  return Boolean(competition?.activa)
 }
 
 function splitDuration(ms) {
@@ -407,6 +395,7 @@ function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr, isMobile 
   const banner = resolveCompetitionAsset(competition, 'banner')
   const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
   const isConfirmed = String(competition?.enrollment_estado || '').toLowerCase() === 'confirmado'
+  const competitionStarted = hasCompetitionStarted(competition)
 
   return (
     <section
@@ -455,14 +444,16 @@ function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr, isMobile 
           </div>
         </div>
 
-        <CompetitionCountdown competition={competition} isMobile={isMobile} />
+        {!competitionStarted ? <CompetitionCountdown competition={competition} isMobile={isMobile} /> : null}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-        <PersonalMetric label="Posicion" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
-        <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
-        <PersonalMetric label="Scores" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
-      </div>
+      {competitionStarted ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
+          <PersonalMetric label="Posicion" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
+          <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
+          <PersonalMetric label="Pruebas" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <Link to={`/competitions/${competition.id}/my-schedule`} style={primaryActionStyle()}>
