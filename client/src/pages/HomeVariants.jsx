@@ -616,26 +616,37 @@ function CompactEventList({ items, primaryId }) {
   )
 }
 
-function AvailableCompetitionsPanel({ competitions, onParticipate, enrollmentByComp, isAthlete }) {
-  const openItems = (Array.isArray(competitions) ? competitions : []).filter((item) => item.enrollment_open).slice(0, 3)
+function isActiveEnrollmentState(value) {
+  return ['confirmado', 'pendiente', 'pago_pendiente', 'pago_en_verificacion'].includes(String(value || '').trim().toLowerCase())
+}
+
+function AvailableCompetitionsPanel({ competitions, onParticipate, enrollmentByComp, isAthlete, isMobile }) {
+  const openItems = (Array.isArray(competitions) ? competitions : [])
+    .filter((item) => item.enrollment_open)
+    .filter((item) => !isActiveEnrollmentState(enrollmentByComp[item.id]))
+    .slice(0, 4)
+  const cards = openItems.map((competition, index) => mapCompetitionViewModel(competition, index))
   if (!openItems.length) return null
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
+    <section style={{ display: 'grid', gap: 14 }}>
       <div>
         <h2 style={{ margin: 0, color: premium.text, fontSize: 24 }}>Elige tu proxima competencia</h2>
         <p style={{ margin: '6px 0 0', color: premium.textSoft, fontSize: 14 }}>Estas son las inscripciones abiertas ahora.</p>
       </div>
-      <div style={{ display: 'grid', gap: 12 }}>
-        {openItems.map((competition) => (
-          <div key={competition.id} className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 16, display: 'grid', gap: 10 }}>
-            <div style={{ color: premium.text, fontWeight: 800, fontSize: 18 }}>{competition.nombre}</div>
-            <div style={{ color: premium.textSoft, fontSize: 13 }}>{formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fecha por confirmar' })}</div>
-            <button type="button" onClick={() => onParticipate(competition)} disabled={buttonStateForCompetition(competition, isAthlete, enrollmentByComp[competition.id]).disabled} style={primaryActionStyle()}>
-              Inscribirme
-            </button>
-          </div>
-        ))}
-      </div>
+      <CompetitionGrid
+        competitions={cards}
+        isMobile={isMobile}
+        renderCard={(competition) => (
+          <HomeCompetitionCard
+            competition={competition}
+            isMobile={isMobile}
+            isAthlete={isAthlete}
+            enrollmentState={enrollmentByComp[competition.id]}
+            onParticipate={onParticipate}
+            getButtonState={buttonStateForCompetition}
+          />
+        )}
+      />
     </section>
   )
 }
@@ -700,7 +711,7 @@ function PersonalHome({
           <h1 style={{ margin: '10px 0', color: premium.text, fontSize: isMobile ? 36 : 58, lineHeight: 1 }}>Elige tu proxima competencia</h1>
           <p style={{ margin: 0, color: premium.textSoft, maxWidth: 700, lineHeight: 1.6 }}>Si ya llegaste a FinalRep, lo importante es competir. Entra a una inscripcion abierta y deja tu evento listo en pocos pasos.</p>
         </section>
-        <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} />
+        <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} isMobile={isMobile} />
         <CompactEventList items={myComps} primaryId={null} />
       </div>
     )
@@ -715,7 +726,7 @@ function PersonalHome({
         <ScorePanel leaderboard={leaderboard} results={results} />
       </div>
       <CompactEventList items={myComps} primaryId={primaryCompetition.id} />
-      <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} />
+      <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} isMobile={isMobile} />
     </div>
   )
 }
