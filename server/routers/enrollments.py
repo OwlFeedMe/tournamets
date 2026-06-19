@@ -14,6 +14,10 @@ from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import func, text
 from sqlmodel import Session, select
@@ -255,6 +259,51 @@ def _merge_enrollment_answers(questions: list[dict], existing_answers: list[dict
     if missing_required:
         raise HTTPException(400, f"Responde las preguntas obligatorias: {', '.join(missing_required)}")
     return json.dumps(normalized, ensure_ascii=False) if normalized else None
+
+
+def _safe_xlsx_filename(value: str | None) -> str:
+    raw = str(value or "inscripciones").strip() or "inscripciones"
+    safe = "".join("_" if ch in '\\/:*?"<>|' else ch for ch in raw)
+    safe = "_".join(safe.split())
+    safe = safe.encode("ascii", "ignore").decode("ascii") or "inscripciones"
+    return safe[:80] or "inscripciones"
+
+
+def _format_export_datetime(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M")
+    return str(value)
+
+
+def _build_enrollment_answer_columns(questions: list[dict], rows) -> list[dict]:
+    columns = []
+    seen = set()
+    for question in questions:
+        key = str(question.get("id") or question.get("label") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        columns.append({
+            "key": key,
+            "question_id": str(question.get("id") or "").strip(),
+            "label": str(question.get("label") or "Respuesta").strip() or "Respuesta",
+            "required": bool(question.get("required")),
+        })
+    for enrollment, _participant in rows:
+        for answer in _parse_enrollment_answers(enrollment.enrollment_answers):
+            key = str(answer.get("question_id") or answer.get("question_label") or "Respuesta").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            columns.append({
+                "key": key,
+                "question_id": str(answer.get("question_id") or "").strip(),
+                "label": str(answer.get("question_label") or "Respuesta").strip() or "Respuesta",
+                "required": False,
+            })
+    return columns
 
 
 def _serialize_enrollment_answers(questions: list[dict], answers: list | None, extra_items: list[dict] | None = None) -> str | None:
@@ -771,6 +820,97 @@ def list_enrolled(competition_id: int, session: Session = Depends(get_session), 
     checkin_usage_by_participant = _get_checkin_usage_by_participant(session, competition_id)
     questions = _parse_enrollment_questions(competition.enrollment_questions)
     return _serialize_enrolled_rows(rows, checkin_usage_by_participant, questions)
+
+
+@router.get("/api/competitions/{competition_id}/participants/export.xlsx")
+def export_enrolled_xlsx(competition_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
+    competition = require_competition_access(session, competition_id, user)
+
+    rows = session.exec(
+        select(CompetitionParticipant, Participant)
+        .join(Participant, Participant.id == CompetitionParticipant.user_id)
+        .where(CompetitionParticipant.competition_id == competition_id)
+        .order_by(CompetitionParticipant.estado, Participant.apellido, Participant.nombre)
+    ).all()
+    questions = _parse_enrollment_questions(competition.enrollment_questions)
+    answer_columns = _build_enrollment_answer_columns(questions, rows)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Inscripciones"
+    headers = [
+        "Participante",
+        "Cedula",
+        "Categoria",
+        "Estado",
+        "Email",
+        "Celular",
+        "Genero",
+        "Box",
+        "Ciudad / Pais",
+        "Fecha de inscripcion",
+        "Preguntas pendientes",
+        *[column["label"] for column in answer_columns],
+    ]
+    ws.append(headers)
+
+    header_fill = PatternFill("solid", fgColor="171B21")
+    header_font = Font(bold=True, color="F5F7FA")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    for enrollment, participant in rows:
+        parsed_answers = _parse_enrollment_answers(enrollment.enrollment_answers)
+        answers_by_id = {
+            str(item.get("question_id") or "").strip(): str(item.get("answer") or "").strip()
+            for item in parsed_answers
+            if str(item.get("question_id") or "").strip()
+        }
+        answers_by_label = {
+            str(item.get("question_label") or "").strip(): str(item.get("answer") or "").strip()
+            for item in parsed_answers
+            if str(item.get("question_label") or "").strip()
+        }
+        missing_questions = _missing_required_enrollment_questions(questions, parsed_answers)
+        ws.append([
+            f"{participant.nombre or ''} {participant.apellido or ''}".strip(),
+            participant.cedula or "",
+            enrollment.categoria or "",
+            enrollment.estado or "",
+            participant.email or "",
+            participant.celular or "",
+            participant.genero or participant.sexo or "",
+            participant.box or "",
+            participant.ciudad_pais or "",
+            _format_export_datetime(enrollment.inscrito_at),
+            len(missing_questions) or "",
+            *[
+                (
+                    answers_by_id.get(column["question_id"], "")
+                    or answers_by_label.get(column["label"], "")
+                    or ("Pendiente" if column["required"] else "")
+                )
+                for column in answer_columns
+            ],
+        ])
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for column_cells in ws.columns:
+        letter = get_column_letter(column_cells[0].column)
+        max_len = max(len(str(cell.value or "")) for cell in column_cells)
+        ws.column_dimensions[letter].width = min(max(max_len + 2, 12), 42)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    filename = f"{_safe_xlsx_filename(competition.nombre)}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/api/me/enrollment-question-tasks")

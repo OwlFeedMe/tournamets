@@ -428,112 +428,14 @@ function parseEnrollmentAnswers(raw) {
   }
 }
 
-function escapeXml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-function downloadEnrollmentWorkbook(participants, competition) {
-  const currentQuestions = parseEnrollmentQuestions(competition?.enrollment_questions)
-  const answerColumns = []
-  const seenColumnKeys = new Set()
-  currentQuestions.forEach((question) => {
-    const key = question.id || question.label
-    if (!key || seenColumnKeys.has(key)) return
-    seenColumnKeys.add(key)
-    answerColumns.push({
-      key,
-      questionId: question.id,
-      label: question.label,
-      required: !!question.required,
-    })
-  })
-  participants.forEach((participant) => {
-    parseEnrollmentAnswers(participant.enrollment_answers).forEach((item) => {
-      const key = item.question_id || item.question_label || 'Respuesta'
-      if (!key || seenColumnKeys.has(key)) return
-      seenColumnKeys.add(key)
-      answerColumns.push({
-        key,
-        questionId: item.question_id,
-        label: item.question_label || 'Respuesta',
-        required: false,
-      })
-    })
-  })
-  const headers = [
-    'Participante',
-    'Cedula',
-    'Categoria',
-    'Estado',
-    'Email',
-    'Celular',
-    'Genero',
-    'Box',
-    'Ciudad / Pais',
-    'Fecha de inscripcion',
-    'Check-in',
-    'Preguntas pendientes',
-    ...answerColumns.map(column => column.label),
-  ]
-  const rows = participants.map(participant => {
-    const answersById = {}
-    const answersByLabel = {}
-    parseEnrollmentAnswers(participant.enrollment_answers).forEach((item) => {
-      const value = item.question_type === 'image' && item.answer ? item.answer : (item.answer || '')
-      if (item.question_id) answersById[item.question_id] = value
-      if (item.question_label) answersByLabel[item.question_label] = value
-    })
-    return [
-      `${participant.nombre || ''} ${participant.apellido || ''}`.trim(),
-      formatCedula(participant.cedula),
-      participant.categoria_competencia || '',
-      participant.estado || '',
-      participant.email || '',
-      participant.celular || '',
-      participant.genero || participant.sexo || '',
-      participant.box || '',
-      participant.ciudad_pais || '',
-      participant.inscrito_at ? formatDate(participant.inscrito_at) : '',
-      participant.check_in_done ? 'Realizado' : 'Pendiente',
-      Number(participant.pending_enrollment_question_count || 0) || '',
-      ...answerColumns.map(column => {
-        const value = (column.questionId ? answersById[column.questionId] : '') || answersByLabel[column.label] || ''
-        return value || (column.required ? 'Pendiente' : '')
-      }),
-    ]
-  })
-  const workbookXml = `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Header">
-      <Font ss:Bold="1"/>
-    </Style>
-  </Styles>
-  <Worksheet ss:Name="Inscripciones">
-    <Table>
-      <Row>
-        ${headers.map(header => `<Cell ss:StyleID="Header"><Data ss:Type="String">${escapeXml(header)}</Data></Cell>`).join('')}
-      </Row>
-      ${rows.map(row => `
-      <Row>
-        ${row.map(cell => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`).join('')}
-      </Row>`).join('')}
-    </Table>
-  </Worksheet>
-</Workbook>`
-  const blob = new Blob([workbookXml], { type: 'application/vnd.ms-excel;charset=utf-8;' })
+async function downloadEnrollmentWorkbook(competition) {
+  if (!competition?.id) return
+  const response = await api.get(`/competitions/${competition.id}/participants/export.xlsx`, { responseType: 'blob' })
+  const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `${String(competition?.nombre || 'inscripciones').trim().replace(/[\\/:*?"<>|]+/g, '_') || 'inscripciones'}.xls`
+  anchor.download = `${String(competition?.nombre || 'inscripciones').trim().replace(/[\\/:*?"<>|]+/g, '_') || 'inscripciones'}.xlsx`
   anchor.click()
   URL.revokeObjectURL(url)
 }
@@ -11353,7 +11255,7 @@ function CompetitionsTab() {
                         }}>
                           <button
                             className="btn-secondary btn-sm"
-                            onClick={() => downloadEnrollmentWorkbook(filteredSelectedParticipants, selectedCompetition)}
+                            onClick={() => downloadEnrollmentWorkbook(selectedCompetition)}
                             style={isMobile ? { gridColumn: '1 / -1', width: '100%', minWidth: 0 } : undefined}
                           >
                           Descargar Excel
