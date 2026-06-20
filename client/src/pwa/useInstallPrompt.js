@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-const DISMISS_KEY = 'openarena-pwa-install-dismissed'
+const DISMISS_KEY = 'finalrep-pwa-install-dismissed'
 
 function isStandaloneMode() {
   if (typeof window === 'undefined') return false

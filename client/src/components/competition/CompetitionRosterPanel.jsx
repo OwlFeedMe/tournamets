@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, Users, Search, X, LayoutGrid, List, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../../api/axios'
+import { SkeletonBlock, SkeletonCardGrid, SkeletonMetricGrid } from '../layout/Skeleton'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../../utils/competitionLayout'
 import { hexToRgba, resolveCompetitionTheme } from '../../utils/competitionTheme'
 import { loadCountries, parseCityCountry } from '../../utils/locations'
@@ -851,7 +852,17 @@ export function CompetitionRosterPanel({
     <div style={shellStyle}>
       <div style={innerStyle}>
         {loading ? (
-          <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando inscritos...</div>
+          <div style={{ display: 'grid', gap: 18 }}>
+            <section className="fr-cut-card" style={{ border: '1px solid #252A33', background: '#171B21', padding: embedded ? 24 : 20 }}>
+              <SkeletonBlock width={120} height={12} radius={999} />
+              <SkeletonBlock width={embedded ? '58%' : '42%'} height={42} radius={8} style={{ marginTop: 14 }} />
+              <SkeletonBlock width="72%" height={14} radius={999} style={{ marginTop: 14 }} />
+              <div style={{ marginTop: 18 }}>
+                <SkeletonMetricGrid count={3} />
+              </div>
+            </section>
+            <SkeletonCardGrid count={embedded ? 3 : 6} minWidth={isMobile ? 220 : 260} />
+          </div>
         ) : error ? (
           <div className="fr-cut-card" style={{ padding: 24, background: '#171B21', border: '1px solid #252A33', color: '#F5F7FA' }}>
             {error}

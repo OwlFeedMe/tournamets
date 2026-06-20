@@ -20,6 +20,7 @@ class PublicCategoryRosterTests(unittest.TestCase):
                 "profile_photo_url": "/img/ana.jpg",
                 "ciudad_pais": "Bogota, Colombia",
                 "box": "Cross Box",
+                "username": "ana.lopez",
                 "member_category": "Scaled",
                 "email": "secret@example.com",
             },
@@ -33,6 +34,7 @@ class PublicCategoryRosterTests(unittest.TestCase):
                 "profile_photo_url": None,
                 "ciudad_pais": "Medellin, Colombia",
                 "box": "Downtown Box",
+                "username": "luis.perez",
                 "member_category": "Rx",
                 "cedula": "999999",
             },
@@ -45,8 +47,9 @@ class PublicCategoryRosterTests(unittest.TestCase):
         self.assertEqual(items[0]["nombre"], "Wolves")
         self.assertEqual(
             set(items[0]["members"][0].keys()),
-            {"id", "nombre", "apellido", "profile_photo_url", "ciudad_pais", "box"},
+            {"id", "nombre", "apellido", "profile_photo_url", "ciudad_pais", "box", "username"},
         )
+        self.assertEqual(items[0]["members"][0]["username"], "ana.lopez")
         self.assertNotIn("email", items[0]["members"][0])
         self.assertNotIn("cedula", items[0]["members"][1])
 

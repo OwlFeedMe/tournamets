@@ -9,6 +9,7 @@ import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry 
 import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
 import { isStageEnvironment, paymentsDisabled } from '../utils/environment'
 import DiscountInput from '../components/enrollment/DiscountInput'
+import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
@@ -848,7 +849,23 @@ export default function CompetitionEnrollmentPage() {
     setCurrentStep(step => Math.min(4, step + 1))
   }
 
-  if (loading) return <div style={{ minHeight: '100vh', background: pageBg, color: '#AAB2C0', padding: '28px 18px' }}>Cargando pagina de inscripcion...</div>
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA', padding: '28px 18px' }}>
+        <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', display: 'grid', gap: 18 }}>
+          <section className="fr-cut-card" style={{ border: '1px solid #252A33', background: '#171B21', padding: 22 }}>
+            <SkeletonBlock width={110} height={28} radius={999} />
+            <SkeletonBlock width="62%" height={54} radius={10} style={{ marginTop: 18 }} />
+            <SkeletonBlock width="78%" height={14} radius={999} style={{ marginTop: 14 }} />
+          </section>
+          <SkeletonMetricGrid count={3} />
+          <div className="fr-cut-card" style={{ border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <SkeletonList count={4} />
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (!competition) return <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA', padding: '28px 18px' }}>{msg?.text || 'No se encontro la competencia.'}</div>
 
   return (

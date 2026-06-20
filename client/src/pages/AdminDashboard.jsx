@@ -13,6 +13,7 @@ import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
 import CompetitionDiscountsPage from './CompetitionDiscountsPage'
 import CompetitorInvitationsPage from './CompetitorInvitationsPage'
 import AdminGymsPanel from './AdminGymsPanel'
+import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 
 function buildAthleteProfilePath(username) {
   const value = String(username || '').trim()
@@ -1677,7 +1678,7 @@ function TicketingProductsPanel({ competition, refreshKey }) {
   )
   const remainingCapacity = aforoEnabled ? Math.max(0, aforoMax - soldTotal) : null
 
-  if (loading) return <div style={{ color: '#AAB2C0', fontSize: 12 }}>Cargando boleterias...</div>
+  if (loading) return <SkeletonList count={3} />
 
   return (
     <div style={{ display: 'grid', gap: 8 }}>
@@ -9428,7 +9429,7 @@ function CompetitionJudgesPanel({ competition }) {
 
       <div className="card" style={{ display: 'grid', gap: 10 }}>
         <div style={{ color: '#F5F7FA', fontWeight: 800 }}>Auditoria de jueces</div>
-        {loading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando auditoria...</div> : null}
+        {loading ? <SkeletonList count={4} /> : null}
         {!loading && !auditItems.length ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Todavia no hay acciones registradas.</div> : null}
         {!loading && auditItems.length ? (
           <div style={{ display: 'grid', gap: 8 }}>
@@ -12768,24 +12769,24 @@ function FinanceTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
         <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
           <div style={{ color: '#AAB2C0', fontSize: 12 }}>{isOrganizer ? 'Total recaudado' : 'Ingresos totales'}</div>
-          <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(headlineCollected)}</div>
+          {loading ? <SkeletonBlock width={120} height={28} radius={8} style={{ marginTop: 8 }} /> : <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(headlineCollected)}</div>}
         </div>
         {!isOrganizer && (
           <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
             <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo esperado en Bold</div>
-            <div style={{ color: '#8DF1E4', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.expected_bold_balance)}</div>
+            {loading ? <SkeletonBlock width={120} height={28} radius={8} style={{ marginTop: 8 }} /> : <div style={{ color: '#8DF1E4', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.expected_bold_balance)}</div>}
           </div>
         )}
         {!isOrganizer && (
           <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
             <div style={{ color: '#AAB2C0', fontSize: 12 }}>Saldo retenido organizadores</div>
-            <div style={{ color: '#FFB36F', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.organizer_balance_held)}</div>
+            {loading ? <SkeletonBlock width={120} height={28} radius={8} style={{ marginTop: 8 }} /> : <div style={{ color: '#FFB36F', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.organizer_balance_held)}</div>}
           </div>
         )}
         {!isOrganizer && (
           <div className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 16, padding: 16 }}>
             <div style={{ color: '#AAB2C0', fontSize: 12 }}>Libre FinalRep</div>
-            <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.finalrep_available_balance)}</div>
+            {loading ? <SkeletonBlock width={120} height={28} radius={8} style={{ marginTop: 8 }} /> : <div style={{ color: '#F5F7FA', fontSize: 24, fontWeight: 800, marginTop: 6 }}>{formatCop(totals.finalrep_available_balance)}</div>}
           </div>
         )}
       </div>
@@ -12801,7 +12802,7 @@ function FinanceTab() {
               style={{ marginBottom: 10, fontSize: 13 }}
             />
           )}
-          {loading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando...</div> : null}
+          {loading ? <SkeletonList count={4} /> : null}
           {!loading && !competitions.length ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>No hay competencias con ingresos todavia.</div> : null}
           <div style={{ display: 'grid', gap: 10, overflowY: 'auto', maxHeight: isMobile ? 'none' : 520, paddingRight: 2 }}>
             {competitions.filter(item =>
@@ -12845,7 +12846,7 @@ function FinanceTab() {
         </div>
 
         <div ref={detailRef} className="card" style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 18, padding: 16 }}>
-          {detailLoading ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando detalle financiero...</div> : null}
+          {detailLoading ? <SkeletonList count={4} /> : null}
           {!detailLoading && !summary ? <div style={{ color: '#AAB2C0', fontSize: 14 }}>Selecciona una competencia.</div> : null}
           {!detailLoading && summary ? (
             <div style={{ display: 'grid', gap: 16 }}>
@@ -13319,7 +13320,7 @@ function SystemStatusTab() {
       <div style={{ background: '#171B21', border: '1px solid #252A33', borderRadius: 8, padding: 16 }}>
         <div style={{ color: '#F5F7FA', fontWeight: 800, marginBottom: 12 }}>Resumen de conexiones en PostgreSQL</div>
         {loading ? (
-          <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando estado...</div>
+          <SkeletonList count={3} />
         ) : !db?.activity_summary?.length ? (
           <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay datos de actividad disponibles.</div>
         ) : (

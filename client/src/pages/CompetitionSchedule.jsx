@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Clock3, MapPin, Medal, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
@@ -610,8 +611,15 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         </section>
 
         {loading ? (
-          <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
-            Cargando cronograma...
+          <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}` }}>
+            <SkeletonBlock width="48%" height={30} radius={8} />
+            <SkeletonBlock width="72%" height={14} radius={999} style={{ marginTop: 14 }} />
+            <div style={{ marginTop: 18 }}>
+              <SkeletonMetricGrid count={3} />
+            </div>
+            <div style={{ marginTop: 18 }}>
+              <SkeletonList count={4} />
+            </div>
           </div>
         ) : error ? (
           <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>

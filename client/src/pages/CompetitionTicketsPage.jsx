@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Ticket } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { paymentsDisabled } from '../utils/environment'
 
@@ -192,7 +193,24 @@ export default function CompetitionTicketsPage() {
     }
   }
 
-  if (loading) return <div style={{ minHeight: '100vh', background: pageBg, color: '#AAB2C0', padding: '28px 18px' }}>Cargando boleteria...</div>
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA', padding: '28px 18px' }}>
+        <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', display: 'grid', gap: 18 }}>
+          <SkeletonBlock width={120} height={40} radius={6} />
+          <section className="fr-cut-card" style={{ border: '1px solid #252A33', background: '#171B21', padding: 22 }}>
+            <SkeletonBlock width={180} height={18} radius={999} />
+            <SkeletonBlock width="58%" height={38} radius={8} style={{ marginTop: 18 }} />
+            <SkeletonBlock width="74%" height={14} radius={999} style={{ marginTop: 14 }} />
+            <div style={{ marginTop: 18 }}>
+              <SkeletonMetricGrid count={3} />
+            </div>
+          </section>
+          <SkeletonList count={4} />
+        </div>
+      </div>
+    )
+  }
   const hasProducts = Array.isArray(ticketing?.ticket_products) && ticketing.ticket_products.length > 0
   if (!hasProducts) return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA', padding: '28px 18px' }}>

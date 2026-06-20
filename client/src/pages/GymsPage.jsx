@@ -2,6 +2,7 @@ import { Dumbbell, MapPin, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonCardGrid } from '../components/layout/Skeleton'
 import { useAuth } from '../context/AuthContext'
 
 const OWNERSHIP_LABELS = {
@@ -361,9 +362,7 @@ export default function GymsPage() {
       {/* Grid */}
       <div style={{ maxWidth: 900, margin: '0 auto', padding: '0 20px' }}>
         {loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--oa-text-muted)', padding: '60px 0', fontSize: 14 }}>
-            Cargando gyms...
-          </div>
+          <SkeletonCardGrid count={6} minWidth={260} />
         ) : gyms.length === 0 ? (
           <div
             style={{

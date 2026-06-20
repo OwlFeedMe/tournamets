@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Camera, CheckCircle2, ChevronRight, QrCode, ShieldAlert, XCircle } from 'lucide-react'
 import api from '../api/axios'
+import { SkeletonList } from '../components/layout/Skeleton'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const pageStyle = {
@@ -1166,7 +1167,7 @@ export default function JudgeHub() {
           </p>
         </SectionCard>
 
-        {loading ? <div style={{ color: '#AAB2C0', padding: '0 4px' }}>Cargando asignaciones...</div> : null}
+        {loading ? <SkeletonList count={4} /> : null}
 
         {!loading && pendingAssignments.length > 0 ? (
           <SectionCard mobile={isMobile}>
@@ -1495,7 +1496,7 @@ export default function JudgeHub() {
                             ) : null}
                           </div>
                           {manualError ? <div style={{ color: '#FCA5A5', fontSize: 13 }}>{manualError}</div> : null}
-                          {manualLoading ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>Cargando lista...</div> : null}
+                          {manualLoading ? <SkeletonList count={4} /> : null}
                           {!manualLoading && !manualRows.length ? <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay coincidencias con los filtros actuales.</div> : null}
                           {!manualLoading && manualRows.length ? (
                             <div style={{ display: 'grid', gap: 8, maxHeight: isMobile ? 'none' : 420, overflowY: isMobile ? 'visible' : 'auto' }}>

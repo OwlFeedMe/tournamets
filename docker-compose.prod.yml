@@ -1,7 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: loyalty-tournament-redis
+    container_name: finalrep-redis
     restart: unless-stopped
     command: >
       redis-server
@@ -23,7 +23,7 @@ services:
   backend:
     build:
       context: ./server
-    container_name: loyalty-tournament-backend
+    container_name: finalrep-backend
     restart: unless-stopped
     env_file:
       - ./server/.env
@@ -61,7 +61,7 @@ services:
         VITE_APP_ENV: ${APP_ENV:-production}
         VITE_PWA_APP_NAME: ${VITE_PWA_APP_NAME:-}
         VITE_PAYMENTS_ENABLED: ${PAYMENTS_ENABLED:-1}
-    container_name: loyalty-tournament-frontend
+    container_name: finalrep-frontend
     restart: unless-stopped
     depends_on:
       - backend

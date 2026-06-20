@@ -16,6 +16,7 @@ import {
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 
@@ -571,8 +572,18 @@ export default function GymPublicProfile() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0d0f12', display: 'grid', placeItems: 'center', color: 'var(--oa-text-muted)', fontSize: 14 }}>
-        Cargando...
+      <div style={{ minHeight: '100vh', background: '#0d0f12', paddingBottom: 120 }}>
+        <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '24px 24px 72px' }}>
+          <section style={{ borderRadius: 28, border: '1px solid rgba(37,42,51,0.96)', background: '#171B21', padding: '24px 18px 22px', marginBottom: 18 }}>
+            <SkeletonBlock width={38} height={38} radius={999} />
+            <SkeletonBlock width="48%" height={52} radius={10} style={{ marginTop: 36 }} />
+            <SkeletonBlock width="34%" height={14} radius={999} style={{ marginTop: 12 }} />
+          </section>
+          <SkeletonMetricGrid count={3} />
+          <div className="fr-cut-card" style={{ marginTop: 18, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <SkeletonList count={4} />
+          </div>
+        </div>
       </div>
     )
   }

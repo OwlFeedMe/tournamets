@@ -2,6 +2,7 @@ import { Check, ChevronRight, Dumbbell, GitMerge, MapPin, ScrollText, X } from '
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonList } from '../components/layout/Skeleton'
 
 const SUBMISSION_STATUS_COLORS = {
   pending: '#cdaa6b',
@@ -147,7 +148,7 @@ function SubmissionsSection() {
       />
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : submissions.length === 0 ? (
         <p style={{ color: 'var(--oa-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Sin sugerencias en este estado</p>
       ) : (
@@ -251,7 +252,7 @@ function ClaimsSection() {
       />
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : claims.length === 0 ? (
         <p style={{ color: 'var(--oa-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Sin claims en este estado</p>
       ) : (
@@ -475,7 +476,7 @@ function GymsListSection() {
       />
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : gyms.length === 0 ? (
         <p style={{ color: 'var(--oa-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>No hay gyms en este estado</p>
       ) : (
@@ -563,7 +564,7 @@ function ReportsSection() {
       />
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : reports.length === 0 ? (
         <p style={{ color: 'var(--oa-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Sin reportes en este estado</p>
       ) : (
@@ -674,7 +675,7 @@ function BitacoraSection() {
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : entries.length === 0 ? (
         <p style={{ color: 'var(--oa-text-muted)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>Sin entradas en el log</p>
       ) : (

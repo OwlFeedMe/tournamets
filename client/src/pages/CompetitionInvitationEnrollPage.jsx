@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2 } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { cedulaInputValue, formatCedula, getMissingParticipantProfileFields } from '../utils/participantProfile'
@@ -193,7 +194,17 @@ export default function CompetitionInvitationEnrollPage() {
   }
 
   if (loading) {
-    return <div style={{ minHeight: '100dvh', background: pageBg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7E8796', fontSize: 14 }}>Cargando...</div>
+    return (
+      <div style={{ minHeight: '100dvh', background: pageBg, display: 'grid', placeItems: 'center', padding: 24 }}>
+        <div className="fr-cut-card" style={{ width: 'min(100%, 560px)', background: '#171B21', border: '1px solid #252A33', padding: 24 }}>
+          <SkeletonBlock width="54%" height={34} radius={8} />
+          <SkeletonBlock width="78%" height={14} radius={999} style={{ marginTop: 14 }} />
+          <div style={{ marginTop: 18 }}>
+            <SkeletonList count={3} />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   if (loadErr) {

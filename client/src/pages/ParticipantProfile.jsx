@@ -6,6 +6,7 @@ import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { useAuth } from '../context/AuthContext'
 import { cedulaInputValue, formatCedula, formatMissingParticipantProfileFields } from '../utils/participantProfile'
 import GymSelector from '../components/gyms/GymSelector'
+import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 import {
   Trophy, PlusCircle, Medal, Dumbbell,
   X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck,
@@ -141,10 +142,54 @@ const PUBLIC_PROFILE_COVER_PRESETS = [
   { id: 'podium', label: 'Podium', background: 'linear-gradient(135deg, #D4A537 0%, #A16207 42%, #090B0E 100%)' },
 ]
 
+const PROFILE_COMPLETION_FIELD_LABELS = {
+  email: 'Email',
+  celular: 'Celular',
+  genero: 'Genero',
+  fecha_nacimiento: 'Fecha nacimiento',
+  ciudad_pais: 'Ciudad / Pais',
+  profile_photo_url: 'Foto de perfil',
+  gym: 'Gym',
+}
+
+const PROFILE_COMPLETION_EDITABLE_FIELDS = new Set([
+  'email',
+  'celular',
+  'genero',
+  'fecha_nacimiento',
+  'ciudad_pais',
+  'profile_photo_url',
+])
+
 function normalizePublicCoverPreset(value) {
   const normalized = String(value || '').trim().toLowerCase()
   if (PUBLIC_PROFILE_COVER_PRESETS.some((preset) => preset.id === normalized)) return normalized
   return PUBLIC_PROFILE_COVER_PRESETS[0].id
+}
+
+function normalizeMissingProfileFields(fields) {
+  return Array.from(new Set(
+    (Array.isArray(fields) ? fields : [])
+      .map((field) => String(field || '').trim())
+      .filter(Boolean)
+  ))
+}
+
+function profileHighlightStyle(active) {
+  if (!active) return {}
+  return {
+    borderColor: 'rgba(255,107,0,0.72)',
+    background: 'rgba(255,107,0,0.08)',
+    boxShadow: '0 0 0 3px rgba(255,107,0,0.12)',
+  }
+}
+
+function inputHighlightStyle(active) {
+  if (!active) return {}
+  return {
+    borderColor: 'rgba(255,107,0,0.78)',
+    boxShadow: '0 0 0 3px rgba(255,107,0,0.12)',
+  }
 }
 
 function PublicProfileToggle({ label, description, checked, onChange }) {
@@ -666,6 +711,8 @@ export default function ParticipantProfile() {
 
   // Edit profile
   const [myProfile, setMyProfile] = useState(null)
+  const [profileLoading, setProfileLoading] = useState(true)
+  const [dashboardLoading, setDashboardLoading] = useState(true)
   const [showEditProfile, setShowEditProfile] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [editMsg, setEditMsg] = useState(null)
@@ -718,6 +765,13 @@ export default function ParticipantProfile() {
     if (!query) return list.slice(0, 5)
     return list.filter(city => city.toLowerCase().includes(query)).slice(0, 5)
   }, [allCities, editForm.city])
+  const highlightedMissingFields = useMemo(
+    () => normalizeMissingProfileFields(location.state?.missingFields),
+    [location.state?.missingFields]
+  )
+  const highlightedMissingFieldSet = useMemo(() => new Set(highlightedMissingFields), [highlightedMissingFields])
+  const hasProfileCompletionHighlight = highlightedMissingFields.length > 0
+  const shouldHighlightField = useCallback((field) => highlightedMissingFieldSet.has(field), [highlightedMissingFieldSet])
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768)
@@ -850,16 +904,22 @@ export default function ParticipantProfile() {
   }, [countries, countryCodeByName, editForm.ciudad_pais, editForm.countryCode])
 
   useEffect(() => {
-    loadMyProfile().catch(() => {})
-    loadOrganizerApplication().catch(() => {})
-    loadGymMemberships().catch(() => {})
+    setProfileLoading(true)
+    Promise.allSettled([
+      loadMyProfile(),
+      loadOrganizerApplication(),
+      loadGymMemberships(),
+    ]).finally(() => setProfileLoading(false))
     if (!userId) {
       setMyComps([])
       setPendingInvitations([])
       setResults([])
+      setDashboardLoading(false)
       return
     }
-    Promise.all([loadResults(), loadMyCompetitions(), loadMyInvitations()]).catch(() => {})
+    setDashboardLoading(true)
+    Promise.allSettled([loadResults(), loadMyCompetitions(), loadMyInvitations()])
+      .finally(() => setDashboardLoading(false))
   }, [userId])
 
   const enrollmentByComp = useMemo(() => {
@@ -1201,6 +1261,17 @@ export default function ParticipantProfile() {
     ? `Completa tu perfil antes de participar${location.state?.competitionName ? ` en ${location.state.competitionName}` : ''}. Faltan: ${formatMissingParticipantProfileFields(location.state?.missingFields || [])}.`
     : ''
 
+  useEffect(() => {
+    if (!location.state?.profileNotification && !location.state?.profileRequiredForEnrollment) return
+    const hasEditableMissingField = highlightedMissingFields.some((field) => PROFILE_COMPLETION_EDITABLE_FIELDS.has(field))
+    if (location.state?.openProfileEditor && hasEditableMissingField) {
+      setShowEditProfile(true)
+    }
+    if (highlightedMissingFieldSet.has('gym') && !primaryGymMembership) {
+      setGymSelectorOpen(true)
+    }
+  }, [highlightedMissingFields, highlightedMissingFieldSet, location.state, primaryGymMembership])
+
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
   const phasesLoading = phasesRaw === undefined
@@ -1377,9 +1448,20 @@ export default function ParticipantProfile() {
       )}
 
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '14px 12px' : '24px 20px' }}>
-        {profileRequirementNotice ? (
-          <div className="fr-cut-card" style={{ marginBottom: 16, border: '1px solid rgba(214,217,224,0.2)', background: 'rgba(214,217,224,0.06)', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
-            {profileRequirementNotice}
+        {profileRequirementNotice || hasProfileCompletionHighlight ? (
+          <div className="fr-cut-card" style={{ marginBottom: 16, border: '1px solid rgba(255,107,0,0.34)', background: 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.94))', padding: '14px 16px', color: '#F5F7FA', fontSize: 14, lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 800 }}>
+              {profileRequirementNotice || 'Completa estos datos para dejar tu perfil listo.'}
+            </div>
+            {hasProfileCompletionHighlight ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                {highlightedMissingFields.map((field) => (
+                  <span key={field} style={{ border: '1px solid rgba(255,107,0,0.36)', background: 'rgba(13,15,18,0.62)', color: '#F5F7FA', borderRadius: 999, padding: '5px 9px', fontSize: 12, fontWeight: 800 }}>
+                    {PROFILE_COMPLETION_FIELD_LABELS[field] || field.replaceAll('_', ' ')}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1396,6 +1478,7 @@ export default function ParticipantProfile() {
             borderRadius: '50%', background: 'rgba(13,15,18,0.62)', border: '1px solid rgba(214,217,224,0.24)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: isMobile ? 20 : 26, fontWeight: 800, color: 'var(--oa-text)', overflow: 'hidden',
+            ...profileHighlightStyle(shouldHighlightField('profile_photo_url')),
           }}>
             {profilePhotoUrl ? (
               <img
@@ -1416,7 +1499,11 @@ export default function ParticipantProfile() {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: 'var(--oa-primary)' }}>{totalPuntos}</div>
+              {dashboardLoading ? (
+                <SkeletonBlock width={54} height={isMobile ? 44 : 56} radius={8} />
+              ) : (
+                <div style={{ fontFamily: 'Bebas Neue, monospace', fontSize: isMobile ? 44 : 56, lineHeight: 1, color: 'var(--oa-primary)' }}>{totalPuntos}</div>
+              )}
               <div style={{ fontSize: 10, color: 'var(--oa-text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
             </div>
             <button
@@ -1438,17 +1525,21 @@ export default function ParticipantProfile() {
 
         <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Ficha del atleta</h3>
+          {profileLoading ? (
+            <SkeletonList count={3} />
+          ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Gym principal</div><div style={{ fontWeight: 600 }}>{primaryGymMembership?.gym_display_name || '-'}</div></div>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
-            <div><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
+            <div style={{ borderRadius: 12, padding: 10, ...profileHighlightStyle(shouldHighlightField('gym')) }}><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Gym principal</div><div style={{ fontWeight: 600 }}>{primaryGymMembership?.gym_display_name || '-'}</div></div>
+            <div style={{ borderRadius: 12, padding: 10, ...profileHighlightStyle(shouldHighlightField('fecha_nacimiento')) }}><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Fecha nacimiento</div><div style={{ fontWeight: 600 }}>{formatBirthDate(myProfile?.fecha_nacimiento)}</div></div>
+            <div style={{ borderRadius: 12, padding: 10, ...profileHighlightStyle(shouldHighlightField('ciudad_pais')) }}><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Ciudad / Pais</div><div style={{ fontWeight: 600 }}>{myProfile?.ciudad_pais || '-'}</div></div>
+            <div style={{ borderRadius: 12, padding: 10, ...profileHighlightStyle(shouldHighlightField('genero')) }}><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Genero</div><div style={{ fontWeight: 600 }}>{displayGenero}</div></div>
+            <div style={{ borderRadius: 12, padding: 10, ...profileHighlightStyle(shouldHighlightField('email') || shouldHighlightField('celular')) }}><div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginBottom: 4 }}>Contacto</div><div style={{ fontWeight: 600 }}>{myProfile?.email || myProfile?.celular || '-'}</div></div>
           </div>
+          )}
         </div>
 
         {/* Gym affiliations */}
-        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+        <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20, ...profileHighlightStyle(shouldHighlightField('gym')) }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 7 }}>
               <Dumbbell size={16} color="#5eead4" /> Gym que representas
@@ -1549,7 +1640,7 @@ export default function ParticipantProfile() {
 
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 18, WebkitOverflowScrolling: 'touch' }}>
                 {(editMsg || photoMsg) && <div className={`alert alert-${(editMsg || photoMsg).type}`} style={{ marginBottom: 12 }}>{(editMsg || photoMsg).text}</div>}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16, flexWrap: 'wrap', borderRadius: 16, padding: shouldHighlightField('profile_photo_url') ? 12 : 0, ...profileHighlightStyle(shouldHighlightField('profile_photo_url')) }}>
                   <div style={{ width: 92, height: 92, borderRadius: '50%', overflow: 'hidden', background: 'rgba(255,255,255,0.05)', border: '3px solid var(--oa-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: '#D6D9E0' }}>
                     {profilePhotoUrl ? (
                       <img src={profilePhotoUrl} alt="Foto de perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1582,15 +1673,15 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
-                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" />
+                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" style={inputHighlightStyle(shouldHighlightField('celular'))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Email</label>
-                  <input value={editForm.email || ''} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" inputMode="email" />
+                  <input value={editForm.email || ''} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" inputMode="email" style={inputHighlightStyle(shouldHighlightField('email'))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Genero</label>
-                  <select value={editForm.genero || ''} onChange={e => setEditForm(f => ({ ...f, genero: e.target.value }))}>
+                  <select value={editForm.genero || ''} onChange={e => setEditForm(f => ({ ...f, genero: e.target.value }))} style={inputHighlightStyle(shouldHighlightField('genero'))}>
                     <option value="">Sin especificar</option>
                     <option value="M">Masculino</option>
                     <option value="F">Femenino</option>
@@ -1599,12 +1690,12 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Fecha nacimiento</label>
-                  <input type="date" value={editForm.fecha_nacimiento || ''} onChange={e => setEditForm(f => ({ ...f, fecha_nacimiento: e.target.value }))} />
+                  <input type="date" value={editForm.fecha_nacimiento || ''} onChange={e => setEditForm(f => ({ ...f, fecha_nacimiento: e.target.value }))} style={inputHighlightStyle(shouldHighlightField('fecha_nacimiento'))} />
                 </div>
-                <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2' }}>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: isMobile ? undefined : 'span 2', borderRadius: 14, padding: shouldHighlightField('ciudad_pais') ? 10 : 0, ...profileHighlightStyle(shouldHighlightField('ciudad_pais')) }}>
                   <label>Ciudad / Pais</label>
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
-                    <select value={editForm.countryCode || ''} onChange={e => { setShowCitySuggestions(false); setEditForm(f => ({ ...f, countryCode: e.target.value, city: '' })) }}>
+                    <select value={editForm.countryCode || ''} onChange={e => { setShowCitySuggestions(false); setEditForm(f => ({ ...f, countryCode: e.target.value, city: '' })) }} style={inputHighlightStyle(shouldHighlightField('ciudad_pais'))}>
                       <option value="">Selecciona pais</option>
                       {countries.map(country => <option key={country.code} value={country.code}>{country.name}</option>)}
                     </select>
@@ -1623,6 +1714,7 @@ export default function ParticipantProfile() {
                         }}
                         placeholder={editForm.countryCode ? 'Escribe o selecciona ciudad' : 'Primero selecciona un pais'}
                         disabled={!editForm.countryCode}
+                        style={inputHighlightStyle(shouldHighlightField('ciudad_pais'))}
                       />
                       {showCitySuggestions && editForm.countryCode && cityOptions.length > 0 ? (
                         <div style={{
@@ -1886,7 +1978,7 @@ export default function ParticipantProfile() {
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Evento en progreso</label>
                   {phasesLoading
-                    ? <div style={{ padding: '10px 0', color: 'var(--oa-text-secondary)', fontSize: 13 }}>Cargando eventos...</div>
+                    ? <SkeletonBlock height={38} radius={6} />
                     : phasesEmpty
                       ? <div style={{ padding: '10px 0', color: 'var(--oa-error)', fontSize: 13, fontWeight: 600 }}>Sin eventos en progreso</div>
                       : (
@@ -1944,7 +2036,12 @@ export default function ParticipantProfile() {
         )}
 
         {/* My enrollments */}
-        {myComps.length > 0 && (
+        {dashboardLoading ? (
+          <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
+            <SkeletonList count={3} />
+          </div>
+        ) : myComps.length > 0 && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
             <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
             <div style={{ display: 'grid', gap: 8 }}>
@@ -2077,7 +2174,9 @@ export default function ParticipantProfile() {
         {/* My results */}
         <div className="card" style={{ padding: isMobile ? 14 : 20 }}>
           <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Mis resultados</h3>
-          {results.length === 0 ? (
+          {dashboardLoading ? (
+            <SkeletonList count={4} />
+          ) : results.length === 0 ? (
             <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
           ) : isMobile ? (
             <div style={{ display: 'grid', gap: 8 }}>

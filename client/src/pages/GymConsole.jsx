@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonList } from '../components/layout/Skeleton'
 import { useAuth } from '../context/AuthContext'
 import { loadCitiesByCountry, loadCountries } from '../utils/locations'
 
@@ -408,7 +409,7 @@ function MembershipsTab({ gymId }) {
       </div>
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : memberships.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--oa-text-muted)', fontSize: 13 }}>
           No hay afiliaciones con estado "{statusLabel.label}"
@@ -643,7 +644,7 @@ function StaffTab({ gymId, myRole }) {
       )}
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {staff.map((s) => (
@@ -810,7 +811,7 @@ function LocationsTab({ gymId }) {
       )}
 
       {loading ? (
-        <p style={{ color: 'var(--oa-text-muted)', fontSize: 13 }}>Cargando...</p>
+        <SkeletonList count={3} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {locations.map((loc) => (

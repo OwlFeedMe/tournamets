@@ -199,8 +199,8 @@ def _serialize_enrolled_rows(
                 "payment_processor_fee": cp.payment_processor_fee,
                 "payment_platform_net": cp.payment_platform_net,
                 "payment_amount_total": cp.payment_amount_total,
-                "payment_processed_at": cp.payment_processed_at,
-                "inscrito_at": cp.inscrito_at,
+                "payment_processed_at": getattr(cp, "payment_processed_at", None),
+                "inscrito_at": getattr(cp, "inscrito_at", None),
                 "check_in_done": bool(checkin_used_at),
                 "check_in_used_at": checkin_used_at,
             }

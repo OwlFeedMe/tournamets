@@ -25,6 +25,7 @@ import {
   formatCompetitionWindow,
   resolveCompetitionAsset,
 } from '../components/home/homeModel'
+import { SkeletonBlock, SkeletonCardGrid, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
@@ -390,7 +391,26 @@ function PersonalMetric({ label, value, tone = premium.teal }) {
   )
 }
 
-function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr, isMobile }) {
+function PersonalHomeSkeleton({ isMobile }) {
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: isMobile ? 18 : 22 }}>
+        <SkeletonBlock width={150} height={28} radius={999} />
+        <SkeletonBlock width="72%" height={54} radius={10} style={{ marginTop: 18 }} />
+        <SkeletonBlock width="52%" height={14} radius={999} style={{ marginTop: 14 }} />
+        <div style={{ marginTop: 18 }}>
+          <SkeletonMetricGrid count={3} />
+        </div>
+      </section>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
+        <SkeletonList count={2} />
+        <SkeletonList count={3} />
+      </div>
+    </div>
+  )
+}
+
+function PrimaryCompetitionPanel({ competition, leaderboard, leaderboardLoading = false, onOpenQr, isMobile }) {
   const badge = enrollmentBadge(competition?.enrollment_estado)
   const banner = resolveCompetitionAsset(competition, 'banner')
   const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
@@ -449,9 +469,19 @@ function PrimaryCompetitionPanel({ competition, leaderboard, onOpenQr, isMobile 
 
       {competitionStarted ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12 }}>
-          <PersonalMetric label="Posicion" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
-          <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
-          <PersonalMetric label="Pruebas" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
+          {leaderboardLoading ? (
+            <>
+              <SkeletonBlock height={76} radius={8} />
+              <SkeletonBlock height={76} radius={8} />
+              <SkeletonBlock height={76} radius={8} />
+            </>
+          ) : (
+            <>
+              <PersonalMetric label="Posicion" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
+              <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
+              <PersonalMetric label="Pruebas" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
+            </>
+          )}
         </div>
       ) : null}
 
@@ -700,7 +730,7 @@ function PersonalHome({
   isAthlete,
 }) {
   if (loading) {
-    return <div style={{ color: premium.textSoft, padding: '20px 0' }}>Cargando tu inicio...</div>
+    return <PersonalHomeSkeleton isMobile={isMobile} />
   }
 
   if (!primaryCompetition || !hasCurrentOrFuture) {
@@ -719,11 +749,11 @@ function PersonalHome({
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} onOpenQr={onOpenQr} isMobile={isMobile} />
-      {detailsLoading ? <div style={{ color: premium.textSoft }}>Actualizando tu cronograma y puntuacion...</div> : null}
+      <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} leaderboardLoading={detailsLoading} onOpenQr={onOpenQr} isMobile={isMobile} />
+      {detailsLoading ? <SkeletonMetricGrid count={3} /> : null}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
-        <NextHeatPanel heat={nextHeat} />
-        <ScorePanel leaderboard={leaderboard} results={results} />
+        {detailsLoading ? <SkeletonList count={2} /> : <NextHeatPanel heat={nextHeat} />}
+        {detailsLoading ? <SkeletonList count={3} /> : <ScorePanel leaderboard={leaderboard} results={results} />}
       </div>
       <CompactEventList items={myComps} primaryId={primaryCompetition.id} />
       <AvailableCompetitionsPanel competitions={publicCompetitions} onParticipate={onParticipate} enrollmentByComp={enrollmentByComp} isAthlete={isAthlete} isMobile={isMobile} />
@@ -934,7 +964,7 @@ export default function HomeVariants({ variant = 1 }) {
           <CompetitionSearch value={query} onChange={setQuery} />
 
           {loading ? (
-            <div style={{ color: premium.textSoft, fontSize: 14 }}>Cargando competencias...</div>
+            <SkeletonCardGrid count={6} minWidth={260} />
           ) : competitionCards.length ? (
             <CompetitionGrid
               competitions={competitionCards}

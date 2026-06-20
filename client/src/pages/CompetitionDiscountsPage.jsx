@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Trash2, ToggleLeft, ToggleRight, Eye, X, ChevronDown, ChevronUp } from 'lucide-react'
 import api from '../api/axios'
+import { SkeletonList } from '../components/layout/Skeleton'
 
 const MAX_DISCOUNT_PERCENTAGE = 80
 
@@ -257,7 +258,7 @@ function UsageLogModal({ discount, competitionId, onClose }) {
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: 20 }}>
           {loading ? (
-            <div style={{ color: '#7E8796', fontSize: 14 }}>Cargando...</div>
+            <SkeletonList count={4} />
           ) : !usages.length ? (
             <div style={{ color: '#7E8796', fontSize: 14 }}>Nadie ha usado este codigo todavia.</div>
           ) : (

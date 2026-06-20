@@ -18,6 +18,7 @@ import {
   homePageBg,
   mapCompetitionViewModel,
 } from '../components/home/homeModel'
+import { SkeletonCardGrid } from '../components/layout/Skeleton'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
@@ -122,7 +123,7 @@ export default function Home() {
           <CompetitionSearch value={query} onChange={setQuery} />
 
           {loading ? (
-            <div style={{ color: '#AAB2C0', fontSize: 14 }}>Cargando competencias...</div>
+            <SkeletonCardGrid count={6} minWidth={260} />
           ) : competitionCards.length ? (
             <CompetitionGrid
               competitions={competitionCards}

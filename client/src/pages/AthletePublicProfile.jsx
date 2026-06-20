@@ -2,6 +2,7 @@ import { Copy, MapPin, Medal, ShieldCheck, Trophy, UserRound } from 'lucide-reac
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const COVER_PRESET_BACKGROUNDS = {
@@ -135,7 +136,23 @@ export default function AthletePublicProfile() {
   }
 
   if (!profile) {
-    return <div style={{ minHeight: '100dvh', background: '#0D0F12' }} />
+    return (
+      <div style={{ minHeight: '100dvh', background: '#0D0F12', color: '#F5F7FA' }}>
+        <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '20px 12px 40px' }}>
+          <div className="fr-cut-card" style={{ overflow: 'hidden', border: '1px solid #252A33', background: '#171B21', marginBottom: 18 }}>
+            <SkeletonBlock height={220} radius={0} />
+            <div style={{ padding: 22 }}>
+              <SkeletonBlock width="42%" height={42} radius={8} />
+              <SkeletonBlock width="24%" height={14} radius={999} style={{ marginTop: 12 }} />
+            </div>
+          </div>
+          <SkeletonMetricGrid count={4} minWidth={170} />
+          <div className="fr-cut-card" style={{ marginTop: 18, padding: 20, background: '#171B21', border: '1px solid #252A33' }}>
+            <SkeletonList count={3} />
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const coverBackground = resolveCoverBackground(profile.cover_url)

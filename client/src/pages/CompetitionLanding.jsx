@@ -3,6 +3,7 @@ import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Globe, Info, Insta
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
 import CompetitionRosterPanel from '../components/competition/CompetitionRosterPanel'
+import { SkeletonBlock, SkeletonCardGrid, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { formatCalendarDateRange } from '../utils/calendarDate'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -751,7 +752,24 @@ export default function CompetitionLanding() {
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
       <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 24px 72px' }}>
         {loading ? (
-          <div style={{ color: theme.textSecondary, fontSize: 14 }}>Cargando competencia...</div>
+          <div style={{ display: 'grid', gap: 18 }}>
+            <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.72fr 1.28fr', gap: 14 }}>
+              <div className="fr-cut-card" style={{ minHeight: isMobile ? 280 : 520, border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
+                <SkeletonBlock height="100%" radius={16} />
+              </div>
+              <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 20 : 28, minHeight: isMobile ? 320 : 520 }}>
+                <SkeletonBlock width={180} height={34} radius={999} />
+                <SkeletonBlock width="78%" height={64} radius={10} style={{ marginTop: 28 }} />
+                <SkeletonBlock width="92%" height={16} radius={999} style={{ marginTop: 22 }} />
+                <SkeletonBlock width="68%" height={16} radius={999} style={{ marginTop: 10 }} />
+                <div style={{ marginTop: 28 }}>
+                  <SkeletonMetricGrid count={3} />
+                </div>
+              </div>
+            </section>
+            <SkeletonMetricGrid count={4} />
+            <SkeletonCardGrid count={3} />
+          </div>
         ) : error ? (
           <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.text }}>
             {error}

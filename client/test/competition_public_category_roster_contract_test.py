@@ -4,6 +4,7 @@ import unittest
 
 LANDING_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "CompetitionLanding.jsx"
 ROSTER_PAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "CompetitionPublicRosterPage.jsx"
+ROSTER_PANEL_PATH = Path(__file__).resolve().parents[1] / "src" / "components" / "competition" / "CompetitionRosterPanel.jsx"
 ADMIN_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "AdminDashboard.jsx"
 APP_PATH = Path(__file__).resolve().parents[1] / "src" / "App.jsx"
 
@@ -13,14 +14,18 @@ class CompetitionPublicCategoryRosterContractTest(unittest.TestCase):
         source = LANDING_PATH.read_text(encoding="utf-8")
 
         self.assertIn("show_public_category_roster", source)
-        self.assertIn("/competitions/${competition.id}/inscritos", source)
+        self.assertIn("const openRosterView = () =>", source)
+        self.assertIn("nextParams.set('view', 'inscritos')", source)
         self.assertIn("Ver inscritos", source)
-        self.assertIn("<Users size={15} />", source)
+        self.assertIn("<Users size={14}", source)
 
     def test_public_roster_page_loads_public_roster_payload(self):
-        source = ROSTER_PAGE_PATH.read_text(encoding="utf-8")
+        page_source = ROSTER_PAGE_PATH.read_text(encoding="utf-8")
+        source = ROSTER_PANEL_PATH.read_text(encoding="utf-8")
         route_source = APP_PATH.read_text(encoding="utf-8")
 
+        self.assertIn("CompetitionRosterPanel", page_source)
+        self.assertIn("<CompetitionRosterPanel competitionId={competitionId} />", page_source)
         self.assertIn("public-roster", source)
         self.assertIn("selectedCategoryKey", source)
         self.assertIn("setSelectedCategoryKey", source)
@@ -31,8 +36,8 @@ class CompetitionPublicCategoryRosterContractTest(unittest.TestCase):
         self.assertIn("useRef", source)
         self.assertIn("dropIn", source)
         self.assertIn("Categoria", source)
-        self.assertIn("Temporada", source)
-        self.assertIn("Atletas", source)
+        self.assertIn("Inscritos confirmados", source)
+        self.assertIn("Inscritos", source)
         self.assertIn("Paises", source)
         self.assertIn("Buscar atleta, pais o box", source)
         self.assertIn("Ver mas", source)

@@ -1912,4 +1912,3 @@ class PlatformConfigUpdate(SQLModel):
     bold_processor_rate: Optional[float] = None          # e.g. 0.0269
     bold_processor_fixed_fee: Optional[int] = None       # e.g. 300 (COP)
     min_platform_fee: Optional[int] = None               # e.g. 5000 (COP)
-

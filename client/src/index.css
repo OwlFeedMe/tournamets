@@ -214,6 +214,30 @@ label { font-size: 13px; color: var(--oa-text-secondary); display: block; margin
   transform: translateX(20px);
 }
 
+@keyframes frSkeletonShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.fr-skeleton,
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(37, 42, 51, 0.78) 25%,
+    rgba(82, 91, 108, 0.55) 38%,
+    rgba(37, 42, 51, 0.78) 63%
+  );
+  background-size: 400% 100%;
+  animation: frSkeletonShimmer 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fr-skeleton,
+  .skeleton {
+    animation: none;
+  }
+}
+
 table {
   width: 100%;
   border-collapse: separate;

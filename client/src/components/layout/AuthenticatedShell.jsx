@@ -6,6 +6,23 @@ import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api/axios'
 
+const profileFieldLabels = {
+  email: 'email',
+  celular: 'celular',
+  genero: 'genero',
+  fecha_nacimiento: 'fecha nacimiento',
+  ciudad_pais: 'ciudad / pais',
+  profile_photo_url: 'foto de perfil',
+  gym: 'gym',
+}
+
+function formatProfileMissingFields(fields = []) {
+  return fields
+    .map((field) => profileFieldLabels[field] || String(field || '').replaceAll('_', ' '))
+    .filter(Boolean)
+    .join(', ')
+}
+
 const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
 const footerLegalLinks = [
   {
@@ -505,12 +522,13 @@ export function AuthenticatedShell() {
         const { missing_fields: missing = [], total_fields: total = 6, filled_fields: filled = 0 } = profileResult.data
         const profileMissingKey = [...missing].sort().join(',') || 'profile'
         const profileSeenKey = `finalrep:profile-notif-seen:${userId}:${profileMissingKey}`
+        const missingText = formatProfileMissingFields(missing)
         dynamicItems.push({
           title: 'Completa tu perfil',
-          text: `Tienes ${missing.length} campo${missing.length !== 1 ? 's' : ''} pendiente${missing.length !== 1 ? 's' : ''} (${filled}/${total} completado${filled !== 1 ? 's' : ''}). Completar tu perfil mejora tu experiencia y te permite recibir invitaciones correctamente.`,
+          text: `Falta ${missingText || `${missing.length} campo${missing.length !== 1 ? 's' : ''}`} (${filled}/${total}). Completa estos datos para mantener tu perfil listo para eventos e invitaciones.`,
           tone: 'neutral',
           actions: [
-            { id: 'go-to-profile', label: 'Ir a mi perfil', tone: 'primary', actionType: 'go-to-profile', profileSeenKey },
+            { id: 'go-to-profile', label: 'Ir a mi perfil', tone: 'primary', actionType: 'go-to-profile', profileSeenKey, missingFields: missing },
           ],
         })
         if (!window.localStorage.getItem(profileSeenKey)) {
@@ -618,7 +636,13 @@ export function AuthenticatedShell() {
           window.localStorage.setItem(action.profileSeenKey, '1')
         }
         setNotificationsOpen(false)
-        navigate('/profile')
+        navigate('/profile', {
+          state: {
+            profileNotification: true,
+            openProfileEditor: true,
+            missingFields: action.missingFields || [],
+          },
+        })
       } else if (action.actionType === 'answer-enrollment-questions') {
         setPendingQuestionTask(action.task)
         setPendingQuestionDraft({})

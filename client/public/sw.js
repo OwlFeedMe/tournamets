@@ -1,15 +1,15 @@
-const CACHE_NAME = 'openarena-pwa-v1'
+const CACHE_NAME = 'finalrep-pwa-v2'
 const APP_SHELL = [
   '/',
   '/index.html',
   '/manifest.webmanifest',
   '/favicon.svg',
   '/apple-touch-icon.png',
-  '/icons/openarena-192.png',
-  '/icons/openarena-512.png',
-  '/icons/openarena-maskable-512.png',
-  '/icons/openarena.svg',
-  '/icons/openarena-maskable.svg',
+  '/icons/finalrep-192.png',
+  '/icons/finalrep-512.png',
+  '/icons/finalrep-maskable-512.png',
+  '/icons/finalrep.svg',
+  '/icons/finalrep-maskable.svg',
 ]
 
 function isApiRequest(url) {

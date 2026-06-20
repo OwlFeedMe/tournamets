@@ -9,11 +9,11 @@ class AdminDashboardEnrollmentLabelsContractTest(unittest.TestCase):
     def test_enrollment_list_separates_enrollment_and_checkin_labels(self):
         source = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("Ver inscritos", source)
-        self.assertIn("Estado check-in", source)
+        self.assertIn("Inscritos", source)
+        self.assertIn("check_in_done", source)
         self.assertIn("Inscripcion:", source)
         self.assertIn("<th>Inscripcion</th>", source)
-        self.assertIn("<CheckinStatusChip participant={p} labeled />", source)
+        self.assertIn("selectedParticipants.filter(item => item.check_in_done).length", source)
         self.assertIn("const labelPrefix = labeled ? 'Check-in: ' : ''", source)
 
     def test_admin_sees_delete_competition_action(self):

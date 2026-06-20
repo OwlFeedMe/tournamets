@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Trash2, MailCheck, MailX, Clock, X } from 'lucide-react'
 import api from '../api/axios'
+import { SkeletonList } from '../components/layout/Skeleton'
 
 function formatDate(iso) {
   if (!iso) return '—'
@@ -167,7 +168,7 @@ export default function CompetitorInvitationsPage({ competition }) {
       {err && <div style={{ fontSize: 13, color: '#FF6B6B', background: 'rgba(255,69,58,0.08)', border: '1px solid rgba(255,69,58,0.2)', borderRadius: 8, padding: '10px 14px' }}>{err}</div>}
 
       {loading ? (
-        <div style={{ textAlign: 'center', color: '#7E8796', padding: 32, fontSize: 13 }}>Cargando...</div>
+        <SkeletonList count={4} />
       ) : invitations.length === 0 ? (
         <div style={{ textAlign: 'center', color: '#7E8796', padding: 32, fontSize: 13 }}>No hay invitaciones enviadas todavia.</div>
       ) : (

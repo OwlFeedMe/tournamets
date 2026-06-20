@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
+import { SkeletonCardGrid, SkeletonList } from '../components/layout/Skeleton'
 import {
   filterCompetitionsByQuery,
   formatCompetitionDate,
@@ -191,7 +192,7 @@ export function EventsPage() {
         />
         <SearchInput value={query} onChange={setQuery} placeholder="Buscar competencia por nombre, lugar o descripcion" />
 
-        {loading ? <div style={{ color: '#AAB2C0' }}>Cargando eventos...</div> : null}
+        {loading ? <SkeletonCardGrid count={4} minWidth={260} /> : null}
         {!loading && !competitions.length ? <div style={{ color: '#AAB2C0' }}>Todavia no hay eventos publicados.</div> : null}
         {!loading && !!competitions.length && !filteredCompetitions.length ? <div style={{ color: '#AAB2C0' }}>No hay competencias que coincidan con tu busqueda.</div> : null}
 
@@ -296,7 +297,7 @@ export function WorkoutsPage() {
           text="Explora los workouts publicados para entender el formato del reto y lo que viene en cada evento."
         />
 
-        {loading ? <div style={{ color: '#AAB2C0' }}>Cargando workouts...</div> : null}
+        {loading ? <SkeletonList count={4} /> : null}
 
         <div style={{ display: 'grid', gap: 14 }}>
           {cards.map((competition) => {
@@ -415,7 +416,7 @@ export function MyEventsPage() {
         />
         <SearchInput value={query} onChange={setQuery} placeholder="Buscar en tus competencias" />
 
-        {loading ? <div style={{ color: '#AAB2C0' }}>Cargando tus eventos...</div> : null}
+        {loading ? <SkeletonList count={4} /> : null}
         {!loading && !items.length ? <div style={{ color: '#AAB2C0' }}>Todavia no tienes eventos asociados a tu cuenta.</div> : null}
         {!loading && !!items.length && !filteredItems.length ? <div style={{ color: '#AAB2C0' }}>No hay competencias que coincidan con tu busqueda.</div> : null}
 

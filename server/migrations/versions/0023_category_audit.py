@@ -1,14 +1,14 @@
 """add competition category audit log
 
 Revision ID: 0023_category_audit
-Revises: 0021_profile_reminder, 0022_category_capacity
+Revises: 0021_profile_reminder
 Create Date: 2026-06-19
 """
 from alembic import op
 
 
 revision = "0023_category_audit"
-down_revision = ("0021_profile_reminder", "0022_category_capacity")
+down_revision = "0021_profile_reminder"
 branch_labels = None
 depends_on = None
 
