@@ -16,6 +16,12 @@ function fromLocalDateTimeInput(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
+function heatSortMs(item) {
+  const date = new Date(item?.start_at || item?.end_at || '')
+  if (!Number.isNaN(date.getTime())) return date.getTime()
+  return Number.MAX_SAFE_INTEGER
+}
+
 function formatDateTime(value) {
   if (!value) return 'Por confirmar'
   const date = new Date(value)
@@ -152,7 +158,13 @@ export function CompetitionSchedulePanel({ competition }) {
 
   const grouped = useMemo(() => {
     const map = new Map()
-    payload.items.forEach((item) => {
+    const orderedItems = [...(payload.items || [])].sort((a, b) => (
+      heatSortMs(a) - heatSortMs(b)
+      || Number(a.phase_id || 0) - Number(b.phase_id || 0)
+      || Number(a.heat_number || 0) - Number(b.heat_number || 0)
+      || Number(a.id || 0) - Number(b.id || 0)
+    ))
+    orderedItems.forEach((item) => {
       const key = String(item.phase_id || 'sin-fase')
       if (!map.has(key)) {
         map.set(key, {
@@ -163,7 +175,14 @@ export function CompetitionSchedulePanel({ competition }) {
       }
       map.get(key).items.push(item)
     })
-    return Array.from(map.values())
+    return Array.from(map.values()).map((group) => ({
+      ...group,
+      items: [...group.items].sort((a, b) => (
+        heatSortMs(a) - heatSortMs(b)
+        || Number(a.heat_number || 0) - Number(b.heat_number || 0)
+        || Number(a.id || 0) - Number(b.id || 0)
+      )),
+    }))
   }, [payload.items])
 
   const selectedPhase = useMemo(

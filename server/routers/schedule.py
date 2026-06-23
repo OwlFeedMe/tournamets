@@ -377,7 +377,14 @@ def _schedule_payload(
     if published_only:
         query = query.where(CompetitionHeat.is_published == 1)
         query = query.where(CompetitionHeat.phase_id.in_(visible_phase_ids))
-    heats = session.exec(query.order_by(CompetitionHeat.phase_id, CompetitionHeat.heat_number, CompetitionHeat.id)).all()
+    heats = session.exec(
+        query.order_by(
+            CompetitionHeat.start_at,
+            CompetitionHeat.phase_id,
+            CompetitionHeat.heat_number,
+            CompetitionHeat.id,
+        )
+    ).all()
     heat_ids = [int(heat.id) for heat in heats if heat.id is not None]
     assignments_by_heat: dict[int, list[dict]] = {}
     participant_total: set[int] = set()
