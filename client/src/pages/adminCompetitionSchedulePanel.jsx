@@ -31,30 +31,48 @@ function categoriesForPhase(phases, categories, phaseId) {
 }
 
 function HelpLabel({ children, help }) {
+  const [open, setOpen] = useState(false)
   return (
-    <span style={{ color: '#AAB2C0', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-      <span>{children}</span>
-      <span
-        title={help}
-        aria-label={help}
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 999,
-          border: '1px solid #252A33',
-          color: '#00C2A8',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 11,
-          fontWeight: 800,
-          lineHeight: 1,
-          cursor: 'help',
-          flex: '0 0 auto',
-        }}
-      >
-        i
+    <span style={{ display: 'grid', gap: 5, minWidth: 0 }}>
+      <span style={{ color: '#AAB2C0', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        <span>{children}</span>
+        <button
+          type="button"
+          title={help}
+          aria-label={help}
+          aria-expanded={open}
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            setOpen(prev => !prev)
+          }}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 999,
+            border: '1px solid #252A33',
+            background: 'rgba(0,194,168,0.08)',
+            color: '#00C2A8',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            fontWeight: 900,
+            lineHeight: 1,
+            cursor: 'pointer',
+            flex: '0 0 auto',
+            padding: 0,
+            touchAction: 'manipulation',
+          }}
+        >
+          i
+        </button>
       </span>
+      {open ? (
+        <span style={{ color: '#F5F7FA', fontSize: 12, lineHeight: 1.35, border: '1px solid #252A33', background: 'rgba(9,11,14,0.92)', borderRadius: 8, padding: '8px 10px', overflowWrap: 'anywhere' }}>
+          {help}
+        </span>
+      ) : null}
     </span>
   )
 }
