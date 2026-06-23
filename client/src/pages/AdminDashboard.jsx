@@ -1881,9 +1881,11 @@ function CategoriesModal({ competition, onClose }) {
   const add = async (e) => {
     e.preventDefault()
     if (!nombre.trim()) return
+    const nextOrden = cats.reduce((max, cat) => Math.max(max, Number(cat.orden || 0)), 0) + 1
     await api.post(`/competitions/${competition.id}/categories`, {
       nombre: nombre.trim(),
       descripcion: descripcion.trim() || null,
+      orden: nextOrden,
     })
     setNombre('')
     setDescripcion('')
@@ -1892,6 +1894,21 @@ function CategoriesModal({ competition, onClose }) {
 
   const updateCatField = (id, field, value) => {
     setCats(prev => prev.map(cat => (cat.id === id ? { ...cat, [field]: value } : cat)))
+  }
+
+  const moveCatOrder = (id, direction) => {
+    setCats(prev => {
+      const ordered = [...prev].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0))
+      const index = ordered.findIndex(cat => cat.id === id)
+      const targetIndex = index + direction
+      if (index < 0 || targetIndex < 0 || targetIndex >= ordered.length) return prev
+      const current = ordered[index]
+      const target = ordered[targetIndex]
+      ordered[index] = { ...target, orden: Number(current.orden || index + 1) }
+      ordered[targetIndex] = { ...current, orden: Number(target.orden || targetIndex + 1) }
+      const byId = new Map(ordered.map(cat => [cat.id, cat]))
+      return prev.map(cat => byId.get(cat.id) || cat)
+    })
   }
 
   const saveCat = async (cat) => {
@@ -1903,6 +1920,21 @@ function CategoriesModal({ competition, onClose }) {
         descripcion: String(cat.descripcion || '').trim() || null,
         orden: Number.isFinite(cat.orden) ? cat.orden : 0,
       })
+      load()
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const saveCategoryOrder = async () => {
+    setSavingId('order')
+    try {
+      const ordered = [...cats].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0))
+      await Promise.all(ordered.map((cat, index) => api.put(`/competitions/${competition.id}/categories/${cat.id}`, {
+        nombre: String(cat.nombre || '').trim(),
+        descripcion: String(cat.descripcion || '').trim() || null,
+        orden: index + 1,
+      })))
       load()
     } finally {
       setSavingId(null)
@@ -1921,12 +1953,33 @@ function CategoriesModal({ competition, onClose }) {
         <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} placeholder="Descripcion de la categoria" rows={3} style={{ resize: 'vertical' }} />
         <button type="submit" className="btn-primary btn-sm">Agregar</button>
       </form>
+      {cats.length ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>Primero salen las categorias con menor orden. Deja las categorias mas fuertes al final.</div>
+          <button type="button" className="btn-secondary btn-sm" onClick={saveCategoryOrder} disabled={savingId === 'order'}>
+            {savingId === 'order' ? 'Guardando...' : 'Guardar orden'}
+          </button>
+        </div>
+      ) : null}
       <div style={{ overflowY: 'auto', flex: 1 }}>
         {cats.length === 0 && <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 20 }}>Sin categorias definidas</p>}
         {cats.map(c => (
           <div key={c.id} style={{ display: 'grid', gap: 8, padding: '10px 12px', borderRadius: 10, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', marginBottom: 8 }}>
-            <input value={c.nombre || ''} onChange={e => updateCatField(c.id, 'nombre', e.target.value)} placeholder="Nombre" />
+            <input value={c.nombre || ''} onChange={e => updateCatField(c.id, 'nombre', e.target.value)} placeholder="Nombre" style={{ minWidth: 0, overflowWrap: 'anywhere' }} />
             <textarea value={c.descripcion || ''} onChange={e => updateCatField(c.id, 'descripcion', e.target.value)} placeholder="Descripcion" rows={3} style={{ resize: 'vertical' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) auto auto', gap: 8, alignItems: 'end' }}>
+              <label style={{ display: 'grid', gap: 5, minWidth: 0 }}>
+                <span style={{ color: '#AAB2C0', fontSize: 12 }}>Orden de salida</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={Number(c.orden || 0)}
+                  onChange={e => updateCatField(c.id, 'orden', Number(e.target.value || 0))}
+                />
+              </label>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => moveCatOrder(c.id, -1)} title="Subir en el orden de salida">↑</button>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => moveCatOrder(c.id, 1)} title="Bajar en el orden de salida">↓</button>
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <button type="button" className="btn-secondary btn-sm" onClick={() => saveCat(c)} disabled={savingId === c.id}>
                 {savingId === c.id ? 'Guardando...' : 'Guardar'}

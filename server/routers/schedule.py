@@ -14,6 +14,7 @@ from competition_rules import normalize_phase_visibility
 from database import get_session
 from models import (
     Competition,
+    CompetitionCategory,
     CompetitionHeat,
     CompetitionHeatAssignment,
     CompetitionParticipant,
@@ -65,6 +66,7 @@ class HeatInput(BaseModel):
 class HeatGenerateInput(BaseModel):
     phase_id: int
     categoria: Optional[str] = None
+    generation_mode: str = "mixed"
     lane_count: int = 8
     heat_count: Optional[int] = None
     location_name: Optional[str] = None
@@ -75,6 +77,13 @@ class HeatGenerateInput(BaseModel):
     heat_duration_minutes: int = 15
     heat_gap_minutes: int = 5
     delete_existing: int = 1
+
+
+class HeatMoveInput(BaseModel):
+    user_id: Optional[int] = None
+    team_id: Optional[int] = None
+    target_heat_id: int
+    lane_number: Optional[int] = None
 
 
 def _normalize_dt(value: datetime | None) -> datetime | None:
@@ -106,6 +115,70 @@ def _build_lane_order(lane_count: int) -> list[int]:
         right += 1
         left -= 1
     return ordered
+
+
+def _normalize_category_label(value: str | None) -> str:
+    return str(value or "").strip()
+
+
+def _display_category_label(value: str | None) -> str:
+    return _normalize_category_label(value) or "Sin categoria"
+
+
+def _normalize_generation_mode(value: str | None, categoria: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"by_category", "por_categoria", "categories", "category_order"}:
+        return "by_category"
+    if raw in {"single_category", "categoria", "category"}:
+        return "single_category"
+    if raw in {"mixed", "all_mixed", "todos_mezclados", "all"}:
+        return "mixed"
+    return "single_category" if _normalize_category_label(categoria) else "mixed"
+
+
+def _category_order_map(session: Session, competition_id: int, modality: str | None) -> dict[str, tuple[int, str]]:
+    normalized_modality = str(modality or "individual").strip().lower()
+    rows = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .order_by(CompetitionCategory.orden, CompetitionCategory.nombre)
+    ).all()
+    out: dict[str, tuple[int, str]] = {}
+    for idx, row in enumerate(rows):
+        row_modality = str(getattr(row, "modality", "individual") or "individual").strip().lower()
+        if row_modality != normalized_modality:
+            continue
+        label = _normalize_category_label(row.nombre)
+        if label:
+            out[label.lower()] = (int(row.orden if row.orden is not None else idx), label)
+    return out
+
+
+def _category_sort_key(order_map: dict[str, tuple[int, str]], category: str | None) -> tuple[int, int, str]:
+    label = _normalize_category_label(category)
+    if not label:
+        return (1, 999999, "Sin categoria")
+    configured = order_map.get(label.lower())
+    if configured:
+        return (0, configured[0], configured[1].lower())
+    return (0, 999998, label.lower())
+
+
+def _group_entries_by_category(
+    entries: list[dict],
+    order_map: dict[str, tuple[int, str]],
+) -> list[tuple[str, list[dict]]]:
+    groups: dict[str, list[dict]] = {}
+    display_names: dict[str, str] = {}
+    for entry in entries:
+        label = _display_category_label(entry.get("categoria"))
+        key = label.lower()
+        groups.setdefault(key, []).append(entry)
+        display_names.setdefault(key, label)
+    return [
+        (display_names[key], groups[key])
+        for key in sorted(groups, key=lambda item: _category_sort_key(order_map, display_names[item]))
+    ]
 
 
 def _phase_seed_mode(session: Session, competition_id: int, phase: CompetitionPhase) -> str:
@@ -246,6 +319,7 @@ def _serialize_heat_payload(
         "kind": "heat",
         "phase_id": int(heat.phase_id),
         "phase_name": phase_name,
+        "categoria": heat.categoria,
         "heat_label": heat.nombre,
         "heat_number": int(heat.heat_number or 0),
         "lane_count": int(heat.lane_count or 0),
@@ -410,10 +484,47 @@ def _replace_assignments(
         session.delete(item)
     session.flush()
 
+    seen_users: set[int] = set()
+    seen_teams: set[int] = set()
     for idx, entry in enumerate(assignments):
         resolved_user_id = entry.user_id
         if resolved_user_id is None and entry.team_id is None:
             continue
+        if resolved_user_id is not None:
+            user_key = int(resolved_user_id)
+            if user_key in seen_users:
+                continue
+            seen_users.add(user_key)
+            duplicate_rows = session.exec(
+                select(CompetitionHeatAssignment)
+                .join(CompetitionHeat, CompetitionHeat.id == CompetitionHeatAssignment.heat_id)
+                .where(
+                    CompetitionHeat.competition_id == int(heat.competition_id),
+                    CompetitionHeat.phase_id == int(heat.phase_id),
+                    CompetitionHeatAssignment.user_id == user_key,
+                    CompetitionHeatAssignment.heat_id != int(heat.id),
+                )
+            ).all()
+            for duplicate in duplicate_rows:
+                session.delete(duplicate)
+        if entry.team_id is not None:
+            team_key = int(entry.team_id)
+            if team_key in seen_teams:
+                continue
+            seen_teams.add(team_key)
+            duplicate_rows = session.exec(
+                select(CompetitionHeatAssignment)
+                .join(CompetitionHeat, CompetitionHeat.id == CompetitionHeatAssignment.heat_id)
+                .where(
+                    CompetitionHeat.competition_id == int(heat.competition_id),
+                    CompetitionHeat.phase_id == int(heat.phase_id),
+                    CompetitionHeatAssignment.team_id == team_key,
+                    CompetitionHeatAssignment.heat_id != int(heat.id),
+                )
+            ).all()
+            for duplicate in duplicate_rows:
+                session.delete(duplicate)
+        session.flush()
         session.add(
                 CompetitionHeatAssignment(
                     heat_id=int(heat.id),
@@ -432,6 +543,82 @@ def _validate_heat_input(session: Session, competition_id: int, payload: HeatInp
     if payload.end_at and payload.start_at and payload.start_at > payload.end_at:
         raise HTTPException(400, "La hora de inicio no puede ser mayor a la hora final")
     return phase
+
+
+def _existing_heat_summary(session: Session, competition_id: int, phase_id: int) -> dict:
+    rows = session.exec(
+        select(CompetitionHeat).where(
+            CompetitionHeat.competition_id == competition_id,
+            CompetitionHeat.phase_id == phase_id,
+        )
+    ).all()
+    heat_ids = [int(row.id) for row in rows if row.id is not None]
+    assignment_count = 0
+    if heat_ids:
+        assignment_count = int(session.exec(
+            select(CompetitionHeatAssignment)
+            .where(CompetitionHeatAssignment.heat_id.in_(heat_ids))
+        ).all().__len__())
+    categories: dict[str, int] = {}
+    for row in rows:
+        categories[_display_category_label(row.categoria)] = categories.get(_display_category_label(row.categoria), 0) + 1
+    return {
+        "heats": len(rows),
+        "assignments": assignment_count,
+        "categories": [
+            {"categoria": label, "heats": count}
+            for label, count in sorted(categories.items(), key=lambda item: item[0].lower())
+        ],
+    }
+
+
+def _build_generation_plan(
+    session: Session,
+    competition_id: int,
+    body: HeatGenerateInput,
+) -> tuple[CompetitionPhase, str, list[dict], dict]:
+    phase = session.get(CompetitionPhase, body.phase_id)
+    if not phase or int(phase.competition_id) != int(competition_id):
+        raise HTTPException(400, "La fase no pertenece a esta competencia")
+    mode = _normalize_generation_mode(body.generation_mode, body.categoria)
+    if mode == "single_category" and not _normalize_category_label(body.categoria):
+        raise HTTPException(400, "Selecciona una categoria para generar solo esa categoria")
+    lane_count = max(1, int(body.lane_count or 1))
+    all_entries = _seed_entries_for_phase(session, competition_id, phase, None)
+    if not all_entries:
+        raise HTTPException(400, "No hay participantes confirmados para generar heats")
+    order_map = _category_order_map(session, competition_id, phase.modality)
+
+    if mode == "by_category":
+        groups = _group_entries_by_category(all_entries, order_map)
+    elif mode == "single_category":
+        entries = _seed_entries_for_phase(session, competition_id, phase, body.categoria)
+        groups = [(_display_category_label(body.categoria), entries)]
+    else:
+        groups = [("Todos mezclados", _seed_entries_for_phase(session, competition_id, phase, None))]
+
+    plan_items: list[dict] = []
+    for label, entries in groups:
+        if not entries:
+            continue
+        requested_count = max(1, int(body.heat_count or 0)) if body.heat_count and mode != "by_category" else 0
+        heat_count = requested_count or ((len(entries) + lane_count - 1) // lane_count)
+        plan_items.append({
+            "categoria": label,
+            "heat_categoria": None if mode == "mixed" else (None if label == "Sin categoria" else label),
+            "participants": len(entries),
+            "heats": heat_count,
+            "entries": entries,
+            "mixed": mode == "mixed",
+        })
+
+    if not plan_items:
+        raise HTTPException(400, "No hay participantes confirmados para generar heats")
+
+    return phase, mode, plan_items, {
+        "lane_count": lane_count,
+        "existing": _existing_heat_summary(session, competition_id, body.phase_id),
+    }
 
 
 @router.get("/{competition_id}/schedule")
@@ -584,6 +771,121 @@ def replace_heat_assignments(
     return {"ok": True}
 
 
+@router.put("/{competition_id}/heats/{heat_id}/move-assignment")
+def move_heat_assignment(
+    competition_id: int,
+    heat_id: int,
+    body: HeatMoveInput,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    source_heat = session.get(CompetitionHeat, heat_id)
+    target_heat = session.get(CompetitionHeat, body.target_heat_id)
+    if not source_heat or int(source_heat.competition_id) != int(competition_id):
+        raise HTTPException(404, "Heat origen no encontrado")
+    if not target_heat or int(target_heat.competition_id) != int(competition_id):
+        raise HTTPException(404, "Heat destino no encontrado")
+    if int(source_heat.phase_id) != int(target_heat.phase_id):
+        raise HTTPException(400, "Solo puedes mover atletas dentro del mismo evento")
+    if int(source_heat.id) == int(target_heat.id):
+        raise HTTPException(400, "Selecciona un heat destino diferente")
+    if body.user_id is None and body.team_id is None:
+        raise HTTPException(400, "Selecciona un atleta o equipo para mover")
+
+    source_assignment = None
+    source_rows = session.exec(
+        select(CompetitionHeatAssignment).where(CompetitionHeatAssignment.heat_id == int(source_heat.id))
+    ).all()
+    for row in source_rows:
+        if body.user_id is not None and int(row.user_id or 0) == int(body.user_id):
+            source_assignment = row
+            break
+        if body.team_id is not None and int(row.team_id or 0) == int(body.team_id):
+            source_assignment = row
+            break
+    if not source_assignment:
+        raise HTTPException(404, "Asignacion no encontrada en el heat origen")
+
+    target_rows = session.exec(
+        select(CompetitionHeatAssignment).where(CompetitionHeatAssignment.heat_id == int(target_heat.id))
+    ).all()
+    used_lanes = {int(row.lane_number or 0) for row in target_rows}
+    next_lane = body.lane_number
+    if not next_lane:
+        for lane in range(1, max(1, int(target_heat.lane_count or 1)) + 1):
+            if lane not in used_lanes:
+                next_lane = lane
+                break
+        if not next_lane:
+            next_lane = len(target_rows) + 1
+
+    session.delete(source_assignment)
+    session.flush()
+    _replace_assignments(
+        session,
+        target_heat,
+        [
+            *[
+                HeatAssignmentInput(
+                    user_id=row.user_id,
+                    team_id=row.team_id,
+                    lane_number=row.lane_number,
+                    seed_order=row.seed_order,
+                )
+                for row in target_rows
+            ],
+            HeatAssignmentInput(
+                user_id=body.user_id,
+                team_id=body.team_id,
+                lane_number=max(1, int(next_lane or 1)),
+                seed_order=len(target_rows) + 1,
+            ),
+        ],
+    )
+    session.commit()
+
+    remaining = session.exec(
+        select(CompetitionHeatAssignment).where(CompetitionHeatAssignment.heat_id == int(source_heat.id))
+    ).all()
+    return {
+        "ok": True,
+        "source_heat_id": int(source_heat.id),
+        "target_heat_id": int(target_heat.id),
+        "source_empty": len(remaining) == 0,
+        "target_count": len(target_rows) + 1,
+    }
+
+
+@router.post("/{competition_id}/heats/generate/preview")
+def preview_generate_heats(
+    competition_id: int,
+    body: HeatGenerateInput,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    phase, mode, plan_items, meta = _build_generation_plan(session, competition_id, body)
+    return {
+        "ok": True,
+        "phase_id": int(phase.id),
+        "phase_name": phase.nombre,
+        "generation_mode": mode,
+        "seed_mode": _phase_seed_mode(session, competition_id, phase),
+        "lane_count": meta["lane_count"],
+        "existing": meta["existing"],
+        "plan": [
+            {
+                "categoria": item["categoria"],
+                "participants": item["participants"],
+                "heats": item["heats"],
+                "mixed": item["mixed"],
+            }
+            for item in plan_items
+        ],
+    }
+
+
 @router.post("/{competition_id}/heats/generate")
 def generate_heats(
     competition_id: int,
@@ -592,24 +894,18 @@ def generate_heats(
     user=Depends(require_staff),
 ):
     require_competition_access(session, competition_id, user)
-    phase = session.get(CompetitionPhase, body.phase_id)
-    if not phase or int(phase.competition_id) != int(competition_id):
-        raise HTTPException(400, "La fase no pertenece a esta competencia")
-    lane_count = max(1, int(body.lane_count or 1))
-    entries = _seed_entries_for_phase(session, competition_id, phase, body.categoria)
-    if not entries:
-        raise HTTPException(400, "No hay participantes confirmados para generar heats")
-    heat_count = max(1, int(body.heat_count or 0)) if body.heat_count else 0
-    if heat_count <= 0:
-        heat_count = (len(entries) + lane_count - 1) // lane_count
+    phase, mode, plan_items, meta = _build_generation_plan(session, competition_id, body)
+    lane_count = meta["lane_count"]
     if body.delete_existing:
-        existing_heats = session.exec(
-            select(CompetitionHeat).where(
-                CompetitionHeat.competition_id == competition_id,
-                CompetitionHeat.phase_id == body.phase_id,
-                CompetitionHeat.categoria == ((body.categoria or "").strip() or None),
+        existing_query = select(CompetitionHeat).where(
+            CompetitionHeat.competition_id == competition_id,
+            CompetitionHeat.phase_id == body.phase_id,
+        )
+        if mode == "single_category":
+            existing_query = existing_query.where(
+                CompetitionHeat.categoria == (_normalize_category_label(body.categoria) or None)
             )
-        ).all()
+        existing_heats = session.exec(existing_query).all()
         for heat in existing_heats:
             session.delete(heat)
         session.commit()
@@ -621,53 +917,56 @@ def generate_heats(
     seed_mode = _phase_seed_mode(session, competition_id, phase)
 
     created_ids: list[int] = []
-    for heat_index in range(heat_count):
+    global_sequence = 0
+    for plan_item in plan_items:
+        entries = plan_item["entries"]
+        chunks = [entries[i:i + lane_count] for i in range(0, len(entries), lane_count)]
         if seed_mode == "leaderboard":
-            ordered_chunks = list(reversed([entries[i:i + lane_count] for i in range(0, len(entries), lane_count)]))
-            current_chunk = ordered_chunks[heat_index] if heat_index < len(ordered_chunks) else []
-            display_number = heat_count - heat_index
-        else:
-            current_chunk = entries[heat_index * lane_count:(heat_index + 1) * lane_count]
+            chunks = list(reversed(chunks))
+        for heat_index, current_chunk in enumerate(chunks):
+            if not current_chunk:
+                continue
             display_number = heat_index + 1
-        if not current_chunk:
-            continue
-        start_at = first_start + timedelta(minutes=((display_number - 1) * (duration + gap))) if first_start else None
-        end_at = start_at + timedelta(minutes=duration) if start_at else None
-        heat = CompetitionHeat(
-            competition_id=competition_id,
-            phase_id=body.phase_id,
-            categoria=(body.categoria or "").strip() or None,
-            nombre=f"{phase.nombre} · Heat {display_number}",
-            heat_number=display_number,
-            lane_count=lane_count,
-            start_at=start_at,
-            end_at=end_at,
-            location_name=(body.location_name or "").strip() or None,
-            location_detail=(body.location_detail or "").strip() or None,
-            note=(body.note or "").strip() or None,
-            is_published=1 if body.is_published else 0,
-            published_at=datetime.now(timezone.utc) if body.is_published else None,
-        )
-        session.add(heat)
-        session.commit()
-        session.refresh(heat)
-        created_ids.append(int(heat.id))
-        assignments = []
-        for seed_index, entry in enumerate(current_chunk):
-            lane_number = lane_order[seed_index] if seed_index < len(lane_order) else seed_index + 1
-            assignments.append(
-                HeatAssignmentInput(
-                    user_id=int(entry["user_id"]),
-                    lane_number=lane_number,
-                    seed_order=seed_index + 1,
-                )
+            global_sequence += 1
+            start_at = first_start + timedelta(minutes=((global_sequence - 1) * (duration + gap))) if first_start else None
+            end_at = start_at + timedelta(minutes=duration) if start_at else None
+            category_prefix = "" if plan_item["mixed"] else f"{plan_item['categoria']} · "
+            heat = CompetitionHeat(
+                competition_id=competition_id,
+                phase_id=body.phase_id,
+                categoria=plan_item["heat_categoria"],
+                nombre=f"{category_prefix}{phase.nombre} · Heat {display_number}",
+                heat_number=display_number,
+                lane_count=lane_count,
+                start_at=start_at,
+                end_at=end_at,
+                location_name=(body.location_name or "").strip() or None,
+                location_detail=(body.location_detail or "").strip() or None,
+                note=(body.note or "").strip() or None,
+                is_published=1 if body.is_published else 0,
+                published_at=datetime.now(timezone.utc) if body.is_published else None,
             )
-        _replace_assignments(session, heat, assignments)
-        session.commit()
+            session.add(heat)
+            session.commit()
+            session.refresh(heat)
+            created_ids.append(int(heat.id))
+            assignments = []
+            for seed_index, entry in enumerate(current_chunk):
+                lane_number = lane_order[seed_index] if seed_index < len(lane_order) else seed_index + 1
+                assignments.append(
+                    HeatAssignmentInput(
+                        user_id=int(entry["user_id"]),
+                        lane_number=lane_number,
+                        seed_order=seed_index + 1,
+                    )
+                )
+            _replace_assignments(session, heat, assignments)
+            session.commit()
 
     return {
         "ok": True,
         "phase_id": body.phase_id,
+        "generation_mode": mode,
         "seed_mode": seed_mode,
         "generated_heats": len(created_ids),
         "heat_ids": created_ids,

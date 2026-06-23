@@ -36,9 +36,12 @@ export function CompetitionSchedulePanel({ competition }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [editingHeat, setEditingHeat] = useState(null)
+  const [preview, setPreview] = useState(null)
+  const [moveDraft, setMoveDraft] = useState(null)
   const [editBusy, setEditBusy] = useState(false)
   const [form, setForm] = useState({
     phase_id: '',
+    generation_mode: 'by_category',
     categoria: '',
     lane_count: 8,
     heat_count: '',
@@ -107,30 +110,61 @@ export function CompetitionSchedulePanel({ competition }) {
     return categoriesForPhase(payload.phases, payload.categories, editingHeat?.phase_id)
   }, [payload.phases, payload.categories, editingHeat?.phase_id])
 
-  const handleGenerate = async (event) => {
-    event.preventDefault()
+  const generatePayload = () => ({
+    phase_id: Number(form.phase_id),
+    generation_mode: form.generation_mode,
+    categoria: form.generation_mode === 'single_category' ? form.categoria.trim() || null : null,
+    lane_count: Number(form.lane_count || 0),
+    heat_count: form.generation_mode === 'by_category' ? null : (form.heat_count ? Number(form.heat_count) : null),
+    first_heat_start_at: form.first_heat_start_at || null,
+    heat_duration_minutes: Number(form.heat_duration_minutes || 15),
+    heat_gap_minutes: Number(form.heat_gap_minutes || 0),
+    location_name: form.location_name.trim() || null,
+    location_detail: form.location_detail.trim() || null,
+    note: form.note.trim() || null,
+    is_published: form.is_published ? 1 : 0,
+    delete_existing: 1,
+  })
+
+  const handlePreview = async () => {
     if (!form.phase_id) return
     setBusy(true)
     setMsg(null)
     try {
-      const { data } = await api.post(`/competitions/${competition.id}/heats/generate`, {
-        phase_id: Number(form.phase_id),
-        categoria: form.categoria.trim() || null,
-        lane_count: Number(form.lane_count || 0),
-        heat_count: form.heat_count ? Number(form.heat_count) : null,
-        first_heat_start_at: form.first_heat_start_at || null,
-        heat_duration_minutes: Number(form.heat_duration_minutes || 15),
-        heat_gap_minutes: Number(form.heat_gap_minutes || 0),
-        location_name: form.location_name.trim() || null,
-        location_detail: form.location_detail.trim() || null,
-        note: form.note.trim() || null,
-        is_published: form.is_published ? 1 : 0,
-        delete_existing: 1,
-      })
+      const { data } = await api.post(`/competitions/${competition.id}/heats/generate/preview`, generatePayload())
+      setPreview(data)
+    } catch (error) {
+      setPreview(null)
+      setMsg({ type: 'error', text: error?.response?.data?.detail || 'No se pudo preparar el resumen de heats' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleGenerate = async (event) => {
+    event.preventDefault()
+    if (!form.phase_id) return
+    if (form.generation_mode === 'single_category' && !form.categoria.trim()) {
+      setMsg({ type: 'error', text: 'Selecciona una categoria para generar solo esa categoria.' })
+      return
+    }
+    if (form.generation_mode === 'mixed') {
+      const ok = window.confirm('Esto puede mezclar atletas de distintas categorias en los mismos heats. Continuar?')
+      if (!ok) return
+    }
+    if (preview?.existing?.heats) {
+      const ok = window.confirm(`Se reemplazaran ${preview.existing.heats} heats existentes de este evento. Continuar?`)
+      if (!ok) return
+    }
+    setBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.post(`/competitions/${competition.id}/heats/generate`, generatePayload())
       setMsg({
         type: 'success',
         text: `Heats generados: ${data.generated_heats}. Regla usada: ${data.seed_mode === 'leaderboard' ? 'leaderboard' : 'inscripcion'}.`,
       })
+      setPreview(null)
       await load()
     } catch (error) {
       setMsg({ type: 'error', text: error?.response?.data?.detail || 'No se pudieron generar los heats' })
@@ -143,7 +177,7 @@ export function CompetitionSchedulePanel({ competition }) {
     setEditingHeat({
       id: item.id,
       phase_id: String(item.phase_id || ''),
-      categoria: item.participants?.find((participant) => participant.categoria)?.categoria || '',
+      categoria: item.categoria || item.participants?.find((participant) => participant.categoria)?.categoria || '',
       nombre: item.heat_label || '',
       heat_number: item.heat_number || 1,
       lane_count: item.lane_count || Math.max((item.participants || []).length, 1),
@@ -161,6 +195,49 @@ export function CompetitionSchedulePanel({ competition }) {
       })),
     })
     setMsg(null)
+  }
+
+  const targetHeatOptions = useMemo(() => {
+    if (!moveDraft) return []
+    return payload.items
+      .filter((item) => String(item.phase_id) === String(moveDraft.phase_id) && String(item.id) !== String(moveDraft.source_heat_id))
+      .sort((a, b) => {
+        const sameA = (a.categoria || '') === (moveDraft.categoria || '')
+        const sameB = (b.categoria || '') === (moveDraft.categoria || '')
+        if (sameA !== sameB) return sameA ? -1 : 1
+        return Number(a.heat_number || 0) - Number(b.heat_number || 0)
+      })
+  }, [payload.items, moveDraft])
+
+  const handleMoveParticipant = async () => {
+    if (!moveDraft?.source_heat_id || !moveDraft?.target_heat_id) return
+    const target = payload.items.find((item) => String(item.id) === String(moveDraft.target_heat_id))
+    if (target && (target.categoria || '') !== (moveDraft.categoria || '')) {
+      const ok = window.confirm('El heat destino pertenece a otra categoria. Continuar con el movimiento?')
+      if (!ok) return
+    }
+    setEditBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.put(`/competitions/${competition.id}/heats/${moveDraft.source_heat_id}/move-assignment`, {
+        user_id: moveDraft.user_id,
+        team_id: moveDraft.team_id,
+        target_heat_id: Number(moveDraft.target_heat_id),
+      })
+      if (data?.source_empty) {
+        const deleteEmpty = window.confirm('El heat origen quedo vacio. Quieres eliminarlo?')
+        if (deleteEmpty) {
+          await api.delete(`/competitions/${competition.id}/heats/${moveDraft.source_heat_id}`)
+        }
+      }
+      setMoveDraft(null)
+      setMsg({ type: 'success', text: 'Atleta reubicado.' })
+      await load()
+    } catch (error) {
+      setMsg({ type: 'error', text: error?.response?.data?.detail || 'No se pudo mover el atleta' })
+    } finally {
+      setEditBusy(false)
+    }
   }
 
   const handleUpdateHeat = async (event) => {
@@ -235,9 +312,23 @@ export function CompetitionSchedulePanel({ competition }) {
             </select>
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Modo</span>
+            <select value={form.generation_mode} onChange={(e) => {
+              setPreview(null)
+              setForm(prev => ({ ...prev, generation_mode: e.target.value, categoria: e.target.value === 'single_category' ? prev.categoria : '' }))
+            }}>
+              <option value="by_category">Generar por categoria</option>
+              <option value="single_category">Generar una categoria</option>
+              <option value="mixed">Generar todos mezclados</option>
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ color: '#AAB2C0', fontSize: 12 }}>Categoria</span>
-            <select value={form.categoria} onChange={(e) => setForm(prev => ({ ...prev, categoria: e.target.value }))}>
-              <option value="">Todas / sin categoria</option>
+            <select value={form.categoria} disabled={form.generation_mode !== 'single_category'} onChange={(e) => {
+              setPreview(null)
+              setForm(prev => ({ ...prev, categoria: e.target.value }))
+            }}>
+              <option value="">Selecciona una categoria</option>
               {categoryOptions.map((category) => (
                 <option key={category.id} value={category.nombre}>{category.nombre}</option>
               ))}
@@ -280,11 +371,40 @@ export function CompetitionSchedulePanel({ competition }) {
             <span style={{ color: '#F5F7FA', fontSize: 13 }}>Publicar al generar</span>
           </label>
           <div style={{ display: 'flex', alignItems: 'end' }}>
-            <button type="submit" className="btn-primary btn-sm" disabled={busy || !form.phase_id}>
+            <button type="button" className="btn-secondary btn-sm" onClick={handlePreview} disabled={busy || !form.phase_id}>
+              {busy ? 'Calculando...' : 'Ver resumen'}
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'end' }}>
+            <button type="submit" className="btn-primary btn-sm" disabled={busy || !form.phase_id || (form.generation_mode === 'single_category' && !form.categoria.trim())}>
               {busy ? 'Generando...' : 'Generar heats'}
             </button>
           </div>
         </form>
+
+        {preview ? (
+          <div style={{ marginTop: 14, border: '1px solid #252A33', background: 'rgba(9,11,14,0.68)', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>Resumen antes de generar</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
+                  {preview.generation_mode === 'mixed' ? 'Todos mezclados' : preview.generation_mode === 'single_category' ? 'Una categoria' : 'Por categoria'} · {preview.lane_count} lanes
+                </div>
+              </div>
+              <div style={{ color: preview?.existing?.heats ? '#F59E0B' : '#00C2A8', fontSize: 12, fontWeight: 800 }}>
+                {preview?.existing?.heats ? `${preview.existing.heats} heats existentes se reemplazaran` : 'Sin heats previos'}
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+              {(preview.plan || []).map((item) => (
+                <div key={item.categoria} style={{ border: '1px solid #252A33', borderRadius: 10, padding: 10, minWidth: 0 }}>
+                  <div title={item.categoria} style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 13, minWidth: 0, overflowWrap: 'anywhere' }}>{item.categoria}</div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{item.participants} atletas · {item.heats} heats</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {msg ? (
           <div style={{ marginTop: 12, color: msg.type === 'error' ? '#EF4444' : '#5EEAD4', fontSize: 13 }}>
@@ -318,7 +438,7 @@ export function CompetitionSchedulePanel({ competition }) {
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: '#AAB2C0', fontSize: 12 }}>Categoria</span>
               <select value={editingHeat.categoria} onChange={(e) => setEditingHeat(prev => ({ ...prev, categoria: e.target.value }))}>
-                <option value="">Todas / sin categoria</option>
+                <option value="">Sin categoria asignada</option>
                 {editCategoryOptions.map((category) => (
                   <option key={category.id} value={category.nombre}>{category.nombre}</option>
                 ))}
@@ -372,6 +492,37 @@ export function CompetitionSchedulePanel({ competition }) {
         </div>
       ) : null}
 
+      {moveDraft ? (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap', marginBottom: 14 }}>
+            <div style={{ minWidth: 0 }}>
+              <h4 style={{ margin: 0, fontSize: 16 }}>Mover atleta</h4>
+              <div title={moveDraft.name} style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4, overflowWrap: 'anywhere' }}>
+                {moveDraft.name} · {moveDraft.categoria || 'Sin categoria'}
+              </div>
+            </div>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setMoveDraft(null)} disabled={editBusy}>Cerrar</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto', gap: 10, alignItems: 'end' }}>
+            <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+              <span style={{ color: '#AAB2C0', fontSize: 12 }}>Heat destino</span>
+              <select value={moveDraft.target_heat_id || ''} onChange={(e) => setMoveDraft(prev => ({ ...prev, target_heat_id: e.target.value }))}>
+                <option value="">Selecciona un heat</option>
+                {targetHeatOptions.map((item) => {
+                  const count = (item.participants || []).length
+                  const cap = Number(item.lane_count || 0)
+                  const label = `${item.categoria || 'Todos mezclados'} · Heat ${item.heat_number} · ${count}/${cap || count} atletas`
+                  return <option key={item.id} value={item.id}>{label}</option>
+                })}
+              </select>
+            </label>
+            <button type="button" className="btn-primary btn-sm" onClick={handleMoveParticipant} disabled={editBusy || !moveDraft.target_heat_id}>
+              {editBusy ? 'Moviendo...' : 'Mover'}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
           <div>
@@ -395,11 +546,14 @@ export function CompetitionSchedulePanel({ competition }) {
                   {group.items.map((item) => (
                     <div key={item.id} style={{ borderRadius: 16, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 14, display: 'grid', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                        <div>
+                        <div style={{ minWidth: 0 }}>
                           <div style={{ color: '#5EEAD4', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                             Heat {item.heat_number}
                           </div>
-                          <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15, marginTop: 4 }}>{item.heat_label}</div>
+                          <div title={item.heat_label} style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 15, marginTop: 4, minWidth: 0, overflowWrap: 'anywhere' }}>{item.heat_label}</div>
+                          {item.categoria ? (
+                            <div title={item.categoria} style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3, overflowWrap: 'anywhere' }}>{item.categoria}</div>
+                          ) : null}
                         </div>
                         <span style={{ padding: '6px 10px', borderRadius: 999, border: `1px solid ${item.is_published ? 'rgba(94,234,212,0.28)' : 'rgba(214,217,224,0.28)'}`, color: item.is_published ? '#9AF7EA' : '#FFD0AE', background: item.is_published ? 'rgba(94,234,212,0.08)' : 'rgba(214,217,224,0.10)', fontSize: 12, fontWeight: 800 }}>
                           {item.is_published ? 'Publicado' : 'Borrador'}
@@ -421,11 +575,27 @@ export function CompetitionSchedulePanel({ competition }) {
                       {(item.participants || []).length ? (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
                           {item.participants.map((participant) => (
-                            <div key={participant.id} style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', padding: '10px 12px' }}>
-                              <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 13 }}>{participant.participant_name}</div>
+                            <div key={participant.id} style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', minWidth: 0, display: 'grid', gap: 8 }}>
+                              <div title={participant.participant_name} style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 13, minWidth: 0, overflowWrap: 'anywhere', lineHeight: 1.25 }}>{participant.participant_name}</div>
                               <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
                     Lane {participant.lane_number}{participant.categoria ? ` · ${participant.categoria}` : ''}
                               </div>
+                              <button
+                                type="button"
+                                className="btn-secondary btn-sm"
+                                onClick={() => setMoveDraft({
+                                  source_heat_id: item.id,
+                                  phase_id: item.phase_id,
+                                  user_id: participant.user_id,
+                                  team_id: participant.team_id,
+                                  name: participant.participant_name,
+                                  categoria: participant.categoria || item.categoria || '',
+                                  target_heat_id: '',
+                                })}
+                                disabled={busy || editBusy}
+                              >
+                                Mover
+                              </button>
                             </div>
                           ))}
                         </div>
