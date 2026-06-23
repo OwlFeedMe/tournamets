@@ -3,7 +3,17 @@ import { Clock3, MapPin, Users } from 'lucide-react'
 import api from '../api/axios'
 
 function toLocalDateTimeInput(value) {
-  return value ? String(value).slice(0, 16) : ''
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16)
+  const offsetMs = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
+}
+
+function fromLocalDateTimeInput(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
 }
 
 function formatDateTime(value) {
@@ -85,6 +95,9 @@ export function CompetitionSchedulePanel({ competition }) {
   const [editingHeat, setEditingHeat] = useState(null)
   const [preview, setPreview] = useState(null)
   const [moveDraft, setMoveDraft] = useState(null)
+  const [orderOpen, setOrderOpen] = useState(false)
+  const [orderDraft, setOrderDraft] = useState([])
+  const [orderBusy, setOrderBusy] = useState(false)
   const [editBusy, setEditBusy] = useState(false)
   const [form, setForm] = useState({
     phase_id: '',
@@ -128,6 +141,15 @@ export function CompetitionSchedulePanel({ competition }) {
     }
   }, [payload.phases, form.phase_id])
 
+  useEffect(() => {
+    if (!orderOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [orderOpen])
+
   const grouped = useMemo(() => {
     const map = new Map()
     payload.items.forEach((item) => {
@@ -157,13 +179,64 @@ export function CompetitionSchedulePanel({ competition }) {
     return categoriesForPhase(payload.phases, payload.categories, editingHeat?.phase_id)
   }, [payload.phases, payload.categories, editingHeat?.phase_id])
 
+  const openOrderModal = () => {
+    setOrderDraft(categoryOptions.map((category, index) => ({
+      ...category,
+      orden: Number(category?.orden || index + 1),
+    })))
+    setOrderOpen(true)
+    setMsg(null)
+  }
+
+  const moveOrderCategory = (id, direction) => {
+    setOrderDraft(prev => {
+      const next = [...prev].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0))
+      const index = next.findIndex((item) => String(item.id) === String(id))
+      const targetIndex = index + direction
+      if (index < 0 || targetIndex < 0 || targetIndex >= next.length) return prev
+      const current = next[index]
+      next[index] = next[targetIndex]
+      next[targetIndex] = current
+      return next.map((item, itemIndex) => ({ ...item, orden: itemIndex + 1 }))
+    })
+  }
+
+  const updateOrderValue = (id, value) => {
+    setOrderDraft(prev => prev.map((item) => (
+      String(item.id) === String(id) ? { ...item, orden: Math.max(1, Number(value || 1)) } : item
+    )))
+  }
+
+  const saveCategoryOrder = async () => {
+    setOrderBusy(true)
+    setMsg(null)
+    try {
+      const ordered = [...orderDraft].sort((a, b) => {
+        const orderDiff = Number(a.orden || 0) - Number(b.orden || 0)
+        if (orderDiff !== 0) return orderDiff
+        return String(a.nombre || '').localeCompare(String(b.nombre || ''))
+      })
+      await Promise.all(ordered.map((category, index) => api.put(`/competitions/${competition.id}/categories/${category.id}`, {
+        orden: index + 1,
+      })))
+      setOrderOpen(false)
+      setPreview(null)
+      setMsg({ type: 'success', text: 'Orden de salida actualizado.' })
+      await load()
+    } catch (error) {
+      setMsg({ type: 'error', text: error?.response?.data?.detail || 'No se pudo guardar el orden de salida' })
+    } finally {
+      setOrderBusy(false)
+    }
+  }
+
   const generatePayload = () => ({
     phase_id: Number(form.phase_id),
     generation_mode: form.generation_mode,
     categoria: form.generation_mode === 'single_category' ? form.categoria.trim() || null : null,
     lane_count: Number(form.lane_count || 0),
     heat_count: form.generation_mode === 'by_category' ? null : (form.heat_count ? Number(form.heat_count) : null),
-    first_heat_start_at: form.first_heat_start_at || null,
+    first_heat_start_at: fromLocalDateTimeInput(form.first_heat_start_at),
     heat_duration_minutes: Number(form.heat_duration_minutes || 15),
     heat_gap_minutes: Number(form.heat_gap_minutes || 0),
     location_name: form.location_name.trim() || null,
@@ -299,8 +372,8 @@ export function CompetitionSchedulePanel({ competition }) {
         nombre: editingHeat.nombre.trim(),
         heat_number: Number(editingHeat.heat_number || 1),
         lane_count: Number(editingHeat.lane_count || 1),
-        start_at: editingHeat.start_at || null,
-        end_at: editingHeat.end_at || null,
+        start_at: fromLocalDateTimeInput(editingHeat.start_at),
+        end_at: fromLocalDateTimeInput(editingHeat.end_at),
         location_name: editingHeat.location_name.trim() || null,
         location_detail: editingHeat.location_detail.trim() || null,
         note: editingHeat.note.trim() || null,
@@ -337,6 +410,49 @@ export function CompetitionSchedulePanel({ competition }) {
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {orderOpen ? (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(9,11,14,0.78)', display: 'grid', placeItems: 'center', padding: 14 }}>
+          <div style={{ width: 'min(560px, 100%)', maxHeight: '88vh', overflow: 'auto', borderRadius: 14, border: '1px solid #252A33', background: '#171B21', boxShadow: '0 24px 80px rgba(0,0,0,0.48)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#171B21', borderBottom: '1px solid #252A33', padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+              <div style={{ minWidth: 0 }}>
+                <h4 style={{ margin: 0, fontSize: 16, color: '#F5F7FA' }}>Orden de salida</h4>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+                  Las categorias con menor numero salen primero. Deja las categorias mas fuertes al final.
+                </div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setOrderOpen(false)} disabled={orderBusy}>Cerrar</button>
+            </div>
+            <div style={{ padding: 14, display: 'grid', gap: 10 }}>
+              {[...orderDraft].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0)).map((category, index) => (
+                <div key={category.id} style={{ border: '1px solid #252A33', background: 'rgba(13,15,18,0.68)', borderRadius: 10, padding: 10, display: 'grid', gridTemplateColumns: '72px minmax(0, 1fr) auto auto', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    min="1"
+                    value={Number(category.orden || index + 1)}
+                    onChange={(event) => updateOrderValue(category.id, event.target.value)}
+                    aria-label={`Orden de salida de ${category.nombre}`}
+                  />
+                  <div title={category.nombre} style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 13, minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {category.nombre}
+                  </div>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => moveOrderCategory(category.id, -1)} disabled={orderBusy || index === 0}>
+                    Subir
+                  </button>
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => moveOrderCategory(category.id, 1)} disabled={orderBusy || index === orderDraft.length - 1}>
+                    Bajar
+                  </button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'end', gap: 8, flexWrap: 'wrap', paddingTop: 4 }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setOrderOpen(false)} disabled={orderBusy}>Cancelar</button>
+                <button type="button" className="btn-primary btn-sm" onClick={saveCategoryOrder} disabled={orderBusy || !orderDraft.length}>
+                  {orderBusy ? 'Guardando...' : 'Guardar orden'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap', marginBottom: 14 }}>
           <div>
@@ -381,6 +497,12 @@ export function CompetitionSchedulePanel({ competition }) {
               ))}
             </select>
           </label>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Orden de salida</span>
+            <button type="button" className="btn-secondary btn-sm" onClick={openOrderModal} disabled={!form.phase_id || !categoryOptions.length}>
+              Configurar orden
+            </button>
+          </div>
           <label style={{ display: 'grid', gap: 6 }}>
             <HelpLabel help="Cantidad maxima de atletas que caben en cada salida o tanda. Ejemplo: 10 lanes crea heats de hasta 10 atletas.">Lanes por heat</HelpLabel>
             <input type="number" min="1" max="20" value={form.lane_count} onChange={(e) => setForm(prev => ({ ...prev, lane_count: e.target.value }))} />
