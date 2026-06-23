@@ -148,13 +148,13 @@ export function CompetitionSchedulePanel({ competition }) {
   }, [payload.phases, form.phase_id])
 
   useEffect(() => {
-    if (!orderOpen) return undefined
+    if (!orderOpen && !moveDraft) return undefined
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [orderOpen])
+  }, [orderOpen, moveDraft])
 
   const grouped = useMemo(() => {
     const map = new Map()
@@ -351,13 +351,45 @@ export function CompetitionSchedulePanel({ competition }) {
       })
   }, [payload.items, moveDraft])
 
+  const moveSourceHeat = useMemo(() => (
+    moveDraft ? payload.items.find((item) => String(item.id) === String(moveDraft.source_heat_id)) || null : null
+  ), [payload.items, moveDraft])
+
+  const moveTargetHeat = useMemo(() => (
+    moveDraft ? payload.items.find((item) => String(item.id) === String(moveDraft.target_heat_id)) || null : null
+  ), [payload.items, moveDraft])
+
+  const moveWarnings = useMemo(() => {
+    if (!moveDraft) return []
+    const warnings = []
+    const sourceCount = (moveSourceHeat?.participants || []).length
+    const targetCount = (moveTargetHeat?.participants || []).length
+    const targetLaneCount = Number(moveTargetHeat?.lane_count || 0)
+    if (sourceCount <= 1) {
+      warnings.push({
+        tone: 'warning',
+        text: moveDraft.delete_empty_source
+          ? 'Este movimiento dejara el heat origen vacio y se eliminara al confirmar.'
+          : 'Este movimiento dejara el heat origen vacio. Si no lo eliminas, quedara como heat vacio.',
+      })
+    }
+    if (moveTargetHeat && targetLaneCount > 0 && targetCount >= targetLaneCount) {
+      warnings.push({
+        tone: 'warning',
+        text: `El heat destino ya tiene ${targetCount}/${targetLaneCount} atletas. El atleta se agregara como lane adicional.`,
+      })
+    }
+    if (moveTargetHeat && (moveTargetHeat.categoria || '') !== (moveDraft.categoria || '')) {
+      warnings.push({
+        tone: 'danger',
+        text: 'El heat destino pertenece a otra categoria. Este movimiento mezclara categorias.',
+      })
+    }
+    return warnings
+  }, [moveDraft, moveSourceHeat, moveTargetHeat])
+
   const handleMoveParticipant = async () => {
     if (!moveDraft?.source_heat_id || !moveDraft?.target_heat_id) return
-    const target = payload.items.find((item) => String(item.id) === String(moveDraft.target_heat_id))
-    if (target && (target.categoria || '') !== (moveDraft.categoria || '')) {
-      const ok = window.confirm('El heat destino pertenece a otra categoria. Continuar con el movimiento?')
-      if (!ok) return
-    }
     setEditBusy(true)
     setMsg(null)
     try {
@@ -366,11 +398,8 @@ export function CompetitionSchedulePanel({ competition }) {
         team_id: moveDraft.team_id,
         target_heat_id: Number(moveDraft.target_heat_id),
       })
-      if (data?.source_empty) {
-        const deleteEmpty = window.confirm('El heat origen quedo vacio. Quieres eliminarlo?')
-        if (deleteEmpty) {
-          await api.delete(`/competitions/${competition.id}/heats/${moveDraft.source_heat_id}`)
-        }
+      if (data?.source_empty && moveDraft.delete_empty_source) {
+        await api.delete(`/competitions/${competition.id}/heats/${moveDraft.source_heat_id}`)
       }
       setMoveDraft(null)
       setMsg({ type: 'success', text: 'Atleta reubicado.' })
@@ -684,6 +713,101 @@ export function CompetitionSchedulePanel({ competition }) {
       ) : null}
 
       {moveDraft ? (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(9,11,14,0.78)', display: 'grid', placeItems: 'center', padding: 14 }}>
+          <div style={{ width: 'min(620px, 100%)', maxHeight: '88vh', overflow: 'auto', borderRadius: 14, border: '1px solid #252A33', background: '#171B21', boxShadow: '0 24px 80px rgba(0,0,0,0.48)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#171B21', borderBottom: '1px solid #252A33', padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+              <div style={{ minWidth: 0 }}>
+                <h4 style={{ margin: 0, fontSize: 16 }}>Mover atleta</h4>
+                <div title={moveDraft.name} style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4, overflowWrap: 'anywhere' }}>
+                  {moveDraft.name} · {moveDraft.categoria || 'Sin categoria'}
+                </div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setMoveDraft(null)} disabled={editBusy}>Cerrar</button>
+            </div>
+            <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+                <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 12, minWidth: 0 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Origen</div>
+                  <div title={moveSourceHeat?.heat_label || ''} style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14, marginTop: 6, overflowWrap: 'anywhere' }}>
+                    {moveSourceHeat?.heat_label || `Heat ${moveSourceHeat?.heat_number || ''}`}
+                  </div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+                    {(moveSourceHeat?.participants || []).length} atletas
+                  </div>
+                </div>
+                <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(13,15,18,0.72)', padding: 12, minWidth: 0 }}>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Destino</div>
+                  <div title={moveTargetHeat?.heat_label || ''} style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14, marginTop: 6, overflowWrap: 'anywhere' }}>
+                    {moveTargetHeat ? moveTargetHeat.heat_label || `Heat ${moveTargetHeat.heat_number}` : 'Sin seleccionar'}
+                  </div>
+                  <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+                    {moveTargetHeat ? `${(moveTargetHeat.participants || []).length}/${Number(moveTargetHeat.lane_count || 0) || (moveTargetHeat.participants || []).length} atletas` : 'Selecciona un heat'}
+                  </div>
+                </div>
+              </div>
+
+              <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
+                <span style={{ color: '#AAB2C0', fontSize: 12 }}>Heat destino</span>
+                <select value={moveDraft.target_heat_id || ''} onChange={(e) => setMoveDraft(prev => ({ ...prev, target_heat_id: e.target.value }))}>
+                  <option value="">Selecciona un heat</option>
+                  {targetHeatOptions.map((item) => {
+                    const count = (item.participants || []).length
+                    const cap = Number(item.lane_count || 0)
+                    const label = `${item.categoria || 'Todos mezclados'} · Heat ${item.heat_number} · ${count}/${cap || count} atletas`
+                    return <option key={item.id} value={item.id}>{label}</option>
+                  })}
+                </select>
+              </label>
+
+              {(moveSourceHeat?.participants || []).length <= 1 ? (
+                <label style={{ display: 'flex', alignItems: 'start', gap: 10, borderRadius: 12, border: '1px solid rgba(245,158,11,0.34)', background: 'rgba(245,158,11,0.08)', padding: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!moveDraft.delete_empty_source}
+                    onChange={(e) => setMoveDraft(prev => ({ ...prev, delete_empty_source: e.target.checked }))}
+                    style={{ marginTop: 2 }}
+                  />
+                  <span style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.35 }}>
+                    Eliminar el heat origen si queda vacio
+                  </span>
+                </label>
+              ) : null}
+
+              {moveWarnings.length ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {moveWarnings.map((warning, index) => (
+                    <div
+                      key={`${warning.tone}-${index}`}
+                      style={{
+                        borderRadius: 12,
+                        border: `1px solid ${warning.tone === 'danger' ? 'rgba(239,68,68,0.34)' : 'rgba(245,158,11,0.34)'}`,
+                        background: warning.tone === 'danger' ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
+                        color: warning.tone === 'danger' ? '#FECACA' : '#FDE68A',
+                        padding: 12,
+                        fontSize: 13,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      {warning.text}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap', borderTop: '1px solid #252A33', paddingTop: 12 }}>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setMoveDraft(null)} disabled={editBusy}>
+                  Cancelar
+                </button>
+                <button type="button" className="btn-primary btn-sm" onClick={handleMoveParticipant} disabled={editBusy || !moveDraft.target_heat_id}>
+                  {editBusy ? 'Moviendo...' : 'Confirmar movimiento'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {false && moveDraft ? (
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap', marginBottom: 14 }}>
             <div style={{ minWidth: 0 }}>
@@ -782,6 +906,7 @@ export function CompetitionSchedulePanel({ competition }) {
                                   name: participant.participant_name,
                                   categoria: participant.categoria || item.categoria || '',
                                   target_heat_id: '',
+                                  delete_empty_source: (item.participants || []).length <= 1,
                                 })}
                                 disabled={busy || editBusy}
                               >
