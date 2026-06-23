@@ -30,6 +30,35 @@ function categoriesForPhase(phases, categories, phaseId) {
     })
 }
 
+function HelpLabel({ children, help }) {
+  return (
+    <span style={{ color: '#AAB2C0', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+      <span>{children}</span>
+      <span
+        title={help}
+        aria-label={help}
+        style={{
+          width: 16,
+          height: 16,
+          borderRadius: 999,
+          border: '1px solid #252A33',
+          color: '#00C2A8',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 11,
+          fontWeight: 800,
+          lineHeight: 1,
+          cursor: 'help',
+          flex: '0 0 auto',
+        }}
+      >
+        i
+      </span>
+    </span>
+  )
+}
+
 export function CompetitionSchedulePanel({ competition }) {
   const [payload, setPayload] = useState({ phases: [], items: [], categories: [] })
   const [loading, setLoading] = useState(true)
@@ -335,23 +364,23 @@ export function CompetitionSchedulePanel({ competition }) {
             </select>
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Lanes por heat</span>
+            <HelpLabel help="Cantidad maxima de atletas que caben en cada salida o tanda. Ejemplo: 10 lanes crea heats de hasta 10 atletas.">Lanes por heat</HelpLabel>
             <input type="number" min="1" max="20" value={form.lane_count} onChange={(e) => setForm(prev => ({ ...prev, lane_count: e.target.value }))} />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Cantidad de heats</span>
+            <HelpLabel help="Dejalo en Auto para que FinalRep calcule cuantos heats necesita segun atletas y lanes. Usalo solo si quieres forzar una cantidad.">Cantidad de heats</HelpLabel>
             <input type="number" min="1" value={form.heat_count} onChange={(e) => setForm(prev => ({ ...prev, heat_count: e.target.value }))} placeholder="Auto" />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Inicio del primer heat</span>
+            <HelpLabel help="Hora en la que sale el primer heat generado. Los siguientes se calculan sumando duracion y gap.">Inicio del primer heat</HelpLabel>
             <input type="datetime-local" value={form.first_heat_start_at} onChange={(e) => setForm(prev => ({ ...prev, first_heat_start_at: e.target.value }))} />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Duracion</span>
+            <HelpLabel help="Minutos que dura cada heat desde que inicia hasta que termina.">Duracion</HelpLabel>
             <input type="number" min="1" value={form.heat_duration_minutes} onChange={(e) => setForm(prev => ({ ...prev, heat_duration_minutes: e.target.value }))} />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>Gap</span>
+            <HelpLabel help="Minutos de pausa entre el final de un heat y el inicio del siguiente. Sirve para transiciones, limpieza o llamados.">Gap</HelpLabel>
             <input type="number" min="0" value={form.heat_gap_minutes} onChange={(e) => setForm(prev => ({ ...prev, heat_gap_minutes: e.target.value }))} />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
