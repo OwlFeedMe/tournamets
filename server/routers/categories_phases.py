@@ -3,6 +3,7 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, text
 from sqlmodel import Session, select
 
@@ -72,6 +73,15 @@ ACTIVE_CATEGORY_ENROLLMENT_STATES = {
     "pago_pendiente",
     "pago_en_verificacion",
 }
+
+
+class CategoryOrderItem(BaseModel):
+    id: int
+    orden: int
+
+
+class CategoryOrderUpdate(BaseModel):
+    items: list[CategoryOrderItem]
 
 
 def _normalize_phase_type(raw: str | None) -> str:
@@ -479,6 +489,54 @@ def create_category(competition_id: int, body: CategoryCreate,
     invalidate_leaderboard_results_snapshot(competition_id)
     usage = get_category_usage(session, competition_id)
     return _category_response(cat, usage)
+
+
+@router.put("/api/competitions/{competition_id}/categories/order")
+def update_category_order(
+    competition_id: int,
+    body: CategoryOrderUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+    actor_user_id = get_current_user_id(user)
+    if not body.items:
+        raise HTTPException(400, "No hay categorias para ordenar")
+    category_ids = [int(item.id) for item in body.items]
+    categories = session.exec(
+        select(CompetitionCategory).where(
+            CompetitionCategory.competition_id == competition_id,
+            CompetitionCategory.id.in_(category_ids),
+        )
+    ).all()
+    categories_by_id = {int(category.id): category for category in categories if category.id is not None}
+    missing_ids = [category_id for category_id in category_ids if category_id not in categories_by_id]
+    if missing_ids:
+        raise HTTPException(400, "Una o mas categorias no pertenecen a esta competencia")
+
+    for index, item in enumerate(body.items):
+        category = categories_by_id[int(item.id)]
+        before = _category_snapshot(category)
+        category.orden = max(1, int(item.orden or index + 1))
+        session.add(category)
+        _audit_category_change(
+            session,
+            competition_id=competition_id,
+            category_id=category.id,
+            action="update_order",
+            actor_user_id=actor_user_id,
+            before=before,
+            after=_category_snapshot(category),
+        )
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    usage = get_category_usage(session, competition_id)
+    refreshed = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .order_by(CompetitionCategory.modality, CompetitionCategory.orden, CompetitionCategory.nombre)
+    ).all()
+    return [_category_response(cat, usage) for cat in refreshed]
 
 
 @router.put("/api/competitions/{competition_id}/categories/{cat_id}")

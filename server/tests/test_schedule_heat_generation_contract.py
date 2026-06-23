@@ -3,6 +3,7 @@ import unittest
 
 
 SCHEDULE_ROUTER_PATH = Path(__file__).resolve().parents[1] / "routers" / "schedule.py"
+CATEGORIES_ROUTER_PATH = Path(__file__).resolve().parents[1] / "routers" / "categories_phases.py"
 SCHEDULE_PANEL_PATH = Path(__file__).resolve().parents[2] / "client" / "src" / "pages" / "adminCompetitionSchedulePanel.jsx"
 
 
@@ -33,6 +34,14 @@ class ScheduleHeatGenerationContractTests(unittest.TestCase):
         self.assertIn("Ver resumen", source)
         self.assertIn("Mover atleta", source)
         self.assertNotIn("Todas / sin categoria", source)
+
+    def test_category_order_has_dedicated_endpoint(self):
+        backend = CATEGORIES_ROUTER_PATH.read_text(encoding="utf-8")
+        frontend = SCHEDULE_PANEL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("/categories/order", backend)
+        self.assertIn("CategoryOrderUpdate", backend)
+        self.assertIn("/categories/order", frontend)
 
 
 if __name__ == "__main__":

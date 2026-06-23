@@ -216,9 +216,12 @@ export function CompetitionSchedulePanel({ competition }) {
         if (orderDiff !== 0) return orderDiff
         return String(a.nombre || '').localeCompare(String(b.nombre || ''))
       })
-      await Promise.all(ordered.map((category, index) => api.put(`/competitions/${competition.id}/categories/${category.id}`, {
-        orden: index + 1,
-      })))
+      await api.put(`/competitions/${competition.id}/categories/order`, {
+        items: ordered.map((category, index) => ({
+          id: Number(category.id),
+          orden: index + 1,
+        })),
+      })
       setOrderOpen(false)
       setPreview(null)
       setMsg({ type: 'success', text: 'Orden de salida actualizado.' })
