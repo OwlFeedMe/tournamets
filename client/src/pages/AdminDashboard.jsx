@@ -2284,6 +2284,37 @@ function parseMetricByPhase(value, phase) {
   return Number.isFinite(n) ? n : null
 }
 
+function formatSecondsToClock(totalSeconds) {
+  if (!Number.isFinite(Number(totalSeconds))) return ''
+  const safe = Math.max(0, Math.round(Number(totalSeconds)))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const seconds = safe % 60
+  if (hours > 0) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function formatMarkForPhase(mark, phase, fallback = '') {
+  if (fallback) return fallback
+  if (mark == null || mark === '') return ''
+  return phaseTypeFromPhase(phase) === 'tiempo' ? formatSecondsToClock(mark) : String(mark)
+}
+
+function scoreInputConfig(phase) {
+  const phaseType = phaseTypeFromPhase(phase)
+  const method = normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
+  if (phaseType === 'tiempo') {
+    return { type: 'text', label: 'Tiempo', placeholder: 'MM:SS', helper: 'Acepta MM:SS o HH:MM:SS' }
+  }
+  if (method === 'rm') {
+    return { type: 'number', label: `Peso (${String(phase?.rm_unit || 'kg').toUpperCase()})`, placeholder: 'Ej: 120', helper: 'Carga el peso logrado' }
+  }
+  if (method === 'metros') {
+    return { type: 'number', label: 'Metros', placeholder: 'Ej: 850', helper: 'Carga distancia total' }
+  }
+  return { type: 'number', label: 'Marca', placeholder: 'Ej: 120', helper: PHASE_MEASUREMENT_LABELS[method] || 'Valor numerico' }
+}
+
 function PhasesModal({ competition, onClose, inline = false }) {
   const [phases, setPhases] = useState([])
   const [form, setForm] = useState(createPhaseFormState)
@@ -8121,6 +8152,498 @@ function CompetitionTeamsPanel({ competition }) {
   )
 }
 
+function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
+  const [phases, setPhases] = useState([])
+  const [phaseId, setPhaseId] = useState('')
+  const [rows, setRows] = useState([])
+  const [heats, setHeats] = useState([])
+  const [heatFilter, setHeatFilter] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('pending')
+  const [query, setQuery] = useState('')
+  const [drafts, setDrafts] = useState({})
+  const [savingKey, setSavingKey] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const inputRefs = useRef({})
+  const userSelectedHeatRef = useRef(false)
+
+  const activePhase = phases.find(item => String(item.id) === String(phaseId))
+  const inputConfig = scoreInputConfig(activePhase)
+
+  useEffect(() => {
+    let cancelled = false
+    setError('')
+    api.get(`/judge/competitions/${competition.id}/score/phases`)
+      .then(({ data }) => {
+        if (cancelled) return
+        const items = Array.isArray(data) ? data : []
+        setPhases(items)
+        setPhaseId(current => {
+          if (current && items.some(item => String(item.id) === String(current))) return current
+          return items[0]?.id ? String(items[0].id) : ''
+        })
+      })
+      .catch(err => {
+        if (cancelled) return
+        setPhases([])
+        setError(err?.response?.data?.detail || 'No se pudieron cargar los eventos para resultados.')
+      })
+    return () => { cancelled = true }
+  }, [competition.id])
+
+  useEffect(() => {
+    setHeatFilter('')
+    setCategoryFilter('')
+    setStatusFilter('pending')
+    setDrafts({})
+    userSelectedHeatRef.current = false
+  }, [phaseId])
+
+  useEffect(() => {
+    if (!phaseId) {
+      setRows([])
+      setHeats([])
+      return undefined
+    }
+    let cancelled = false
+    setLoading(true)
+    setError('')
+    api.get(`/judge/competitions/${competition.id}/score/manual-options`, {
+      params: {
+        phase_id: Number(phaseId),
+        q: query || undefined,
+        category: categoryFilter || undefined,
+        status: 'all',
+      },
+    })
+      .then(({ data }) => {
+        if (cancelled) return
+        const nextRows = Array.isArray(data?.items) ? data.items : []
+        const nextHeats = Array.isArray(data?.heats) ? data.heats : []
+        setRows(nextRows)
+        setHeats(nextHeats)
+        setDrafts(prev => {
+          const next = {}
+          nextRows.forEach(item => {
+            const key = resultEntryKey(item)
+            next[key] = Object.prototype.hasOwnProperty.call(prev, key)
+              ? prev[key]
+              : formatMarkForPhase(item.existing_mark, activePhase, item.existing_formatted)
+          })
+          return next
+        })
+      })
+      .catch(err => {
+        if (cancelled) return
+        setRows([])
+        setHeats([])
+        setError(err?.response?.data?.detail || 'No se pudo cargar la lista de atletas/equipos.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [competition.id, phaseId, categoryFilter, query, refreshKey])
+
+  const categories = useMemo(
+    () => Array.from(new Set(rows.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  )
+
+  const heatStats = useMemo(() => {
+    const stats = {}
+    rows.forEach(item => {
+      const key = item.heat_id ? String(item.heat_id) : '__unassigned__'
+      if (!stats[key]) stats[key] = { total: 0, pending: 0, scored: 0 }
+      stats[key].total += 1
+      if (item.status === 'scored') stats[key].scored += 1
+      else stats[key].pending += 1
+    })
+    return stats
+  }, [rows])
+
+  useEffect(() => {
+    if (userSelectedHeatRef.current || heatFilter || !rows.length) return
+    const heatWithPending = heats.find(heat => (heatStats[String(heat.id)]?.pending || 0) > 0)
+    const fallbackHeat = heats[0]
+    if (heatWithPending?.id) setHeatFilter(String(heatWithPending.id))
+    else if (fallbackHeat?.id) setHeatFilter(String(fallbackHeat.id))
+    else if (heatStats.__unassigned__?.total) setHeatFilter('__unassigned__')
+  }, [rows, heats, heatStats, heatFilter])
+
+  const filteredRows = useMemo(() => {
+    return rows
+      .filter(item => {
+        const heatMatch = !heatFilter
+          || (heatFilter === '__unassigned__' ? !item.heat_id : String(item.heat_id || '') === String(heatFilter))
+        const statusMatch = statusFilter === 'all' || item.status === statusFilter
+        return heatMatch && statusMatch
+      })
+      .sort((a, b) => (
+        Number(a.heat_id || 0) - Number(b.heat_id || 0)
+        || Number(a.lane_number || 999) - Number(b.lane_number || 999)
+        || String(a.display_name || '').localeCompare(String(b.display_name || ''))
+      ))
+  }, [rows, heatFilter, statusFilter])
+
+  const selectedHeatStats = heatFilter ? (heatStats[heatFilter] || { total: 0, pending: 0, scored: 0 }) : {
+    total: rows.length,
+    pending: rows.filter(item => item.status !== 'scored').length,
+    scored: rows.filter(item => item.status === 'scored').length,
+  }
+  const completionPct = selectedHeatStats.total
+    ? Math.round((selectedHeatStats.scored / selectedHeatStats.total) * 100)
+    : 0
+
+  const selectHeat = (value) => {
+    userSelectedHeatRef.current = true
+    setHeatFilter(value)
+  }
+
+  const changeDraft = (item, value) => {
+    const key = resultEntryKey(item)
+    setDrafts(prev => ({ ...prev, [key]: value }))
+  }
+
+  const focusNext = (item) => {
+    const index = filteredRows.findIndex(row => resultEntryKey(row) === resultEntryKey(item))
+    const next = filteredRows.slice(index + 1).find(row => row.status !== 'scored')
+      || filteredRows.slice(index + 1)[0]
+      || filteredRows[0]
+    const nextKey = next ? resultEntryKey(next) : ''
+    if (nextKey) {
+      setTimeout(() => inputRefs.current[nextKey]?.focus(), 50)
+    }
+  }
+
+  const saveOne = async (item, { moveNext = true } = {}) => {
+    if (!activePhase) return
+    const key = resultEntryKey(item)
+    const value = String(drafts[key] ?? '').trim()
+    const parsed = parseMetricByPhase(value, activePhase)
+    if (parsed == null) {
+      setMsg({
+        type: 'error',
+        text: phaseTypeFromPhase(activePhase) === 'tiempo'
+          ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS.'
+          : 'Marca invalida.',
+      })
+      inputRefs.current[key]?.focus()
+      return
+    }
+    setSavingKey(key)
+    setMsg(null)
+    try {
+      const endpoint = item.status === 'scored' ? '/judge/score/edit' : '/judge/score/submit'
+      await api.post(endpoint, {
+        competition_id: Number(competition.id),
+        phase_id: Number(activePhase.id),
+        user_id: item.user_id ?? null,
+        team_id: item.team_id ?? null,
+        marca_raw: value,
+        station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${item.heat_name || heatFilter}` : 'Carga por heat',
+      })
+      setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
+      setRefreshKey(current => current + 1)
+      onSaved?.()
+      if (moveNext) focusNext(item)
+    } catch (err) {
+      setMsg({ type: 'error', text: err?.response?.data?.detail || 'No se pudo guardar el resultado.' })
+    } finally {
+      setSavingKey('')
+    }
+  }
+
+  const saveVisible = async () => {
+    const candidates = filteredRows.filter(item => {
+      const key = resultEntryKey(item)
+      return String(drafts[key] ?? '').trim()
+    })
+    if (!candidates.length) {
+      setMsg({ type: 'error', text: 'No hay marcas para guardar en este heat.' })
+      return
+    }
+    for (const item of candidates) {
+      // eslint-disable-next-line no-await-in-loop
+      await saveOne(item, { moveNext: false })
+    }
+  }
+
+  const goToNextHeat = () => {
+    const ordered = heats.map(item => String(item.id))
+    const currentIndex = ordered.indexOf(String(heatFilter))
+    const nextWithPending = ordered.slice(currentIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
+      || ordered.find(id => (heatStats[id]?.pending || 0) > 0)
+    if (nextWithPending) selectHeat(nextWithPending)
+  }
+
+  return (
+    <div className="card" style={{ display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <h4 style={{ margin: 0, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <ClipboardList size={17} />
+            Carga por heat
+          </h4>
+          <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+            Carga marcas por carril y avanza al siguiente atleta sin perder contexto.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" className="btn-secondary btn-sm" onClick={() => setRefreshKey(current => current + 1)} disabled={loading}>
+            {loading ? 'Actualizando...' : 'Actualizar'}
+          </button>
+          <button type="button" className="btn-primary btn-sm" onClick={saveVisible} disabled={loading || savingKey || !filteredRows.length}>
+            Guardar visibles
+          </button>
+          <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!heats.length}>
+            Siguiente heat pendiente
+          </button>
+        </div>
+      </div>
+
+      {msg ? <div className={`alert alert-${msg.type}`} style={{ marginBottom: 0 }}>{msg.text}</div> : null}
+      {error ? <div className="alert alert-error" style={{ marginBottom: 0 }}>{error}</div> : null}
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 1fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr)', gap: 10 }}>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Evento</label>
+          <select value={phaseId} onChange={event => setPhaseId(event.target.value)}>
+            {!phases.length ? <option value="">Sin eventos</option> : null}
+            {phases.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
+          </select>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Categoria</label>
+          <select value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setHeatFilter(''); userSelectedHeatRef.current = false }}>
+            <option value="">Todas</option>
+            {categories.map(item => <option key={item} value={item}>{item}</option>)}
+            {categoryFilter && !categories.includes(categoryFilter) ? <option value={categoryFilter}>{categoryFilter}</option> : null}
+          </select>
+        </div>
+        <div className="form-group" style={{ marginBottom: 0 }}>
+          <label>Buscar</label>
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Atleta, equipo o cedula" />
+        </div>
+      </div>
+
+      <div style={{ border: '1px solid #252A33', borderRadius: 16, background: 'rgba(13,15,18,0.64)', padding: 12, display: 'grid', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>
+              {heatFilter
+                ? heatFilter === '__unassigned__'
+                  ? 'Sin heat asignado'
+                  : heats.find(item => String(item.id) === String(heatFilter))?.nombre || `Heat ${heatFilter}`
+                : 'Todos los heats'}
+            </div>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
+              {selectedHeatStats.scored}/{selectedHeatStats.total} cargados · {selectedHeatStats.pending} pendientes
+            </div>
+          </div>
+          <div style={{ minWidth: isMobile ? '100%' : 220, flex: isMobile ? '1 1 100%' : '0 1 260px' }}>
+            <div style={{ height: 8, borderRadius: 999, background: '#090B0E', overflow: 'hidden', border: '1px solid #252A33' }}>
+              <div style={{ height: '100%', width: `${completionPct}%`, background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+            </div>
+            <div style={{ color: '#6B7280', fontSize: 11, marginTop: 4 }}>{completionPct}% completo</div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+          <button
+            type="button"
+            className={!heatFilter ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+            onClick={() => selectHeat('')}
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            Todos ({rows.length})
+          </button>
+          {heats.map(heat => {
+            const stat = heatStats[String(heat.id)] || { total: 0, pending: 0, scored: 0 }
+            const active = String(heatFilter) === String(heat.id)
+            return (
+              <button
+                key={heat.id}
+                type="button"
+                className={active ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+                onClick={() => selectHeat(String(heat.id))}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                {heat.nombre} · {stat.scored}/{stat.total}
+              </button>
+            )
+          })}
+          {heatStats.__unassigned__?.total ? (
+            <button
+              type="button"
+              className={heatFilter === '__unassigned__' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
+              onClick={() => selectHeat('__unassigned__')}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              Sin heat · {heatStats.__unassigned__.scored}/{heatStats.__unassigned__.total}
+            </button>
+          ) : null}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[
+            ['pending', 'Pendientes'],
+            ['scored', 'Cargados'],
+            ['all', 'Todos'],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={statusFilter === id ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
+              onClick={() => setStatusFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? <SkeletonList count={4} /> : null}
+      {!loading && !filteredRows.length ? (
+        <div style={{ border: '1px solid #252A33', borderRadius: 16, padding: 18, textAlign: 'center', color: '#AAB2C0', background: 'rgba(13,15,18,0.48)' }}>
+          No hay atletas o equipos con estos filtros.
+        </div>
+      ) : null}
+
+      {!loading && filteredRows.length ? (
+        isMobile ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {filteredRows.map(item => {
+              const key = resultEntryKey(item)
+              return (
+                <div key={key} style={{ border: '1px solid #252A33', borderRadius: 16, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 900 }}>Carril {item.lane_number || '-'}</div>
+                      <div style={{ color: '#F5F7FA', fontWeight: 900, marginTop: 2, overflowWrap: 'anywhere' }}>{item.display_name}</div>
+                      <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>{item.category || 'Sin categoria'}{item.heat_name ? ` · ${item.heat_name}` : ''}</div>
+                    </div>
+                    <ResultStatusPill status={item.status} value={item.existing_formatted} />
+                  </div>
+                  {Array.isArray(item.member_names) && item.member_names.length ? (
+                    <div style={{ color: '#6B7280', fontSize: 12 }}>{item.member_names.join(' | ')}</div>
+                  ) : null}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>{inputConfig.label}</label>
+                      <input
+                        ref={node => { if (node) inputRefs.current[key] = node }}
+                        type={inputConfig.type}
+                        value={drafts[key] ?? ''}
+                        onChange={event => changeDraft(item, event.target.value)}
+                        onKeyDown={event => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            saveOne(item)
+                          }
+                        }}
+                        placeholder={inputConfig.placeholder}
+                      />
+                    </div>
+                    <button type="button" className="btn-primary btn-sm" onClick={() => saveOne(item)} disabled={savingKey === key}>
+                      {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 84 }}>Carril</th>
+                  <th>Atleta / Equipo</th>
+                  <th>Categoria</th>
+                  <th style={{ width: 180 }}>{inputConfig.label}</th>
+                  <th style={{ width: 150 }}>Estado</th>
+                  <th style={{ width: 120 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map(item => {
+                  const key = resultEntryKey(item)
+                  return (
+                    <tr key={key}>
+                      <td style={{ color: '#FFB36F', fontWeight: 900 }}>{item.lane_number || '-'}</td>
+                      <td>
+                        <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.display_name}</div>
+                        <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>
+                          {item.heat_name || 'Sin heat'}{Array.isArray(item.member_names) && item.member_names.length ? ` · ${item.member_names.join(' | ')}` : ''}
+                        </div>
+                      </td>
+                      <td>{item.category || 'Sin categoria'}</td>
+                      <td>
+                        <input
+                          ref={node => { if (node) inputRefs.current[key] = node }}
+                          type={inputConfig.type}
+                          value={drafts[key] ?? ''}
+                          onChange={event => changeDraft(item, event.target.value)}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              saveOne(item)
+                            }
+                          }}
+                          placeholder={inputConfig.placeholder}
+                          style={{ minWidth: 120 }}
+                        />
+                      </td>
+                      <td><ResultStatusPill status={item.status} value={item.existing_formatted} /></td>
+                      <td>
+                        <button type="button" className={item.status === 'scored' ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => saveOne(item)} disabled={savingKey === key}>
+                          {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : null}
+
+      <div style={{ color: '#6B7280', fontSize: 12 }}>
+        {inputConfig.helper}. Enter guarda la fila y enfoca el siguiente carril.
+      </div>
+    </div>
+  )
+}
+
+function resultEntryKey(item) {
+  return `${item.entity_type || (item.team_id ? 'team' : 'user')}-${item.team_id || item.user_id || 'unknown'}`
+}
+
+function ResultStatusPill({ status, value }) {
+  const scored = status === 'scored'
+  return (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      borderRadius: 999,
+      padding: '5px 9px',
+      border: `1px solid ${scored ? 'rgba(0,194,168,0.28)' : 'rgba(245,158,11,0.28)'}`,
+      background: scored ? 'rgba(0,194,168,0.10)' : 'rgba(245,158,11,0.10)',
+      color: scored ? '#8DF1E4' : '#FCD34D',
+      fontSize: 11,
+      fontWeight: 900,
+      whiteSpace: 'nowrap',
+    }}>
+      {scored ? `Cargado${value ? `: ${value}` : ''}` : 'Pendiente'}
+    </span>
+  )
+}
+
 function CompetitionResultsPanel({ competition }) {
   const [participants, setParticipants] = useState([])
   const [teams, setTeams] = useState([])
@@ -8906,180 +9429,7 @@ function CompetitionResultsPanel({ competition }) {
         </div>
       </div>
 
-      <div className="card" style={{ display: 'grid', gap: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <h4 style={{ margin: 0, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Plus size={16} />
-              Cargar resultados individuales
-            </h4>
-            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-              {activePhase
-                ? `${activePhase.nombre} | ${categoryFilter || 'Todas las categorias'}`
-                : 'Selecciona un evento para cargar marcas.'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ color: '#AAB2C0', fontSize: 12 }}>
-              Pendientes: {individualParticipantsForEntry.length}/{participantsForCategory.length}
-            </span>
-            {hiddenParticipantsBySingleResultRule > 0 ? (
-              <span style={{ color: '#FBBF24', fontSize: 12 }}>
-                Ya cargados: {hiddenParticipantsBySingleResultRule}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <form
-          onSubmit={createOne}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(120px, 0.6fr) auto',
-            gap: 10,
-            alignItems: 'end',
-            border: '1px solid #252A33',
-            borderRadius: 16,
-            background: 'rgba(13,15,18,0.64)',
-            padding: 12,
-          }}
-        >
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Participante</label>
-            <select
-              value={form.user_id}
-              onChange={e => setForm(prev => ({ ...prev, user_id: e.target.value }))}
-              disabled={!activePhase || individualParticipantsForEntry.length === 0}
-            >
-              <option value="">Seleccionar...</option>
-              {individualParticipantsForEntry.map(p => (
-                <option key={`single-result-participant-${p.id}`} value={p.id}>
-                  {`${p.apellido || ''}, ${p.nombre || ''}`.trim()} - {p.categoria_competencia || 'Sin categoria'}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>{formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'Tiempo' : 'Marca'}</label>
-            <input
-              type={formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'text' : 'number'}
-              value={form.puntos}
-              onChange={e => setForm(prev => ({ ...prev, puntos: e.target.value }))}
-              placeholder={formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'HH:MM:SS' : ''}
-              disabled={!activePhase}
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Posicion</label>
-            <input
-              type="number"
-              value={form.posicion}
-              onChange={e => setForm(prev => ({ ...prev, posicion: e.target.value }))}
-              placeholder={phaseTypeFromPhase(formPhase) === 'posicion' ? 'Requerida' : 'Auto'}
-              disabled={!activePhase}
-            />
-          </div>
-          <button type="submit" className="btn-primary" disabled={!activePhase || !individualParticipantsForEntry.length}>
-            Guardar
-          </button>
-        </form>
-
-        <div style={{ border: '1px solid #252A33', borderRadius: 16, background: 'rgba(13,15,18,0.64)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '12px 14px', borderBottom: '1px solid #252A33' }}>
-            <div>
-              <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>Carga rapida por lista</div>
-              <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
-                Escribe las marcas y guarda todas las filas con datos.
-              </div>
-            </div>
-            <button className="btn-primary btn-sm" onClick={saveBulk} disabled={quickSaving || !activePhase || !individualParticipantsForEntry.length}>
-              {quickSaving ? 'Guardando...' : 'Guardar lista'}
-            </button>
-          </div>
-
-          {individualParticipantsForEntry.length === 0 ? (
-            <div style={{ textAlign: 'center', color: '#AAB2C0', padding: 18 }}>
-              {activePhase ? 'No hay participantes pendientes con el filtro actual.' : 'No hay evento seleccionado.'}
-            </div>
-          ) : isMobile ? (
-            <div style={{ display: 'grid', gap: 10, padding: 12 }}>
-              {individualParticipantsForEntry.map(p => {
-                const row = quickRows[p.id] || {}
-                const rowIsTime = quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo))
-                return (
-                  <div key={`quick-result-mobile-${p.id}`} style={{ border: '1px solid #252A33', borderRadius: 14, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
-                    <div>
-                      <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>{`${p.apellido || ''}, ${p.nombre || ''}`.trim()}</div>
-                      <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>{p.categoria_competencia || 'Sin categoria'}</div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label>{rowIsTime ? 'Tiempo' : 'Marca'}</label>
-                        <input
-                          type={rowIsTime ? 'text' : 'number'}
-                          value={row.puntos ?? ''}
-                          onChange={e => patchQuickRow(p.id, { puntos: e.target.value })}
-                          placeholder={rowIsTime ? 'HH:MM:SS' : ''}
-                        />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label>Posicion</label>
-                        <input
-                          type="number"
-                          value={row.posicion ?? ''}
-                          onChange={e => patchQuickRow(p.id, { posicion: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table style={{ border: 'none', borderRadius: 0 }}>
-                <thead>
-                  <tr>
-                    <th>Participante</th>
-                    <th>Categoria</th>
-                    <th>{quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo)) ? 'Tiempo' : 'Marca'}</th>
-                    <th>Posicion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {individualParticipantsForEntry.map(p => {
-                    const row = quickRows[p.id] || {}
-                    const rowIsTime = quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo))
-                    return (
-                      <tr key={`quick-result-row-${p.id}`}>
-                        <td>
-                          <div style={{ color: '#F5F7FA', fontWeight: 800 }}>{`${p.apellido || ''}, ${p.nombre || ''}`.trim()}</div>
-                        </td>
-                        <td>{p.categoria_competencia || 'Sin categoria'}</td>
-                        <td>
-                          <input
-                            type={rowIsTime ? 'text' : 'number'}
-                            value={row.puntos ?? ''}
-                            onChange={e => patchQuickRow(p.id, { puntos: e.target.value })}
-                            placeholder={rowIsTime ? 'HH:MM:SS' : ''}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={row.posicion ?? ''}
-                            onChange={e => patchQuickRow(p.id, { posicion: e.target.value })}
-                          />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
+      <HeatResultsEntryPanel competition={competition} isMobile={isMobile} onSaved={() => load().catch(() => {})} />
 
       {teams.length > 0 && (
         <div className="card">
