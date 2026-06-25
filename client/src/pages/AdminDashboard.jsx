@@ -8128,7 +8128,7 @@ function CompetitionResultsPanel({ competition }) {
   const [results, setResults] = useState([])
   const [msg, setMsg] = useState(null)
   const [activePhaseId, setActivePhaseId] = useState('')
-  const [form, setForm] = useState({ user_id: '', phase_id: '', puntos: 0, posicion: '' })
+  const [form, setForm] = useState({ user_id: '', phase_id: '', puntos: '', posicion: '' })
   const [quickRows, setQuickRows] = useState({})
   const [quick, setQuick] = useState({ phase_id: '' })
   const [teamQuickRows, setTeamQuickRows] = useState({})
@@ -8299,6 +8299,14 @@ function CompetitionResultsPanel({ competition }) {
   const createOne = async (e) => {
     e.preventDefault()
     try {
+      if (!form.user_id) {
+        setMsg({ type: 'error', text: 'Selecciona un participante' })
+        return
+      }
+      if (!form.phase_id) {
+        setMsg({ type: 'error', text: 'Selecciona un evento' })
+        return
+      }
       const basePhase = phases.find(p => String(p.id) === String(form.phase_id))
       const phaseType = phaseTypeFromPhase(basePhase)
       const phaseMethod = normalizeMeasurementMethod(basePhase?.measurement_method, basePhase?.tipo)
@@ -8333,7 +8341,7 @@ function CompetitionResultsPanel({ competition }) {
         posicion: form.posicion ? Number(form.posicion) : null,
       })
       setMsg({ type: 'success', text: 'Resultado guardado' })
-      setForm({ user_id: '', phase_id: form.phase_id, puntos: 0, posicion: '' })
+      setForm({ user_id: '', phase_id: form.phase_id, puntos: '', posicion: '' })
       await load()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'Error al guardar' })
@@ -8341,7 +8349,7 @@ function CompetitionResultsPanel({ competition }) {
   }
 
   const saveBulk = async () => {
-    const rows = participants
+    const rows = individualParticipantsForEntry
       .map(p => ({ p, r: quickRows[p.id] || {} }))
       .filter(({ r }) => r.puntos !== '' || r.posicion !== '')
     if (rows.length === 0) {
@@ -8574,6 +8582,9 @@ function CompetitionResultsPanel({ competition }) {
       [id]: { ...(prev[id] || {}), [field]: value },
     }))
   }
+  const patchQuickRow = (participantId, patch) => {
+    setQuickRows(prev => ({ ...prev, [participantId]: { ...(prev[participantId] || {}), ...patch } }))
+  }
   const patchTeamMemberRow = (teamId, patch) => {
     setTeamMembersQuickRows(prev => ({ ...prev, [teamId]: { ...(prev[teamId] || {}), ...patch } }))
   }
@@ -8672,6 +8683,18 @@ function CompetitionResultsPanel({ competition }) {
       setCategoryFilter('')
     }
   }, [categories, categoryFilter])
+
+  const participantsForCategory = categoryFilter
+    ? participants.filter(p => (p.categoria_competencia || 'Sin categoria') === categoryFilter)
+    : participants
+  const activeIndividualPhaseAllowsMultiple = !!Number(activePhase?.allow_multiple_results || 0)
+  const individualParticipantsForEntry = (!activeIndividualPhaseAllowsMultiple && activePhaseId)
+    ? participantsForCategory.filter(p => !results.some(r =>
+        Number(r.user_id || 0) === Number(p.id) &&
+        String(r.phase_id || '') === String(activePhaseId)
+      ))
+    : participantsForCategory
+  const hiddenParticipantsBySingleResultRule = Math.max(0, participantsForCategory.length - individualParticipantsForEntry.length)
 
   const participantCategoryById = participants.reduce((acc, p) => {
     acc[p.id] = p.categoria_competencia || 'Sin categoria'
@@ -8880,6 +8903,181 @@ function CompetitionResultsPanel({ competition }) {
               Borrar TODOS los resultados
             </button>
           </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ display: 'grid', gap: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: 15, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={16} />
+              Cargar resultados individuales
+            </h4>
+            <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+              {activePhase
+                ? `${activePhase.nombre} | ${categoryFilter || 'Todas las categorias'}`
+                : 'Selecciona un evento para cargar marcas.'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ color: '#AAB2C0', fontSize: 12 }}>
+              Pendientes: {individualParticipantsForEntry.length}/{participantsForCategory.length}
+            </span>
+            {hiddenParticipantsBySingleResultRule > 0 ? (
+              <span style={{ color: '#FBBF24', fontSize: 12 }}>
+                Ya cargados: {hiddenParticipantsBySingleResultRule}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <form
+          onSubmit={createOne}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 1.5fr) minmax(150px, 0.8fr) minmax(120px, 0.6fr) auto',
+            gap: 10,
+            alignItems: 'end',
+            border: '1px solid #252A33',
+            borderRadius: 16,
+            background: 'rgba(13,15,18,0.64)',
+            padding: 12,
+          }}
+        >
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Participante</label>
+            <select
+              value={form.user_id}
+              onChange={e => setForm(prev => ({ ...prev, user_id: e.target.value }))}
+              disabled={!activePhase || individualParticipantsForEntry.length === 0}
+            >
+              <option value="">Seleccionar...</option>
+              {individualParticipantsForEntry.map(p => (
+                <option key={`single-result-participant-${p.id}`} value={p.id}>
+                  {`${p.apellido || ''}, ${p.nombre || ''}`.trim()} - {p.categoria_competencia || 'Sin categoria'}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>{formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'Tiempo' : 'Marca'}</label>
+            <input
+              type={formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'text' : 'number'}
+              value={form.puntos}
+              onChange={e => setForm(prev => ({ ...prev, puntos: e.target.value }))}
+              placeholder={formPhase && isTimeMeasurement(normalizeMeasurementMethod(formPhase.measurement_method, formPhase.tipo)) ? 'HH:MM:SS' : ''}
+              disabled={!activePhase}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Posicion</label>
+            <input
+              type="number"
+              value={form.posicion}
+              onChange={e => setForm(prev => ({ ...prev, posicion: e.target.value }))}
+              placeholder={phaseTypeFromPhase(formPhase) === 'posicion' ? 'Requerida' : 'Auto'}
+              disabled={!activePhase}
+            />
+          </div>
+          <button type="submit" className="btn-primary" disabled={!activePhase || !individualParticipantsForEntry.length}>
+            Guardar
+          </button>
+        </form>
+
+        <div style={{ border: '1px solid #252A33', borderRadius: 16, background: 'rgba(13,15,18,0.64)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '12px 14px', borderBottom: '1px solid #252A33' }}>
+            <div>
+              <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>Carga rapida por lista</div>
+              <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
+                Escribe las marcas y guarda todas las filas con datos.
+              </div>
+            </div>
+            <button className="btn-primary btn-sm" onClick={saveBulk} disabled={quickSaving || !activePhase || !individualParticipantsForEntry.length}>
+              {quickSaving ? 'Guardando...' : 'Guardar lista'}
+            </button>
+          </div>
+
+          {individualParticipantsForEntry.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#AAB2C0', padding: 18 }}>
+              {activePhase ? 'No hay participantes pendientes con el filtro actual.' : 'No hay evento seleccionado.'}
+            </div>
+          ) : isMobile ? (
+            <div style={{ display: 'grid', gap: 10, padding: 12 }}>
+              {individualParticipantsForEntry.map(p => {
+                const row = quickRows[p.id] || {}
+                const rowIsTime = quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo))
+                return (
+                  <div key={`quick-result-mobile-${p.id}`} style={{ border: '1px solid #252A33', borderRadius: 14, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
+                    <div>
+                      <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>{`${p.apellido || ''}, ${p.nombre || ''}`.trim()}</div>
+                      <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>{p.categoria_competencia || 'Sin categoria'}</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>{rowIsTime ? 'Tiempo' : 'Marca'}</label>
+                        <input
+                          type={rowIsTime ? 'text' : 'number'}
+                          value={row.puntos ?? ''}
+                          onChange={e => patchQuickRow(p.id, { puntos: e.target.value })}
+                          placeholder={rowIsTime ? 'HH:MM:SS' : ''}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>Posicion</label>
+                        <input
+                          type="number"
+                          value={row.posicion ?? ''}
+                          onChange={e => patchQuickRow(p.id, { posicion: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ border: 'none', borderRadius: 0 }}>
+                <thead>
+                  <tr>
+                    <th>Participante</th>
+                    <th>Categoria</th>
+                    <th>{quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo)) ? 'Tiempo' : 'Marca'}</th>
+                    <th>Posicion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {individualParticipantsForEntry.map(p => {
+                    const row = quickRows[p.id] || {}
+                    const rowIsTime = quickPhase && isTimeMeasurement(normalizeMeasurementMethod(quickPhase.measurement_method, quickPhase.tipo))
+                    return (
+                      <tr key={`quick-result-row-${p.id}`}>
+                        <td>
+                          <div style={{ color: '#F5F7FA', fontWeight: 800 }}>{`${p.apellido || ''}, ${p.nombre || ''}`.trim()}</div>
+                        </td>
+                        <td>{p.categoria_competencia || 'Sin categoria'}</td>
+                        <td>
+                          <input
+                            type={rowIsTime ? 'text' : 'number'}
+                            value={row.puntos ?? ''}
+                            onChange={e => patchQuickRow(p.id, { puntos: e.target.value })}
+                            placeholder={rowIsTime ? 'HH:MM:SS' : ''}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            value={row.posicion ?? ''}
+                            onChange={e => patchQuickRow(p.id, { posicion: e.target.value })}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 
