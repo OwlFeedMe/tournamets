@@ -40,6 +40,7 @@ PHASE_TEAM_MODES_VALIDOS = {"sum_two", "single_member", "total"}
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
 PHASE_MEASUREMENT_METHODS_VALIDOS = PHASE_MEASUREMENT_METHODS_ALLOWED
+WORKOUT_FORMATS_VALIDOS = {"for_time", "amrap", "emom", "max_weight", "chipper", "other"}
 PHASE_TIPO_ALIAS = {
     "puntos": "cantidad",
     "peso": "cantidad",
@@ -119,6 +120,28 @@ def _normalize_winner_rule(raw: str | None, phase_type: str | None) -> str:
 
 def _normalize_measurement_method(raw: str | None, phase_type: str | None) -> str:
     return normalize_phase_measurement_method(raw, phase_type)
+
+
+def _normalize_workout_format(raw: str | None, fallback: str | None = None) -> str:
+    value = (raw or fallback or "").strip().lower()
+    value = {
+        "for time": "for_time",
+        "fortime": "for_time",
+        "max lift": "max_weight",
+        "max_weight": "max_weight",
+        "rm": "max_weight",
+        "otro": "other",
+        "otros": "other",
+    }.get(value, value)
+    return value if value in WORKOUT_FORMATS_VALIDOS else "for_time"
+
+
+def _normalize_transition_seconds(raw: object) -> int:
+    try:
+        value = int(raw if raw is not None else 0)
+    except Exception:
+        value = 0
+    return max(0, min(value, 24 * 60 * 60))
 
 
 def _normalize_phase_status(raw: str | None) -> str:
@@ -433,6 +456,11 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload["block_name"] = _normalize_block_name(getattr(phase, "block_name", None))
     payload["measurement_method"] = _normalize_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None))
     payload["tipo"] = type_from_measurement_method(payload["measurement_method"])
+    payload["workout_format"] = _normalize_workout_format(getattr(phase, "workout_format", None), payload["measurement_method"])
+    payload["tie_break_enabled"] = 1 if int(getattr(phase, "tie_break_enabled", 0) or 0) else 0
+    payload["tie_break_method"] = _normalize_measurement_method(getattr(phase, "tie_break_method", None), "tiempo")
+    payload["heat_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "heat_transition_seconds", 0))
+    payload["category_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "category_transition_seconds", 0))
     payload["is_visible"] = normalize_phase_visibility(getattr(phase, "is_visible", 1))
     payload["activities"] = _parse_phase_activities(phase)
     payload["phase_format"] = _phase_format_from_count(len(payload["activities"]))
@@ -722,12 +750,17 @@ def create_phase(competition_id: int, body: PhaseCreate,
         phase_format=phase_format,
         tipo=primary_activity["tipo"],
         measurement_method=primary_activity["measurement_method"],
+        workout_format=_normalize_workout_format(body.workout_format, body.measurement_method),
         winner_rule=primary_activity["winner_rule"],
         scoring_rules=body.scoring_rules,
         activities=activities,
         points_mode=primary_activity["points_mode"],
         allow_multiple_results=1 if body.allow_multiple_results else 0,
         team_result_mode=team_mode,
+        tie_break_enabled=1 if body.tie_break_enabled else 0,
+        tie_break_method=_normalize_measurement_method(body.tie_break_method, "tiempo"),
+        heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
+        category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
         estado=phase_status,
         is_visible=normalize_phase_visibility(body.is_visible),
         start_at=body.start_at,
@@ -770,6 +803,8 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["tipo"] = type_from_measurement_method(data["measurement_method"])
     elif "tipo" in data:
         data["measurement_method"] = default_measurement_method_for_type(data["tipo"])
+    if "workout_format" in data:
+        data["workout_format"] = _normalize_workout_format(data["workout_format"], data.get("measurement_method", phase.measurement_method))
     if "is_visible" in data:
         data["is_visible"] = normalize_phase_visibility(data["is_visible"])
     if "winner_rule" in data:
@@ -780,6 +815,14 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["winner_rule"] = _default_winner_rule_for_type(data["tipo"])
     if "allow_multiple_results" in data:
         data["allow_multiple_results"] = 1 if data["allow_multiple_results"] else 0
+    if "tie_break_enabled" in data:
+        data["tie_break_enabled"] = 1 if data["tie_break_enabled"] else 0
+    if "tie_break_method" in data:
+        data["tie_break_method"] = _normalize_measurement_method(data["tie_break_method"], "tiempo")
+    if "heat_transition_seconds" in data:
+        data["heat_transition_seconds"] = _normalize_transition_seconds(data["heat_transition_seconds"])
+    if "category_transition_seconds" in data:
+        data["category_transition_seconds"] = _normalize_transition_seconds(data["category_transition_seconds"])
     if "team_result_mode" in data:
         data["team_result_mode"] = _normalize_team_mode(data["team_result_mode"])
         if data["team_result_mode"] not in PHASE_TEAM_MODES_VALIDOS:

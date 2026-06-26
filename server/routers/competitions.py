@@ -667,7 +667,7 @@ def get_public_competition_detail(
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, estado, is_visible, start_at, end_at, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
@@ -686,6 +686,11 @@ def get_public_competition_detail(
         item["block_order"] = int(item.get("block_order") or 0)
         item["measurement_method"] = normalize_phase_measurement_method(item.get("measurement_method"), item.get("tipo"))
         item["tipo"] = type_from_measurement_method(item["measurement_method"])
+        item["workout_format"] = str(item.get("workout_format") or item["measurement_method"] or "for_time").strip().lower()
+        item["tie_break_enabled"] = 1 if int(item.get("tie_break_enabled") or 0) else 0
+        item["tie_break_method"] = normalize_phase_measurement_method(item.get("tie_break_method"), "tiempo")
+        item["heat_transition_seconds"] = int(item.get("heat_transition_seconds") or 0)
+        item["category_transition_seconds"] = int(item.get("category_transition_seconds") or 0)
         phase_format = str(item.get("phase_format") or "activity").strip().lower()
         if phase_format in {"actividad", "activity"}:
             phase_format = "activity"
@@ -722,6 +727,11 @@ def get_public_competition_detail(
                 "points_mode": item.get("points_mode"),
                 "team_result_mode": item.get("team_result_mode"),
                 "allow_multiple_results": item.get("allow_multiple_results"),
+                "workout_format": item.get("workout_format"),
+                "tie_break_enabled": item.get("tie_break_enabled"),
+                "tie_break_method": item.get("tie_break_method"),
+                "heat_transition_seconds": item.get("heat_transition_seconds"),
+                "category_transition_seconds": item.get("category_transition_seconds"),
                 "orden": 0,
             }]
         normalized_phases.append(item)

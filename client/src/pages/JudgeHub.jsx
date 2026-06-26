@@ -91,9 +91,9 @@ function scoreInputConfig(phase) {
   if (phaseType === 'tiempo') {
     return {
       type: 'text',
-      placeholder: 'Ej: 12:34 o 01:12:34',
+      placeholder: 'Ej: 7:33',
       label: 'Tiempo',
-      helper: 'Usa HH:MM:SS o MM:SS',
+      helper: 'Usa MM:SS, HH:MM:SS o segundos',
     }
   }
   if (phaseType === 'posicion') {
@@ -159,6 +159,8 @@ function ScannerModal({
   scoreContext,
   scoreValue,
   onScoreValueChange,
+  scoreTieBreakValue,
+  onScoreTieBreakValueChange,
   scoreBusy,
   scoreMsg,
   editingScore,
@@ -170,6 +172,10 @@ function ScannerModal({
   scoreInputLabel,
   scoreInputPlaceholder,
   scoreInputHelper,
+  tieBreakInputType,
+  tieBreakInputLabel,
+  tieBreakInputPlaceholder,
+  tieBreakInputHelper,
 }) {
   useEffect(() => {
     if (typeof document === 'undefined') return undefined
@@ -385,6 +391,11 @@ function ScannerModal({
                     <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>
                       Puntuacion actual: {scoreContext.existing.formatted_mark || (scoreContext.existing.marca ?? '-')}
                     </div>
+                    {scoreContext?.phase?.tie_break_enabled ? (
+                      <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                        Tie break: {scoreContext.existing.formatted_tiebreak || (scoreContext.existing.tiebreak ?? '-')}
+                      </div>
+                    ) : null}
                     <div style={{ color: '#AAB2C0', fontSize: 12 }}>
                       Cargado: {scoreContext.existing.judge_at ? new Date(scoreContext.existing.judge_at).toLocaleString('es-CO') : (scoreContext.existing.created_at ? new Date(scoreContext.existing.created_at).toLocaleString('es-CO') : '-')}
                     </div>
@@ -420,6 +431,26 @@ function ScannerModal({
                           }}
                         />
                         {scoreInputHelper ? <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreInputHelper}</div> : null}
+                        {scoreContext?.phase?.tie_break_enabled ? (
+                          <>
+                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>Tie break</label>
+                            <input
+                              type={tieBreakInputType || 'text'}
+                              value={scoreTieBreakValue || ''}
+                              onChange={(event) => onScoreTieBreakValueChange?.(event.target.value)}
+                              placeholder={tieBreakInputPlaceholder || 'Ej: 7:33'}
+                              style={{
+                                borderRadius: 12,
+                                border: '1px solid #252A33',
+                                background: '#0D0F12',
+                                color: '#F5F7FA',
+                                padding: '10px 12px',
+                                fontSize: 14,
+                              }}
+                            />
+                            {tieBreakInputHelper ? <div style={{ color: '#6B7280', fontSize: 12 }}>{tieBreakInputHelper}</div> : null}
+                          </>
+                        ) : null}
                       </>
                     ) : null}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -532,6 +563,7 @@ export default function JudgeHub() {
   const [scanError, setScanError] = useState('')
   const [scoreContext, setScoreContext] = useState(null)
   const [scoreValue, setScoreValue] = useState('')
+  const [scoreTieBreakValue, setScoreTieBreakValue] = useState('')
   const [scoreBusy, setScoreBusy] = useState(false)
   const [scoreMsg, setScoreMsg] = useState(null)
   const [editingScore, setEditingScore] = useState(false)
@@ -864,6 +896,7 @@ export default function JudgeHub() {
         setScanResult(parseCheckinScanResponse(data))
         setScoreContext(null)
         setScoreValue('')
+        setScoreTieBreakValue('')
         setEditingScore(false)
       } else {
         const { data } = await api.post('/judge/score/scan', {
@@ -874,7 +907,8 @@ export default function JudgeHub() {
         })
         setScanResult(parseScoreScanResponse(data))
         setScoreContext({ ...data, token: data?.token || nextToken })
-        setScoreValue(data?.existing?.marca != null ? String(data.existing.marca) : '')
+        setScoreValue(data?.existing?.formatted_mark || (data?.existing?.marca != null ? String(data.existing.marca) : ''))
+        setScoreTieBreakValue(data?.existing?.formatted_tiebreak || (data?.existing?.tiebreak != null ? String(data.existing.tiebreak) : ''))
         setEditingScore(false)
         setScannerModalOpen(true)
       }
@@ -901,6 +935,21 @@ export default function JudgeHub() {
       })
       return
     }
+    const tieBreakPhase = {
+      measurement_method: scoreContext?.phase?.tie_break_method || 'for_time',
+      tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+    }
+    const tieBreakValue = String(scoreTieBreakValue || '').trim()
+    const parsedTieBreak = scoreContext?.phase?.tie_break_enabled && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
+    if (scoreContext?.phase?.tie_break_enabled && tieBreakValue && parsedTieBreak == null) {
+      setScoreMsg({
+        type: 'error',
+        text: isTimeMeasurement(tieBreakPhase.measurement_method)
+          ? 'Ingresa un tie break valido. Usa HH:MM:SS, MM:SS o segundos.'
+          : 'Ingresa un tie break numerico valido.',
+      })
+      return
+    }
     setScoreBusy(true)
     setScoreMsg(null)
     try {
@@ -909,6 +958,7 @@ export default function JudgeHub() {
         ? {
             token: scoreContext.token,
             marca_raw: String(scoreValue).trim(),
+            tiebreak_raw: scoreContext?.phase?.tie_break_enabled ? tieBreakValue : undefined,
             station: String(station || '').trim() || null,
             device_id: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 180) : null,
           }
@@ -918,6 +968,7 @@ export default function JudgeHub() {
             user_id: scoreContext?.user?.id ?? scoreContext?.participant?.id ?? scoreContext?.user_id ?? null,
             team_id: scoreContext?.team?.id ?? null,
             marca_raw: String(scoreValue).trim(),
+            tiebreak_raw: scoreContext?.phase?.tie_break_enabled ? tieBreakValue : undefined,
             station: String(station || '').trim() || null,
             device_id: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 180) : null,
           }
@@ -928,6 +979,7 @@ export default function JudgeHub() {
       setScanResult(parseScoreScanResponse(data))
       setEditingScore(false)
       setScoreValue(data?.existing?.formatted_mark || formatMarkForPhase(parsed, scoreContext.phase))
+      setScoreTieBreakValue(data?.existing?.formatted_tiebreak || (parsedTieBreak != null ? formatMarkForPhase(parsedTieBreak, tieBreakPhase) : ''))
       if (data?.status === 'created') {
         setScoreMsg({ type: 'success', text: 'Puntuacion cargada correctamente.' })
       } else if (data?.status === 'updated') {
@@ -960,6 +1012,7 @@ export default function JudgeHub() {
       })
       setScoreContext(data)
       setScoreValue(data?.existing?.formatted_mark || '')
+      setScoreTieBreakValue(data?.existing?.formatted_tiebreak || '')
       setEditingScore(false)
       setScanResult(parseScoreScanResponse(data))
       setScannerModalOpen(true)
@@ -1099,6 +1152,7 @@ export default function JudgeHub() {
     setScoreMsg(null)
     setEditingScore(false)
     setScoreValue('')
+    setScoreTieBreakValue('')
     scanLockRef.current = false
     if (scoreEntryMode === 'manual') {
       setManualRefreshKey((current) => current + 1)
@@ -1126,17 +1180,21 @@ export default function JudgeHub() {
         scoreContext={scoreContext}
         scoreValue={scoreValue}
         onScoreValueChange={setScoreValue}
+        scoreTieBreakValue={scoreTieBreakValue}
+        onScoreTieBreakValueChange={setScoreTieBreakValue}
         scoreBusy={scoreBusy}
         scoreMsg={scoreMsg}
         editingScore={editingScore}
         onStartEditScore={() => {
           setEditingScore(true)
           setScoreValue(scoreContext?.existing?.formatted_mark || '')
+          setScoreTieBreakValue(scoreContext?.existing?.formatted_tiebreak || '')
           setScoreMsg(null)
         }}
         onCancelEditScore={() => {
           setEditingScore(false)
           setScoreValue(scoreContext?.existing?.formatted_mark || '')
+          setScoreTieBreakValue(scoreContext?.existing?.formatted_tiebreak || '')
         }}
         onSubmitScore={submitScore}
         secondaryButtonStyle={secondaryButtonStyle}
@@ -1144,6 +1202,22 @@ export default function JudgeHub() {
         scoreInputLabel={scoreFieldConfig.label}
         scoreInputPlaceholder={scoreFieldConfig.placeholder}
         scoreInputHelper={scoreFieldConfig.helper}
+        tieBreakInputType={scoreInputConfig({
+          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
+          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+        }).type}
+        tieBreakInputLabel={scoreInputConfig({
+          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
+          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+        }).label}
+        tieBreakInputPlaceholder={scoreInputConfig({
+          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
+          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+        }).placeholder}
+        tieBreakInputHelper={scoreInputConfig({
+          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
+          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+        }).helper}
       />
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: outerPadding, display: 'grid', gap: gridGap }}>
         <SectionCard

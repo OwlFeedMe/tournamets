@@ -494,12 +494,17 @@ class CompetitionPhase(SQLModel, table=True):
     phase_format: str = Field(default=FormatoFase.ACTIVITY)  # activity / wod
     tipo: str = Field(default="cantidad")  # posicion / cantidad / tiempo
     measurement_method: str = Field(default="unidades")  # unidades / metros / tiempo_hms / repeticiones / kilogramos / gramos / libras / posicion
+    workout_format: Optional[str] = None  # for_time / amrap / emom / max_weight / other
     winner_rule: str = Field(default=ReglaGanador.HIGHER_WINS)  # higher_wins / lower_wins
     scoring_rules: Optional[str] = None  # JSON string for position scoring rules
     activities: Optional[str] = None  # JSON string for WOD child activities
     points_mode: str = Field(default=ModoPoints.MANUAL)  # manual | position_direct | position_rules
     allow_multiple_results: int = Field(default=0)  # 0 = unico por participante/fase, 1 = multiple
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
+    tie_break_enabled: int = Field(default=0)
+    tie_break_method: str = Field(default="for_time")
+    heat_transition_seconds: int = Field(default=0)
+    category_transition_seconds: int = Field(default=0)
     estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
     is_visible: int = Field(default=1)
     start_at: Optional[datetime] = None
@@ -1074,6 +1079,7 @@ class Result(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="SET NULL"), nullable=True),
     )
     marca: Optional[int] = None  # valor bruto de la prueba (metros, reps, peso, segundos, etc.)
+    tiebreak: Optional[int] = None
     puntos: int = Field(default=0)
     posicion: Optional[int] = None
     created_at: Optional[datetime] = Field(
@@ -1676,6 +1682,7 @@ class ResultCreate(SQLModel):
     team_id: Optional[int] = None
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    tiebreak: Optional[int] = None
     puntos: int = 0
     posicion: Optional[int] = None
 
@@ -1683,6 +1690,7 @@ class ResultCreate(SQLModel):
 class ResultUpdate(SQLModel):
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    tiebreak: Optional[int] = None
     puntos: Optional[int] = None
     posicion: Optional[int] = None
 
@@ -1741,12 +1749,17 @@ class PhaseCreate(SQLModel):
     phase_format: str = FormatoFase.ACTIVITY
     tipo: str = "cantidad"
     measurement_method: Optional[str] = None
+    workout_format: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
     activities: Optional[List[dict]] = None
     points_mode: str = ModoPoints.MANUAL
     allow_multiple_results: int = 0
     team_result_mode: str = "sum_two"
+    tie_break_enabled: int = 0
+    tie_break_method: str = "for_time"
+    heat_transition_seconds: int = 0
+    category_transition_seconds: int = 0
     estado: str = EstadoFase.PENDIENTE
     is_visible: int = 1
     start_at: Optional[datetime] = None
@@ -1763,12 +1776,17 @@ class PhaseUpdate(SQLModel):
     phase_format: Optional[str] = None
     tipo: Optional[str] = None
     measurement_method: Optional[str] = None
+    workout_format: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
     activities: Optional[List[dict]] = None
     points_mode: Optional[str] = None
     allow_multiple_results: Optional[int] = None
     team_result_mode: Optional[str] = None
+    tie_break_enabled: Optional[int] = None
+    tie_break_method: Optional[str] = None
+    heat_transition_seconds: Optional[int] = None
+    category_transition_seconds: Optional[int] = None
     estado: Optional[str] = None
     is_visible: Optional[int] = None
     start_at: Optional[datetime] = None

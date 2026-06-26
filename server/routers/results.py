@@ -73,6 +73,25 @@ def _phase_lower_is_better(phase: CompetitionPhase | None, comp: Competition | N
     return bool(comp and getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
 
 
+def _phase_tiebreak_lower_is_better(phase: CompetitionPhase | None) -> bool:
+    method = (getattr(phase, "tie_break_method", None) or "for_time").strip().lower() if phase else "for_time"
+    return method in {"for_time", "tiempo_hms", "tiempo", "posicion"}
+
+
+def _ranking_value(value: int | None, *, lower_is_better: bool) -> tuple[int, int]:
+    if value is None:
+        return (1, 0)
+    return (0, int(value) if lower_is_better else -int(value))
+
+
+def _result_rank_key(result: Result, *, lower_is_better: bool, tiebreak_lower_is_better: bool) -> tuple[int, int, int, int, int]:
+    return (
+        *_ranking_value(result.marca, lower_is_better=lower_is_better),
+        *_ranking_value(result.tiebreak, lower_is_better=tiebreak_lower_is_better),
+        int(result.id or 0),
+    )
+
+
 def _normalize_team_result_mode(raw: str | None) -> str:
     value = (raw or "").strip().lower()
     if value in {"sum_two", "single_member", "total"}:
@@ -141,6 +160,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
         return
     phase = session.get(CompetitionPhase, phase_id)
     lower_is_better = _phase_lower_is_better(phase, comp)
+    tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
     score_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
 
     rows = session.exec(
@@ -165,7 +185,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped.setdefault(int(r.team_id), []).append(r)
 
         team_category = _team_categories_map(session, competition_id, set(grouped.keys())) if rank_by_category else {}
-        entities_by_category: dict[str, list[tuple[int, int, list[Result]]]] = {}
+        entities_by_category: dict[str, list[tuple[int, int, int | None, list[Result]]]] = {}
         for team_id, items in grouped.items():
             marks = [int(x.marca) for x in items if x.marca is not None]
             if not marks:
@@ -174,14 +194,20 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 team_mark = min(marks) if lower_is_better else max(marks)
             else:
                 team_mark = sum(marks)
+            tie_values = [int(x.tiebreak) for x in items if x.tiebreak is not None]
+            team_tiebreak = (min(tie_values) if tiebreak_lower_is_better else max(tie_values)) if tie_values else None
             category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
-            entities_by_category.setdefault(category, []).append((team_id, team_mark, items))
+            entities_by_category.setdefault(category, []).append((team_id, team_mark, team_tiebreak, items))
 
         ranked_team_ids = set()
         for category_entities in entities_by_category.values():
-            category_entities.sort(key=lambda x: x[1], reverse=not lower_is_better)
+            category_entities.sort(key=lambda x: (
+                _ranking_value(x[1], lower_is_better=lower_is_better),
+                _ranking_value(x[2], lower_is_better=tiebreak_lower_is_better),
+                x[0],
+            ))
             total = len(category_entities)
-            for idx, (team_id, _team_mark, items) in enumerate(category_entities, 1):
+            for idx, (team_id, _team_mark, _team_tiebreak, items) in enumerate(category_entities, 1):
                 ranked_team_ids.add(team_id)
                 pts = idx if score_lower_is_better else (total - idx + 1)
                 for r in items:
@@ -222,14 +248,14 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped_rows.setdefault(category, []).append(r)
 
         for category_rows in grouped_rows.values():
-            category_rows.sort(key=lambda rr: int(rr.marca), reverse=not lower_is_better)
+            category_rows.sort(key=lambda rr: _result_rank_key(rr, lower_is_better=lower_is_better, tiebreak_lower_is_better=tiebreak_lower_is_better))
             total = len(category_rows)
             for idx, r in enumerate(category_rows, 1):
                 r.posicion = idx
                 r.puntos = idx if score_lower_is_better else (total - idx + 1)
                 session.add(r)
     else:
-        with_metric.sort(key=lambda r: int(r.marca), reverse=not lower_is_better)
+        with_metric.sort(key=lambda r: _result_rank_key(r, lower_is_better=lower_is_better, tiebreak_lower_is_better=tiebreak_lower_is_better))
         total = len(with_metric)
         for idx, r in enumerate(with_metric, 1):
             r.posicion = idx
@@ -242,7 +268,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
 def _enrich(session: Session, result_id: int) -> dict:
     row = session.execute(text("""
-        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.puntos, r.posicion, r.created_at,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.tiebreak, r.puntos, r.posicion, r.created_at,
                p.nombre        AS nombre,
                p.apellido      AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
@@ -343,7 +369,7 @@ def list_results(
 
     rows = session.execute(text(f"""
         SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id,
-               r.marca, r.puntos, r.posicion, r.created_at,
+               r.marca, r.tiebreak, r.puntos, r.posicion, r.created_at,
                p.nombre   AS nombre,
                p.apellido AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
