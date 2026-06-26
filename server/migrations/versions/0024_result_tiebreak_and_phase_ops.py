@@ -1,13 +1,13 @@
 """add result tiebreak and phase operation fields
 
-Revision ID: 0024_result_tiebreak_and_phase_ops
+Revision ID: 0024_result_tiebreak_ops
 Revises: 0023_category_audit
 Create Date: 2026-06-26
 """
 from alembic import op
 
 
-revision = "0024_result_tiebreak_and_phase_ops"
+revision = "0024_result_tiebreak_ops"
 down_revision = "0023_category_audit"
 branch_labels = None
 depends_on = None
