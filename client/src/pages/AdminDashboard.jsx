@@ -8160,7 +8160,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   const [heatFilter, setHeatFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
-  const [query, setQuery] = useState('')
   const [drafts, setDrafts] = useState({})
   const [savingKey, setSavingKey] = useState('')
   const [loading, setLoading] = useState(false)
@@ -8214,7 +8213,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     api.get(`/judge/competitions/${competition.id}/score/manual-options`, {
       params: {
         phase_id: Number(phaseId),
-        q: query || undefined,
         category: categoryFilter || undefined,
         status: 'all',
       },
@@ -8246,7 +8244,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [competition.id, phaseId, categoryFilter, query, refreshKey])
+  }, [competition.id, phaseId, categoryFilter, refreshKey])
 
   const categories = useMemo(
     () => Array.from(new Set(rows.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
@@ -8264,6 +8262,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     })
     return stats
   }, [rows])
+  const showHitFilter = heats.length > 1
 
   useEffect(() => {
     if (userSelectedHeatRef.current || heatFilter || !rows.length) return
@@ -8344,7 +8343,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         user_id: item.user_id ?? null,
         team_id: item.team_id ?? null,
         marca_raw: value,
-        station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${item.heat_name || heatFilter}` : 'Carga por heat',
+        station: heatFilter && heatFilter !== '__unassigned__' ? `Hit ${item.heat_name || heatFilter}` : 'Carga por hit',
       })
       setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
       setRefreshKey(current => current + 1)
@@ -8363,7 +8362,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       return String(drafts[key] ?? '').trim()
     })
     if (!candidates.length) {
-      setMsg({ type: 'error', text: 'No hay marcas para guardar en este heat.' })
+      setMsg({ type: 'error', text: 'No hay marcas para guardar en este hit.' })
       return
     }
     for (const item of candidates) {
@@ -8386,10 +8385,10 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         <div>
           <h4 style={{ margin: 0, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <ClipboardList size={17} />
-            Carga por heat
+            Carga por hit
           </h4>
           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-            Carga marcas por carril y avanza al siguiente atleta sin perder contexto.
+            Filtra por WOD, categoria y hit para cargar marcas por carril sin perder contexto.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -8400,7 +8399,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             Guardar visibles
           </button>
           <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!heats.length}>
-            Siguiente heat pendiente
+            Siguiente hit pendiente
           </button>
         </div>
       </div>
@@ -8408,9 +8407,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       {msg ? <div className={`alert alert-${msg.type}`} style={{ marginBottom: 0 }}>{msg.text}</div> : null}
       {error ? <div className="alert alert-error" style={{ marginBottom: 0 }}>{error}</div> : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(220px, 1fr) minmax(180px, 0.8fr) minmax(180px, 0.8fr)', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${showHitFilter ? 3 : 2}, minmax(0, 1fr))`, gap: 10 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Evento</label>
+          <label>WOD</label>
           <select value={phaseId} onChange={event => setPhaseId(event.target.value)}>
             {!phases.length ? <option value="">Sin eventos</option> : null}
             {phases.map(item => <option key={item.id} value={item.id}>{item.nombre}</option>)}
@@ -8424,10 +8423,25 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             {categoryFilter && !categories.includes(categoryFilter) ? <option value={categoryFilter}>{categoryFilter}</option> : null}
           </select>
         </div>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Buscar</label>
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Atleta, equipo o cedula" />
-        </div>
+        {showHitFilter ? (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Hit</label>
+            <select value={heatFilter} onChange={event => selectHeat(event.target.value)}>
+              <option value="">Todos los hits</option>
+              {heats.map(heat => {
+                const stat = heatStats[String(heat.id)] || { total: 0, pending: 0, scored: 0 }
+                return (
+                  <option key={heat.id} value={heat.id}>
+                    {heat.nombre} ({stat.scored}/{stat.total})
+                  </option>
+                )
+              })}
+              {heatStats.__unassigned__?.total ? (
+                <option value="__unassigned__">Sin hit ({heatStats.__unassigned__.scored}/{heatStats.__unassigned__.total})</option>
+              ) : null}
+            </select>
+          </div>
+        ) : null}
       </div>
 
       <div style={{ border: '1px solid #252A33', borderRadius: 16, background: 'rgba(13,15,18,0.64)', padding: 12, display: 'grid', gap: 12 }}>
@@ -8436,9 +8450,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>
               {heatFilter
                 ? heatFilter === '__unassigned__'
-                  ? 'Sin heat asignado'
-                  : heats.find(item => String(item.id) === String(heatFilter))?.nombre || `Heat ${heatFilter}`
-                : 'Todos los heats'}
+                  ? 'Sin hit asignado'
+                  : heats.find(item => String(item.id) === String(heatFilter))?.nombre || `Hit ${heatFilter}`
+                : 'Todos los hits'}
             </div>
             <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
               {selectedHeatStats.scored}/{selectedHeatStats.total} cargados · {selectedHeatStats.pending} pendientes
@@ -8450,42 +8464,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             </div>
             <div style={{ color: '#6B7280', fontSize: 11, marginTop: 4 }}>{completionPct}% completo</div>
           </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-          <button
-            type="button"
-            className={!heatFilter ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
-            onClick={() => selectHeat('')}
-            style={{ whiteSpace: 'nowrap' }}
-          >
-            Todos ({rows.length})
-          </button>
-          {heats.map(heat => {
-            const stat = heatStats[String(heat.id)] || { total: 0, pending: 0, scored: 0 }
-            const active = String(heatFilter) === String(heat.id)
-            return (
-              <button
-                key={heat.id}
-                type="button"
-                className={active ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
-                onClick={() => selectHeat(String(heat.id))}
-                style={{ whiteSpace: 'nowrap' }}
-              >
-                {heat.nombre} · {stat.scored}/{stat.total}
-              </button>
-            )
-          })}
-          {heatStats.__unassigned__?.total ? (
-            <button
-              type="button"
-              className={heatFilter === '__unassigned__' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
-              onClick={() => selectHeat('__unassigned__')}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              Sin heat · {heatStats.__unassigned__.scored}/{heatStats.__unassigned__.total}
-            </button>
-          ) : null}
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -8578,7 +8556,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                       <td>
                         <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.display_name}</div>
                         <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>
-                          {item.heat_name || 'Sin heat'}{Array.isArray(item.member_names) && item.member_names.length ? ` · ${item.member_names.join(' | ')}` : ''}
+                          {item.heat_name || 'Sin hit'}{Array.isArray(item.member_names) && item.member_names.length ? ` · ${item.member_names.join(' | ')}` : ''}
                         </div>
                       </td>
                       <td>{item.category || 'Sin categoria'}</td>
