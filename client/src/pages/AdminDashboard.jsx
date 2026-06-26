@@ -8213,7 +8213,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     api.get(`/judge/competitions/${competition.id}/score/manual-options`, {
       params: {
         phase_id: Number(phaseId),
-        category: categoryFilter || undefined,
         status: 'all',
       },
     })
@@ -8244,16 +8243,20 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [competition.id, phaseId, categoryFilter, refreshKey])
+  }, [competition.id, phaseId, refreshKey])
 
   const categories = useMemo(
     () => Array.from(new Set(rows.map(item => String(item.category || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b)),
     [rows],
   )
 
+  const categoryRows = useMemo(() => (
+    rows.filter(item => !categoryFilter || String(item.category || '').trim() === categoryFilter)
+  ), [rows, categoryFilter])
+
   const heatStats = useMemo(() => {
     const stats = {}
-    rows.forEach(item => {
+    categoryRows.forEach(item => {
       const key = item.heat_id ? String(item.heat_id) : '__unassigned__'
       if (!stats[key]) stats[key] = { total: 0, pending: 0, scored: 0 }
       stats[key].total += 1
@@ -8261,20 +8264,24 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       else stats[key].pending += 1
     })
     return stats
-  }, [rows])
-  const showHitFilter = heats.length > 1
+  }, [categoryRows])
+  const visibleHeats = useMemo(() => {
+    const visibleIds = new Set(categoryRows.map(item => (item.heat_id ? String(item.heat_id) : '')).filter(Boolean))
+    return heats.filter(heat => visibleIds.has(String(heat.id)))
+  }, [heats, categoryRows])
+  const showHeatFilter = visibleHeats.length > 1
 
   useEffect(() => {
-    if (userSelectedHeatRef.current || heatFilter || !rows.length) return
-    const heatWithPending = heats.find(heat => (heatStats[String(heat.id)]?.pending || 0) > 0)
-    const fallbackHeat = heats[0]
+    if (userSelectedHeatRef.current || heatFilter || !categoryRows.length) return
+    const heatWithPending = visibleHeats.find(heat => (heatStats[String(heat.id)]?.pending || 0) > 0)
+    const fallbackHeat = visibleHeats[0]
     if (heatWithPending?.id) setHeatFilter(String(heatWithPending.id))
     else if (fallbackHeat?.id) setHeatFilter(String(fallbackHeat.id))
     else if (heatStats.__unassigned__?.total) setHeatFilter('__unassigned__')
-  }, [rows, heats, heatStats, heatFilter])
+  }, [categoryRows, visibleHeats, heatStats, heatFilter])
 
   const filteredRows = useMemo(() => {
-    return rows
+    return categoryRows
       .filter(item => {
         const heatMatch = !heatFilter
           || (heatFilter === '__unassigned__' ? !item.heat_id : String(item.heat_id || '') === String(heatFilter))
@@ -8286,12 +8293,12 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         || Number(a.lane_number || 999) - Number(b.lane_number || 999)
         || String(a.display_name || '').localeCompare(String(b.display_name || ''))
       ))
-  }, [rows, heatFilter, statusFilter])
+  }, [categoryRows, heatFilter, statusFilter])
 
   const selectedHeatStats = heatFilter ? (heatStats[heatFilter] || { total: 0, pending: 0, scored: 0 }) : {
-    total: rows.length,
-    pending: rows.filter(item => item.status !== 'scored').length,
-    scored: rows.filter(item => item.status === 'scored').length,
+    total: categoryRows.length,
+    pending: categoryRows.filter(item => item.status !== 'scored').length,
+    scored: categoryRows.filter(item => item.status === 'scored').length,
   }
   const completionPct = selectedHeatStats.total
     ? Math.round((selectedHeatStats.scored / selectedHeatStats.total) * 100)
@@ -8343,7 +8350,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         user_id: item.user_id ?? null,
         team_id: item.team_id ?? null,
         marca_raw: value,
-        station: heatFilter && heatFilter !== '__unassigned__' ? `Hit ${item.heat_name || heatFilter}` : 'Carga por hit',
+        station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${heatDisplayNumber(item)}` : 'Carga por heat',
       })
       setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
       setRefreshKey(current => current + 1)
@@ -8362,7 +8369,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       return String(drafts[key] ?? '').trim()
     })
     if (!candidates.length) {
-      setMsg({ type: 'error', text: 'No hay marcas para guardar en este hit.' })
+      setMsg({ type: 'error', text: 'No hay marcas para guardar en este heat.' })
       return
     }
     for (const item of candidates) {
@@ -8372,7 +8379,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   }
 
   const goToNextHeat = () => {
-    const ordered = heats.map(item => String(item.id))
+    const ordered = visibleHeats.map(item => String(item.id))
     const currentIndex = ordered.indexOf(String(heatFilter))
     const nextWithPending = ordered.slice(currentIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
       || ordered.find(id => (heatStats[id]?.pending || 0) > 0)
@@ -8385,10 +8392,10 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         <div>
           <h4 style={{ margin: 0, fontSize: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <ClipboardList size={17} />
-            Carga por hit
+            Carga por heat
           </h4>
           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
-            Filtra por WOD, categoria y hit para cargar marcas por carril sin perder contexto.
+            Filtra por WOD, categoria y heat para cargar marcas por carril sin perder contexto.
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -8398,8 +8405,8 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
           <button type="button" className="btn-primary btn-sm" onClick={saveVisible} disabled={loading || savingKey || !filteredRows.length}>
             Guardar visibles
           </button>
-          <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!heats.length}>
-            Siguiente hit pendiente
+          <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!visibleHeats.length}>
+            Siguiente heat pendiente
           </button>
         </div>
       </div>
@@ -8407,7 +8414,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       {msg ? <div className={`alert alert-${msg.type}`} style={{ marginBottom: 0 }}>{msg.text}</div> : null}
       {error ? <div className="alert alert-error" style={{ marginBottom: 0 }}>{error}</div> : null}
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${showHitFilter ? 3 : 2}, minmax(0, 1fr))`, gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : `repeat(${showHeatFilter ? 3 : 2}, minmax(0, 1fr))`, gap: 10 }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>WOD</label>
           <select value={phaseId} onChange={event => setPhaseId(event.target.value)}>
@@ -8423,21 +8430,21 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             {categoryFilter && !categories.includes(categoryFilter) ? <option value={categoryFilter}>{categoryFilter}</option> : null}
           </select>
         </div>
-        {showHitFilter ? (
+        {showHeatFilter ? (
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Hit</label>
+            <label>Heat</label>
             <select value={heatFilter} onChange={event => selectHeat(event.target.value)}>
-              <option value="">Todos los hits</option>
-              {heats.map(heat => {
+              <option value="">Todos los heats</option>
+              {visibleHeats.map(heat => {
                 const stat = heatStats[String(heat.id)] || { total: 0, pending: 0, scored: 0 }
                 return (
                   <option key={heat.id} value={heat.id}>
-                    {heat.nombre} ({stat.scored}/{stat.total})
+                    {heatDisplayNumber(heat)} ({stat.scored}/{stat.total})
                   </option>
                 )
               })}
               {heatStats.__unassigned__?.total ? (
-                <option value="__unassigned__">Sin hit ({heatStats.__unassigned__.scored}/{heatStats.__unassigned__.total})</option>
+                <option value="__unassigned__">Sin heat ({heatStats.__unassigned__.scored}/{heatStats.__unassigned__.total})</option>
               ) : null}
             </select>
           </div>
@@ -8450,9 +8457,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             <div style={{ color: '#F5F7FA', fontWeight: 800, fontSize: 14 }}>
               {heatFilter
                 ? heatFilter === '__unassigned__'
-                  ? 'Sin hit asignado'
-                  : heats.find(item => String(item.id) === String(heatFilter))?.nombre || `Hit ${heatFilter}`
-                : 'Todos los hits'}
+                  ? 'Sin heat asignado'
+                  : `Heat ${heatDisplayNumber(visibleHeats.find(item => String(item.id) === String(heatFilter)) || heatFilter)}`
+                : 'Todos los heats'}
             </div>
             <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>
               {selectedHeatStats.scored}/{selectedHeatStats.total} cargados · {selectedHeatStats.pending} pendientes
@@ -8502,7 +8509,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ color: '#FFB36F', fontSize: 12, fontWeight: 900 }}>Carril {item.lane_number || '-'}</div>
                       <div style={{ color: '#F5F7FA', fontWeight: 900, marginTop: 2, overflowWrap: 'anywhere' }}>{item.display_name}</div>
-                      <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>{item.category || 'Sin categoria'}{item.heat_name ? ` · ${item.heat_name}` : ''}</div>
+                      <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>{item.category || 'Sin categoria'}{item.heat_id ? ` · Heat ${heatDisplayNumber(item)}` : ''}</div>
                     </div>
                     <ResultStatusPill status={item.status} value={item.existing_formatted} />
                   </div>
@@ -8556,7 +8563,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                       <td>
                         <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.display_name}</div>
                         <div style={{ color: '#6B7280', fontSize: 12, marginTop: 3 }}>
-                          {item.heat_name || 'Sin hit'}{Array.isArray(item.member_names) && item.member_names.length ? ` · ${item.member_names.join(' | ')}` : ''}
+                          {item.heat_id ? `Heat ${heatDisplayNumber(item)}` : 'Sin heat'}{Array.isArray(item.member_names) && item.member_names.length ? ` · ${item.member_names.join(' | ')}` : ''}
                         </div>
                       </td>
                       <td>{item.category || 'Sin categoria'}</td>
@@ -8600,6 +8607,19 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
 
 function resultEntryKey(item) {
   return `${item.entity_type || (item.team_id ? 'team' : 'user')}-${item.team_id || item.user_id || 'unknown'}`
+}
+
+function heatDisplayNumber(item) {
+  if (item == null) return '-'
+  if (typeof item === 'string' || typeof item === 'number') return String(item)
+  const explicitNumber = Number(item.heat_number || 0)
+  if (explicitNumber > 0) return String(explicitNumber)
+  const source = String(item.heat_name || item.nombre || '').trim()
+  const heatMatch = source.match(/\bheat\s*#?\s*(\d+)\b/i)
+  if (heatMatch?.[1]) return heatMatch[1]
+  const lastNumber = source.match(/(\d+)(?!.*\d)/)
+  if (lastNumber?.[1]) return lastNumber[1]
+  return item.heat_id ? String(item.heat_id) : '-'
 }
 
 function ResultStatusPill({ status, value }) {

@@ -1009,7 +1009,11 @@ def list_judge_score_manual_options(
                 "team_result_mode": phase_mode,
             },
             "heats": [
-                {"id": int(item.id), "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}"}
+                {
+                    "id": int(item.id),
+                    "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}",
+                    "heat_number": int(item.heat_number or 0),
+                }
                 for item in heat_rows
             ],
             "items": items,
@@ -1073,7 +1077,11 @@ def list_judge_score_manual_options(
             "team_result_mode": phase_mode,
         },
         "heats": [
-            {"id": int(item.id), "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}"}
+            {
+                "id": int(item.id),
+                "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}",
+                "heat_number": int(item.heat_number or 0),
+            }
             for item in heat_rows
         ],
         "items": items,
