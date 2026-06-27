@@ -6241,6 +6241,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [msg, setMsg] = useState(null)
+  const [advanceNotice, setAdvanceNotice] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const inputRefs = useRef({})
   const userSelectedHeatRef = useRef(false)
@@ -6284,6 +6285,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setDrafts({})
     setTieBreakDrafts({})
     setManualPhaseMeta(null)
+    setAdvanceNotice('')
     userSelectedHeatRef.current = false
   }, [phaseId])
 
@@ -6442,21 +6444,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
 
   const selectHeat = (value) => {
     userSelectedHeatRef.current = true
+    setAdvanceNotice('')
     setHeatFilter(value)
   }
-
-  useEffect(() => {
-    if (!heatFilter || heatFilter === '__unassigned__' || !visibleHeats.length) return
-    const currentStats = heatStats[String(heatFilter)]
-    if (!currentStats || currentStats.pending > 0) return
-    const ordered = visibleHeats.map(item => String(item.id))
-    const currentIndex = ordered.indexOf(String(heatFilter))
-    const nextWithPending = ordered.slice(currentIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
-      || ordered.find(id => (heatStats[id]?.pending || 0) > 0)
-    if (nextWithPending && nextWithPending !== String(heatFilter)) {
-      setHeatFilter(nextWithPending)
-    }
-  }, [heatFilter, heatStats, visibleHeats])
 
   const changeDraft = (item, value) => {
     const key = resultEntryKey(item)
@@ -6511,6 +6501,15 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setSavingKey(key)
     setMsg(null)
     try {
+      const autoAdvanceFromHeat = heatFilter && heatFilter !== '__unassigned__' ? String(heatFilter) : ''
+      const autoAdvanceStats = autoAdvanceFromHeat ? heatStats[autoAdvanceFromHeat] : null
+      const shouldAutoAdvanceHeat = moveNext && item.status !== 'scored' && autoAdvanceFromHeat && Number(autoAdvanceStats?.pending || 0) <= 1
+      const orderedHeatIds = visibleHeats.map(heat => String(heat.id))
+      const currentHeatIndex = orderedHeatIds.indexOf(autoAdvanceFromHeat)
+      const autoAdvanceTarget = shouldAutoAdvanceHeat
+        ? orderedHeatIds.slice(currentHeatIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
+          || orderedHeatIds.find(id => id !== autoAdvanceFromHeat && (heatStats[id]?.pending || 0) > 0)
+        : ''
       const endpoint = item.status === 'scored' ? '/judge/score/edit' : '/judge/score/submit'
       const { data } = await api.post(endpoint, {
         competition_id: Number(competition.id),
@@ -6537,7 +6536,18 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
           }
           : row
       )))
-      if (moveNext) focusNext(item)
+      if (autoAdvanceTarget) {
+        const fromHeat = visibleHeats.find(heat => String(heat.id) === autoAdvanceFromHeat)
+        const toHeat = visibleHeats.find(heat => String(heat.id) === autoAdvanceTarget)
+        userSelectedHeatRef.current = false
+        setHeatFilter(autoAdvanceTarget)
+        setAdvanceNotice(`Heat ${heatDisplayNumber(fromHeat || autoAdvanceFromHeat)} completo. Seguimos con Heat ${heatDisplayNumber(toHeat || autoAdvanceTarget)}.`)
+        const nextTargetRow = rows.find(row => String(row.heat_id || '') === autoAdvanceTarget && row.status !== 'scored')
+        const nextTargetKey = nextTargetRow ? resultEntryKey(nextTargetRow) : ''
+        if (nextTargetKey) setTimeout(() => inputRefs.current[nextTargetKey]?.focus(), 80)
+      } else if (moveNext) {
+        focusNext(item)
+      }
     } catch (err) {
       setMsg({ type: 'error', text: err?.response?.data?.detail || 'No se pudo guardar el resultado.' })
     } finally {
@@ -6591,7 +6601,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Categoria</label>
-          <select value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setHeatFilter(''); userSelectedHeatRef.current = false }}>
+          <select value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setHeatFilter(''); setAdvanceNotice(''); userSelectedHeatRef.current = false }}>
             <option value="">Todas</option>
             {categories.map(item => <option key={item} value={item}>{item}</option>)}
             {categoryFilter && !categories.includes(categoryFilter) ? <option value={categoryFilter}>{categoryFilter}</option> : null}
@@ -6652,6 +6662,11 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
         <div style={{ color: '#AAB2C0', fontSize: 12 }}>
           Carga la marca, usa DNF si no inicio o no termino. Los pendientes quedan arriba y los cargados bajan solos.
         </div>
+        {advanceNotice ? (
+          <div style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', color: '#9AF7EA', borderRadius: 10, padding: '8px 10px', fontSize: 12, fontWeight: 800 }}>
+            {advanceNotice}
+          </div>
+        ) : null}
       </div>
 
       {loading ? <SkeletonList count={4} /> : null}
