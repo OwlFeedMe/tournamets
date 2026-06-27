@@ -45,6 +45,14 @@ router = APIRouter(tags=["judges"])
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
+def _phase_score_mode(phase: CompetitionPhase | None) -> str:
+    mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
+    modality = str(getattr(phase, "modality", "") or "").strip().lower()
+    if mode == "total" and modality not in {"team", "teams", "equipo", "equipos"}:
+        return "sum_two"
+    return mode
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -404,7 +412,7 @@ def _resolve_score_target(
     if not phase or int(phase.competition_id) != int(competition_id):
         raise HTTPException(404, "La fase indicada no pertenece a la competencia")
 
-    phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
+    phase_mode = _phase_score_mode(phase)
     resolved_user_id = int(user_id) if user_id is not None else None
     resolved_team_id = int(team_id) if team_id is not None else None
 
@@ -922,7 +930,7 @@ def list_judge_score_phases(
                 "tipo": _phase_type_value(phase),
                 "measurement_method": _phase_measurement_method(phase),
                 "modality": str(getattr(phase, "modality", None) or "individual").strip().lower(),
-                "team_result_mode": _normalize_team_result_mode(getattr(phase, "team_result_mode", None)),
+                "team_result_mode": _phase_score_mode(phase),
                 "allow_multiple_results": int(getattr(phase, "allow_multiple_results", 0) or 0),
                 **_phase_score_meta(phase),
             }
@@ -945,7 +953,7 @@ def list_judge_score_manual_options(
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or int(phase.competition_id) != int(competition_id):
         raise HTTPException(404, "La fase indicada no pertenece a la competencia")
-    phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
+    phase_mode = _phase_score_mode(phase)
 
     normalized_query = str(q or "").strip().lower()
     normalized_category = str(category or "").strip().lower()
