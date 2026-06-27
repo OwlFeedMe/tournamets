@@ -841,36 +841,6 @@ export function CompetitionSchedulePanel({ competition }) {
         </div>
       ) : null}
 
-      {false && moveDraft ? (
-        <div className="card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start', flexWrap: 'wrap', marginBottom: 14 }}>
-            <div style={{ minWidth: 0 }}>
-              <h4 style={{ margin: 0, fontSize: 16 }}>Mover atleta</h4>
-              <div title={moveDraft.name} style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4, overflowWrap: 'anywhere' }}>
-                {moveDraft.name} · {moveDraft.categoria || 'Sin categoria'}
-              </div>
-            </div>
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setMoveDraft(null)} disabled={editBusy}>Cerrar</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) auto', gap: 10, alignItems: 'end' }}>
-            <label style={{ display: 'grid', gap: 6, minWidth: 0 }}>
-              <span style={{ color: '#AAB2C0', fontSize: 12 }}>Heat destino</span>
-              <select value={moveDraft.target_heat_id || ''} onChange={(e) => setMoveDraft(prev => ({ ...prev, target_heat_id: e.target.value }))}>
-                <option value="">Selecciona un heat</option>
-                {targetHeatOptions.map((item) => {
-                  const count = (item.participants || []).length
-                  const cap = Number(item.lane_count || 0)
-                  const label = `${item.categoria || 'Todos mezclados'} · Heat ${item.heat_number} · ${count}/${cap || count} atletas`
-                  return <option key={item.id} value={item.id}>{label}</option>
-                })}
-              </select>
-            </label>
-            <button type="button" className="btn-primary btn-sm" onClick={handleMoveParticipant} disabled={editBusy || !moveDraft.target_heat_id}>
-              {editBusy ? 'Moviendo...' : 'Mover'}
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>

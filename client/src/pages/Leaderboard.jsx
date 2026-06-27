@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CheckCircle2, Clock3, Circle } from 'lucide-react'
+import { CheckCircle2, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -322,25 +322,6 @@ function AthleteAvatar({ athlete, size = 36 }) {
   )
 }
 
-function AthleteProfileLink({ athlete, children, style }) {
-  if (!athlete?.username) {
-    return <span style={style}>{children}</span>
-  }
-  return (
-    <Link
-      to={`/a/${athlete.username}`}
-      style={{
-        color: 'inherit',
-        textDecoration: 'none',
-        ...style,
-      }}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {children}
-    </Link>
-  )
-}
-
 function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCodeByName = {} }) {
   const countryCode = countryCodeFromLocation(athlete?.ciudad_pais, countryCodeByName)
   const flagUrl = flagUrlFromCountryCode(countryCode)
@@ -350,8 +331,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
     <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 10, minWidth: 0 }}>
       <AthleteAvatar athlete={athlete} size={tvMode ? 48 : compact ? 34 : 38} />
       <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-        <AthleteProfileLink
-          athlete={athlete}
+        <span
           style={{
             color: THEME.ink,
             fontWeight: 800,
@@ -363,7 +343,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
           }}
         >
           {athleteDisplayName(athlete)}
-        </AthleteProfileLink>
+        </span>
         {countryLabel || flagUrl ? (
           <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
             {flagUrl ? (
@@ -383,7 +363,233 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
 }
 
 // â”€â”€ Individual leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
+function allIndividualRows(individualData) {
+  return Object.values(individualData || {}).flat()
+}
+
+function findTotalRowForAthlete(data, athleteId) {
+  return allIndividualRows(data?.individual).find((row) => String(row.id) === String(athleteId)) || null
+}
+
+function rowsForAthleteCategory(data, athlete) {
+  const totalRow = findTotalRowForAthlete(data, athlete?.id) || athlete
+  const category = totalRow?.categoria || athlete?.categoria || 'Sin categoria'
+  return data?.individual?.[category] || []
+}
+
+function athletePhaseResults(data, athleteId) {
+  return (data?.phases || [])
+    .map((phase) => {
+      const row = allIndividualRows(phase.individual).find((item) => String(item.id) === String(athleteId))
+      if (!row) return null
+      return {
+        phase,
+        rank: row.rank,
+        points: Number(row.total_puntos || 0),
+        mark: row.mejor_marca,
+        tiebreak: row.tiebreak,
+        attempts: Number(row.total_eventos || 0),
+      }
+    })
+    .filter(Boolean)
+}
+
+function competitionStatusForSummary(summary) {
+  if (!summary.completedCount) return 'Debe completar workouts'
+  if (summary.rank && summary.rank <= 3) return 'En zona de podio'
+  if (summary.prevGap != null && summary.prevGap <= 10) return 'A pocos puntos'
+  if (summary.bestWorkout?.rank && summary.bestWorkout.rank <= 3) return 'Presionando arriba'
+  return 'En competencia'
+}
+
+function buildAthleteSummary(athlete, data) {
+  if (!athlete || !data) return null
+  const totalRow = findTotalRowForAthlete(data, athlete.id) || athlete
+  const categoryRows = rowsForAthleteCategory(data, totalRow)
+  const rowIndex = categoryRows.findIndex((row) => String(row.id) === String(totalRow.id))
+  const prevRow = rowIndex > 0 ? categoryRows[rowIndex - 1] : null
+  const nextRow = rowIndex >= 0 && rowIndex < categoryRows.length - 1 ? categoryRows[rowIndex + 1] : null
+  const totalPoints = Number(totalRow.total_puntos || 0)
+  const prevPoints = prevRow ? Number(prevRow.total_puntos || 0) : null
+  const nextPoints = nextRow ? Number(nextRow.total_puntos || 0) : null
+  const phaseResults = athletePhaseResults(data, totalRow.id)
+  const completed = phaseResults.filter((item) => item.attempts > 0 || item.mark != null || item.points > 0)
+  const rankedCompleted = completed.filter((item) => Number.isFinite(Number(item.rank)))
+  const sortedByRank = [...rankedCompleted].sort((a, b) => Number(a.rank) - Number(b.rank))
+  const summary = {
+    athlete: totalRow,
+    rank: totalRow.rank,
+    category: totalRow.categoria || 'Sin categoria',
+    totalPoints,
+    totalWorkouts: (data.phases || []).filter((phase) => (phase.modality || 'individual') === 'individual').length,
+    completedCount: completed.length,
+    prevGap: prevPoints == null ? null : Math.abs(totalPoints - prevPoints),
+    nextGap: nextPoints == null ? null : Math.abs(totalPoints - nextPoints),
+    prevRow,
+    nextRow,
+    bestWorkout: sortedByRank[0] || null,
+    worstWorkout: sortedByRank[sortedByRank.length - 1] || null,
+    phaseResults,
+  }
+  summary.status = competitionStatusForSummary(summary)
+  return summary
+}
+
+function summaryMetric(label, value, accent = THEME.ink) {
+  return (
+    <div style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: '10px 12px', minWidth: 0 }}>
+      <div style={{ color: THEME.soft, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7 }}>{label}</div>
+      <div style={{ marginTop: 5, color: accent, fontWeight: 900, fontSize: 20, lineHeight: 1.05 }}>{value}</div>
+    </div>
+  )
+}
+
+function AthleteSummaryModal({ summary, onClose, isMobile }) {
+  useEffect(() => {
+    if (!summary) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.body.classList.add('fr-modal-open')
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.classList.remove('fr-modal-open')
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose, summary])
+
+  if (!summary) return null
+
+  const athlete = summary.athlete
+  const profilePath = athlete?.username ? `/a/${athlete.username}` : ''
+  const topBorder = summary.rank && summary.rank <= 3
+    ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)'
+    : `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.accent} 100%)`
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        background: 'rgba(0,0,0,0.68)',
+        display: 'flex',
+        alignItems: isMobile ? 'flex-end' : 'center',
+        justifyContent: 'center',
+        padding: isMobile ? '10px 0 0' : 18,
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Resumen competitivo de ${athleteDisplayName(athlete)}`}
+        onMouseDown={(event) => event.stopPropagation()}
+        style={{
+          width: isMobile ? '100%' : 'min(720px, 94vw)',
+          maxHeight: isMobile ? '88dvh' : '86vh',
+          overflowY: 'auto',
+          background: THEME.surface,
+          border: `1px solid ${THEME.border}`,
+          borderRadius: isMobile ? '14px 14px 0 0' : 12,
+          boxShadow: '0 24px 70px rgba(0,0,0,0.48)',
+          color: THEME.ink,
+        }}
+      >
+        <div style={{ height: 5, background: topBorder }} />
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(23,27,33,0.98)', borderBottom: `1px solid ${THEME.border}`, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontWeight: 900, fontSize: 15 }}>Resumen competitivo</div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar resumen"
+            style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ padding: isMobile ? 16 : 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <AthleteAvatar athlete={athlete} size={58} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 24, lineHeight: 1.1, fontWeight: 900, color: THEME.ink }}>{athleteDisplayName(athlete)}</div>
+              <div style={{ marginTop: 5, color: THEME.muted, fontSize: 13, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <span>{summary.category}</span>
+                {athlete?.box ? <span>{athlete.box}</span> : null}
+                {countryLabelFromLocation(athlete?.ciudad_pais) ? <span>{countryLabelFromLocation(athlete.ciudad_pais)}</span> : null}
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontFamily: '"Bebas Neue", monospace', color: summary.rank <= 3 ? '#FF9A3D' : THEME.primary, fontSize: 44, lineHeight: 0.9 }}>#{summary.rank ?? '-'}</div>
+              <div style={{ color: THEME.soft, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Puesto</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+            {summaryMetric('Puntos', summary.totalPoints, THEME.primary)}
+            {summaryMetric('Workouts', `${summary.completedCount}/${summary.totalWorkouts || '-'}`, THEME.accent)}
+            {summaryMetric('Arriba', summary.prevGap == null ? 'Liderando' : `${summary.prevGap} pts`, THEME.ink)}
+            {summaryMetric('Abajo', summary.nextGap == null ? 'Sin perseguidor' : `${summary.nextGap} pts`, THEME.muted)}
+          </div>
+
+          <div style={{ marginTop: 14, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 12 }}>
+            <div style={{ color: THEME.accent, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{summary.status}</div>
+            <div style={{ marginTop: 6, color: THEME.muted, fontSize: 13, lineHeight: 1.5 }}>
+              {summary.bestWorkout
+                ? `Mejor workout: ${summary.bestWorkout.phase.nombre}, puesto #${summary.bestWorkout.rank}.`
+                : 'Aun no tiene resultados cargados en workouts individuales.'}
+              {summary.worstWorkout && summary.worstWorkout !== summary.bestWorkout
+                ? ` Ultimo margen a mejorar: ${summary.worstWorkout.phase.nombre}, puesto #${summary.worstWorkout.rank}.`
+                : ''}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18 }}>
+            <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 900 }}>Workouts</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {summary.phaseResults.length ? summary.phaseResults.map((item) => (
+                <div key={item.phase.id} style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: '10px 12px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 90px 110px 90px', gap: isMobile ? 7 : 12, alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.phase.nombre}</div>
+                    <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{item.phase.estado || 'pendiente'}</div>
+                  </div>
+                  <div style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
+                  <div style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValue(item.mark, item.phase)}</div>
+                  <div style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
+                </div>
+              )) : (
+                <div style={{ color: THEME.muted, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 14 }}>Sin workouts individuales registrados.</div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={onClose} style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, fontWeight: 800, cursor: 'pointer' }}>
+              Cerrar
+            </button>
+            {profilePath ? (
+              <Link to={profilePath} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid transparent', background: THEME.primary, color: '#fff', fontWeight: 900, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                Ir al perfil
+                <ExternalLink size={15} />
+              </Link>
+            ) : (
+              <button type="button" disabled style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#11151a', color: THEME.soft, fontWeight: 900 }}>
+                Perfil no disponible
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {}, onAthleteSelect }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -428,7 +634,17 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     <div
                       key={p.id}
                       className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : isNew ? 'row-new' : ''}
-                      style={mobileRankCardStyle}
+                      role="button"
+                      tabIndex={onAthleteSelect ? 0 : undefined}
+                      onClick={() => onAthleteSelect?.(p)}
+                      onKeyDown={(event) => {
+                        if (!onAthleteSelect) return
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onAthleteSelect(p)
+                        }
+                      }}
+                      style={{ ...mobileRankCardStyle, cursor: onAthleteSelect ? 'pointer' : 'default' }}
                     >
                       {/* Header: rank + name + movement */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -492,7 +708,17 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <tr
                         key={p.id}
                         className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : isNew ? 'row-new' : ''}
-                        style={{ transition: 'background 0.6s' }}
+                        role="button"
+                        tabIndex={onAthleteSelect ? 0 : undefined}
+                        onClick={() => onAthleteSelect?.(p)}
+                        onKeyDown={(event) => {
+                          if (!onAthleteSelect) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onAthleteSelect(p)
+                          }
+                        }}
+                        style={{ transition: 'background 0.6s', cursor: onAthleteSelect ? 'pointer' : 'default' }}
                       >
                         <td style={{ textAlign: 'center' }}><RankCell rank={p.rank} tvMode={tvMode} /></td>
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
@@ -805,6 +1031,7 @@ export default function Leaderboard() {
   const [timerData, setTimerData] = useState(null)
   const [timerClockOffsetMs, setTimerClockOffsetMs] = useState(null)
   const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [selectedAthleteSummary, setSelectedAthleteSummary] = useState(null)
   const [tvScrollableHeight, setTvScrollableHeight] = useState(null)
   const [countryCodeByName, setCountryCodeByName] = useState({})
   const intervalRef = useRef(null)
@@ -995,6 +1222,20 @@ export default function Leaderboard() {
   const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''
+
+  const openAthleteSummary = useCallback((athlete) => {
+    if (tvMode) return
+    const summary = buildAthleteSummary(athlete, data)
+    if (summary) setSelectedAthleteSummary(summary)
+  }, [data, tvMode])
+
+  const closeAthleteSummary = useCallback(() => {
+    setSelectedAthleteSummary(null)
+  }, [])
+
+  useEffect(() => {
+    setSelectedAthleteSummary(null)
+  }, [selectedComp, tvMode])
 
   // Only poll timer when TV mode actually needs it.
   useEffect(() => {
@@ -1681,7 +1922,7 @@ export default function Leaderboard() {
                 : null
               return Object.keys(indData).length === 0
                 ? <div style={{ color: '#555', textAlign: 'center', padding: 60 }}>No hay participantes activos con resultados</div>
-                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} countryCodeByName={countryCodeByName} onAthleteSelect={tvMode ? null : openAthleteSummary} />
             })()}
 
             {view === 'teams' && (() => {
@@ -1733,6 +1974,7 @@ export default function Leaderboard() {
           )}
         </div>
       </div>
+      <AthleteSummaryModal summary={selectedAthleteSummary} onClose={closeAthleteSummary} isMobile={isMobile} />
       {qrModalOpen && !tvMode && selectedComp && (
         <div
           onClick={() => setQrModalOpen(false)}
