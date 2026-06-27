@@ -78,11 +78,6 @@ function phaseMetricLabel(phaseInfo) {
   return 'Marca'
 }
 
-function phaseMetricHeader(phaseInfo) {
-  const label = phaseMetricLabel(phaseInfo)
-  return Number(phaseInfo?.tie_break_enabled || 0) ? `${label} + TB` : label
-}
-
 function formatSecondsToHMS(totalSeconds) {
   const n = Number(totalSeconds)
   if (!Number.isFinite(n)) return '-'
@@ -403,6 +398,18 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
     <>
       {CATEGORY_ORDER.filter(c => data[c]).concat(Object.keys(data).filter(c => !CATEGORY_ORDER.includes(c))).map(cat => {
         if (!data[cat]) return null
+        const markCounts = data[cat].reduce((acc, item) => {
+          if (item.mejor_marca == null) return acc
+          const key = String(item.mejor_marca)
+          acc[key] = (acc[key] || 0) + 1
+          return acc
+        }, {})
+        const shouldShowTiebreak = (item) => (
+          Number(phaseInfo?.tie_break_enabled || 0)
+          && item?.tiebreak != null
+          && item?.mejor_marca != null
+          && markCounts[String(item.mejor_marca)] > 1
+        )
         return (
           <div key={cat} style={{ marginBottom: isMobile ? 20 : 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -451,7 +458,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         {phaseInfo && p.mejor_marca != null && (
                           <span style={{ color: THEME.ink, fontWeight: 500 }}>
                             {phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b>
-                            <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact />
+                            {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
                           </span>
                         )}
                         <span>Sexo: {p.sexo || '-'}</span>
@@ -469,7 +476,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     <th>Nombre</th>
                     <th>Sexo</th>
                     {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
-                    {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricHeader(phaseInfo)}</th>}
+                    {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
                     {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
                     {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
@@ -499,7 +506,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         {phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
                             <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValue(p.mejor_marca, phaseInfo)}</div>
-                            <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} />
+                            {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} /> : null}
                           </td>
                         )}
                         <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
