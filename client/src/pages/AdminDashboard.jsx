@@ -4308,7 +4308,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [categoriesLoaded, setCategoriesLoaded] = useState(!isEdit)
   const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0, max_capacity: '', registration_enabled: 1 })
   const [phases, setPhases] = useState([])
-  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
+  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', heat_transition_minutes: '', category_transition_minutes: '', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
   const [questions, setQuestions] = useState([])
   const [questionDraft, setQuestionDraft] = useState({ label: '', field_type: 'text', required: 0, placeholder: '' })
   const [scheduleItems, setScheduleItems] = useState([])
@@ -4431,10 +4431,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           block_name: p.block_name || '',
           block_order: Number(p.block_order || 0),
           nombre: p.nombre,
+          workout_format: normalizeWorkoutFormat(p.workout_format, p.measurement_method),
           measurement_method: normalizeMeasurementMethod(p.measurement_method, p.tipo),
           tipo: phaseTypeFromMethod(normalizeMeasurementMethod(p.measurement_method, p.tipo)),
           descripcion: baseActivities[0]?.descripcion || p.descripcion || '',
           team_result_mode: p.team_result_mode || 'sum_two',
+          tie_break_enabled: Number(p.tie_break_enabled || 0),
+          tie_break_method: normalizeMeasurementMethod(p.tie_break_method || 'for_time', 'tiempo'),
+          heat_transition_minutes: p.heat_transition_seconds ? String(Math.round(Number(p.heat_transition_seconds) / 60)) : '',
+          category_transition_minutes: p.category_transition_seconds ? String(Math.round(Number(p.category_transition_seconds) / 60)) : '',
           is_visible: p.is_visible == null ? 1 : Number(p.is_visible),
           start_at: toDateInput(p.start_at),
           end_at: toDateInput(p.end_at),
@@ -4572,17 +4577,27 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       modality: newPhase.modality || 'individual',
       block_name: (newPhase.block_name || '').trim(),
       block_order: prev.length,
+      workout_format: normalizeWorkoutFormat(newPhase.workout_format, newPhase.measurement_method),
       tipo: phaseTypeFromMethod(newPhase.measurement_method),
       nombre,
       measurement_method: newPhase.measurement_method,
       descripcion: newPhase.descripcion.trim(),
       team_result_mode: newPhase.team_result_mode,
+      tie_break_enabled: Number(newPhase.tie_break_enabled || 0) ? 1 : 0,
+      tie_break_method: normalizeMeasurementMethod(newPhase.tie_break_method || 'for_time', 'tiempo'),
+      heat_transition_minutes: newPhase.heat_transition_minutes || '',
+      category_transition_minutes: newPhase.category_transition_minutes || '',
       is_visible: Number(newPhase.is_visible == null ? 1 : newPhase.is_visible) ? 1 : 0,
       start_at: newPhase.start_at || '',
       end_at: newPhase.end_at || '',
+      time_cap: newPhase.time_cap || '',
+      part_b_enabled: !!newPhase.part_b_enabled,
+      part_b_descripcion: newPhase.part_b_descripcion || '',
+      part_b_time_cap: newPhase.part_b_time_cap || '',
+      part_b_measurement_method: newPhase.part_b_measurement_method || 'for_time',
       catOverrides: newPhaseCatOverrides,
     }])
-    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' }))
+    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', heat_transition_minutes: '', category_transition_minutes: '', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' }))
     setNewPhaseCatOverrides({})
     return true
   }
@@ -6093,6 +6108,30 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               </select>
             </div>
           ) : null}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Formato del WOD</label>
+            <select value={newPhase.workout_format || 'for_time'} onChange={e => setNewPhase(p => ({ ...p, workout_format: e.target.value }))}>
+              {WOD_FORMATS.map(item => <option key={`visible-new-format-${item}`} value={item}>{WOD_FORMAT_LABELS[item] || item}</option>)}
+            </select>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#AAB2C0', fontSize: 13, fontWeight: 700, minHeight: 42 }}>
+            <input type="checkbox" checked={!!newPhase.tie_break_enabled} onChange={e => setNewPhase(p => ({ ...p, tie_break_enabled: e.target.checked ? 1 : 0 }))} />
+            Tie break
+          </label>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo tie break</label>
+            <select value={newPhase.tie_break_method || 'for_time'} onChange={e => setNewPhase(p => ({ ...p, tie_break_method: e.target.value }))} disabled={!newPhase.tie_break_enabled}>
+              {PHASE_MEASUREMENT_METHODS.map(m => <option key={`visible-new-tb-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+            <input type="number" min="0" max="999" value={newPhase.heat_transition_minutes || ''} onChange={e => setNewPhase(p => ({ ...p, heat_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 2" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+            <input type="number" min="0" max="999" value={newPhase.category_transition_minutes || ''} onChange={e => setNewPhase(p => ({ ...p, category_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 8" />
+          </div>
           {(() => {
             const compStart = parseCalendarDate(form.competition_start)
             const compEnd = parseCalendarDate(form.competition_end)
@@ -6183,7 +6222,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Medicion</label>
+              <label>Se rankea por</label>
               <select value={newPhase.measurement_method} onChange={e => setNewPhase(p => ({ ...p, measurement_method: e.target.value }))}>
                 {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
               </select>
@@ -6212,7 +6251,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Medicion</label>
+                <label>Se rankea por</label>
                 <select value={newPhase.part_b_measurement_method} onChange={e => setNewPhase(p => ({ ...p, part_b_measurement_method: e.target.value }))}>
                   {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                 </select>
@@ -6876,6 +6915,30 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               </select>
             </div>
           ) : null}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Formato del WOD</label>
+            <select value={editingPhase.workout_format || 'for_time'} onChange={e => updatePhase(editingPhase.id, 'workout_format', e.target.value)}>
+              {WOD_FORMATS.map(item => <option key={`visible-edit-format-${editingPhase.id}-${item}`} value={item}>{WOD_FORMAT_LABELS[item] || item}</option>)}
+            </select>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#AAB2C0', fontSize: 13, fontWeight: 700, minHeight: 42 }}>
+            <input type="checkbox" checked={!!editingPhase.tie_break_enabled} onChange={e => updatePhase(editingPhase.id, 'tie_break_enabled', e.target.checked ? 1 : 0)} />
+            Tie break
+          </label>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Tipo tie break</label>
+            <select value={editingPhase.tie_break_method || 'for_time'} onChange={e => updatePhase(editingPhase.id, 'tie_break_method', e.target.value)} disabled={!editingPhase.tie_break_enabled}>
+              {PHASE_MEASUREMENT_METHODS.map(m => <option key={`visible-edit-tb-${editingPhase.id}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+            <input type="number" min="0" max="999" value={editingPhase.heat_transition_minutes || ''} onChange={e => updatePhase(editingPhase.id, 'heat_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 2" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
+            <input type="number" min="0" max="999" value={editingPhase.category_transition_minutes || ''} onChange={e => updatePhase(editingPhase.id, 'category_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 8" />
+          </div>
           {(() => {
             const compStart = parseCalendarDate(form.competition_start)
             const compEnd = parseCalendarDate(form.competition_end)
@@ -6966,7 +7029,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Medicion</label>
+              <label>Se rankea por</label>
               <select value={normalizeMeasurementMethod(editingPhase.measurement_method, editingPhase.tipo)} onChange={e => updatePhase(editingPhase.id, 'measurement_method', e.target.value)}>
                 {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
               </select>
@@ -7021,7 +7084,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <div style={{ fontSize: 12, fontWeight: 800, color: '#D6D9E0', textTransform: 'uppercase', letterSpacing: 0.8 }}>Parte B</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label>Medicion</label>
+                <label>Se rankea por</label>
                 <select value={editingPhase.part_b_measurement_method || 'for_time'} onChange={e => updatePhase(editingPhase.id, 'part_b_measurement_method', e.target.value)}>
                   {PHASE_MEASUREMENT_METHODS.map(m => <option key={m} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                 </select>
