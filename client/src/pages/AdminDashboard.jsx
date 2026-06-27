@@ -6207,7 +6207,7 @@ function CompetitionTeamsPanel({ competition }) {
   )
 }
 
-function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
+function HeatResultsEntryPanel({ competition, isMobile = false }) {
   const [phases, setPhases] = useState([])
   const [phaseId, setPhaseId] = useState('')
   const [rows, setRows] = useState([])
@@ -6492,7 +6492,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     setMsg(null)
     try {
       const endpoint = item.status === 'scored' ? '/judge/score/edit' : '/judge/score/submit'
-      await api.post(endpoint, {
+      const { data } = await api.post(endpoint, {
         competition_id: Number(competition.id),
         phase_id: Number(activePhaseMeta.id),
         user_id: item.user_id ?? null,
@@ -6501,9 +6501,22 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         tiebreak_raw: rowNeedsTieBreak && tieBreakValue ? tieBreakValue : undefined,
         station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${heatDisplayNumber(item)}` : 'Carga por heat',
       })
-      setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
-      setRefreshKey(current => current + 1)
-      onSaved?.()
+      const savedMark = data?.existing?.marca ?? data?.marca ?? (isDnf ? value : parsed)
+      const savedTieBreak = data?.existing?.tiebreak ?? data?.tiebreak ?? (rowNeedsTieBreak && tieBreakValue ? parsedTieBreak : null)
+      const savedFormatted = data?.existing_formatted || data?.existing?.formatted_mark || formatMarkForPhase(savedMark, activePhaseMeta)
+      const savedTieBreakFormatted = data?.existing_tiebreak_formatted || data?.existing?.formatted_tiebreak || formatMarkForPhase(savedTieBreak, tieBreakPhase)
+      setRows(prev => prev.map(row => (
+        resultEntryKey(row) === key
+          ? {
+            ...row,
+            status: 'scored',
+            existing_mark: savedMark,
+            existing_formatted: savedFormatted,
+            existing_tiebreak: savedTieBreak,
+            existing_tiebreak_formatted: savedTieBreakFormatted,
+          }
+          : row
+      )))
       if (moveNext) focusNext(item)
     } catch (err) {
       setMsg({ type: 'error', text: err?.response?.data?.detail || 'No se pudo guardar el resultado.' })
