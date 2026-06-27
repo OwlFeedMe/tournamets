@@ -78,6 +78,11 @@ function phaseMetricLabel(phaseInfo) {
   return 'Marca'
 }
 
+function phaseMetricHeader(phaseInfo) {
+  const label = phaseMetricLabel(phaseInfo)
+  return Number(phaseInfo?.tie_break_enabled || 0) ? `${label} + TB` : label
+}
+
 function formatSecondsToHMS(totalSeconds) {
   const n = Number(totalSeconds)
   if (!Number.isFinite(n)) return '-'
@@ -97,6 +102,33 @@ function metricValue(v, phaseInfo) {
   if (method === 'rm' || method === 'kilogramos' || method === 'gramos' || method === 'libras') return `${v}`
   if (method === 'posicion') return `#${v}`
   return v
+}
+
+function tieBreakValue(value, phaseInfo) {
+  if (value == null) return ''
+  const method = (phaseInfo?.tie_break_method || 'for_time').toString().toLowerCase()
+  const tiePhase = { measurement_method: method, tipo: method === 'for_time' || method === 'tiempo_hms' ? 'tiempo' : 'cantidad' }
+  return metricValue(value, tiePhase)
+}
+
+function TieBreakLine({ value, phaseInfo, compact = false }) {
+  if (!Number(phaseInfo?.tie_break_enabled || 0) || value == null) return null
+  return (
+    <span
+      title="Desempate usado para ordenar atletas con la misma marca"
+      style={{
+        display: compact ? 'inline' : 'block',
+        marginTop: compact ? 0 : 3,
+        marginLeft: compact ? 6 : 0,
+        color: THEME.accent,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      TB {tieBreakValue(value, phaseInfo)}
+    </span>
+  )
 }
 
 function phaseStatusIcon(estado, size = 14) {
@@ -417,7 +449,10 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       {/* Meta row */}
                       <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap' }}>
                         {phaseInfo && p.mejor_marca != null && (
-                          <span style={{ color: THEME.ink, fontWeight: 500 }}>{phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b></span>
+                          <span style={{ color: THEME.ink, fontWeight: 500 }}>
+                            {phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b>
+                            <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact />
+                          </span>
                         )}
                         <span>Sexo: {p.sexo || '-'}</span>
                         {showEventCount && <span>Registros: {p.total_eventos}</span>}
@@ -434,7 +469,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     <th>Nombre</th>
                     <th>Sexo</th>
                     {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
-                    {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
+                    {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricHeader(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
                     {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
                     {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
@@ -461,7 +496,12 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         </td>
                         <td style={{ color: THEME.muted }}>{p.sexo || '-'}</td>
                         {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{p.total_eventos}</td>}
-                        {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(p.mejor_marca, phaseInfo)}</td>}
+                        {phaseInfo && (
+                          <td style={{ textAlign: 'center', color: THEME.muted }}>
+                            <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValue(p.mejor_marca, phaseInfo)}</div>
+                            <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} />
+                          </td>
+                        )}
                         <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                           {p.total_puntos}
                         </td>

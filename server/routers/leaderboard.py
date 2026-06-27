@@ -116,7 +116,7 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
 
 
 def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
-    """dict[(phase_id, user_id)] = {sum, count, min, max}. phase_id may be None."""
+    """dict[(phase_id, user_id)] = {sum, count, min, max, min_tiebreak, max_tiebreak}."""
     rows = session.execute(text("""
         SELECT
             phase_id,
@@ -124,7 +124,9 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             COALESCE(SUM(puntos), 0)::int AS sum_pts,
             COUNT(id)::int                AS cnt,
             MIN(marca)                    AS min_mark,
-            MAX(marca)                    AS max_mark
+            MAX(marca)                    AS max_mark,
+            MIN(tiebreak)                 AS min_tiebreak,
+            MAX(tiebreak)                 AS max_tiebreak
         FROM results
         WHERE competition_id = :cid
           AND team_id IS NULL
@@ -137,9 +139,16 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "min_tiebreak": int(r["min_tiebreak"]) if r["min_tiebreak"] is not None else None,
+            "max_tiebreak": int(r["max_tiebreak"]) if r["max_tiebreak"] is not None else None,
         }
         for r in rows
     }
+
+
+def _phase_tiebreak_lower_is_better(phase: CompetitionPhase | None) -> bool:
+    method = (getattr(phase, "tie_break_method", None) or "for_time").strip().lower() if phase else "for_time"
+    return method in {"for_time", "tiempo_hms", "tiempo", "posicion"}
 
 
 def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -> dict:
@@ -257,6 +266,7 @@ def _build_ind_rows(
     ind_totals_by_pid: dict,
     phase_id: int | None,
     lower_is_better: bool,
+    tiebreak_lower_is_better: bool = True,
 ) -> list[dict]:
     rows: list[dict] = []
     if phase_id is None:
@@ -281,10 +291,12 @@ def _build_ind_rows(
             data = ind_points_per_phase.get((phase_id, p["id"]))
             if data:
                 mark = data["min"] if lower_is_better else data["max"]
+                tiebreak = data["min_tiebreak"] if tiebreak_lower_is_better else data["max_tiebreak"]
                 total = int(data["sum"])
                 events = int(data["count"])
             else:
                 mark = None
+                tiebreak = None
                 total = 0
                 events = 0
             rows.append({
@@ -300,6 +312,7 @@ def _build_ind_rows(
                 "total_puntos": total,
                 "total_eventos": events,
                 "mejor_marca": mark,
+                "tiebreak": tiebreak,
             })
     return rows
 
@@ -562,12 +575,14 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     phases_data = []
     for phase in phases:
         phase_lower_is_better = _phase_lower_is_better(phase)
+        phase_tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
         phase_rows = _build_ind_rows(
             participants_meta,
             ind_points_per_phase,
             ind_totals_by_pid,
             phase_id=int(phase.id),
             lower_is_better=phase_lower_is_better,
+            tiebreak_lower_is_better=phase_tiebreak_lower_is_better,
         ) if show_individual else []
         phase_mode = (phase.team_result_mode or "sum_two").strip().lower()
         if phase_mode not in {"sum_two", "single_member", "total"}:
@@ -596,6 +611,8 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "tipo": type_from_measurement_method(getattr(phase, "measurement_method", None)),
             "measurement_method": normalize_phase_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None)),
             "winner_rule": getattr(phase, "winner_rule", None),
+            "tie_break_enabled": int(getattr(phase, "tie_break_enabled", 0) or 0),
+            "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_status_map.get(int(phase.id), phase.estado),
             "descripcion": phase.descripcion,
