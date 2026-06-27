@@ -2141,8 +2141,6 @@ function createPhaseFormState() {
     team_result_mode: 'sum_two',
     tie_break_enabled: 0,
     tie_break_method: 'for_time',
-    heat_transition_minutes: '',
-    category_transition_minutes: '',
     estado: 'pendiente',
     is_visible: 1,
     start_at: '',
@@ -2161,8 +2159,6 @@ function createPhaseDraftState(phase) {
     team_result_mode: phase.team_result_mode || 'sum_two',
     tie_break_enabled: Number(phase.tie_break_enabled || 0),
     tie_break_method: normalizeMeasurementMethod(phase.tie_break_method || 'for_time', 'tiempo'),
-    heat_transition_minutes: phase.heat_transition_seconds ? String(Math.round(Number(phase.heat_transition_seconds) / 60)) : '',
-    category_transition_minutes: phase.category_transition_seconds ? String(Math.round(Number(phase.category_transition_seconds) / 60)) : '',
     estado: phase.estado || 'pendiente',
     is_visible: phase.is_visible == null ? 1 : Number(phase.is_visible),
     start_at: toDateInput(phase.start_at),
@@ -2211,8 +2207,6 @@ function buildPhasePayload(values, orden = 0) {
   }
   const timeCapMin = parseInt(values.time_cap, 10)
   const timeCap = Number.isFinite(timeCapMin) && timeCapMin > 0 ? timeCapMin * 60 : null
-  const heatTransitionMin = parseInt(values.heat_transition_minutes, 10)
-  const categoryTransitionMin = parseInt(values.category_transition_minutes, 10)
   const payload = {
     nombre: String(values.nombre || '').trim(),
     phase_format: activities.length > 1 ? 'wod' : 'activity',
@@ -2223,8 +2217,6 @@ function buildPhasePayload(values, orden = 0) {
     team_result_mode: values.team_result_mode || 'sum_two',
     tie_break_enabled: Number(values.tie_break_enabled || 0) ? 1 : 0,
     tie_break_method: normalizeMeasurementMethod(values.tie_break_method || 'for_time', 'tiempo'),
-    heat_transition_seconds: Number.isFinite(heatTransitionMin) && heatTransitionMin > 0 ? heatTransitionMin * 60 : 0,
-    category_transition_seconds: Number.isFinite(categoryTransitionMin) && categoryTransitionMin > 0 ? categoryTransitionMin * 60 : 0,
     estado: values.estado || 'pendiente',
     is_visible: Number(values.is_visible == null ? 1 : values.is_visible) ? 1 : 0,
     start_at: dateInputToStartOfDay(values.start_at),
@@ -2798,14 +2790,6 @@ function PhasesModal({ competition, onClose, inline = false }) {
                             {PHASE_MEASUREMENT_METHODS.map(m => <option key={`tb-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                           </select>
                         </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-                          <input type="number" min="0" max="999" value={form.heat_transition_minutes} onChange={e => setForm(prev => ({ ...prev, heat_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 2" />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-                          <input type="number" min="0" max="999" value={form.category_transition_minutes} onChange={e => setForm(prev => ({ ...prev, category_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 8" />
-                        </div>
                       </div>
                       {currentMethod === 'rm' && (
                         <div style={{ borderRadius: 12, border: '1px solid rgba(94,234,212,0.2)', background: 'rgba(94,234,212,0.08)', padding: '10px 12px', color: '#D9FFFA', fontSize: 12 }}>
@@ -3167,16 +3151,6 @@ function PhasesModal({ competition, onClose, inline = false }) {
                   <select value={phaseDrafts[ph.id]?.tie_break_method ?? normalizeMeasurementMethod(ph.tie_break_method || 'for_time', 'tiempo')} onChange={e => patchPhaseDraft(ph.id, 'tie_break_method', e.target.value)} disabled={!(phaseDrafts[ph.id]?.tie_break_enabled ?? ph.tie_break_enabled)}>
                     {PHASE_MEASUREMENT_METHODS.map(m => <option key={`edit-tb-${ph.id}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
                   </select>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-                    <input type="number" min="0" max="999" value={phaseDrafts[ph.id]?.heat_transition_minutes ?? (ph.heat_transition_seconds ? String(Math.round(Number(ph.heat_transition_seconds) / 60)) : '')} onChange={e => patchPhaseDraft(ph.id, 'heat_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 2" />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-                    <input type="number" min="0" max="999" value={phaseDrafts[ph.id]?.category_transition_minutes ?? (ph.category_transition_seconds ? String(Math.round(Number(ph.category_transition_seconds) / 60)) : '')} onChange={e => patchPhaseDraft(ph.id, 'category_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 8" />
-                  </div>
                 </div>
               </div>
 
@@ -4308,7 +4282,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
   const [categoriesLoaded, setCategoriesLoaded] = useState(!isEdit)
   const [newCat, setNewCat] = useState({ nombre: '', descripcion: '', modality: 'individual', enrollment_price: 0, max_capacity: '', registration_enabled: 1 })
   const [phases, setPhases] = useState([])
-  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', heat_transition_minutes: '', category_transition_minutes: '', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
+  const [newPhase, setNewPhase] = useState({ nombre: '', block_name: '', modality: 'individual', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' })
   const [questions, setQuestions] = useState([])
   const [questionDraft, setQuestionDraft] = useState({ label: '', field_type: 'text', required: 0, placeholder: '' })
   const [scheduleItems, setScheduleItems] = useState([])
@@ -4438,8 +4412,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           team_result_mode: p.team_result_mode || 'sum_two',
           tie_break_enabled: Number(p.tie_break_enabled || 0),
           tie_break_method: normalizeMeasurementMethod(p.tie_break_method || 'for_time', 'tiempo'),
-          heat_transition_minutes: p.heat_transition_seconds ? String(Math.round(Number(p.heat_transition_seconds) / 60)) : '',
-          category_transition_minutes: p.category_transition_seconds ? String(Math.round(Number(p.category_transition_seconds) / 60)) : '',
           is_visible: p.is_visible == null ? 1 : Number(p.is_visible),
           start_at: toDateInput(p.start_at),
           end_at: toDateInput(p.end_at),
@@ -4585,8 +4557,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       team_result_mode: newPhase.team_result_mode,
       tie_break_enabled: Number(newPhase.tie_break_enabled || 0) ? 1 : 0,
       tie_break_method: normalizeMeasurementMethod(newPhase.tie_break_method || 'for_time', 'tiempo'),
-      heat_transition_minutes: newPhase.heat_transition_minutes || '',
-      category_transition_minutes: newPhase.category_transition_minutes || '',
       is_visible: Number(newPhase.is_visible == null ? 1 : newPhase.is_visible) ? 1 : 0,
       start_at: newPhase.start_at || '',
       end_at: newPhase.end_at || '',
@@ -4597,7 +4567,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       part_b_measurement_method: newPhase.part_b_measurement_method || 'for_time',
       catOverrides: newPhaseCatOverrides,
     }])
-    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', heat_transition_minutes: '', category_transition_minutes: '', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' }))
+    setNewPhase(prev => ({ ...prev, nombre: '', block_name: prev.block_name || '', workout_format: 'for_time', measurement_method: 'for_time', descripcion: '', team_result_mode: 'sum_two', tie_break_enabled: 0, tie_break_method: 'for_time', is_visible: 1, start_at: '', end_at: '', time_cap: '', part_b_enabled: false, part_b_descripcion: '', part_b_time_cap: '', part_b_measurement_method: 'for_time' }))
     setNewPhaseCatOverrides({})
     return true
   }
@@ -6124,14 +6094,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
               {PHASE_MEASUREMENT_METHODS.map(m => <option key={`visible-new-tb-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
             </select>
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-            <input type="number" min="0" max="999" value={newPhase.heat_transition_minutes || ''} onChange={e => setNewPhase(p => ({ ...p, heat_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 2" />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-            <input type="number" min="0" max="999" value={newPhase.category_transition_minutes || ''} onChange={e => setNewPhase(p => ({ ...p, category_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Ej: 8" />
-          </div>
           {(() => {
             const compStart = parseCalendarDate(form.competition_start)
             const compEnd = parseCalendarDate(form.competition_end)
@@ -6930,14 +6892,6 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <select value={editingPhase.tie_break_method || 'for_time'} onChange={e => updatePhase(editingPhase.id, 'tie_break_method', e.target.value)} disabled={!editingPhase.tie_break_enabled}>
               {PHASE_MEASUREMENT_METHODS.map(m => <option key={`visible-edit-tb-${editingPhase.id}-${m}`} value={m}>{PHASE_MEASUREMENT_LABELS[m] || m}</option>)}
             </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Cambio heat <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-            <input type="number" min="0" max="999" value={editingPhase.heat_transition_minutes || ''} onChange={e => updatePhase(editingPhase.id, 'heat_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 2" />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Cambio categoria <span style={{ color: '#6B7280', fontWeight: 400 }}>(min)</span></label>
-            <input type="number" min="0" max="999" value={editingPhase.category_transition_minutes || ''} onChange={e => updatePhase(editingPhase.id, 'category_transition_minutes', e.target.value.replace(/\D/g, ''))} placeholder="Ej: 8" />
           </div>
           {(() => {
             const compStart = parseCalendarDate(form.competition_start)
@@ -8475,6 +8429,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     pending: categoryRows.filter(item => item.status !== 'scored').length,
     scored: categoryRows.filter(item => item.status === 'scored').length,
   }
+  const selectedTransitionHeat = heatFilter && heatFilter !== '__unassigned__'
+    ? visibleHeats.find(item => String(item.id) === String(heatFilter))
+    : visibleHeats[0]
   const completionPct = selectedHeatStats.total
     ? Math.round((selectedHeatStats.scored / selectedHeatStats.total) * 100)
     : 0
@@ -8658,7 +8615,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
               {selectedHeatStats.scored}/{selectedHeatStats.total} cargados · {selectedHeatStats.pending} pendientes
             </div>
             <div style={{ color: '#6B7280', fontSize: 11, marginTop: 3 }}>
-              Cambio heat: {formatTransitionMinutes(activePhase?.heat_transition_seconds)} · Cambio categoria: {formatTransitionMinutes(activePhase?.category_transition_seconds)}
+              Cambio heat: {formatTransitionMinutes(selectedTransitionHeat?.heat_transition_seconds)} · Cambio categoria: {formatTransitionMinutes(selectedTransitionHeat?.category_transition_seconds)}
               {tieBreakActive ? ` · Tie break: ${tieBreakInputConfig.label}` : ''}
             </div>
           </div>

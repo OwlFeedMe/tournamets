@@ -1049,6 +1049,8 @@ def list_judge_score_manual_options(
                     "id": int(item.id),
                     "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}",
                     "heat_number": int(item.heat_number or 0),
+                    "heat_transition_seconds": int(getattr(item, "heat_transition_seconds", 0) or 0),
+                    "category_transition_seconds": int(getattr(item, "category_transition_seconds", 0) or 0),
                 }
                 for item in heat_rows
             ],
@@ -1120,6 +1122,8 @@ def list_judge_score_manual_options(
                 "id": int(item.id),
                 "nombre": str(item.nombre or "").strip() or f"Heat {item.heat_number}",
                 "heat_number": int(item.heat_number or 0),
+                "heat_transition_seconds": int(getattr(item, "heat_transition_seconds", 0) or 0),
+                "category_transition_seconds": int(getattr(item, "category_transition_seconds", 0) or 0),
             }
             for item in heat_rows
         ],

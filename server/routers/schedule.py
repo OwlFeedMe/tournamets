@@ -54,6 +54,8 @@ class HeatInput(BaseModel):
     nombre: str
     heat_number: int = 1
     lane_count: int = 0
+    heat_transition_seconds: int = 0
+    category_transition_seconds: int = 0
     start_at: Optional[datetime] = None
     end_at: Optional[datetime] = None
     location_name: Optional[str] = None
@@ -76,6 +78,8 @@ class HeatGenerateInput(BaseModel):
     first_heat_start_at: Optional[datetime] = None
     heat_duration_minutes: int = 15
     heat_gap_minutes: int = 5
+    heat_transition_seconds: int = 0
+    category_transition_seconds: int = 0
     delete_existing: int = 1
 
 
@@ -92,6 +96,13 @@ def _normalize_dt(value: datetime | None) -> datetime | None:
     if value.tzinfo is not None:
         return value.astimezone(timezone.utc)
     return value.replace(tzinfo=timezone.utc)
+
+
+def _normalize_transition_seconds(value: object) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _phase_sort_key(phase: CompetitionPhase) -> tuple[int, int, int]:
@@ -323,6 +334,8 @@ def _serialize_heat_payload(
         "heat_label": heat.nombre,
         "heat_number": int(heat.heat_number or 0),
         "lane_count": int(heat.lane_count or 0),
+        "heat_transition_seconds": _normalize_transition_seconds(getattr(heat, "heat_transition_seconds", 0)),
+        "category_transition_seconds": _normalize_transition_seconds(getattr(heat, "category_transition_seconds", 0)),
         "start_at": heat.start_at.isoformat() if heat.start_at else None,
         "end_at": heat.end_at.isoformat() if heat.end_at else None,
         "location_name": heat.location_name,
@@ -690,6 +703,8 @@ def create_heat(
         nombre=body.nombre.strip(),
         heat_number=max(1, int(body.heat_number or 1)),
         lane_count=max(0, int(body.lane_count or 0)),
+        heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
+        category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
         start_at=_normalize_dt(body.start_at),
         end_at=_normalize_dt(body.end_at),
         location_name=(body.location_name or "").strip() or None,
@@ -727,6 +742,8 @@ def update_heat(
     heat.nombre = body.nombre.strip()
     heat.heat_number = max(1, int(body.heat_number or 1))
     heat.lane_count = max(0, int(body.lane_count or 0))
+    heat.heat_transition_seconds = _normalize_transition_seconds(body.heat_transition_seconds)
+    heat.category_transition_seconds = _normalize_transition_seconds(body.category_transition_seconds)
     heat.start_at = _normalize_dt(body.start_at)
     heat.end_at = _normalize_dt(body.end_at)
     heat.location_name = (body.location_name or "").strip() or None
@@ -920,11 +937,16 @@ def generate_heats(
     first_start = _normalize_dt(body.first_heat_start_at) or _normalize_dt(phase.start_at)
     duration = max(1, int(body.heat_duration_minutes or 15))
     gap = max(0, int(body.heat_gap_minutes or 0))
+    heat_transition_seconds = _normalize_transition_seconds(body.heat_transition_seconds)
+    category_transition_seconds = _normalize_transition_seconds(body.category_transition_seconds)
+    if heat_transition_seconds == 0 and gap > 0:
+        heat_transition_seconds = gap * 60
     lane_order = _build_lane_order(lane_count)
     seed_mode = _phase_seed_mode(session, competition_id, phase)
 
     created_ids: list[int] = []
-    global_sequence = 0
+    current_start = first_start
+    previous_category: str | None = None
     for plan_item in plan_items:
         entries = plan_item["entries"]
         chunks = [entries[i:i + lane_count] for i in range(0, len(entries), lane_count)]
@@ -934,17 +956,25 @@ def generate_heats(
             if not current_chunk:
                 continue
             display_number = heat_index + 1
-            global_sequence += 1
-            start_at = first_start + timedelta(minutes=((global_sequence - 1) * (duration + gap))) if first_start else None
+            current_category = str(plan_item["heat_categoria"] or "")
+            start_at = current_start
+            if (
+                start_at
+                and previous_category is not None
+                and current_category != previous_category
+                and category_transition_seconds > heat_transition_seconds
+            ):
+                start_at = start_at + timedelta(seconds=category_transition_seconds - heat_transition_seconds)
             end_at = start_at + timedelta(minutes=duration) if start_at else None
-            category_prefix = "" if plan_item["mixed"] else f"{plan_item['categoria']} · "
             heat = CompetitionHeat(
                 competition_id=competition_id,
                 phase_id=body.phase_id,
                 categoria=plan_item["heat_categoria"],
-                nombre=f"{category_prefix}{phase.nombre} · Heat {display_number}",
+                nombre=f"Heat {display_number}",
                 heat_number=display_number,
                 lane_count=lane_count,
+                heat_transition_seconds=heat_transition_seconds,
+                category_transition_seconds=category_transition_seconds,
                 start_at=start_at,
                 end_at=end_at,
                 location_name=(body.location_name or "").strip() or None,
@@ -969,6 +999,9 @@ def generate_heats(
                 )
             _replace_assignments(session, heat, assignments)
             session.commit()
+            if current_start:
+                current_start = end_at + timedelta(seconds=heat_transition_seconds) if end_at else None
+                previous_category = current_category
 
     return {
         "ok": True,

@@ -34,6 +34,21 @@ function formatDateTime(value) {
   }).format(date)
 }
 
+function secondsToMinutesInput(value) {
+  const seconds = Number(value || 0)
+  return seconds > 0 ? String(Math.round(seconds / 60)) : ''
+}
+
+function minutesInputToSeconds(value) {
+  const minutes = parseInt(value, 10)
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 : 0
+}
+
+function formatTransitionMinutes(value) {
+  const minutes = Math.round(Number(value || 0) / 60)
+  return minutes > 0 ? `${minutes} min` : 'Sin pausa'
+}
+
 function categoriesForPhase(phases, categories, phaseId) {
   const phase = (phases || []).find((item) => String(item.id) === String(phaseId))
   const modality = String(phase?.modality || 'individual').trim().toLowerCase()
@@ -113,7 +128,8 @@ export function CompetitionSchedulePanel({ competition }) {
     heat_count: '',
     first_heat_start_at: '',
     heat_duration_minutes: 15,
-    heat_gap_minutes: 5,
+    heat_transition_minutes: 5,
+    category_transition_minutes: '',
     location_name: '',
     location_detail: '',
     note: '',
@@ -260,7 +276,9 @@ export function CompetitionSchedulePanel({ competition }) {
     heat_count: form.generation_mode === 'by_category' ? null : (form.heat_count ? Number(form.heat_count) : null),
     first_heat_start_at: fromLocalDateTimeInput(form.first_heat_start_at),
     heat_duration_minutes: Number(form.heat_duration_minutes || 15),
-    heat_gap_minutes: Number(form.heat_gap_minutes || 0),
+    heat_gap_minutes: 0,
+    heat_transition_seconds: minutesInputToSeconds(form.heat_transition_minutes),
+    category_transition_seconds: minutesInputToSeconds(form.category_transition_minutes),
     location_name: form.location_name.trim() || null,
     location_detail: form.location_detail.trim() || null,
     note: form.note.trim() || null,
@@ -325,6 +343,8 @@ export function CompetitionSchedulePanel({ competition }) {
       lane_count: item.lane_count || Math.max((item.participants || []).length, 1),
       start_at: toLocalDateTimeInput(item.start_at),
       end_at: toLocalDateTimeInput(item.end_at),
+      heat_transition_minutes: secondsToMinutesInput(item.heat_transition_seconds),
+      category_transition_minutes: secondsToMinutesInput(item.category_transition_seconds),
       location_name: item.location_name || '',
       location_detail: item.location_detail || '',
       note: item.note || '',
@@ -425,6 +445,8 @@ export function CompetitionSchedulePanel({ competition }) {
         lane_count: Number(editingHeat.lane_count || 1),
         start_at: fromLocalDateTimeInput(editingHeat.start_at),
         end_at: fromLocalDateTimeInput(editingHeat.end_at),
+        heat_transition_seconds: minutesInputToSeconds(editingHeat.heat_transition_minutes),
+        category_transition_seconds: minutesInputToSeconds(editingHeat.category_transition_minutes),
         location_name: editingHeat.location_name.trim() || null,
         location_detail: editingHeat.location_detail.trim() || null,
         note: editingHeat.note.trim() || null,
@@ -571,8 +593,12 @@ export function CompetitionSchedulePanel({ competition }) {
             <input type="number" min="1" value={form.heat_duration_minutes} onChange={(e) => setForm(prev => ({ ...prev, heat_duration_minutes: e.target.value }))} />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
-            <HelpLabel help="Minutos de pausa entre el final de un heat y el inicio del siguiente. Sirve para transiciones, limpieza o llamados.">Gap</HelpLabel>
-            <input type="number" min="0" value={form.heat_gap_minutes} onChange={(e) => setForm(prev => ({ ...prev, heat_gap_minutes: e.target.value }))} />
+            <HelpLabel help="Minutos entre el final de un heat y el inicio del siguiente dentro de la misma categoria.">Cambio heat</HelpLabel>
+            <input type="number" min="0" max="999" value={form.heat_transition_minutes} onChange={(e) => setForm(prev => ({ ...prev, heat_transition_minutes: e.target.value.replace(/\D/g, '') }))} />
+          </label>
+          <label style={{ display: 'grid', gap: 6 }}>
+            <HelpLabel help="Minutos cuando el siguiente heat cambia de categoria y hay que ajustar implementos, pesos o carriles.">Cambio categoria</HelpLabel>
+            <input type="number" min="0" max="999" value={form.category_transition_minutes} onChange={(e) => setForm(prev => ({ ...prev, category_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Opcional" />
           </label>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ color: '#AAB2C0', fontSize: 12 }}>Ubicacion</span>
@@ -683,6 +709,14 @@ export function CompetitionSchedulePanel({ competition }) {
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: '#AAB2C0', fontSize: 12 }}>Fin</span>
               <input type="datetime-local" value={editingHeat.end_at} onChange={(e) => setEditingHeat(prev => ({ ...prev, end_at: e.target.value }))} />
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <HelpLabel help="Minutos de pausa antes del siguiente heat de la misma categoria.">Cambio heat</HelpLabel>
+              <input type="number" min="0" max="999" value={editingHeat.heat_transition_minutes || ''} onChange={(e) => setEditingHeat(prev => ({ ...prev, heat_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Sin pausa" />
+            </label>
+            <label style={{ display: 'grid', gap: 6 }}>
+              <HelpLabel help="Minutos de pausa antes del siguiente heat cuando cambia la categoria.">Cambio categoria</HelpLabel>
+              <input type="number" min="0" max="999" value={editingHeat.category_transition_minutes || ''} onChange={(e) => setEditingHeat(prev => ({ ...prev, category_transition_minutes: e.target.value.replace(/\D/g, '') }))} placeholder="Sin pausa" />
             </label>
             <label style={{ display: 'grid', gap: 6 }}>
               <span style={{ color: '#AAB2C0', fontSize: 12 }}>Ubicacion</span>
@@ -884,6 +918,7 @@ export function CompetitionSchedulePanel({ competition }) {
                       </div>
                       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', color: '#AAB2C0', fontSize: 13 }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Clock3 size={14} />{formatDateTime(item.start_at)}{item.end_at ? ` - ${formatDateTime(item.end_at)}` : ''}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Clock3 size={14} />Cambio heat {formatTransitionMinutes(item.heat_transition_seconds)} · categoria {formatTransitionMinutes(item.category_transition_seconds)}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><MapPin size={14} />{item.location_name || 'Ubicacion por confirmar'}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Users size={14} />{(item.participants || []).length} asignados</span>
                       </div>

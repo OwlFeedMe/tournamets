@@ -526,6 +526,8 @@ class CompetitionHeat(SQLModel, table=True):
     nombre: str
     heat_number: int = Field(default=1)
     lane_count: int = Field(default=0)
+    heat_transition_seconds: int = Field(default=0)
+    category_transition_seconds: int = Field(default=0)
     start_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
