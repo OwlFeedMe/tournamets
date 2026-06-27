@@ -8430,6 +8430,42 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       ))
   }, [categoryRows, heatFilter, statusFilter])
 
+  const tiebreakScopeRows = useMemo(() => (
+    categoryRows.filter(item => {
+      if (!heatFilter) return true
+      return heatFilter === '__unassigned__'
+        ? !item.heat_id
+        : String(item.heat_id || '') === String(heatFilter)
+    })
+  ), [categoryRows, heatFilter])
+
+  const markDuplicateCounts = useMemo(() => {
+    const counts = {}
+    if (!tieBreakActive || !activePhaseMeta) return counts
+    tiebreakScopeRows.forEach(item => {
+      const key = resultEntryKey(item)
+      const rawValue = String(drafts[key] ?? '').trim()
+      if (!rawValue) return
+      const parsed = parseMetricByPhase(rawValue, activePhaseMeta)
+      if (parsed == null) return
+      const markKey = String(parsed)
+      counts[markKey] = (counts[markKey] || 0) + 1
+    })
+    return counts
+  }, [tieBreakActive, activePhaseMeta, tiebreakScopeRows, drafts])
+
+  const shouldAskTieBreak = (item) => {
+    if (!tieBreakActive || !activePhaseMeta) return false
+    const key = resultEntryKey(item)
+    const rawValue = String(drafts[key] ?? '').trim()
+    if (!rawValue) return false
+    const parsed = parseMetricByPhase(rawValue, activePhaseMeta)
+    if (parsed == null) return false
+    return (markDuplicateCounts[String(parsed)] || 0) > 1
+  }
+
+  const anyTieBreakNeeded = filteredRows.some(item => shouldAskTieBreak(item))
+
   const selectedHeatStats = heatFilter ? (heatStats[heatFilter] || { total: 0, pending: 0, scored: 0 }) : {
     total: categoryRows.length,
     pending: categoryRows.filter(item => item.status !== 'scored').length,
@@ -8484,8 +8520,17 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       return
     }
     const tieBreakValue = String(tieBreakDrafts[key] ?? '').trim()
-    const parsedTieBreak = tieBreakActive && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
-    if (tieBreakActive && tieBreakValue && parsedTieBreak == null) {
+    const rowNeedsTieBreak = shouldAskTieBreak(item)
+    const parsedTieBreak = rowNeedsTieBreak && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
+    if (rowNeedsTieBreak && !tieBreakValue) {
+      setMsg({
+        type: 'error',
+        text: 'Esta marca esta empatada. Ingresa tie break para desempatar.',
+      })
+      inputRefs.current[`tb-${key}`]?.focus()
+      return
+    }
+    if (rowNeedsTieBreak && parsedTieBreak == null) {
       setMsg({
         type: 'error',
         text: isTimeMeasurement(tieBreakPhase.measurement_method)
@@ -8505,7 +8550,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         user_id: item.user_id ?? null,
         team_id: item.team_id ?? null,
         marca_raw: value,
-        tiebreak_raw: tieBreakActive ? tieBreakValue : undefined,
+        tiebreak_raw: rowNeedsTieBreak ? tieBreakValue : undefined,
         station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${heatDisplayNumber(item)}` : 'Carga por heat',
       })
       setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
@@ -8622,11 +8667,11 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
             </div>
             <div style={{ color: '#6B7280', fontSize: 11, marginTop: 3 }}>
               Cambio heat: {formatTransitionMinutes(selectedTransitionHeat?.heat_transition_seconds)} · Cambio categoria: {formatTransitionMinutes(selectedTransitionHeat?.category_transition_seconds)}
-              {tieBreakActive ? ` · Tie break: ${tieBreakInputConfig.label}` : ''}
+              {tieBreakActive ? ` · Tie break: solo si hay empate` : ''}
             </div>
             {tieBreakActive ? (
               <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid rgba(0,194,168,0.32)', background: 'rgba(0,194,168,0.10)', color: '#9AF7EA', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 900 }}>
-                Tie break activo: llena marca y desempate por atleta.
+                Tie break activo: el campo aparece automaticamente cuando una marca se repite.
               </div>
             ) : null}
           </div>
@@ -8668,6 +8713,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
           <div style={{ display: 'grid', gap: 10 }}>
             {filteredRows.map(item => {
               const key = resultEntryKey(item)
+              const rowNeedsTieBreak = shouldAskTieBreak(item)
               return (
                 <div key={key} style={{ border: '1px solid #252A33', borderRadius: 16, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
@@ -8681,7 +8727,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                   {Array.isArray(item.member_names) && item.member_names.length ? (
                     <div style={{ color: '#6B7280', fontSize: 12 }}>{item.member_names.join(' | ')}</div>
                   ) : null}
-                  <div style={{ display: 'grid', gridTemplateColumns: tieBreakActive ? '1fr 1fr auto' : '1fr auto', gap: 8, alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>{inputConfig.label}</label>
                       <input
@@ -8698,7 +8744,12 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                         placeholder={inputConfig.placeholder}
                       />
                     </div>
-                    {tieBreakActive ? (
+                    <button type="button" className="btn-primary btn-sm" onClick={() => saveOne(item)} disabled={savingKey === key}>
+                      {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                    </button>
+                  </div>
+                  {rowNeedsTieBreak ? (
+                    <div style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', borderRadius: 12, padding: 10 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label>Tie break <span style={{ color: '#6B7280', fontWeight: 400 }}>(desempate)</span></label>
                         <input
@@ -8715,11 +8766,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                           placeholder={tieBreakInputConfig.placeholder}
                         />
                       </div>
-                    ) : null}
-                    <button type="button" className="btn-primary btn-sm" onClick={() => saveOne(item)} disabled={savingKey === key}>
-                      {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
-                    </button>
-                  </div>
+                      <div style={{ color: '#9AF7EA', fontSize: 11, marginTop: 6, fontWeight: 800 }}>Marca repetida: este desempate define el orden.</div>
+                    </div>
+                  ) : null}
                 </div>
               )
             })}
@@ -8733,7 +8782,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                   <th>Atleta / Equipo</th>
                   <th>Categoria</th>
                   <th style={{ width: 180 }}>{inputConfig.label}</th>
-                  {tieBreakActive ? <th style={{ width: 170 }}>Tie break (desempate)</th> : null}
+                  {anyTieBreakNeeded ? <th style={{ width: 190 }}>Tie break (solo empates)</th> : null}
                   <th style={{ width: 150 }}>Estado</th>
                   <th style={{ width: 120 }}></th>
                 </tr>
@@ -8741,6 +8790,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
               <tbody>
                 {filteredRows.map(item => {
                   const key = resultEntryKey(item)
+                  const rowNeedsTieBreak = shouldAskTieBreak(item)
                   return (
                     <tr key={key}>
                       <td style={{ color: '#FFB36F', fontWeight: 900 }}>{item.lane_number || '-'}</td>
@@ -8767,22 +8817,29 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                           style={{ minWidth: 120 }}
                         />
                       </td>
-                      {tieBreakActive ? (
+                      {anyTieBreakNeeded ? (
                         <td>
-                          <input
-                            ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
-                            type={tieBreakInputConfig.type}
-                            value={tieBreakDrafts[key] ?? ''}
-                            onChange={event => changeTieBreakDraft(item, event.target.value)}
-                            onKeyDown={event => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault()
-                                saveOne(item)
-                              }
-                            }}
-                            placeholder={tieBreakInputConfig.placeholder}
-                            style={{ minWidth: 110 }}
-                          />
+                          {rowNeedsTieBreak ? (
+                            <div style={{ display: 'grid', gap: 4 }}>
+                              <input
+                                ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
+                                type={tieBreakInputConfig.type}
+                                value={tieBreakDrafts[key] ?? ''}
+                                onChange={event => changeTieBreakDraft(item, event.target.value)}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    saveOne(item)
+                                  }
+                                }}
+                                placeholder={tieBreakInputConfig.placeholder}
+                                style={{ minWidth: 130, borderColor: 'rgba(0,194,168,0.45)' }}
+                              />
+                              <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>Marca repetida</span>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#6B7280', fontSize: 12 }}>No aplica</span>
+                          )}
                         </td>
                       ) : null}
                       <td><ResultStatusPill status={item.status} value={item.existing_formatted} /></td>
