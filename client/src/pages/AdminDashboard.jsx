@@ -1527,6 +1527,10 @@ function formatMarkForPhase(mark, phase, fallback = '') {
   return phaseTypeFromPhase(phase) === 'tiempo' ? formatSecondsToClock(mark) : String(mark)
 }
 
+function isDnfValue(value) {
+  return String(value ?? '').trim().toUpperCase() === 'DNF'
+}
+
 function scoreInputConfig(phase) {
   const phaseType = phaseTypeFromPhase(phase)
   const method = normalizeMeasurementMethod(phase?.measurement_method, phase?.tipo)
@@ -6211,7 +6215,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   const [manualPhaseMeta, setManualPhaseMeta] = useState(null)
   const [heatFilter, setHeatFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('pending')
   const [drafts, setDrafts] = useState({})
   const [tieBreakDrafts, setTieBreakDrafts] = useState({})
   const [savingKey, setSavingKey] = useState('')
@@ -6258,7 +6261,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   useEffect(() => {
     setHeatFilter('')
     setCategoryFilter('')
-    setStatusFilter('pending')
     setDrafts({})
     setTieBreakDrafts({})
     setManualPhaseMeta(null)
@@ -6360,15 +6362,15 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       .filter(item => {
         const heatMatch = !heatFilter
           || (heatFilter === '__unassigned__' ? !item.heat_id : String(item.heat_id || '') === String(heatFilter))
-        const statusMatch = statusFilter === 'all' || item.status === statusFilter
-        return heatMatch && statusMatch
+        return heatMatch
       })
       .sort((a, b) => (
-        Number(a.heat_id || 0) - Number(b.heat_id || 0)
+        (a.status === 'scored' ? 1 : 0) - (b.status === 'scored' ? 1 : 0)
+        || Number(a.heat_id || 0) - Number(b.heat_id || 0)
         || Number(a.lane_number || 999) - Number(b.lane_number || 999)
         || String(a.display_name || '').localeCompare(String(b.display_name || ''))
       ))
-  }, [categoryRows, heatFilter, statusFilter])
+  }, [categoryRows, heatFilter])
 
   const tiebreakScopeRows = useMemo(() => (
     categoryRows.filter(item => {
@@ -6385,7 +6387,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     tiebreakScopeRows.forEach(item => {
       const key = resultEntryKey(item)
       const rawValue = String(drafts[key] ?? '').trim()
-      if (!rawValue) return
+      if (!rawValue || isDnfValue(rawValue)) return
       const parsed = parseMetricByPhase(rawValue, activePhaseMeta)
       if (parsed == null) return
       const markKey = String(parsed)
@@ -6398,7 +6400,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     if (!tieBreakActive || !activePhaseMeta) return false
     const key = resultEntryKey(item)
     const rawValue = String(drafts[key] ?? '').trim()
-    if (!rawValue) return false
+    if (!rawValue || isDnfValue(rawValue)) return false
     const parsed = parseMetricByPhase(rawValue, activePhaseMeta)
     if (parsed == null) return false
     return (markDuplicateCounts[String(parsed)] || 0) > 1
@@ -6423,6 +6425,19 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     setHeatFilter(value)
   }
 
+  useEffect(() => {
+    if (!heatFilter || heatFilter === '__unassigned__' || !visibleHeats.length) return
+    const currentStats = heatStats[String(heatFilter)]
+    if (!currentStats || currentStats.pending > 0) return
+    const ordered = visibleHeats.map(item => String(item.id))
+    const currentIndex = ordered.indexOf(String(heatFilter))
+    const nextWithPending = ordered.slice(currentIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
+      || ordered.find(id => (heatStats[id]?.pending || 0) > 0)
+    if (nextWithPending && nextWithPending !== String(heatFilter)) {
+      setHeatFilter(nextWithPending)
+    }
+  }, [heatFilter, heatStats, visibleHeats])
+
   const changeDraft = (item, value) => {
     const key = resultEntryKey(item)
     setDrafts(prev => ({ ...prev, [key]: value }))
@@ -6444,12 +6459,13 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     }
   }
 
-  const saveOne = async (item, { moveNext = true } = {}) => {
+  const saveOne = async (item, { moveNext = true, valueOverride = null } = {}) => {
     if (!activePhaseMeta) return
     const key = resultEntryKey(item)
-    const value = String(drafts[key] ?? '').trim()
-    const parsed = parseMetricByPhase(value, activePhaseMeta)
-    if (parsed == null) {
+    const value = String(valueOverride ?? drafts[key] ?? '').trim()
+    const isDnf = isDnfValue(value)
+    const parsed = isDnf ? 'DNF' : parseMetricByPhase(value, activePhaseMeta)
+    if (!isDnf && parsed == null) {
       setMsg({
         type: 'error',
         text: phaseTypeFromPhase(activePhaseMeta) === 'tiempo'
@@ -6462,15 +6478,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     const tieBreakValue = String(tieBreakDrafts[key] ?? '').trim()
     const rowNeedsTieBreak = shouldAskTieBreak(item)
     const parsedTieBreak = rowNeedsTieBreak && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
-    if (rowNeedsTieBreak && !tieBreakValue) {
-      setMsg({
-        type: 'error',
-        text: 'Esta marca esta empatada. Ingresa tie break para desempatar.',
-      })
-      inputRefs.current[`tb-${key}`]?.focus()
-      return
-    }
-    if (rowNeedsTieBreak && parsedTieBreak == null) {
+    if (rowNeedsTieBreak && tieBreakValue && parsedTieBreak == null) {
       setMsg({
         type: 'error',
         text: isTimeMeasurement(tieBreakPhase.measurement_method)
@@ -6490,7 +6498,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         user_id: item.user_id ?? null,
         team_id: item.team_id ?? null,
         marca_raw: value,
-        tiebreak_raw: rowNeedsTieBreak ? tieBreakValue : undefined,
+        tiebreak_raw: rowNeedsTieBreak && tieBreakValue ? tieBreakValue : undefined,
         station: heatFilter && heatFilter !== '__unassigned__' ? `Heat ${heatDisplayNumber(item)}` : 'Carga por heat',
       })
       setMsg({ type: 'success', text: item.status === 'scored' ? 'Resultado actualizado.' : 'Resultado cargado.' })
@@ -6504,19 +6512,10 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     }
   }
 
-  const saveVisible = async () => {
-    const candidates = filteredRows.filter(item => {
-      const key = resultEntryKey(item)
-      return String(drafts[key] ?? '').trim()
-    })
-    if (!candidates.length) {
-      setMsg({ type: 'error', text: 'No hay marcas para guardar en este heat.' })
-      return
-    }
-    for (const item of candidates) {
-      // eslint-disable-next-line no-await-in-loop
-      await saveOne(item, { moveNext: false })
-    }
+  const saveDnf = (item) => {
+    const key = resultEntryKey(item)
+    setDrafts(prev => ({ ...prev, [key]: 'DNF' }))
+    saveOne(item, { valueOverride: 'DNF' })
   }
 
   const goToNextHeat = () => {
@@ -6540,12 +6539,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="btn-secondary btn-sm" onClick={() => setRefreshKey(current => current + 1)} disabled={loading}>
-            {loading ? 'Actualizando...' : 'Actualizar'}
-          </button>
-          <button type="button" className="btn-primary btn-sm" onClick={saveVisible} disabled={loading || savingKey || !filteredRows.length}>
-            Guardar visibles
-          </button>
           <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!visibleHeats.length}>
             Siguiente heat pendiente
           </button>
@@ -6623,21 +6616,8 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            ['pending', 'Pendientes'],
-            ['scored', 'Cargados'],
-            ['all', 'Todos'],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              className={statusFilter === id ? 'btn-success btn-sm' : 'btn-secondary btn-sm'}
-              onClick={() => setStatusFilter(id)}
-            >
-              {label}
-            </button>
-          ))}
+        <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+          Carga la marca, usa DNF si no inicio o no termino. Los pendientes quedan arriba y los cargados bajan solos.
         </div>
       </div>
 
@@ -6667,12 +6647,12 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                   {Array.isArray(item.member_names) && item.member_names.length ? (
                     <div style={{ color: '#6B7280', fontSize: 12 }}>{item.member_names.join(' | ')}</div>
                   ) : null}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>{inputConfig.label}</label>
                       <input
                         ref={node => { if (node) inputRefs.current[key] = node }}
-                        type={inputConfig.type}
+                        type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
                         value={drafts[key] ?? ''}
                         onChange={event => changeDraft(item, event.target.value)}
                         onKeyDown={event => {
@@ -6684,6 +6664,9 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                         placeholder={inputConfig.placeholder}
                       />
                     </div>
+                    <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
+                      DNF
+                    </button>
                     <button type="button" className="btn-primary btn-sm" onClick={() => saveOne(item)} disabled={savingKey === key}>
                       {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
                     </button>
@@ -6706,7 +6689,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                           placeholder={tieBreakInputConfig.placeholder}
                         />
                       </div>
-                      <div style={{ color: '#9AF7EA', fontSize: 11, marginTop: 6, fontWeight: 800 }}>Marca repetida: este desempate define el orden.</div>
+                      <div style={{ color: '#9AF7EA', fontSize: 11, marginTop: 6, fontWeight: 800 }}>Marca repetida. Si lo dejas vacio, comparten posicion.</div>
                     </div>
                   ) : null}
                 </div>
@@ -6744,7 +6727,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                       <td>
                         <input
                           ref={node => { if (node) inputRefs.current[key] = node }}
-                          type={inputConfig.type}
+                          type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
                           value={drafts[key] ?? ''}
                           onChange={event => changeDraft(item, event.target.value)}
                           onKeyDown={event => {
@@ -6784,9 +6767,14 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                       ) : null}
                       <td><ResultStatusPill status={item.status} value={item.existing_formatted} /></td>
                       <td>
-                        <button type="button" className={item.status === 'scored' ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => saveOne(item)} disabled={savingKey === key}>
-                          {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
+                            DNF
+                          </button>
+                          <button type="button" className={item.status === 'scored' ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => saveOne(item)} disabled={savingKey === key}>
+                            {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )

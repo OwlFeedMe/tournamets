@@ -92,6 +92,50 @@ def _result_rank_key(result: Result, *, lower_is_better: bool, tiebreak_lower_is
     )
 
 
+def _ranked_position_groups(
+    rows: list,
+    *,
+    mark_getter,
+    tiebreak_getter,
+    lower_is_better: bool,
+    tiebreak_lower_is_better: bool,
+) -> list[tuple[int, list]]:
+    ordered = sorted(rows, key=lambda item: (
+        _ranking_value(mark_getter(item), lower_is_better=lower_is_better),
+        int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
+    ))
+    positioned: list[tuple[int, list]] = []
+    position = 1
+    index = 0
+    while index < len(ordered):
+        mark = mark_getter(ordered[index])
+        mark_group = [ordered[index]]
+        index += 1
+        while index < len(ordered) and mark_getter(ordered[index]) == mark:
+            mark_group.append(ordered[index])
+            index += 1
+
+        if len(mark_group) > 1 and all(tiebreak_getter(item) is not None for item in mark_group):
+            mark_group.sort(key=lambda item: (
+                _ranking_value(tiebreak_getter(item), lower_is_better=tiebreak_lower_is_better),
+                int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
+            ))
+            tie_index = 0
+            while tie_index < len(mark_group):
+                tie_value = tiebreak_getter(mark_group[tie_index])
+                tie_items = [mark_group[tie_index]]
+                tie_index += 1
+                while tie_index < len(mark_group) and tiebreak_getter(mark_group[tie_index]) == tie_value:
+                    tie_items.append(mark_group[tie_index])
+                    tie_index += 1
+                positioned.append((position, tie_items))
+                position += len(tie_items)
+        else:
+            positioned.append((position, mark_group))
+            position += len(mark_group)
+    return positioned
+
+
 def _normalize_team_result_mode(raw: str | None) -> str:
     value = (raw or "").strip().lower()
     if value in {"sum_two", "single_member", "total"}:
@@ -201,19 +245,21 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
         ranked_team_ids = set()
         for category_entities in entities_by_category.values():
-            category_entities.sort(key=lambda x: (
-                _ranking_value(x[1], lower_is_better=lower_is_better),
-                _ranking_value(x[2], lower_is_better=tiebreak_lower_is_better),
-                x[0],
-            ))
             total = len(category_entities)
-            for idx, (team_id, _team_mark, _team_tiebreak, items) in enumerate(category_entities, 1):
-                ranked_team_ids.add(team_id)
-                pts = idx if score_lower_is_better else (total - idx + 1)
-                for r in items:
-                    r.posicion = idx
-                    r.puntos = int(pts)
-                    session.add(r)
+            for position, positioned_items in _ranked_position_groups(
+                category_entities,
+                mark_getter=lambda item: item[1],
+                tiebreak_getter=lambda item: item[2],
+                lower_is_better=lower_is_better,
+                tiebreak_lower_is_better=tiebreak_lower_is_better,
+            ):
+                pts = position if score_lower_is_better else (total - position + 1)
+                for team_id, _team_mark, _team_tiebreak, items in positioned_items:
+                    ranked_team_ids.add(team_id)
+                    for r in items:
+                        r.posicion = position
+                        r.puntos = int(pts)
+                        session.add(r)
 
         for team_id, items in grouped.items():
             if team_id in ranked_team_ids:
@@ -248,19 +294,33 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped_rows.setdefault(category, []).append(r)
 
         for category_rows in grouped_rows.values():
-            category_rows.sort(key=lambda rr: _result_rank_key(rr, lower_is_better=lower_is_better, tiebreak_lower_is_better=tiebreak_lower_is_better))
             total = len(category_rows)
-            for idx, r in enumerate(category_rows, 1):
-                r.posicion = idx
-                r.puntos = idx if score_lower_is_better else (total - idx + 1)
-                session.add(r)
+            for position, positioned_items in _ranked_position_groups(
+                category_rows,
+                mark_getter=lambda item: item.marca,
+                tiebreak_getter=lambda item: item.tiebreak,
+                lower_is_better=lower_is_better,
+                tiebreak_lower_is_better=tiebreak_lower_is_better,
+            ):
+                pts = position if score_lower_is_better else (total - position + 1)
+                for r in positioned_items:
+                    r.posicion = position
+                    r.puntos = int(pts)
+                    session.add(r)
     else:
-        with_metric.sort(key=lambda r: _result_rank_key(r, lower_is_better=lower_is_better, tiebreak_lower_is_better=tiebreak_lower_is_better))
         total = len(with_metric)
-        for idx, r in enumerate(with_metric, 1):
-            r.posicion = idx
-            r.puntos = idx if score_lower_is_better else (total - idx + 1)
-            session.add(r)
+        for position, positioned_items in _ranked_position_groups(
+            with_metric,
+            mark_getter=lambda item: item.marca,
+            tiebreak_getter=lambda item: item.tiebreak,
+            lower_is_better=lower_is_better,
+            tiebreak_lower_is_better=tiebreak_lower_is_better,
+        ):
+            pts = position if score_lower_is_better else (total - position + 1)
+            for r in positioned_items:
+                r.posicion = position
+                r.puntos = int(pts)
+                session.add(r)
     for r in without_metric:
         r.posicion = None
         session.add(r)

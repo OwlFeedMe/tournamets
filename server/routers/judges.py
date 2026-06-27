@@ -312,6 +312,30 @@ def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
     }
 
 
+DNF_MARK_HIGH = 2_147_483_647
+DNF_MARK_LOW = -2_147_483_648
+
+
+def _phase_lower_is_better_for_dnf(phase: CompetitionPhase | None) -> bool:
+    phase_type = _phase_type_value(phase)
+    winner_rule = str(getattr(phase, "winner_rule", None) or "").strip().lower()
+    if winner_rule in {"lower_wins", "higher_wins"}:
+        return winner_rule == "lower_wins"
+    return phase_type in {"tiempo", "posicion"} or _phase_uses_time_input(phase)
+
+
+def _is_dnf_raw(raw: object) -> bool:
+    return str(raw or "").strip().upper() == "DNF"
+
+
+def _dnf_mark_for_phase(phase: CompetitionPhase | None) -> int:
+    return DNF_MARK_HIGH if _phase_lower_is_better_for_dnf(phase) else DNF_MARK_LOW
+
+
+def _is_dnf_mark(mark: int | None) -> bool:
+    return mark in {DNF_MARK_HIGH, DNF_MARK_LOW}
+
+
 def _parse_time_to_seconds(value: object) -> int | None:
     raw = str(value or "").strip()
     if not raw:
@@ -340,6 +364,8 @@ def _parse_time_to_seconds(value: object) -> int | None:
 
 
 def _parse_mark_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
+    if _is_dnf_raw(raw):
+        return _dnf_mark_for_phase(phase)
     phase_type = _phase_type_value(phase)
     if phase_type == "tiempo" or _phase_uses_time_input(phase):
         parsed = _parse_time_to_seconds(raw)
@@ -358,6 +384,8 @@ def _parse_mark_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
 def _format_mark_for_phase(mark: int | None, phase: CompetitionPhase | None) -> str | None:
     if mark is None:
         return None
+    if _is_dnf_mark(int(mark)):
+        return "DNF"
     if not _phase_uses_time_input(phase):
         return str(int(mark))
     total_seconds = int(mark)
