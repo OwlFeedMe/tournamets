@@ -6237,6 +6237,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [drafts, setDrafts] = useState({})
   const [tieBreakDrafts, setTieBreakDrafts] = useState({})
+  const [editingResultKeys, setEditingResultKeys] = useState({})
   const [savingKey, setSavingKey] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -6283,6 +6284,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setCategoryFilter('')
     setDrafts({})
     setTieBreakDrafts({})
+    setEditingResultKeys({})
     setManualPhaseMeta(null)
     userSelectedHeatRef.current = false
   }, [phaseId])
@@ -6455,6 +6457,14 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setTieBreakDrafts(prev => ({ ...prev, [key]: value }))
   }
 
+  const startResultEdit = (item) => {
+    const key = resultEntryKey(item)
+    setDrafts(prev => ({ ...prev, [key]: formatMarkForPhase(item.existing_mark, activePhaseMeta, item.existing_formatted) }))
+    setTieBreakDrafts(prev => ({ ...prev, [key]: formatMarkForPhase(item.existing_tiebreak, tieBreakPhase, item.existing_tiebreak_formatted) }))
+    setEditingResultKeys(prev => ({ ...prev, [key]: true }))
+    setTimeout(() => inputRefs.current[key]?.focus(), 50)
+  }
+
   const focusNext = (item) => {
     const index = filteredRows.findIndex(row => resultEntryKey(row) === resultEntryKey(item))
     const next = filteredRows.slice(index + 1).find(row => row.status !== 'scored')
@@ -6524,6 +6534,11 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
           }
           : row
       )))
+      setEditingResultKeys(prev => {
+        const next = { ...prev }
+        delete next[key]
+        return next
+      })
       if (moveNext) {
         focusNext(item)
       }
@@ -6563,6 +6578,11 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     && selectedHeatStats.total > 0
     && selectedHeatStats.pending === 0
     && !!nextPendingHeatId
+  const updateResultButtonStyle = {
+    borderColor: 'rgba(255,107,0,0.58)',
+    background: 'rgba(255,107,0,0.14)',
+    color: '#FFB36F',
+  }
 
   return (
     <div className="card" style={{ display: 'grid', gap: 14 }}>
@@ -6679,6 +6699,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
             {filteredRows.map(item => {
               const key = resultEntryKey(item)
               const rowNeedsTieBreak = shouldAskTieBreak(item)
+              const rowEditing = item.status !== 'scored' || !!editingResultKeys[key]
               return (
                 <div key={key} style={{ border: '1px solid #252A33', borderRadius: 16, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
@@ -6692,31 +6713,39 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                   {Array.isArray(item.member_names) && item.member_names.length ? (
                     <div style={{ color: '#6B7280', fontSize: 12 }}>{item.member_names.join(' | ')}</div>
                   ) : null}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8, alignItems: 'end' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: rowEditing ? '1fr auto auto' : '1fr auto', gap: 8, alignItems: 'end' }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>{inputConfig.label}</label>
-                      <input
-                        ref={node => { if (node) inputRefs.current[key] = node }}
-                        type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
-                        value={drafts[key] ?? ''}
-                        onChange={event => changeDraft(item, event.target.value)}
-                        onKeyDown={event => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            saveOne(item)
-                          }
-                        }}
-                        placeholder={inputConfig.placeholder}
-                      />
+                      {rowEditing ? (
+                        <input
+                          ref={node => { if (node) inputRefs.current[key] = node }}
+                          type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
+                          value={drafts[key] ?? ''}
+                          onChange={event => changeDraft(item, event.target.value)}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              saveOne(item)
+                            }
+                          }}
+                          placeholder={inputConfig.placeholder}
+                        />
+                      ) : (
+                        <div style={{ minHeight: 42, display: 'flex', alignItems: 'center', border: '1px solid #252A33', borderRadius: 10, background: 'rgba(9,11,14,0.62)', padding: '0 12px', color: '#F5F7FA', fontWeight: 900 }}>
+                          {item.existing_formatted || '-'}
+                        </div>
+                      )}
                     </div>
-                    <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
-                      DNF
-                    </button>
-                    <button type="button" className="btn-primary btn-sm" onClick={() => saveOne(item)} disabled={savingKey === key}>
-                      {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                    {rowEditing ? (
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
+                        DNF
+                      </button>
+                    ) : null}
+                    <button type="button" className={rowEditing ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} style={rowEditing ? undefined : updateResultButtonStyle} onClick={() => (rowEditing ? saveOne(item) : startResultEdit(item))} disabled={savingKey === key}>
+                      {savingKey === key ? '...' : rowEditing ? 'Guardar' : 'Actualizar'}
                     </button>
                   </div>
-                  {rowNeedsTieBreak ? (
+                  {rowNeedsTieBreak && rowEditing ? (
                     <div style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', borderRadius: 12, padding: 10 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label>Tie break <span style={{ color: '#6B7280', fontWeight: 400 }}>(desempate)</span></label>
@@ -6759,6 +6788,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                 {filteredRows.map(item => {
                   const key = resultEntryKey(item)
                   const rowNeedsTieBreak = shouldAskTieBreak(item)
+                  const rowEditing = item.status !== 'scored' || !!editingResultKeys[key]
                   return (
                     <tr key={key}>
                       <td style={{ color: '#FFB36F', fontWeight: 900 }}>{item.lane_number || '-'}</td>
@@ -6770,24 +6800,30 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                       </td>
                       <td>{item.category || 'Sin categoria'}</td>
                       <td>
-                        <input
-                          ref={node => { if (node) inputRefs.current[key] = node }}
-                          type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
-                          value={drafts[key] ?? ''}
-                          onChange={event => changeDraft(item, event.target.value)}
-                          onKeyDown={event => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              saveOne(item)
-                            }
-                          }}
-                          placeholder={inputConfig.placeholder}
-                          style={{ minWidth: 120 }}
-                        />
+                        {rowEditing ? (
+                          <input
+                            ref={node => { if (node) inputRefs.current[key] = node }}
+                            type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
+                            value={drafts[key] ?? ''}
+                            onChange={event => changeDraft(item, event.target.value)}
+                            onKeyDown={event => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                saveOne(item)
+                              }
+                            }}
+                            placeholder={inputConfig.placeholder}
+                            style={{ minWidth: 120 }}
+                          />
+                        ) : (
+                          <div style={{ minHeight: 36, display: 'inline-flex', alignItems: 'center', border: '1px solid #252A33', borderRadius: 9, background: 'rgba(9,11,14,0.62)', padding: '0 12px', color: '#F5F7FA', fontWeight: 900, minWidth: 120 }}>
+                            {item.existing_formatted || '-'}
+                          </div>
+                        )}
                       </td>
                       {anyTieBreakNeeded ? (
                         <td>
-                          {rowNeedsTieBreak ? (
+                          {rowNeedsTieBreak && rowEditing ? (
                             <div style={{ display: 'grid', gap: 4 }}>
                               <input
                                 ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
@@ -6805,6 +6841,10 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                               />
                               <span style={{ color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>Marca repetida</span>
                             </div>
+                          ) : rowNeedsTieBreak ? (
+                            <span style={{ color: '#00C2A8', fontSize: 12, fontWeight: 800 }}>
+                              {item.existing_tiebreak_formatted ? `TB ${item.existing_tiebreak_formatted}` : 'Misma posicion si no hay TB'}
+                            </span>
                           ) : (
                             <span style={{ color: '#6B7280', fontSize: 12 }}>No aplica</span>
                           )}
@@ -6813,11 +6853,13 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                       <td><ResultStatusPill status={item.status} value={item.existing_formatted} /></td>
                       <td>
                         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
-                            DNF
-                          </button>
-                          <button type="button" className={item.status === 'scored' ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => saveOne(item)} disabled={savingKey === key}>
-                            {savingKey === key ? '...' : item.status === 'scored' ? 'Actualizar' : 'Guardar'}
+                          {rowEditing ? (
+                            <button type="button" className="btn-secondary btn-sm" onClick={() => saveDnf(item)} disabled={savingKey === key}>
+                              DNF
+                            </button>
+                          ) : null}
+                          <button type="button" className={rowEditing ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} style={rowEditing ? undefined : updateResultButtonStyle} onClick={() => (rowEditing ? saveOne(item) : startResultEdit(item))} disabled={savingKey === key}>
+                            {savingKey === key ? '...' : rowEditing ? 'Guardar' : 'Actualizar'}
                           </button>
                         </div>
                       </td>
