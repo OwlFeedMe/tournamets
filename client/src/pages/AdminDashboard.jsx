@@ -6241,7 +6241,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [msg, setMsg] = useState(null)
-  const [advanceNotice, setAdvanceNotice] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
   const inputRefs = useRef({})
   const userSelectedHeatRef = useRef(false)
@@ -6285,7 +6284,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setDrafts({})
     setTieBreakDrafts({})
     setManualPhaseMeta(null)
-    setAdvanceNotice('')
     userSelectedHeatRef.current = false
   }, [phaseId])
 
@@ -6444,7 +6442,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
 
   const selectHeat = (value) => {
     userSelectedHeatRef.current = true
-    setAdvanceNotice('')
     setHeatFilter(value)
   }
 
@@ -6501,15 +6498,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     setSavingKey(key)
     setMsg(null)
     try {
-      const autoAdvanceFromHeat = heatFilter && heatFilter !== '__unassigned__' ? String(heatFilter) : ''
-      const autoAdvanceStats = autoAdvanceFromHeat ? heatStats[autoAdvanceFromHeat] : null
-      const shouldAutoAdvanceHeat = moveNext && item.status !== 'scored' && autoAdvanceFromHeat && Number(autoAdvanceStats?.pending || 0) <= 1
-      const orderedHeatIds = visibleHeats.map(heat => String(heat.id))
-      const currentHeatIndex = orderedHeatIds.indexOf(autoAdvanceFromHeat)
-      const autoAdvanceTarget = shouldAutoAdvanceHeat
-        ? orderedHeatIds.slice(currentHeatIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
-          || orderedHeatIds.find(id => id !== autoAdvanceFromHeat && (heatStats[id]?.pending || 0) > 0)
-        : ''
       const endpoint = item.status === 'scored' ? '/judge/score/edit' : '/judge/score/submit'
       const { data } = await api.post(endpoint, {
         competition_id: Number(competition.id),
@@ -6536,16 +6524,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
           }
           : row
       )))
-      if (autoAdvanceTarget) {
-        const fromHeat = visibleHeats.find(heat => String(heat.id) === autoAdvanceFromHeat)
-        const toHeat = visibleHeats.find(heat => String(heat.id) === autoAdvanceTarget)
-        userSelectedHeatRef.current = false
-        setHeatFilter(autoAdvanceTarget)
-        setAdvanceNotice(`Heat ${heatDisplayNumber(fromHeat || autoAdvanceFromHeat)} completo. Seguimos con Heat ${heatDisplayNumber(toHeat || autoAdvanceTarget)}.`)
-        const nextTargetRow = rows.find(row => String(row.heat_id || '') === autoAdvanceTarget && row.status !== 'scored')
-        const nextTargetKey = nextTargetRow ? resultEntryKey(nextTargetRow) : ''
-        if (nextTargetKey) setTimeout(() => inputRefs.current[nextTargetKey]?.focus(), 80)
-      } else if (moveNext) {
+      if (moveNext) {
         focusNext(item)
       }
     } catch (err) {
@@ -6569,6 +6548,22 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
     if (nextWithPending) selectHeat(nextWithPending)
   }
 
+  const nextPendingHeatId = useMemo(() => {
+    const ordered = visibleHeats.map(item => String(item.id))
+    const currentIndex = ordered.indexOf(String(heatFilter))
+    return ordered.slice(currentIndex + 1).find(id => (heatStats[id]?.pending || 0) > 0)
+      || ordered.find(id => id !== String(heatFilter) && (heatStats[id]?.pending || 0) > 0)
+      || ''
+  }, [visibleHeats, heatStats, heatFilter])
+  const nextPendingHeat = nextPendingHeatId
+    ? visibleHeats.find(item => String(item.id) === String(nextPendingHeatId))
+    : null
+  const heatCompleteWithNext = !!heatFilter
+    && heatFilter !== '__unassigned__'
+    && selectedHeatStats.total > 0
+    && selectedHeatStats.pending === 0
+    && !!nextPendingHeatId
+
   return (
     <div className="card" style={{ display: 'grid', gap: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -6580,11 +6575,6 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
           <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
             Filtra por WOD, categoria y heat para cargar marcas por carril sin perder contexto.
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" className="btn-secondary btn-sm" onClick={goToNextHeat} disabled={!visibleHeats.length}>
-            Siguiente heat pendiente
-          </button>
         </div>
       </div>
 
@@ -6601,7 +6591,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
         </div>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Categoria</label>
-          <select value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setHeatFilter(''); setAdvanceNotice(''); userSelectedHeatRef.current = false }}>
+          <select value={categoryFilter} onChange={event => { setCategoryFilter(event.target.value); setHeatFilter(''); userSelectedHeatRef.current = false }}>
             <option value="">Todas</option>
             {categories.map(item => <option key={item} value={item}>{item}</option>)}
             {categoryFilter && !categories.includes(categoryFilter) ? <option value={categoryFilter}>{categoryFilter}</option> : null}
@@ -6659,14 +6649,21 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
           </div>
         </div>
 
-        <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-          Carga la marca, usa DNF si no inicio o no termino. Los pendientes quedan arriba y los cargados bajan solos.
-        </div>
-        {advanceNotice ? (
-          <div style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', color: '#9AF7EA', borderRadius: 10, padding: '8px 10px', fontSize: 12, fontWeight: 800 }}>
-            {advanceNotice}
+        {heatCompleteWithNext ? (
+          <div style={{ border: '1px solid rgba(255,107,0,0.42)', background: 'rgba(255,107,0,0.12)', borderRadius: 12, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: '#F5F7FA', fontWeight: 900, fontSize: 13 }}>Heat completo</div>
+              <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 3 }}>Continua con Heat {heatDisplayNumber(nextPendingHeat || nextPendingHeatId)} cuando estes listo.</div>
+            </div>
+            <button type="button" className="btn-primary btn-sm" onClick={goToNextHeat}>
+              Siguiente heat pendiente
+            </button>
           </div>
-        ) : null}
+        ) : (
+          <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+            Carga la marca, usa DNF si no inicio o no termino. Los pendientes quedan arriba y los cargados bajan solos.
+          </div>
+        )}
       </div>
 
       {loading ? <SkeletonList count={4} /> : null}
