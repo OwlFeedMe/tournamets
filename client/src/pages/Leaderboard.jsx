@@ -483,7 +483,7 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
         zIndex: 10000,
         background: 'rgba(0,0,0,0.68)',
         display: 'flex',
-        alignItems: isMobile ? 'flex-end' : 'center',
+        alignItems: 'center',
         justifyContent: 'center',
       }}
     >
@@ -679,7 +679,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
                           </span>
                         )}
-                        <span>Sexo: {p.sexo || '-'}</span>
                         {showEventCount && <span>Registros: {p.total_eventos}</span>}
                       </div>
                     </div>
@@ -692,7 +691,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                   <tr>
                     <th style={{ width: 50 }}>Pos Evento</th>
                     <th>Nombre</th>
-                    <th>Sexo</th>
                     {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
                     {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
@@ -729,7 +727,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
-                        <td style={{ color: THEME.muted }}>{p.sexo || '-'}</td>
                         {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{p.total_eventos}</td>}
                         {phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
