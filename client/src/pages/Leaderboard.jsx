@@ -22,6 +22,8 @@ const THEME = {
   muted: '#AAB2C0',
   soft: '#6B7280',
 }
+const DNF_MARK_HIGH = 2147483647
+const DNF_MARK_LOW = -2147483648
 
 const mobileRankCardStyle = {
   background: 'linear-gradient(135deg, rgba(23,26,32,0.98), rgba(13,15,18,0.96))',
@@ -90,6 +92,7 @@ function formatSecondsToHMS(totalSeconds) {
 
 function metricValue(v, phaseInfo) {
   if (v == null) return '-'
+  if (Number(v) === DNF_MARK_HIGH || Number(v) === DNF_MARK_LOW) return 'DNF'
   const method = (phaseInfo?.measurement_method || '').toString().toLowerCase()
   if (method === 'for_time' || method === 'tiempo_hms') return formatSecondsToHMS(v)
   if (method === 'metros') return `${v} m`
