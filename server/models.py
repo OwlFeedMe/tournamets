@@ -134,6 +134,7 @@ class Competition(SQLModel, table=True):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: str = Field(default="America/Bogota")
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[str] = None
@@ -1538,6 +1539,7 @@ class CompetitionCreate(SQLModel):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: str = "America/Bogota"
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[List["CompetitionSocialLinkItem"]] = None
@@ -1594,6 +1596,7 @@ class CompetitionUpdate(SQLModel):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: Optional[str] = None
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[List["CompetitionSocialLinkItem"]] = None

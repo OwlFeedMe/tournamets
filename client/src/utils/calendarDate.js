@@ -9,10 +9,11 @@ export function parseCalendarDate(value) {
   return null
 }
 
-export function formatCalendarDate(value, locale = 'es-CO', options = { day: 'numeric', month: 'short', year: 'numeric' }) {
-  const date = parseCalendarDate(value)
-  if (!date) return null
-  return new Intl.DateTimeFormat(locale, options).format(date)
+export function formatCalendarDate(value, locale = 'es-CO', options = { day: 'numeric', month: 'short', year: 'numeric' }, timeZone = '') {
+  const raw = String(value || '')
+  const date = timeZone && raw.includes('T') ? new Date(value) : parseCalendarDate(value)
+  if (!date || Number.isNaN(date.getTime())) return null
+  return new Intl.DateTimeFormat(locale, timeZone && raw.includes('T') ? { ...options, timeZone } : options).format(date)
 }
 
 export function formatCalendarDateRange(start, end, {
@@ -21,9 +22,10 @@ export function formatCalendarDateRange(start, end, {
   prefixEnd = 'Hasta',
   locale = 'es-CO',
   options = { day: 'numeric', month: 'short', year: 'numeric' },
+  timeZone = '',
 } = {}) {
-  const startLabel = formatCalendarDate(start, locale, options)
-  const endLabel = formatCalendarDate(end, locale, options)
+  const startLabel = formatCalendarDate(start, locale, options, timeZone)
+  const endLabel = formatCalendarDate(end, locale, options, timeZone)
   if (!startLabel && !endLabel) return empty
   if (!startLabel) return `${prefixEnd} ${endLabel}`
   if (!endLabel) return `${prefixStart} ${startLabel}`

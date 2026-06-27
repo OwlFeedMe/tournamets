@@ -34,6 +34,7 @@ from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.category_registration import get_category_usage, serialize_category_with_registration
+from timezones import DEFAULT_COMPETITION_TIMEZONE, competition_timezone, normalize_timezone, to_utc_from_competition_time
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -130,7 +131,7 @@ def _serialize_enrollment_questions(payload: dict):
     payload["enrollment_questions"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
-def _serialize_schedule_items(payload: dict):
+def _serialize_schedule_items(payload: dict, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE):
     if "schedule_items" not in payload:
         return
     items = payload.get("schedule_items")
@@ -148,6 +149,10 @@ def _serialize_schedule_items(payload: dict):
         note = str((raw or {}).get("note") or "").strip() or None
         if not label and not start_at and not end_at and not note and phase_id in (None, "", False):
             continue
+        if isinstance(start_at, datetime):
+            start_at = to_utc_from_competition_time(start_at, timezone_name)
+        if isinstance(end_at, datetime):
+            end_at = to_utc_from_competition_time(end_at, timezone_name)
         normalized.append({
             "id": str((raw or {}).get("id") or f"date_{idx + 1}").strip() or f"date_{idx + 1}",
             "label": label or f"Fecha {idx + 1}",
@@ -238,13 +243,23 @@ def _serialize_social_links(payload: dict):
     payload["social_links"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
-def _normalize_date_boundary(value, *, end_of_day: bool = False):
+def _normalize_date_boundary(value, *, end_of_day: bool = False, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE):
     if not value or not isinstance(value, datetime):
         return value
-    if value.tzinfo is not None:
-        value = value.replace(tzinfo=None)
     boundary = time(23, 59, 59, 999999) if end_of_day else time(0, 0, 0)
-    return datetime.combine(value.date(), boundary)
+    local_value = value
+    if value.tzinfo is not None:
+        local_value = value.astimezone(competition_timezone(timezone_name)).replace(tzinfo=None)
+    return to_utc_from_competition_time(datetime.combine(local_value.date(), boundary), timezone_name)
+
+
+def _normalize_competition_timezone(payload: dict, current_timezone: str | None = None) -> str:
+    if "timezone" in payload:
+        try:
+            payload["timezone"] = normalize_timezone(payload.get("timezone"))
+        except ValueError:
+            raise HTTPException(400, "Selecciona una zona horaria valida para la competencia")
+    return normalize_timezone(payload.get("timezone") or current_timezone or DEFAULT_COMPETITION_TIMEZONE)
 
 
 def _normalize_theme_color(value: object) -> str | None:
@@ -283,15 +298,15 @@ def _current_global_platform_fee_rate(session: Session) -> float:
     return _normalize_platform_fee_rate(pricing_cfg.get("default_platform_fee_rate"))
 
 
-def _normalize_competition_dates(payload: dict):
+def _normalize_competition_dates(payload: dict, timezone_name: str):
     if "enrollment_start" in payload:
-        payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False)
+        payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False, timezone_name=timezone_name)
     if "enrollment_end" in payload:
-        payload["enrollment_end"] = _normalize_date_boundary(payload.get("enrollment_end"), end_of_day=True)
+        payload["enrollment_end"] = _normalize_date_boundary(payload.get("enrollment_end"), end_of_day=True, timezone_name=timezone_name)
     if "competition_start" in payload:
-        payload["competition_start"] = _normalize_date_boundary(payload.get("competition_start"), end_of_day=False)
+        payload["competition_start"] = _normalize_date_boundary(payload.get("competition_start"), end_of_day=False, timezone_name=timezone_name)
     if "competition_end" in payload:
-        payload["competition_end"] = _normalize_date_boundary(payload.get("competition_end"), end_of_day=True)
+        payload["competition_end"] = _normalize_date_boundary(payload.get("competition_end"), end_of_day=True, timezone_name=timezone_name)
 
 
 def _validate_competition_dates(payload: dict):
@@ -935,6 +950,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _validate_tv_settings(payload)
     if "lugar" in payload:
         payload["lugar"] = str(payload.get("lugar") or "").strip() or None
+    timezone_name = _normalize_competition_timezone(payload)
     if "contact_phone" in payload:
         payload["contact_phone"] = str(payload.get("contact_phone") or "").strip() or None
     if "website_url" in payload:
@@ -954,9 +970,9 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     if "show_public_category_roster" in payload:
         payload["show_public_category_roster"] = _normalize_toggle(payload.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(payload)
-    _normalize_competition_dates(payload)
+    _normalize_competition_dates(payload, timezone_name)
     _validate_competition_dates(payload)
-    _serialize_schedule_items(payload)
+    _serialize_schedule_items(payload, timezone_name)
     _serialize_landing_sections(payload)
     _serialize_social_links(payload)
     _serialize_enrollment_questions(payload)
@@ -991,6 +1007,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _validate_tv_settings(data)
     if "lugar" in data:
         data["lugar"] = str(data.get("lugar") or "").strip() or None
+    timezone_name = _normalize_competition_timezone(data, c.timezone)
     if "contact_phone" in data:
         data["contact_phone"] = str(data.get("contact_phone") or "").strip() or None
     if "website_url" in data:
@@ -1010,9 +1027,9 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     if "show_public_category_roster" in data:
         data["show_public_category_roster"] = _normalize_toggle(data.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(data)
-    _normalize_competition_dates(data)
+    _normalize_competition_dates(data, timezone_name)
     _validate_competition_dates(data)
-    _serialize_schedule_items(data)
+    _serialize_schedule_items(data, timezone_name)
     _serialize_landing_sections(data)
     _serialize_social_links(data)
     _serialize_enrollment_questions(data)

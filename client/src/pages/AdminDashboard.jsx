@@ -5,6 +5,13 @@ import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { COMPETITION_THEME_FIELDS, getReadableTextColor, hexToRgba, normalizeHexColor, resolveCompetitionTheme } from '../utils/competitionTheme'
+import {
+  COMPETITION_TIMEZONE_OPTIONS,
+  competitionDateInputToLocalBoundary,
+  competitionTimeZone,
+  formatCompetitionTimeZoneLabel,
+  utcToCompetitionDateInput,
+} from '../utils/competitionTimeZone'
 import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
 import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2, MoreHorizontal } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -283,7 +290,7 @@ function resolveCompetitionAsset(competition, asset, isMobile = false) {
   return legacy
 }
 
-function parseScheduleItems(raw) {
+function parseScheduleItems(raw, timeZone = '') {
   if (!raw) return []
   try {
     const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -293,8 +300,8 @@ function parseScheduleItems(raw) {
         id: String(item?.id || `date_${idx + 1}`),
         label: String(item?.label || '').trim(),
         kind: String(item?.kind || 'custom').trim().toLowerCase() || 'custom',
-        start_at: toDateInput(item?.start_at),
-        end_at: toDateInput(item?.end_at),
+        start_at: utcToCompetitionDateInput(item?.start_at, timeZone),
+        end_at: utcToCompetitionDateInput(item?.end_at, timeZone),
         phase_id: item?.phase_id == null ? '' : String(item.phase_id),
         use_phase_dates: Number(item?.use_phase_dates || 0),
         note: String(item?.note || '').trim(),
@@ -2289,6 +2296,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
     descripcion: '',
     general_info_text: '',
     lugar: '',
+    timezone: 'America/Bogota',
     contact_phone: '',
     contact_phone_prefix: '+57',
     website_url: '',
@@ -2365,6 +2373,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         descripcion: source.descripcion || '',
         general_info_text: source.general_info_text || '',
         lugar: source.lugar || '',
+        timezone: competitionTimeZone(source.timezone),
         contact_phone: source.contact_phone || '',
         contact_phone_prefix: (source.contact_phone || '').match(/^(\+\d+)/)?.[1] || '+57',
         website_url: source.website_url || '',
@@ -2385,10 +2394,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         show_team_all_by_category_option: source.show_team_all_by_category_option == null ? 1 : source.show_team_all_by_category_option,
         show_team_all_global_option: source.show_team_all_global_option == null ? 1 : source.show_team_all_global_option,
         enrollment_open: source.enrollment_open || 0,
-        enrollment_start: toDateInput(source.enrollment_start),
-        enrollment_end: toDateInput(source.enrollment_end),
-        competition_start: toDateInput(source.competition_start),
-        competition_end: toDateInput(source.competition_end),
+        enrollment_start: utcToCompetitionDateInput(source.enrollment_start, source.timezone),
+        enrollment_end: utcToCompetitionDateInput(source.enrollment_end, source.timezone),
+        competition_start: utcToCompetitionDateInput(source.competition_start, source.timezone),
+        competition_end: utcToCompetitionDateInput(source.competition_end, source.timezone),
         enrollment_intro_text: source.enrollment_intro_text || '',
         enrollment_terms_text: source.enrollment_terms_text || '',
         platform_fee_rate: Number(source.platform_fee_rate || 0.05),
@@ -2396,7 +2405,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
         rm_unit: source.rm_unit === 'lb' ? 'lb' : 'kg',
       })
       setQuestions(parseEnrollmentQuestions(source.enrollment_questions))
-      setScheduleItems(parseScheduleItems(source.schedule_items))
+      setScheduleItems(parseScheduleItems(source.schedule_items, source.timezone))
       setSocialLinks(parseSocialLinks(source.social_links))
       setLandingSections(parseLandingSections(source.landing_sections))
       setAssetFiles({ profile: null, banner: null })
@@ -2411,6 +2420,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       api.get(`/competitions/${competition.id}/phases`),
     ]).then(([competitionRes, catRes, phRes]) => {
       if (competitionRes?.data) applyCompetitionData(competitionRes.data)
+      const loadedTimeZone = competitionTimeZone(competitionRes?.data?.timezone || competition?.timezone)
       setCats(catRes.data.map(c => ({
         id: c.id,
         nombre: c.nombre,
@@ -2454,8 +2464,8 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
           tie_break_enabled: Number(p.tie_break_enabled || 0),
           tie_break_method: normalizeMeasurementMethod(p.tie_break_method || 'for_time', 'tiempo'),
           is_visible: p.is_visible == null ? 1 : Number(p.is_visible),
-          start_at: toDateInput(p.start_at),
-          end_at: toDateInput(p.end_at),
+          start_at: utcToCompetitionDateInput(p.start_at, loadedTimeZone),
+          end_at: utcToCompetitionDateInput(p.end_at, loadedTimeZone),
           activities: baseActivities,
           part_b_enabled: baseActivities.length > 1,
           part_b_descripcion: secondBaseActivity?.descripcion || '',
@@ -2699,6 +2709,7 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       descripcion: form.descripcion.trim() || null,
       general_info_text: form.general_info_text.trim() || null,
       lugar: form.lugar.trim() || null,
+      timezone: competitionTimeZone(form.timezone),
       contact_phone: form.contact_phone.trim() || null,
       website_url: form.website_url.trim() || null,
       theme_background_color: normalizeHexColor(form.theme_background_color) || null,
@@ -2719,10 +2730,10 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
       show_team_all_by_category_option: form.show_team_all_by_category_option ? 1 : 0,
       show_team_all_global_option: form.show_team_all_global_option ? 1 : 0,
       enrollment_open: form.enrollment_open ? 1 : 0,
-      enrollment_start: dateInputToStartOfDay(form.enrollment_start),
-      enrollment_end: dateInputToEndOfDay(form.enrollment_end),
-      competition_start: dateInputToStartOfDay(form.competition_start),
-      competition_end: dateInputToEndOfDay(form.competition_end),
+      enrollment_start: competitionDateInputToLocalBoundary(form.enrollment_start, false),
+      enrollment_end: competitionDateInputToLocalBoundary(form.enrollment_end, true),
+      competition_start: competitionDateInputToLocalBoundary(form.competition_start, false),
+      competition_end: competitionDateInputToLocalBoundary(form.competition_end, true),
       schedule_items: cleanScheduleItems,
       landing_sections: {
         experience: {
@@ -3267,6 +3278,15 @@ function CompetitionEditorModal({ mode, competition, onClose, onSaved, inline = 
             <div className="form-group">
               <label>Lugar</label>
               <input value={form.lugar} onChange={e => setForm(f => ({ ...f, lugar: e.target.value }))} placeholder="Ej: Bogota, Coliseo Central" />
+            </div>
+            <div className="form-group">
+              <label>Zona horaria oficial</label>
+              <select value={form.timezone} onChange={e => setForm(f => ({ ...f, timezone: e.target.value }))}>
+                {COMPETITION_TIMEZONE_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 6 }}>{formatCompetitionTimeZoneLabel(form.timezone)}</div>
             </div>
           </div>
 

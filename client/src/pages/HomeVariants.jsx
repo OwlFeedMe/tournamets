@@ -29,6 +29,7 @@ import { SkeletonBlock, SkeletonCardGrid, SkeletonList, SkeletonMetricGrid } fro
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
+import { formatCompetitionDateTime } from '../utils/competitionTimeZone'
 
 const premium = {
   bg: '#0F1114',
@@ -276,17 +277,12 @@ function TickerItem({ label, value }) {
   )
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, timeZone) {
   if (!value) return 'Por confirmar'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Por confirmar'
-  return new Intl.DateTimeFormat('es-CO', {
+  return formatCompetitionDateTime(value, timeZone, {
     weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+    fallback: 'Por confirmar',
+  })
 }
 
 function enrollmentBadge(status) {
@@ -540,7 +536,7 @@ function secondaryActionStyle() {
   }
 }
 
-function NextHeatPanel({ heat }) {
+function NextHeatPanel({ heat, timeZone }) {
   const participant = Array.isArray(heat?.participants) ? heat.participants[0] : null
   return (
     <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: premium.surface, padding: 18, display: 'grid', gap: 12 }}>
@@ -554,7 +550,7 @@ function NextHeatPanel({ heat }) {
       {heat ? (
         <div style={{ display: 'grid', gap: 8, color: premium.textSoft, fontSize: 14, lineHeight: 1.55 }}>
           <div>{heat.phase_name || heat.phaseName || 'Bloque por confirmar'}</div>
-          <div>{formatDateTime(heat.start_at || heat.startAt)}{heat.end_at ? ` - ${formatDateTime(heat.end_at)}` : ''}</div>
+          <div>{formatDateTime(heat.start_at || heat.startAt, timeZone)}{heat.end_at ? ` - ${formatDateTime(heat.end_at, timeZone)}` : ''}</div>
           {(heat.location_name || heat.locationName) ? <div>{heat.location_name || heat.locationName}</div> : null}
           {participant?.lane_number || participant?.lane ? <div style={{ color: premium.text, fontWeight: 800 }}>Lane {participant.lane_number || participant.lane}</div> : null}
         </div>
@@ -752,7 +748,7 @@ function PersonalHome({
       <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} leaderboardLoading={detailsLoading} onOpenQr={onOpenQr} isMobile={isMobile} />
       {detailsLoading ? <SkeletonMetricGrid count={3} /> : null}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
-        {detailsLoading ? <SkeletonList count={2} /> : <NextHeatPanel heat={nextHeat} />}
+        {detailsLoading ? <SkeletonList count={2} /> : <NextHeatPanel heat={nextHeat} timeZone={primaryCompetition?.timezone} />}
         {detailsLoading ? <SkeletonList count={3} /> : <ScorePanel leaderboard={leaderboard} results={results} />}
       </div>
       <CompactEventList items={myComps} primaryId={primaryCompetition.id} />

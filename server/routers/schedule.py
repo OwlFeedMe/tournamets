@@ -23,6 +23,7 @@ from models import (
     Result,
     Team,
 )
+from timezones import DEFAULT_COMPETITION_TIMEZONE, to_utc_from_competition_time
 
 router = APIRouter(prefix="/api/competitions", tags=["schedule"])
 
@@ -90,12 +91,8 @@ class HeatMoveInput(BaseModel):
     lane_number: Optional[int] = None
 
 
-def _normalize_dt(value: datetime | None) -> datetime | None:
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        return value.astimezone(timezone.utc)
-    return value.replace(tzinfo=timezone.utc)
+def _normalize_dt(value: datetime | None, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE) -> datetime | None:
+    return to_utc_from_competition_time(value, timezone_name)
 
 
 def _normalize_transition_seconds(value: object) -> int:
@@ -556,11 +553,13 @@ def _replace_assignments(
         )
 
 
-def _validate_heat_input(session: Session, competition_id: int, payload: HeatInput) -> CompetitionPhase:
+def _validate_heat_input(session: Session, competition_id: int, payload: HeatInput, timezone_name: str) -> CompetitionPhase:
     phase = session.get(CompetitionPhase, payload.phase_id)
     if not phase or int(phase.competition_id) != int(competition_id):
         raise HTTPException(400, "La fase no pertenece a esta competencia")
-    if payload.end_at and payload.start_at and payload.start_at > payload.end_at:
+    start_at = _normalize_dt(payload.start_at, timezone_name)
+    end_at = _normalize_dt(payload.end_at, timezone_name)
+    if end_at and start_at and start_at > end_at:
         raise HTTPException(400, "La hora de inicio no puede ser mayor a la hora final")
     return phase
 
@@ -694,8 +693,8 @@ def create_heat(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    _validate_heat_input(session, competition_id, body)
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
+    _validate_heat_input(session, competition_id, body, competition.timezone)
     heat = CompetitionHeat(
         competition_id=competition_id,
         phase_id=body.phase_id,
@@ -705,8 +704,8 @@ def create_heat(
         lane_count=max(0, int(body.lane_count or 0)),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
-        start_at=_normalize_dt(body.start_at),
-        end_at=_normalize_dt(body.end_at),
+        start_at=_normalize_dt(body.start_at, competition.timezone),
+        end_at=_normalize_dt(body.end_at, competition.timezone),
         location_name=(body.location_name or "").strip() or None,
         location_detail=(body.location_detail or "").strip() or None,
         note=(body.note or "").strip() or None,
@@ -731,8 +730,8 @@ def update_heat(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    _validate_heat_input(session, competition_id, body)
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
+    _validate_heat_input(session, competition_id, body, competition.timezone)
     heat = session.get(CompetitionHeat, heat_id)
     if not heat or int(heat.competition_id) != int(competition_id):
         raise HTTPException(404, "Heat no encontrado")
@@ -744,8 +743,8 @@ def update_heat(
     heat.lane_count = max(0, int(body.lane_count or 0))
     heat.heat_transition_seconds = _normalize_transition_seconds(body.heat_transition_seconds)
     heat.category_transition_seconds = _normalize_transition_seconds(body.category_transition_seconds)
-    heat.start_at = _normalize_dt(body.start_at)
-    heat.end_at = _normalize_dt(body.end_at)
+    heat.start_at = _normalize_dt(body.start_at, competition.timezone)
+    heat.end_at = _normalize_dt(body.end_at, competition.timezone)
     heat.location_name = (body.location_name or "").strip() or None
     heat.location_detail = (body.location_detail or "").strip() or None
     heat.note = (body.note or "").strip() or None
@@ -917,7 +916,7 @@ def generate_heats(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
     phase, mode, plan_items, meta = _build_generation_plan(session, competition_id, body)
     lane_count = meta["lane_count"]
     if body.delete_existing:
@@ -934,7 +933,7 @@ def generate_heats(
             session.delete(heat)
         session.commit()
 
-    first_start = _normalize_dt(body.first_heat_start_at) or _normalize_dt(phase.start_at)
+    first_start = _normalize_dt(body.first_heat_start_at, competition.timezone) or _normalize_dt(phase.start_at, competition.timezone)
     duration = max(1, int(body.heat_duration_minutes or 15))
     gap = max(0, int(body.heat_gap_minutes or 0))
     heat_transition_seconds = _normalize_transition_seconds(body.heat_transition_seconds)

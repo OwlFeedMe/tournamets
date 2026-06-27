@@ -4,10 +4,10 @@ export const homePageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 24%), radial-gradient(circle at 82% 18%, rgba(94,234,212,0.10), transparent 20%), radial-gradient(circle at 20% 78%, rgba(205,170,107,0.08), transparent 18%), #0D0F12'
 
 export function formatCompetitionDate(value, options = {}) {
-  const { includeYear = true } = options
+  const { includeYear = true, timeZone = '' } = options
   return formatCalendarDate(value, 'es-CO', includeYear
     ? { day: 'numeric', month: 'short', year: 'numeric' }
-    : { day: 'numeric', month: 'short' })
+    : { day: 'numeric', month: 'short' }, timeZone)
 }
 
 export function formatCompetitionDateRange(startValue, endValue, options = {}) {
@@ -20,11 +20,11 @@ export function formatCompetitionDateRange(startValue, endValue, options = {}) {
 }
 
 export function formatEnrollmentDateRange(competition, options = {}) {
-  return formatCompetitionDateRange(competition?.enrollment_start, competition?.enrollment_end, options)
+  return formatCompetitionDateRange(competition?.enrollment_start, competition?.enrollment_end, { ...options, timeZone: competition?.timezone })
 }
 
 export function formatCompetitionWindow(competition, options = {}) {
-  return formatCompetitionDateRange(competition?.competition_start, competition?.competition_end, options)
+  return formatCompetitionDateRange(competition?.competition_start, competition?.competition_end, { ...options, timeZone: competition?.timezone })
 }
 
 export function resolveCompetitionAsset(competition, asset) {
@@ -62,22 +62,22 @@ export function scheduleSummary(competition) {
   const items = parseScheduleItems(competition?.schedule_items)
   if (items.length) {
     const main = items.slice(0, 2).map(item => {
-      const start = formatCompetitionDate(item.start_at)
-      const end = formatCompetitionDate(item.end_at)
+      const start = formatCompetitionDate(item.start_at, { timeZone: competition?.timezone })
+      const end = formatCompetitionDate(item.end_at, { timeZone: competition?.timezone })
       if (start && end && start !== end) return `${item.label || 'Fecha'}: ${start} - ${end}`
       return `${item.label || 'Fecha'}: ${start || end || 'Por confirmar'}`
     })
     return main.join(' | ')
   }
-  const competitionStart = formatCompetitionDate(competition?.competition_start)
-  const competitionEnd = formatCompetitionDate(competition?.competition_end)
+  const competitionStart = formatCompetitionDate(competition?.competition_start, { timeZone: competition?.timezone })
+  const competitionEnd = formatCompetitionDate(competition?.competition_end, { timeZone: competition?.timezone })
   if (competitionStart || competitionEnd) {
     return competitionStart && competitionEnd
       ? `${competitionStart} - ${competitionEnd}`
       : (competitionStart || competitionEnd)
   }
-  const enrollmentStart = formatCompetitionDate(competition?.enrollment_start)
-  const enrollmentEnd = formatCompetitionDate(competition?.enrollment_end)
+  const enrollmentStart = formatCompetitionDate(competition?.enrollment_start, { timeZone: competition?.timezone })
+  const enrollmentEnd = formatCompetitionDate(competition?.enrollment_end, { timeZone: competition?.timezone })
   return enrollmentStart || enrollmentEnd
     ? `${enrollmentStart || 'Ahora'}${enrollmentEnd ? ` - ${enrollmentEnd}` : ''}`
     : 'Fechas por confirmar'

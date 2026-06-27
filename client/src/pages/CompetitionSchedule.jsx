@@ -6,6 +6,7 @@ import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/l
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { getReadableTextColor, hexToRgba, resolveCompetitionTheme } from '../utils/competitionTheme'
+import { formatCompetitionDateTime, formatCompetitionTimeZoneLabel } from '../utils/competitionTimeZone'
 
 function buildPageBackground(theme) {
   return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.16)}, transparent 28%), radial-gradient(circle at 88% 12%, ${hexToRgba(theme.accent, 0.10)}, transparent 24%), ${theme.background}`
@@ -37,22 +38,17 @@ function parseJson(value, fallback = []) {
   }
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, timeZone) {
   if (!value) return null
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('es-CO', {
+  return formatCompetitionDateTime(value, timeZone, {
     weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+    fallback: null,
+  })
 }
 
-function formatDateRange(start, end) {
-  const startLabel = formatDateTime(start)
-  const endLabel = formatDateTime(end)
+function formatDateRange(start, end, timeZone) {
+  const startLabel = formatDateTime(start, timeZone)
+  const endLabel = formatDateTime(end, timeZone)
   if (!startLabel && !endLabel) return 'Por confirmar'
   if (!startLabel) return `Hasta ${endLabel}`
   if (!endLabel) return `Desde ${startLabel}`
@@ -195,7 +191,7 @@ async function fetchWithFallback(urls) {
   throw lastError || new Error('No se pudo cargar el cronograma')
 }
 
-function ScheduleItemCard({ item, personal = false, theme }) {
+function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
   const participants = item.participants || []
   const firstParticipant = participants[0]
   return (
@@ -230,12 +226,12 @@ function ScheduleItemCard({ item, personal = false, theme }) {
         {(item.startAt || item.endAt) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
             <Clock3 size={14} color={theme.accent} />
-            {formatDateRange(item.startAt, item.endAt)}
+            {formatDateRange(item.startAt, item.endAt, timeZone)}
           </div>
         ) : null}
         {item.checkInAt ? (
           <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
-            Check-in: {formatDateTime(item.checkInAt) || item.checkInAt}
+            Check-in: {formatDateTime(item.checkInAt, timeZone) || item.checkInAt}
           </div>
         ) : null}
         {item.locationName || item.locationDetail ? (
@@ -306,7 +302,7 @@ function ScheduleItemCard({ item, personal = false, theme }) {
   )
 }
 
-function ScheduleSection({ section, personal = false, theme }) {
+function ScheduleSection({ section, personal = false, theme, timeZone }) {
   return (
     <section className="fr-cut-card" style={{
       border: `1px solid ${theme.border}`,
@@ -328,7 +324,7 @@ function ScheduleSection({ section, personal = false, theme }) {
         <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
           {section.startAt || section.endAt ? (
             <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
-              {formatDateRange(section.startAt, section.endAt)}
+              {formatDateRange(section.startAt, section.endAt, timeZone)}
             </div>
           ) : null}
           {section.locationName || section.locationDetail ? (
@@ -343,7 +339,7 @@ function ScheduleSection({ section, personal = false, theme }) {
       {section.items?.length ? (
         <div style={{ display: 'grid', gap: 12 }}>
           {section.items.map((item) => (
-            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} />
+            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
           ))}
         </div>
       ) : (
@@ -478,9 +474,10 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
   const heroLink = competition ? `/competitions/${competition.id}` : '/'
   const leaderboardLink = competition ? `/leaderboard/${competition.id}` : '/leaderboard'
   const myScheduleLink = competition ? `/competitions/${competition.id}/my-schedule` : '/profile'
+  const timeZone = competition?.timezone
 
   const title = competition?.nombre || 'Cronograma'
-  const lastUpdated = formatDateTime(schedule.updatedAt)
+  const lastUpdated = formatDateTime(schedule.updatedAt, timeZone)
   const sectionCount = sections.length
   const totalHeats = schedule.items.filter(item => item.kind === 'heat').length || Number(stats.heats_total || 0) || 0
   const totalParticipants = Number(stats.participants_total || stats.confirmed_total || 0) || 0
@@ -573,6 +570,9 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
                 {totalParticipants} inscritos
               </span>
             ) : null}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 999, background: hexToRgba(theme.background, 0.78), border: `1px solid ${hexToRgba(theme.accent, 0.22)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
+              Hora oficial: {formatCompetitionTimeZoneLabel(timeZone)}
+            </span>
           </div>
           <h1 style={{ margin: 0, fontSize: 'clamp(32px, 5vw, 58px)', lineHeight: 0.98 }}>
             {title}
@@ -629,7 +629,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         ) : (
           <div style={{ display: 'grid', gap: 14 }}>
             {sections.length ? sections.map((section) => (
-              <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} />
+              <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} timeZone={timeZone} />
             )) : (
               <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}`, color: theme.textSecondary }}>
                 {modeCopy.empty}

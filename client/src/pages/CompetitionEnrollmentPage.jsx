@@ -14,8 +14,8 @@ import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/l
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
 
-function formatDateRange(start, end) {
-  return formatCalendarDateRange(start, end)
+function formatDateRange(start, end, timeZone) {
+  return formatCalendarDateRange(start, end, { timeZone })
 }
 
 function parseEnrollmentQuestions(raw) {
@@ -908,7 +908,7 @@ export default function CompetitionEnrollmentPage() {
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#5EEAD4" />{competition.lugar || 'Lugar por confirmar'}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#5EEAD4" />{formatDateRange(competition.enrollment_start, competition.enrollment_end)}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#5EEAD4" />{formatDateRange(competition.enrollment_start, competition.enrollment_end, competition.timezone)}</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><Medal size={14} color="#5EEAD4" />{categories.length || 0} categorias disponibles</span>
             </div>
           </div>

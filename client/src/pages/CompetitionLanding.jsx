@@ -13,8 +13,8 @@ function buildPageBackground(theme) {
   return `radial-gradient(circle at top, ${hexToRgba(theme.primary, 0.18)}, transparent 28%), radial-gradient(circle at 85% 20%, ${hexToRgba(theme.accent, 0.12)}, transparent 24%), ${theme.background}`
 }
 
-function formatDateRange(start, end) {
-  return formatCalendarDateRange(start, end)
+function formatDateRange(start, end, timeZone) {
+  return formatCalendarDateRange(start, end, { timeZone })
 }
 
 function normalizeEnrollmentPrice(value) {
@@ -920,7 +920,7 @@ export default function CompetitionLanding() {
                   Fechas
                 </div>
                 <div style={{ marginTop: 10, fontSize: isMobile ? 16 : 18, fontWeight: 800, lineHeight: 1.45 }}>
-                  {formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end)}
+                  {formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end, competition.timezone)}
                 </div>
               </div>
               <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
@@ -1352,7 +1352,7 @@ export default function CompetitionLanding() {
                           {item.linked_phase_name ? <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>Fase enlazada: {item.linked_phase_name}</div> : null}
                           <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25 }}>{item.label || 'Fecha'}</div>
                           <div style={{ marginTop: 6, color: theme.text, fontSize: 14, lineHeight: 1.6 }}>
-                            {formatDateRange(item.start_at, item.end_at)}
+                            {formatDateRange(item.start_at, item.end_at, competition.timezone)}
                           </div>
                           {item.note ? <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.55 }}>{item.note}</div> : null}
                         </div>

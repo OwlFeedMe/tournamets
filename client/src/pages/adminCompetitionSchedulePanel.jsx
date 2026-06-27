@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Clock3, MapPin, Users } from 'lucide-react'
 import api from '../api/axios'
-
-function toLocalDateTimeInput(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16)
-  const offsetMs = date.getTimezoneOffset() * 60000
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16)
-}
-
-function fromLocalDateTimeInput(value) {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
-}
+import {
+  competitionDateTimeInputToUtc,
+  formatCompetitionDateTime,
+  formatCompetitionTimeZoneLabel,
+  utcToCompetitionDateTimeInput,
+} from '../utils/competitionTimeZone'
 
 function heatSortMs(item) {
   const date = new Date(item?.start_at || item?.end_at || '')
@@ -22,16 +14,9 @@ function heatSortMs(item) {
   return Number.MAX_SAFE_INTEGER
 }
 
-function formatDateTime(value) {
+function formatDateTime(value, timeZone) {
   if (!value) return 'Por confirmar'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('es-CO', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
+  return formatCompetitionDateTime(value, timeZone, { fallback: value })
 }
 
 function secondsToMinutesInput(value) {
@@ -274,7 +259,7 @@ export function CompetitionSchedulePanel({ competition }) {
     categoria: form.generation_mode === 'single_category' ? form.categoria.trim() || null : null,
     lane_count: Number(form.lane_count || 0),
     heat_count: form.generation_mode === 'by_category' ? null : (form.heat_count ? Number(form.heat_count) : null),
-    first_heat_start_at: fromLocalDateTimeInput(form.first_heat_start_at),
+    first_heat_start_at: competitionDateTimeInputToUtc(form.first_heat_start_at, competition?.timezone),
     heat_duration_minutes: Number(form.heat_duration_minutes || 15),
     heat_gap_minutes: 0,
     heat_transition_seconds: minutesInputToSeconds(form.heat_transition_minutes),
@@ -341,8 +326,8 @@ export function CompetitionSchedulePanel({ competition }) {
       nombre: item.heat_label || '',
       heat_number: item.heat_number || 1,
       lane_count: item.lane_count || Math.max((item.participants || []).length, 1),
-      start_at: toLocalDateTimeInput(item.start_at),
-      end_at: toLocalDateTimeInput(item.end_at),
+      start_at: utcToCompetitionDateTimeInput(item.start_at, competition?.timezone),
+      end_at: utcToCompetitionDateTimeInput(item.end_at, competition?.timezone),
       heat_transition_minutes: secondsToMinutesInput(item.heat_transition_seconds),
       category_transition_minutes: secondsToMinutesInput(item.category_transition_seconds),
       location_name: item.location_name || '',
@@ -443,8 +428,8 @@ export function CompetitionSchedulePanel({ competition }) {
         nombre: editingHeat.nombre.trim(),
         heat_number: Number(editingHeat.heat_number || 1),
         lane_count: Number(editingHeat.lane_count || 1),
-        start_at: fromLocalDateTimeInput(editingHeat.start_at),
-        end_at: fromLocalDateTimeInput(editingHeat.end_at),
+        start_at: competitionDateTimeInputToUtc(editingHeat.start_at, competition?.timezone),
+        end_at: competitionDateTimeInputToUtc(editingHeat.end_at, competition?.timezone),
         heat_transition_seconds: minutesInputToSeconds(editingHeat.heat_transition_minutes),
         category_transition_seconds: minutesInputToSeconds(editingHeat.category_transition_minutes),
         location_name: editingHeat.location_name.trim() || null,
@@ -532,6 +517,9 @@ export function CompetitionSchedulePanel({ competition }) {
             <h4 style={{ margin: 0, fontSize: 16 }}>Cronograma y heats</h4>
             <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>
               Genera el primer armado por inscripcion y deja que los siguientes eventos usen leaderboard.
+            </div>
+            <div style={{ color: '#00C2A8', fontSize: 12, marginTop: 6, fontWeight: 800 }}>
+              Hora oficial: {formatCompetitionTimeZoneLabel(competition?.timezone)}
             </div>
           </div>
           <button type="button" className="btn-secondary btn-sm" onClick={load} disabled={loading || busy}>Recargar</button>
@@ -887,7 +875,7 @@ export function CompetitionSchedulePanel({ competition }) {
                         </button>
                       </div>
                       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', color: '#AAB2C0', fontSize: 13 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Clock3 size={14} />{formatDateTime(item.start_at)}{item.end_at ? ` - ${formatDateTime(item.end_at)}` : ''}</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Clock3 size={14} />{formatDateTime(item.start_at, competition?.timezone)}{item.end_at ? ` - ${formatDateTime(item.end_at, competition?.timezone)}` : ''}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Clock3 size={14} />Cambio heat {formatTransitionMinutes(item.heat_transition_seconds)} · categoria {formatTransitionMinutes(item.category_transition_seconds)}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><MapPin size={14} />{item.location_name || 'Ubicacion por confirmar'}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Users size={14} />{(item.participants || []).length} asignados</span>

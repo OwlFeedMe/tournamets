@@ -8,8 +8,8 @@ import { FINALREP_COMPETITION_THEME, getReadableTextColor } from '../utils/compe
 
 const TARGET_COMPETITION = 'unbroken games'
 
-function formatDateRange(start, end) {
-  return formatCalendarDateRange(start, end)
+function formatDateRange(start, end, timeZone) {
+  return formatCalendarDateRange(start, end, { timeZone })
 }
 
 function parseLandingSections(raw) {
@@ -287,7 +287,7 @@ function CompetitionHero({ variant, competition, bannerUrl, profileImageUrl, sta
         <div className="fr-cut-card" style={{ position: 'relative', overflow: 'hidden', minHeight: isMobile ? 280 : 420, aspectRatio: isMobile ? '4 / 5' : '4 / 3', border: '1px solid rgba(214,217,224,0.16)', ...bannerFillStyle(bannerBackground, bannerFallback) }}>
           <div style={{ position: 'absolute', inset: 'auto 16px 16px 16px', display: 'grid', gap: 10 }}>
             <MiniStat label="Modo" value={mode} accent />
-            <MiniStat label="Fechas" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end)} />
+            <MiniStat label="Fechas" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end, competition.timezone)} />
             <MiniStat label="Lugar" value={competition.lugar || 'Sede por confirmar'} />
           </div>
         </div>
@@ -355,7 +355,7 @@ function CompetitionHero({ variant, competition, bannerUrl, profileImageUrl, sta
           <MiniStat label="Competidores" value={`${stats.participantes_total || 0} registrados`} accent />
           <MiniStat label="Formato" value={mode} />
           <MiniStat label="Lugar" value={competition.lugar || 'Sede por confirmar'} />
-          <MiniStat label="Ventana" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end)} />
+          <MiniStat label="Ventana" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end, competition.timezone)} />
         </div>
         <HeroActions competitionId={competition.id} />
       </div>
@@ -379,7 +379,7 @@ function SharedCompetitionBody({ competition, payload, landingSections, schedule
     <div style={{ display: 'grid', gap: 18, marginTop: 18 }}>
       <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
         <MiniStat label="Lugar" value={competition.lugar || 'Por confirmar'} accent />
-        <MiniStat label="Fechas" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end)} />
+        <MiniStat label="Fechas" value={formatDateRange(competition.competition_start || competition.enrollment_start, competition.competition_end || competition.enrollment_end, competition.timezone)} />
         <MiniStat label="Categorias" value={`${stats.categorias_total || categories.length || 0} activas`} />
         <MiniStat label="Eventos" value={`${stats.fases_total || 0} publicos`} />
       </section>
@@ -419,7 +419,7 @@ function SharedCompetitionBody({ competition, payload, landingSections, schedule
           <div className="fr-cut-card" style={{ ...infoCardStyle(), padding: 18 }}>
             <SectionTitle kicker="Puntos clave" title={landingSections?.highlights?.title || 'Lo que más pesa'} />
             <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
-              {(highlightItems.length ? highlightItems : scheduleItems.slice(0, 3).map((item) => ({ id: item.id, title: item.label, body: formatDateRange(item.start_at, item.end_at) }))).slice(0, 3).map((item) => (
+              {(highlightItems.length ? highlightItems : scheduleItems.slice(0, 3).map((item) => ({ id: item.id, title: item.label, body: formatDateRange(item.start_at, item.end_at, competition.timezone) }))).slice(0, 3).map((item) => (
                 <div key={item.id} style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700 }}>
                   {item.title}
                   {item.body ? <span style={{ color: 'var(--oa-text-secondary)', fontWeight: 500 }}> {item.body}</span> : null}
@@ -439,7 +439,7 @@ function SharedCompetitionBody({ competition, payload, landingSections, schedule
                 Fecha clave
               </div>
               <div style={{ marginTop: 8, color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{item.label || 'Fecha'}</div>
-              <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{formatDateRange(item.start_at, item.end_at)}</div>
+              <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{formatDateRange(item.start_at, item.end_at, competition.timezone)}</div>
               {item.note ? <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{item.note}</div> : null}
             </div>
           )) : (
@@ -516,7 +516,7 @@ function VariantThreeBody({ competition, payload, landingSections, scheduleItems
               <div key={item.id} className="fr-cut-card" style={{ border: '1px solid rgba(214,217,224,0.14)', background: 'rgba(13,15,18,0.58)', padding: 14 }}>
                 <div style={{ color: 'var(--oa-accent)', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Fecha clave</div>
                 <div style={{ marginTop: 8, color: '#F5F7FA', fontSize: 15, fontWeight: 800 }}>{item.label || 'Fecha'}</div>
-                <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{formatDateRange(item.start_at, item.end_at)}</div>
+                <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{formatDateRange(item.start_at, item.end_at, competition.timezone)}</div>
                 {item.note ? <div style={{ marginTop: 6, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{item.note}</div> : null}
               </div>
             ))}
@@ -541,7 +541,7 @@ function VariantThreeBody({ competition, payload, landingSections, scheduleItems
                 </div>
               </div>
               <div style={{ marginTop: 8, color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.55 }}>
-                {formatDateRange(phase.start_at, phase.end_at)}
+                {formatDateRange(phase.start_at, phase.end_at, competition.timezone)}
               </div>
               {Array.isArray(phase.activities) && phase.activities.length ? (
                 <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>

@@ -31,6 +31,7 @@ from services.category_registration import (
     normalize_registration_enabled,
     serialize_category_with_registration,
 )
+from timezones import to_utc_from_competition_time
 
 router = APIRouter(tags=["categories_phases"])
 PHASE_FORMATS_VALIDOS = {"activity", "wod"}
@@ -155,6 +156,10 @@ def _normalize_modality(raw: str | None) -> str:
     value = (raw or "").strip().lower()
     value = MODALITY_ALIAS.get(value, value)
     return value if value in MODALITY_VALIDOS else "individual"
+
+
+def _normalize_competition_dt(value, competition):
+    return to_utc_from_competition_time(value, getattr(competition, "timezone", None))
 
 
 def _normalize_enrollment_price(raw: object) -> int:
@@ -705,7 +710,7 @@ def list_phases(
 @router.post("/api/competitions/{competition_id}/phases", status_code=201)
 def create_phase(competition_id: int, body: PhaseCreate,
                  session: Session = Depends(get_session), user=Depends(require_staff)):
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
     modality = _normalize_modality(body.modality)
     phase_type = _normalize_phase_type(body.tipo)
     if phase_type not in PHASE_TIPOS_VALIDOS:
@@ -738,7 +743,9 @@ def create_phase(competition_id: int, body: PhaseCreate,
     )
     primary_activity = parsed_activities[0]
     phase_format = _phase_format_from_count(len(parsed_activities))
-    if body.start_at and body.end_at and body.start_at > body.end_at:
+    start_at = _normalize_competition_dt(body.start_at, competition)
+    end_at = _normalize_competition_dt(body.end_at, competition)
+    if start_at and end_at and start_at > end_at:
         raise HTTPException(400, "La fecha inicial de la fase no puede ser mayor a la final")
     phase = CompetitionPhase(
         competition_id=competition_id,
@@ -763,8 +770,8 @@ def create_phase(competition_id: int, body: PhaseCreate,
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
         estado=phase_status,
         is_visible=normalize_phase_visibility(body.is_visible),
-        start_at=body.start_at,
-        end_at=body.end_at,
+        start_at=start_at,
+        end_at=end_at,
         orden=body.orden,
     )
     session.add(phase)
@@ -777,7 +784,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
 @router.put("/api/competitions/{competition_id}/phases/{phase_id}")
 def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
                  session: Session = Depends(get_session), user=Depends(require_staff)):
-    require_competition_access(session, competition_id, user)
+    competition = require_competition_access(session, competition_id, user)
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or phase.competition_id != competition_id:
         raise HTTPException(404, "Fase no encontrada")
@@ -857,6 +864,10 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["winner_rule"] = primary_activity["winner_rule"]
         data["points_mode"] = primary_activity["points_mode"]
         data["phase_format"] = _phase_format_from_count(len(parsed_activities))
+    if "start_at" in data:
+        data["start_at"] = _normalize_competition_dt(data["start_at"], competition)
+    if "end_at" in data:
+        data["end_at"] = _normalize_competition_dt(data["end_at"], competition)
     next_start_at = data.get("start_at", phase.start_at)
     next_end_at = data.get("end_at", phase.end_at)
     if next_start_at and next_end_at and next_start_at > next_end_at:
