@@ -8268,6 +8268,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   const [phaseId, setPhaseId] = useState('')
   const [rows, setRows] = useState([])
   const [heats, setHeats] = useState([])
+  const [manualPhaseMeta, setManualPhaseMeta] = useState(null)
   const [heatFilter, setHeatFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('pending')
@@ -8282,11 +8283,14 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   const userSelectedHeatRef = useRef(false)
 
   const activePhase = phases.find(item => String(item.id) === String(phaseId))
-  const inputConfig = scoreInputConfig(activePhase)
-  const tieBreakActive = !!Number(activePhase?.tie_break_enabled || 0)
+  const activePhaseMeta = (activePhase || manualPhaseMeta)
+    ? { ...(activePhase || {}), ...(manualPhaseMeta || {}) }
+    : null
+  const inputConfig = scoreInputConfig(activePhaseMeta)
+  const tieBreakActive = !!Number(activePhaseMeta?.tie_break_enabled || 0)
   const tieBreakPhase = {
-    measurement_method: activePhase?.tie_break_method || 'for_time',
-    tipo: isTimeMeasurement(activePhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+    measurement_method: activePhaseMeta?.tie_break_method || 'for_time',
+    tipo: isTimeMeasurement(activePhaseMeta?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
   }
   const tieBreakInputConfig = scoreInputConfig(tieBreakPhase)
 
@@ -8317,6 +8321,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
     setStatusFilter('pending')
     setDrafts({})
     setTieBreakDrafts({})
+    setManualPhaseMeta(null)
     userSelectedHeatRef.current = false
   }, [phaseId])
 
@@ -8341,13 +8346,14 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
         const nextHeats = Array.isArray(data?.heats) ? data.heats : []
         setRows(nextRows)
         setHeats(nextHeats)
+        setManualPhaseMeta(data?.phase || null)
         setDrafts(prev => {
           const next = {}
           nextRows.forEach(item => {
             const key = resultEntryKey(item)
             next[key] = Object.prototype.hasOwnProperty.call(prev, key)
               ? prev[key]
-              : formatMarkForPhase(item.existing_mark, activePhase, item.existing_formatted)
+              : formatMarkForPhase(item.existing_mark, data?.phase || activePhaseMeta, item.existing_formatted)
           })
           return next
         })
@@ -8463,14 +8469,14 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
   }
 
   const saveOne = async (item, { moveNext = true } = {}) => {
-    if (!activePhase) return
+    if (!activePhaseMeta) return
     const key = resultEntryKey(item)
     const value = String(drafts[key] ?? '').trim()
-    const parsed = parseMetricByPhase(value, activePhase)
+    const parsed = parseMetricByPhase(value, activePhaseMeta)
     if (parsed == null) {
       setMsg({
         type: 'error',
-        text: phaseTypeFromPhase(activePhase) === 'tiempo'
+        text: phaseTypeFromPhase(activePhaseMeta) === 'tiempo'
           ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS.'
           : 'Marca invalida.',
       })
@@ -8495,7 +8501,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
       const endpoint = item.status === 'scored' ? '/judge/score/edit' : '/judge/score/submit'
       await api.post(endpoint, {
         competition_id: Number(competition.id),
-        phase_id: Number(activePhase.id),
+        phase_id: Number(activePhaseMeta.id),
         user_id: item.user_id ?? null,
         team_id: item.team_id ?? null,
         marca_raw: value,
@@ -8618,6 +8624,11 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
               Cambio heat: {formatTransitionMinutes(selectedTransitionHeat?.heat_transition_seconds)} · Cambio categoria: {formatTransitionMinutes(selectedTransitionHeat?.category_transition_seconds)}
               {tieBreakActive ? ` · Tie break: ${tieBreakInputConfig.label}` : ''}
             </div>
+            {tieBreakActive ? (
+              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid rgba(0,194,168,0.32)', background: 'rgba(0,194,168,0.10)', color: '#9AF7EA', borderRadius: 999, padding: '4px 8px', fontSize: 11, fontWeight: 900 }}>
+                Tie break activo: llena marca y desempate por atleta.
+              </div>
+            ) : null}
           </div>
           <div style={{ minWidth: isMobile ? '100%' : 220, flex: isMobile ? '1 1 100%' : '0 1 260px' }}>
             <div style={{ height: 8, borderRadius: 999, background: '#090B0E', overflow: 'hidden', border: '1px solid #252A33' }}>
@@ -8689,7 +8700,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                     </div>
                     {tieBreakActive ? (
                       <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label>Tie break</label>
+                        <label>Tie break <span style={{ color: '#6B7280', fontWeight: 400 }}>(desempate)</span></label>
                         <input
                           ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
                           type={tieBreakInputConfig.type}
@@ -8722,7 +8733,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false, onSaved }) {
                   <th>Atleta / Equipo</th>
                   <th>Categoria</th>
                   <th style={{ width: 180 }}>{inputConfig.label}</th>
-                  {tieBreakActive ? <th style={{ width: 160 }}>Tie break</th> : null}
+                  {tieBreakActive ? <th style={{ width: 170 }}>Tie break (desempate)</th> : null}
                   <th style={{ width: 150 }}>Estado</th>
                   <th style={{ width: 120 }}></th>
                 </tr>
@@ -9672,9 +9683,9 @@ function CompetitionResultsPanel({ competition }) {
                         : (b ? (autoPoints ?? 0) : 0))
                     : (row.puntos_b ?? '')
                   return (
-                    <div key={`team-member-mobile-${t.id}`} style={{ border: '1px solid #d5ddd3', borderRadius: 10, background: '#fff', padding: 10 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 8 }}>{(t.nombre || '').trim() || `Equipo ${t.id}`}</div>
-                      <div style={{ display: 'grid', gap: 2, fontSize: 13, color: '#555' }}>
+                    <div key={`team-member-mobile-${t.id}`} style={{ border: '1px solid #252A33', borderRadius: 10, background: '#171B21', padding: 10 }}>
+                      <div style={{ fontWeight: 700, marginBottom: 8, color: '#F5F7FA' }}>{(t.nombre || '').trim() || `Equipo ${t.id}`}</div>
+                      <div style={{ display: 'grid', gap: 2, fontSize: 13, color: '#AAB2C0' }}>
                         <div><b>A:</b> {a ? `${a.nombre} ${a.apellido}` : '-'}</div>
                         <div><b>B:</b> {b ? `${b.nombre} ${b.apellido}` : '-'}</div>
                       </div>
@@ -10014,8 +10025,8 @@ function CompetitionResultsPanel({ competition }) {
               {filteredResults.map(r => {
                 const draft = editRows[r.id] || {}
                 return (
-                  <div key={`result-mobile-${r.id}`} style={{ border: '1px solid #d5ddd3', borderRadius: 10, padding: 10, background: '#fff' }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                  <div key={`result-mobile-${r.id}`} style={{ border: '1px solid #252A33', borderRadius: 10, padding: 10, background: '#171B21' }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8, color: '#F5F7FA' }}>
                     {r.user_id
                         ? `${r.nombre || ''} ${r.apellido || ''}`.trim()
                         : (r.equipo || `Equipo ${r.team_id}`)}
@@ -10046,7 +10057,7 @@ function CompetitionResultsPanel({ competition }) {
                   </div>
                 )
               })}
-              {!filteredResults.length && <div style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin resultados</div>}
+              {!filteredResults.length && <div style={{ textAlign: 'center', color: '#AAB2C0', padding: 16 }}>Sin resultados</div>}
             </div>
           ) : (
             <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
@@ -10078,7 +10089,7 @@ function CompetitionResultsPanel({ competition }) {
                     </tr>
                   )
                 })}
-                {!filteredResults.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#666', padding: 16 }}>Sin resultados</td></tr>}
+                {!filteredResults.length && <tr><td colSpan={4} style={{ textAlign: 'center', color: '#AAB2C0', padding: 16 }}>Sin resultados</td></tr>}
               </tbody>
             </table>
             </div>
