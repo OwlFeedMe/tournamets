@@ -437,9 +437,9 @@ function buildAthleteSummary(athlete, data) {
 
 function summaryMetric(label, value, accent = THEME.ink) {
   return (
-    <div style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: '10px 12px', minWidth: 0 }}>
-      <div style={{ color: THEME.soft, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7 }}>{label}</div>
-      <div style={{ marginTop: 5, color: accent, fontWeight: 900, fontSize: 20, lineHeight: 1.05 }}>{value}</div>
+    <div className="lb-athlete-summary-metric" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, minWidth: 0 }}>
+      <div className="lb-athlete-summary-metric-label" style={{ color: THEME.soft, fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+      <div className="lb-athlete-summary-metric-value" style={{ color: accent, fontWeight: 900, lineHeight: 1.05 }}>{value}</div>
     </div>
   )
 }
@@ -471,6 +471,7 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
 
   return (
     <div
+      className="lb-athlete-summary-backdrop"
       role="presentation"
       onMouseDown={onClose}
       style={{
@@ -481,63 +482,61 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
         display: 'flex',
         alignItems: isMobile ? 'flex-end' : 'center',
         justifyContent: 'center',
-        padding: isMobile ? '10px 0 0' : 18,
       }}
     >
       <div
+        className="lb-athlete-summary-panel"
         role="dialog"
         aria-modal="true"
         aria-label={`Resumen competitivo de ${athleteDisplayName(athlete)}`}
         onMouseDown={(event) => event.stopPropagation()}
         style={{
-          width: isMobile ? '100%' : 'min(720px, 94vw)',
-          maxHeight: isMobile ? '88dvh' : '86vh',
           overflowY: 'auto',
           background: THEME.surface,
           border: `1px solid ${THEME.border}`,
-          borderRadius: isMobile ? '14px 14px 0 0' : 12,
           boxShadow: '0 24px 70px rgba(0,0,0,0.48)',
           color: THEME.ink,
         }}
       >
         <div style={{ height: 5, background: topBorder }} />
-        <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(23,27,33,0.98)', borderBottom: `1px solid ${THEME.border}`, padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div className="lb-athlete-summary-header" style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(23,27,33,0.98)', borderBottom: `1px solid ${THEME.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div style={{ fontWeight: 900, fontSize: 15 }}>Resumen competitivo</div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar resumen"
-            style={{ width: 34, height: 34, borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+            className="lb-athlete-summary-close"
+            style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
             <X size={18} />
           </button>
         </div>
 
-        <div style={{ padding: isMobile ? 16 : 20 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <div className="lb-athlete-summary-content">
+          <div className="lb-athlete-summary-hero" style={{ display: 'flex', alignItems: 'center' }}>
             <AthleteAvatar athlete={athlete} size={58} />
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 24, lineHeight: 1.1, fontWeight: 900, color: THEME.ink }}>{athleteDisplayName(athlete)}</div>
-              <div style={{ marginTop: 5, color: THEME.muted, fontSize: 13, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="lb-athlete-summary-name" style={{ lineHeight: 1.1, fontWeight: 900, color: THEME.ink }}>{athleteDisplayName(athlete)}</div>
+              <div className="lb-athlete-summary-meta" style={{ color: THEME.muted, display: 'flex', flexWrap: 'wrap' }}>
                 <span>{summary.category}</span>
                 {athlete?.box ? <span>{athlete.box}</span> : null}
                 {countryLabelFromLocation(athlete?.ciudad_pais) ? <span>{countryLabelFromLocation(athlete.ciudad_pais)}</span> : null}
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: '"Bebas Neue", monospace', color: summary.rank <= 3 ? '#FF9A3D' : THEME.primary, fontSize: 44, lineHeight: 0.9 }}>#{summary.rank ?? '-'}</div>
+            <div className="lb-athlete-summary-rank" style={{ textAlign: 'right' }}>
+              <div className="lb-athlete-summary-rank-number" style={{ fontFamily: '"Bebas Neue", monospace', color: summary.rank <= 3 ? '#FF9A3D' : THEME.primary, lineHeight: 0.9 }}>#{summary.rank ?? '-'}</div>
               <div style={{ color: THEME.soft, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Puesto</div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+          <div className="lb-athlete-summary-metrics" style={{ display: 'grid' }}>
             {summaryMetric('Puntos', summary.totalPoints, THEME.primary)}
             {summaryMetric('Workouts', `${summary.completedCount}/${summary.totalWorkouts || '-'}`, THEME.accent)}
             {summaryMetric('Arriba', summary.prevGap == null ? 'Liderando' : `${summary.prevGap} pts`, THEME.ink)}
             {summaryMetric('Abajo', summary.nextGap == null ? 'Sin perseguidor' : `${summary.nextGap} pts`, THEME.muted)}
           </div>
 
-          <div style={{ marginTop: 14, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 12 }}>
+          <div className="lb-athlete-summary-status" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8 }}>
             <div style={{ color: THEME.accent, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{summary.status}</div>
             <div style={{ marginTop: 6, color: THEME.muted, fontSize: 13, lineHeight: 1.5 }}>
               {summary.bestWorkout
@@ -549,18 +548,18 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
             </div>
           </div>
 
-          <div style={{ marginTop: 18 }}>
+          <div className="lb-athlete-summary-workouts">
             <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 900 }}>Workouts</div>
             <div style={{ display: 'grid', gap: 8 }}>
               {summary.phaseResults.length ? summary.phaseResults.map((item) => (
-                <div key={item.phase.id} style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: '10px 12px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) 90px 110px 90px', gap: isMobile ? 7 : 12, alignItems: 'center' }}>
+                <div key={item.phase.id} className="lb-athlete-summary-workout-row" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, display: 'grid', alignItems: 'center' }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.phase.nombre}</div>
+                    <div className="lb-athlete-summary-workout-name" style={{ fontWeight: 800 }}>{item.phase.nombre}</div>
                     <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{item.phase.estado || 'pendiente'}</div>
                   </div>
-                  <div style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
-                  <div style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValue(item.mark, item.phase)}</div>
-                  <div style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValue(item.mark, item.phase)}</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
                 </div>
               )) : (
                 <div style={{ color: THEME.muted, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 14 }}>Sin workouts individuales registrados.</div>
@@ -568,17 +567,17 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
             </div>
           </div>
 
-          <div style={{ marginTop: 18, display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-            <button type="button" onClick={onClose} style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, fontWeight: 800, cursor: 'pointer' }}>
+          <div className="lb-athlete-summary-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={onClose} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, fontWeight: 800, cursor: 'pointer' }}>
               Cerrar
             </button>
             {profilePath ? (
-              <Link to={profilePath} style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid transparent', background: THEME.primary, color: '#fff', fontWeight: 900, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <Link to={profilePath} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: '1px solid transparent', background: THEME.primary, color: '#fff', fontWeight: 900, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                 Ir al perfil
                 <ExternalLink size={15} />
               </Link>
             ) : (
-              <button type="button" disabled style={{ padding: '10px 14px', borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#11151a', color: THEME.soft, fontWeight: 900 }}>
+              <button type="button" disabled className="lb-athlete-summary-action" style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#11151a', color: THEME.soft, fontWeight: 900 }}>
                 Perfil no disponible
               </button>
             )}
@@ -1500,6 +1499,85 @@ export default function Leaderboard() {
         .lb-root .tab:hover:not(.active) { color: ${THEME.ink}; background: rgba(255,255,255,0.04); }
         .lb-root h1 { color: ${THEME.ink} !important; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.5px; font-size: 38px !important; }
         .lb-root select, .lb-root input { background: ${THEME.surface}; color: ${THEME.ink}; border: 1px solid ${THEME.border}; }
+        .lb-athlete-summary-backdrop {
+          padding: 18px;
+        }
+        .lb-athlete-summary-panel {
+          width: min(720px, 94vw);
+          max-height: 86vh;
+          border-radius: 12px;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+        }
+        .lb-athlete-summary-header {
+          padding: 14px 16px;
+        }
+        .lb-athlete-summary-close {
+          width: 34px;
+          height: 34px;
+        }
+        .lb-athlete-summary-content {
+          padding: 20px;
+        }
+        .lb-athlete-summary-hero {
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+        .lb-athlete-summary-name {
+          font-size: 24px;
+          overflow-wrap: anywhere;
+        }
+        .lb-athlete-summary-meta {
+          margin-top: 5px;
+          gap: 8px;
+          font-size: 13px;
+        }
+        .lb-athlete-summary-rank-number {
+          font-size: 44px;
+        }
+        .lb-athlete-summary-metrics {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .lb-athlete-summary-metric {
+          padding: 10px 12px;
+        }
+        .lb-athlete-summary-metric-label {
+          font-size: 10px;
+          letter-spacing: 0.7px;
+        }
+        .lb-athlete-summary-metric-value {
+          margin-top: 5px;
+          font-size: 20px;
+          overflow-wrap: anywhere;
+        }
+        .lb-athlete-summary-status {
+          margin-top: 14px;
+          padding: 12px;
+        }
+        .lb-athlete-summary-workouts {
+          margin-top: 18px;
+        }
+        .lb-athlete-summary-workout-row {
+          grid-template-columns: minmax(0, 1fr) 90px 110px 90px;
+          gap: 12px;
+          padding: 10px 12px;
+        }
+        .lb-athlete-summary-workout-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .lb-athlete-summary-workout-stat {
+          min-width: 0;
+        }
+        .lb-athlete-summary-actions {
+          margin-top: 18px;
+        }
+        .lb-athlete-summary-action {
+          min-height: 42px;
+          padding: 10px 14px;
+        }
         .lb-root .badge-rx { background: rgba(214,217,224,0.12); color: #ff9a3d; border-color: rgba(214,217,224,0.35); }
         .lb-root .badge-scaled { background: rgba(94,234,212,0.12); color: #6ff3e1; border-color: rgba(94,234,212,0.35); }
         .lb-root .badge-masters { background: rgba(212,165,55,0.12); color: #f1ce75; border-color: rgba(212,165,55,0.35); }
@@ -1549,6 +1627,147 @@ export default function Leaderboard() {
           .lb-root .tabs::-webkit-scrollbar { display: none; }
           .lb-root .tab { font-size: 13px; padding: 6px 12px !important; flex-shrink: 0; }
           .lb-root select { font-size: 14px; }
+        }
+        @media (max-width: 640px) {
+          .lb-athlete-summary-backdrop {
+            padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+          }
+          .lb-athlete-summary-panel {
+            width: 100%;
+            max-height: calc(100dvh - max(8px, env(safe-area-inset-top, 0px)));
+            border-radius: 14px 14px 0 0;
+            border-left: none !important;
+            border-right: none !important;
+          }
+          .lb-athlete-summary-header {
+            padding: 12px 14px;
+          }
+          .lb-athlete-summary-close {
+            width: 38px;
+            height: 38px;
+          }
+          .lb-athlete-summary-content {
+            padding: 14px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+          }
+          .lb-athlete-summary-hero {
+            gap: 10px;
+            margin-bottom: 14px;
+            align-items: flex-start !important;
+          }
+          .lb-athlete-summary-name {
+            font-size: 21px;
+          }
+          .lb-athlete-summary-meta {
+            gap: 6px 8px;
+            font-size: 12px;
+          }
+          .lb-athlete-summary-rank {
+            min-width: 58px;
+          }
+          .lb-athlete-summary-rank-number {
+            font-size: 38px;
+          }
+          .lb-athlete-summary-metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .lb-athlete-summary-metric {
+            padding: 9px 10px;
+          }
+          .lb-athlete-summary-metric-label {
+            font-size: 9px;
+            letter-spacing: 0.45px;
+          }
+          .lb-athlete-summary-metric-value {
+            font-size: 18px;
+          }
+          .lb-athlete-summary-status {
+            margin-top: 10px;
+            padding: 10px;
+          }
+          .lb-athlete-summary-workouts {
+            margin-top: 14px;
+          }
+          .lb-athlete-summary-workout-row {
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 6px 10px;
+            padding: 10px;
+          }
+          .lb-athlete-summary-workout-rank {
+            grid-column: 2;
+            grid-row: 1;
+            align-self: start;
+          }
+          .lb-athlete-summary-workout-mark {
+            grid-column: 1 / span 2;
+            grid-row: 2;
+          }
+          .lb-athlete-summary-workout-points {
+            grid-column: 3;
+            grid-row: 1 / span 2;
+            align-self: center;
+            text-align: right;
+            white-space: nowrap;
+          }
+          .lb-athlete-summary-workout-name {
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+          .lb-athlete-summary-actions {
+            margin-top: 14px;
+            display: grid !important;
+            grid-template-columns: 1fr 1fr;
+          }
+          .lb-athlete-summary-action {
+            width: 100%;
+            padding: 11px 12px;
+          }
+        }
+        @media (max-width: 380px) {
+          .lb-athlete-summary-content {
+            padding-left: 10px;
+            padding-right: 10px;
+          }
+          .lb-athlete-summary-hero {
+            display: grid !important;
+            grid-template-columns: 48px minmax(0, 1fr) auto;
+          }
+          .lb-athlete-summary-hero > span {
+            width: 48px !important;
+            height: 48px !important;
+          }
+          .lb-athlete-summary-name {
+            font-size: 19px;
+          }
+          .lb-athlete-summary-rank {
+            min-width: 48px;
+          }
+          .lb-athlete-summary-rank-number {
+            font-size: 34px;
+          }
+          .lb-athlete-summary-metric {
+            padding: 8px;
+          }
+          .lb-athlete-summary-metric-value {
+            font-size: 16px;
+          }
+          .lb-athlete-summary-workout-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
+          .lb-athlete-summary-workout-rank {
+            grid-column: 2;
+          }
+          .lb-athlete-summary-workout-mark {
+            grid-column: 1 / -1;
+          }
+          .lb-athlete-summary-workout-points {
+            grid-column: 1 / -1;
+            grid-row: 3;
+            text-align: left;
+          }
+          .lb-athlete-summary-actions {
+            grid-template-columns: 1fr;
+          }
         }
         @keyframes tvProgress {
           from { width: 0%; }

@@ -77,15 +77,28 @@ function categoryIsOpen(category) {
 function categoryCapacityLabel(category) {
   const status = categoryRegistrationStatus(category)
   if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
-  if (status === 'full') return 'Cupo lleno'
+  if (status === 'full') return 'Categoria agotada'
   const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
   const registeredCount = Number(category?.registered_count || 0)
   const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
   if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
-    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    if (Number.isFinite(availableSpots)) {
+      if (availableSpots <= 0) return 'Categoria agotada'
+      if (availableSpots === 1) return 'Ultimo cupo'
+      if (availableSpots <= 3) return `Solo ${availableSpots} cupos`
+      return `${availableSpots} cupos libres`
+    }
     return `${registeredCount} / ${maxCapacity} inscritos`
   }
-  return 'Sin limite de cupos'
+  return 'Cupos abiertos'
+}
+
+function getCategoryCapacityBadgeStyle(category, isOpen) {
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  const scarce = isOpen && Number.isFinite(availableSpots) && availableSpots > 0 && availableSpots <= 3
+  if (!isOpen) return { background: 'rgba(107,114,128,0.16)', color: '#D7DEE8' }
+  if (scarce) return { background: 'rgba(255,107,0,0.14)', color: '#FFB36F' }
+  return { background: 'rgba(0,194,168,0.14)', color: '#8DF1E4' }
 }
 
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
@@ -980,6 +993,7 @@ export default function CompetitionEnrollmentPage() {
                     const isExpanded = expandedCategoryId === category.id
                     const isOpen = categoryIsOpen(category)
                     const capacityLabel = categoryCapacityLabel(category)
+                    const capacityBadgeStyle = getCategoryCapacityBadgeStyle(category, isOpen)
                     const categoryBasePrice = normalizeEnrollmentPrice(category.enrollment_price)
                     const categoryDiscountAmount = isSelected ? (appliedDiscount?.discount_amount ?? 0) : 0
                     const categoryPricing = calculateEnrollmentPricing(Math.max(0, categoryBasePrice - categoryDiscountAmount), platformFeeRate, minPlatformFee)
@@ -991,7 +1005,7 @@ export default function CompetitionEnrollmentPage() {
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: isOpen ? 'rgba(0,194,168,0.14)' : 'rgba(107,114,128,0.16)', color: isOpen ? '#8DF1E4' : '#D7DEE8', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: capacityBadgeStyle.background, color: capacityBadgeStyle.color, fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
                                   {capacityLabel}
                                 </span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: categoryDiscountAmount > 0 ? 'rgba(94,234,212,0.14)' : 'rgba(214,217,224,0.14)', color: categoryDiscountAmount > 0 ? '#8DF1E4' : '#FFB36F', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>

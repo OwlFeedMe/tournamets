@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Clock, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
 import CompetitionRosterPanel from '../components/competition/CompetitionRosterPanel'
@@ -72,15 +72,70 @@ function categoryIsOpen(category) {
 function categoryCapacityLabel(category) {
   const status = categoryRegistrationStatus(category)
   if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
-  if (status === 'full') return 'Cupo lleno'
+  if (status === 'full') return 'Categoria agotada'
   const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
   const registeredCount = Number(category?.registered_count || 0)
   const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
   if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
-    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    if (Number.isFinite(availableSpots)) {
+      if (availableSpots <= 0) return 'Categoria agotada'
+      if (availableSpots === 1) return 'Ultimo cupo'
+      if (availableSpots <= 3) return `Solo ${availableSpots} cupos`
+      return `${availableSpots} cupos libres`
+    }
     return `${registeredCount} / ${maxCapacity} inscritos`
   }
-  return 'Sin limite de cupos'
+  return 'Cupos abiertos'
+}
+
+function categoryCapacityTone(category, theme) {
+  const status = categoryRegistrationStatus(category)
+  if (status !== 'open') return { background: 'rgba(107,114,128,0.16)', border: 'rgba(107,114,128,0.28)', color: theme.text }
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  if (Number.isFinite(availableSpots) && availableSpots > 0 && availableSpots <= 3) {
+    return { background: hexToRgba(theme.primary, 0.14), border: hexToRgba(theme.primary, 0.34), color: '#FFB36F' }
+  }
+  return { background: hexToRgba(theme.accent, 0.12), border: hexToRgba(theme.accent, 0.24), color: theme.text }
+}
+
+function parseCountdownDate(value) {
+  if (!value) return null
+  const text = String(value).trim()
+  if (!text) return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const [y, m, d] = text.split('-').map(Number)
+    const dateOnly = new Date(y, m - 1, d, 23, 59, 59, 999)
+    return Number.isNaN(dateOnly.getTime()) ? null : dateOnly
+  }
+  const parsed = new Date(text)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
+function getEnrollmentCountdown(endValue, nowMs) {
+  const endDate = parseCountdownDate(endValue)
+  if (!endDate) return null
+  const remainingMs = endDate.getTime() - nowMs
+  if (remainingMs <= 0) return null
+  const totalSeconds = Math.floor(remainingMs / 1000)
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const units = days > 0
+    ? [
+        { label: 'Dias', value: days },
+        { label: 'Horas', value: hours },
+        { label: 'Min', value: minutes },
+      ]
+    : [
+        { label: 'Horas', value: hours },
+        { label: 'Min', value: minutes },
+        { label: 'Seg', value: seconds },
+      ]
+  return {
+    units,
+    urgent: remainingMs <= 72 * 60 * 60 * 1000,
+  }
 }
 
 function parseLandingSections(raw) {
@@ -464,6 +519,7 @@ export default function CompetitionLanding() {
   const [pricingCfg, setPricingCfg] = useState(null)
   const [spectatorTicketing, setSpectatorTicketing] = useState(null)
   const [publicRosterPayload, setPublicRosterPayload] = useState(null)
+  const [countdownNow, setCountdownNow] = useState(() => Date.now())
   const contentSwitchRef = useRef(null)
   const pendingSwitchAnchorRef = useRef(null)
 
@@ -472,6 +528,13 @@ export default function CompetitionLanding() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!payload?.competition?.enrollment_open || !payload?.competition?.enrollment_end) return undefined
+    setCountdownNow(Date.now())
+    const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [payload?.competition?.enrollment_open, payload?.competition?.enrollment_end])
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined
@@ -624,6 +687,10 @@ export default function CompetitionLanding() {
   const competitionStartDate = useMemo(
     () => parseDateValue(competition?.competition_start || competition?.enrollment_start),
     [competition]
+  )
+  const enrollmentCountdown = useMemo(
+    () => (competition?.enrollment_open ? getEnrollmentCountdown(competition?.enrollment_end, countdownNow) : null),
+    [competition?.enrollment_end, competition?.enrollment_open, countdownNow]
   )
   const isUpcomingCompetition = !!(competitionStartDate && competitionStartDate.getTime() > Date.now())
   const canSeeMySchedule = !!(session && userId && myEnrollmentState === 'confirmado')
@@ -1002,6 +1069,26 @@ export default function CompetitionLanding() {
                     <div style={{ color: '#E8D79B', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.2 }}>
                       Rango de inscripcion
                     </div>
+                    {enrollmentCountdown ? (
+                      <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, color: enrollmentCountdown.urgent ? '#FFB36F' : '#8DF1E4', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1 }}>
+                          <Clock size={14} />
+                          Inscripciones cierran en
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 72px))', gap: 8 }}>
+                          {enrollmentCountdown.units.map((unit) => (
+                            <div key={unit.label} style={{ borderRadius: 6, border: `1px solid ${enrollmentCountdown.urgent ? 'rgba(255,107,0,0.34)' : 'rgba(0,194,168,0.28)'}`, background: enrollmentCountdown.urgent ? 'rgba(255,107,0,0.12)' : 'rgba(0,194,168,0.10)', padding: '8px 10px', textAlign: 'center' }}>
+                              <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 900, lineHeight: 1 }}>
+                                {String(unit.value).padStart(2, '0')}
+                              </div>
+                              <div style={{ marginTop: 4, color: theme.textSecondary, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                                {unit.label}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                     <div style={{ marginTop: 8, color: '#FFF2C7', fontSize: isMobile ? 34 : 48, fontWeight: 800, lineHeight: 0.94 }}>
                       {categoryPricingSummary
                         ? (categoryPricingSummary.min === categoryPricingSummary.max
@@ -1302,8 +1389,8 @@ export default function CompetitionLanding() {
                               const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
                               const hasAnyDescription = !!(shortDescription || longDescription)
                               const hasPricing = pricing.totalPrice > 0
-                              const registrationStatus = categoryRegistrationStatus(category)
                               const capacityLabel = categoryCapacityLabel(category)
+                              const capacityTone = categoryCapacityTone(category, theme)
                               const canExpand = hasAnyDescription || hasPricing
                               const CardTag = canExpand ? 'button' : 'div'
                               return (
@@ -1321,7 +1408,7 @@ export default function CompetitionLanding() {
                                       <span style={{ padding: '5px 8px', borderRadius: 999, background: modality === 'teams' ? hexToRgba(theme.primary, 0.12) : hexToRgba(theme.accent, 0.12), border: `1px solid ${modality === 'teams' ? hexToRgba(theme.primary, 0.24) : hexToRgba(theme.accent, 0.24)}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                                         {modalityLabel(modality)}
                                       </span>
-                                      <span style={{ padding: '5px 8px', borderRadius: 999, background: registrationStatus === 'open' ? hexToRgba(theme.accent, 0.12) : 'rgba(107,114,128,0.16)', border: `1px solid ${registrationStatus === 'open' ? hexToRgba(theme.accent, 0.24) : 'rgba(107,114,128,0.28)'}`, color: theme.text, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                      <span style={{ padding: '5px 8px', borderRadius: 999, background: capacityTone.background, border: `1px solid ${capacityTone.border}`, color: capacityTone.color, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
                                         {capacityLabel}
                                       </span>
                                     </div>
