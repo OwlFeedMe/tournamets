@@ -506,9 +506,9 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
             onClick={onClose}
             aria-label="Cerrar resumen"
             className="lb-athlete-summary-close"
-            style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}
+            style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 1 }}
           >
-            <X size={18} />
+            <X size={18} strokeWidth={2.4} style={{ display: 'block' }} />
           </button>
         </div>
 
@@ -1515,6 +1515,7 @@ export default function Leaderboard() {
         .lb-athlete-summary-close {
           width: 34px;
           height: 34px;
+          box-sizing: border-box;
         }
         .lb-athlete-summary-content {
           padding: 20px;
@@ -1630,14 +1631,19 @@ export default function Leaderboard() {
         }
         @media (max-width: 640px) {
           .lb-athlete-summary-backdrop {
-            padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+            padding:
+              max(8px, env(safe-area-inset-top, 0px))
+              10px
+              max(12px, calc(env(safe-area-inset-bottom, 0px) + 10px));
           }
           .lb-athlete-summary-panel {
-            width: 100%;
-            max-height: calc(100dvh - max(8px, env(safe-area-inset-top, 0px)));
-            border-radius: 14px 14px 0 0;
-            border-left: none !important;
-            border-right: none !important;
+            width: min(100%, 520px);
+            max-height: calc(
+              100dvh
+              - max(8px, env(safe-area-inset-top, 0px))
+              - max(12px, calc(env(safe-area-inset-bottom, 0px) + 10px))
+            );
+            border-radius: 14px;
           }
           .lb-athlete-summary-header {
             padding: 12px 14px;
@@ -1647,7 +1653,7 @@ export default function Leaderboard() {
             height: 38px;
           }
           .lb-athlete-summary-content {
-            padding: 14px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+            padding: 14px;
           }
           .lb-athlete-summary-hero {
             gap: 10px;
