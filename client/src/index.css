@@ -26,6 +26,10 @@ input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; marg
   --fr-card-radius: 4px;
   --fr-card-cut: 18px;
   --fr-card-cut-line: rgba(214, 217, 224, 0.5);
+  --fr-scrollbar-track: #090b0e;
+  --fr-scrollbar-thumb: #252a33;
+  --fr-scrollbar-thumb-hover: #ff6b00;
+  --fr-scrollbar-corner: #090b0e;
 }
 
 body {
@@ -34,6 +38,34 @@ body {
   color: var(--oa-text);
   min-height: 100vh;
   overflow-x: hidden;
+}
+
+* {
+  scrollbar-color: var(--fr-scrollbar-thumb) var(--fr-scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--fr-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--fr-scrollbar-thumb);
+  border: 2px solid var(--fr-scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--fr-scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--fr-scrollbar-corner);
 }
 
 body.fr-modal-open {

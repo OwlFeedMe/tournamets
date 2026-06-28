@@ -217,7 +217,8 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
     rank_by_category = _competition_has_categories(session, competition_id)
     phase_mode = ((getattr(phase, "team_result_mode", None) or "").strip().lower()) if phase else ""
-    is_team_entity_phase = phase_mode in {"sum_two", "single_member"}
+    phase_modality = ((getattr(phase, "modality", None) or "individual").strip().lower()) if phase else "individual"
+    is_team_entity_phase = phase_modality == "teams" and phase_mode in {"sum_two", "single_member"}
 
     # Team-based phases: rank by team, then propagate same position/points to member rows.
     if is_team_entity_phase:
@@ -516,7 +517,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         if phase_mode == "total" and resolved_team_id is not None:
             duplicate_participant_id = None
 
-        if not phase.allow_multiple_results and _has_phase_duplicate(
+        if _has_phase_duplicate(
             session,
             competition_id=body.competition_id,
             phase_id=body.phase_id,
@@ -584,7 +585,7 @@ def update_result(result_id: int, body: ResultUpdate,
         if phase_mode == "total" and r.team_id is not None:
             duplicate_participant_id = None
 
-        if body.phase_id is not None and not phase.allow_multiple_results and _has_phase_duplicate(
+        if body.phase_id is not None and _has_phase_duplicate(
             session,
             competition_id=r.competition_id,
             phase_id=phase_id,

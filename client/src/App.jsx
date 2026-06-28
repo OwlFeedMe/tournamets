@@ -4,6 +4,7 @@ import { AuthProvider, getHomePath, useAuth } from './context/AuthContext'
 import { AuthenticatedShell } from './components/layout/AuthenticatedShell'
 
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
+const AdminCompetitionCommandProposal = lazy(() => import('./pages/AdminCompetitionCommandProposal'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
 const CompetitionPublicRosterPage = lazy(() => import('./pages/CompetitionPublicRosterPage'))
@@ -16,6 +17,7 @@ const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({
 const HomeVariants = lazy(() => import('./pages/HomeVariants'))
 const Leaderboard = lazy(() => import('./pages/Leaderboard'))
 const JudgeHub = lazy(() => import('./pages/JudgeHub'))
+const JudgeResultsPanel = lazy(() => import('./pages/JudgeResultsPanel'))
 const Login = lazy(() => import('./pages/Login'))
 const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.MyEventsPage })))
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
@@ -88,6 +90,7 @@ export default function App() {
               <Route path="/competition3" element={<CompetitionVariants variant={3} />} />
               <Route path="/competition4" element={<CompetitionVariants variant={4} />} />
               <Route path="/competition5" element={<CompetitionVariants variant={5} />} />
+              <Route path="/admin-command-proposal" element={<AdminCompetitionCommandProposal />} />
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
               <Route path="/competitions/:competitionId/inscritos" element={<CompetitionPublicRosterPage />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
@@ -152,15 +155,23 @@ export default function App() {
                   path="/judge"
                   element={
                     <RoleGate allowedRoles={['judge', 'admin']}>
+                      <JudgeResultsPanel />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/judge/score/*"
+                  element={
+                    <RoleGate allowedRoles={['judge', 'admin']}>
                       <JudgeHub />
                     </RoleGate>
                   }
                 />
                 <Route
-                  path="/judge/*"
+                  path="/organizer/command-proposal"
                   element={
-                    <RoleGate allowedRoles={['judge', 'admin']}>
-                      <JudgeHub />
+                    <RoleGate allowedRoles={['organizer', 'admin']}>
+                      <AdminCompetitionCommandProposal />
                     </RoleGate>
                   }
                 />
@@ -189,10 +200,34 @@ export default function App() {
                   }
                 />
                 <Route
-                  path="/admin/*"
+                  path="/admin-legacy"
                   element={
                     <RoleGate allowedRoles={['admin']}>
                       <AdminDashboard />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin-legacy/*"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminDashboard />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminCompetitionCommandProposal />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin/*"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminCompetitionCommandProposal />
                     </RoleGate>
                   }
                 />

@@ -1434,7 +1434,7 @@ function buildPhasePayload(values, orden = 0) {
     descripcion: String(activities[0]?.descripcion || values.descripcion || '').trim() || null,
     workout_format: normalizeWorkoutFormat(values.workout_format, primary.measurement_method),
     time_cap: timeCap,
-    allow_multiple_results: Number(values.allow_multiple_results || 0),
+    allow_multiple_results: 0,
     team_result_mode: values.team_result_mode || 'sum_two',
     tie_break_enabled: Number(values.tie_break_enabled || 0) ? 1 : 0,
     tie_break_method: normalizeMeasurementMethod(values.tie_break_method || 'for_time', 'tiempo'),
@@ -7036,7 +7036,7 @@ function CompetitionResultsPanel({ competition }) {
   const teamMembersPhaseType = phaseTypeFromPhase(teamMembersPhase)
   const teamMembersPhaseMethod = normalizeMeasurementMethod(teamMembersPhase?.measurement_method, teamMembersPhase?.tipo)
   const teamMembersPhaseIsTime = isTimeMeasurement(teamMembersPhaseMethod)
-  const teamMembersAllowMultiple = !!Number(teamMembersPhase?.allow_multiple_results || 0)
+  const teamMembersAllowMultiple = false
   const teamMembersRules = parseScoringRules(teamMembersPhase?.scoring_rules)
   const teamMembersAutoByRules = isPointsModeRules(teamMembersPhase) && teamMembersRules.length > 0
   const teamMembersAutoByDirect = isPointsModeDirect(teamMembersPhase)
@@ -7186,7 +7186,7 @@ function CompetitionResultsPanel({ competition }) {
     return acc
   }, {})
   const activePhaseForTeams = phases.find(p => String(p.id) === String(activePhaseId))
-  const activeTeamPhaseAllowsMultiple = !!Number(activePhaseForTeams?.allow_multiple_results || 0)
+  const activeTeamPhaseAllowsMultiple = false
   const teamsForCategory = categoryFilter
     ? teams.filter(t => (t.members || []).some(m => (participantCategoryById[m.id] || 'Sin categoria') === categoryFilter))
     : []

@@ -698,7 +698,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         "tv_static_phase_id": tv_static_phase_id,
         "tv_static_individual_category": tv_static_individual_category,
         "tv_static_team_category_mode": tv_static_team_category_mode,
-        "show_event_count": any(bool(p.allow_multiple_results) for p in phases),
+        "show_event_count": False,
         "scoring_mode": getattr(comp, "scoring_mode", "highest_wins") if comp else "highest_wins",
         "teams": teams_list,
         "has_teams": team_enabled and len(teams_list) > 0,

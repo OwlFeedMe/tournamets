@@ -110,7 +110,7 @@ function tieBreakValue(value, phaseInfo) {
 }
 
 function TieBreakLine({ value, phaseInfo, compact = false }) {
-  if (!Number(phaseInfo?.tie_break_enabled || 0) || value == null) return null
+  if (value == null) return null
   return (
     <span
       title="Desempate usado para ordenar atletas con la misma marca"
@@ -613,8 +613,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
           return acc
         }, {})
         const shouldShowTiebreak = (item) => (
-          Number(phaseInfo?.tie_break_enabled || 0)
-          && item?.tiebreak != null
+          item?.tiebreak != null
           && item?.mejor_marca != null
           && markCounts[String(item.mejor_marca)] > 1
         )
@@ -679,7 +678,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
                           </span>
                         )}
-                        {showEventCount && <span>Registros: {p.total_eventos}</span>}
                       </div>
                     </div>
                   )
@@ -691,7 +689,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                   <tr>
                     <th style={{ width: 50 }}>Pos Evento</th>
                     <th>Nombre</th>
-                    {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
                     {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
                     {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
@@ -727,7 +724,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
-                        {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{p.total_eventos}</td>}
                         {phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
                             <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValue(p.mejor_marca, phaseInfo)}</div>
@@ -763,7 +759,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
 }
 
 // â”€â”€ Team leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
+function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -829,7 +825,6 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   )
                 })}
               </div>
-              {showEventCount && <div style={{ marginTop: 4, color: THEME.muted, fontSize: 12 }}>Registros: {t.total_eventos}</div>}
             </div>
           )
         })}
@@ -844,7 +839,6 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
           <th style={{ width: 50 }}>Pos Evento</th>
           <th>Equipo</th>
           <th>Integrantes</th>
-          {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
           {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
           <th style={{ textAlign: 'center' }}>Puntos</th>
           {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
@@ -889,7 +883,6 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   })}
                 </div>
               </td>
-              {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{t.total_eventos}</td>}
               {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
               <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                 {t.total_puntos}
@@ -1217,7 +1210,7 @@ export default function Leaderboard() {
   const tvStaticTeamCategoryMode = data?.tv_static_team_category_mode || '__by_category__'
   const tvRotationIntervalMs = Math.min(120000, Math.max(5000, Number(data?.tv_rotation_interval_seconds || 24) * 1000))
   const pollIntervalMs = Math.min(60000, Math.max(2000, Number(data?.tv_data_refresh_interval_seconds || 5) * 1000))
-  const showEventCount = !!data?.show_event_count
+  const showEventCount = false
   const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''

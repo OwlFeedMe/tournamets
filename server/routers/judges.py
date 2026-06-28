@@ -539,7 +539,7 @@ def _score_context_response(
     )
     if token:
         payload["token"] = token
-    payload["status"] = "already_used" if existing and not int(getattr(phase, "allow_multiple_results", 0) or 0) else "ready"
+    payload["status"] = "already_used" if existing else "ready"
     payload["can_edit"] = bool(existing)
     payload["existing_formatted"] = _format_mark_for_phase(existing.marca if existing else None, phase)
     return payload
@@ -1217,7 +1217,7 @@ def judge_score_submit(
         team_id=team_id,
         phase_mode=phase_mode,
     )
-    if existing and not int(getattr(phase, "allow_multiple_results", 0) or 0):
+    if existing:
         out = _score_context_response(
             session,
             competition_id=competition_id,

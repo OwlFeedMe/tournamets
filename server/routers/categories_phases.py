@@ -762,7 +762,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         scoring_rules=body.scoring_rules,
         activities=activities,
         points_mode=primary_activity["points_mode"],
-        allow_multiple_results=1 if body.allow_multiple_results else 0,
+        allow_multiple_results=0,
         team_result_mode=team_mode,
         tie_break_enabled=1 if body.tie_break_enabled else 0,
         tie_break_method=_normalize_measurement_method(body.tie_break_method, "tiempo"),
@@ -820,8 +820,7 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
             raise HTTPException(400, "winner_rule invalido. Usa: higher_wins o lower_wins")
     elif "tipo" in data:
         data["winner_rule"] = _default_winner_rule_for_type(data["tipo"])
-    if "allow_multiple_results" in data:
-        data["allow_multiple_results"] = 1 if data["allow_multiple_results"] else 0
+    data["allow_multiple_results"] = 0
     if "tie_break_enabled" in data:
         data["tie_break_enabled"] = 1 if data["tie_break_enabled"] else 0
     if "tie_break_method" in data:
