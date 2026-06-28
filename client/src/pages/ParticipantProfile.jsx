@@ -838,7 +838,13 @@ export default function ParticipantProfile() {
     }
   }, [showEditProfile])
 
-  const loadResults = () => api.get('/results').then(r => setResults(r.data))
+  const loadResults = () => {
+    if (!userId) {
+      setResults([])
+      return Promise.resolve()
+    }
+    return api.get('/results', { params: { user_id: userId } }).then(r => setResults(r.data))
+  }
   const loadMyCompetitions = async () => { const res = await api.get(`/users/${userId}/competitions`); setMyComps(res.data) }
   const loadMyInvitations = async () => {
     try {
