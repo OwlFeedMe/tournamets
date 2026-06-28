@@ -269,6 +269,157 @@ function ScoreTable({ assignment, phases, notify }) {
   )
 }
 
+function AppealsPanel({ assignment, notify }) {
+  const [appeals, setAppeals] = useState([])
+  const [active, setActive] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [reply, setReply] = useState({ message: '', evidence_url: '' })
+  const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
+  const [busy, setBusy] = useState(false)
+
+  const loadAppeals = async () => {
+    if (!assignment?.competition_id) return
+    setLoading(true)
+    try {
+      const { data } = await api.get('/appeals', { params: { competition_id: assignment.competition_id } })
+      setAppeals(Array.isArray(data) ? data : [])
+    } catch (error) {
+      notify(error.response?.data?.detail || 'No se pudieron cargar las reclamaciones.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openAppeal = async (appeal) => {
+    try {
+      const { data } = await api.get(`/appeals/${appeal.id}`)
+      setActive(data)
+      setResolution({ marca: data.current_marca ?? '', tiebreak: data.current_tiebreak ?? '', resolution_note: '' })
+      setReply({ message: '', evidence_url: '' })
+    } catch (error) {
+      notify(error.response?.data?.detail || 'No se pudo abrir la reclamacion.', 'error')
+    }
+  }
+
+  useEffect(() => {
+    loadAppeals()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignment?.competition_id])
+
+  const sendReply = async () => {
+    if (!active) return
+    setBusy(true)
+    try {
+      const { data } = await api.post(`/appeals/${active.id}/messages`, {
+        message: reply.message.trim(),
+        evidence_url: reply.evidence_url.trim() || null,
+      })
+      setActive(data)
+      setReply({ message: '', evidence_url: '' })
+      await loadAppeals()
+    } catch (error) {
+      notify(error.response?.data?.detail || 'No se pudo enviar el mensaje.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resolveAppeal = async (resolutionType) => {
+    if (!active) return
+    setBusy(true)
+    try {
+      const payload = {
+        resolution_type: resolutionType,
+        resolution_note: resolution.resolution_note.trim(),
+      }
+      if (resolutionType === 'score_adjusted') {
+        payload.marca = resolution.marca
+        if (resolution.tiebreak !== '') payload.tiebreak = resolution.tiebreak
+      }
+      const { data } = await api.post(`/appeals/${active.id}/resolve`, payload)
+      setActive(data)
+      notify(resolutionType === 'rejected' ? 'Reclamacion rechazada' : resolutionType === 'needs_evidence' ? 'Evidencia solicitada' : 'Resultado actualizado')
+      await loadAppeals()
+    } catch (error) {
+      notify(error.response?.data?.detail || 'No se pudo cerrar la reclamacion.', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const activeItems = appeals.filter((item) => ['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(item.status))
+
+  return (
+    <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Reclamaciones</h2>
+          <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>{activeItems.length} abiertas</div>
+        </div>
+        <Button onClick={loadAppeals} disabled={loading}>{loading ? 'Cargando...' : 'Actualizar'}</Button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: active ? 'minmax(260px, 360px) minmax(0, 1fr)' : '1fr', gap: 12 }}>
+        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden' }}>
+          {appeals.length ? appeals.map((appeal) => (
+            <button key={appeal.id} type="button" onClick={() => openAppeal(appeal)} style={{ width: '100%', border: 0, borderBottom: `1px solid ${colors.border}`, background: active?.id === appeal.id ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, textAlign: 'left', padding: 12, display: 'grid', gap: 5 }}>
+              <span style={{ fontWeight: 900 }}>{appeal.user_name || 'Atleta'}</span>
+              <span style={{ color: colors.secondary, fontSize: 12 }}>{appeal.phase_name || 'Workout'} - {appeal.status}</span>
+              <span style={{ color: colors.muted, fontSize: 11 }}>Solicita: {appeal.user_requested_score || '-'}</span>
+            </button>
+          )) : <div style={{ padding: 14, color: colors.secondary }}>{loading ? 'Cargando...' : 'Sin reclamaciones.'}</div>}
+        </div>
+
+        {active ? (
+          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, padding: 12, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontWeight: 950 }}>{active.user_name || 'Atleta'}</div>
+                <div style={{ color: colors.secondary, fontSize: 12 }}>{active.phase_name || 'Workout'} - Estado: {active.status}</div>
+              </div>
+              {active.evidence_url ? <a href={active.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontWeight: 850 }}>Ver evidencia</a> : null}
+            </div>
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, color: colors.secondary, fontSize: 13, lineHeight: 1.55 }}>
+              {active.description}
+            </div>
+            <div style={{ display: 'grid', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+              {(active.messages || []).map((message) => (
+                <div key={message.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, background: colors.surface }}>
+                  <div style={{ color: colors.secondary, fontSize: 11, fontWeight: 850 }}>{message.author_name || message.author_role} - {message.author_role}</div>
+                  <div style={{ marginTop: 5, fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
+                  {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
+                </div>
+              ))}
+            </div>
+            {['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(active.status) ? (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <Field label="Mensaje"><input style={inputStyle()} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Responder al atleta" /></Field>
+                  <Field label="Link"><input style={inputStyle()} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Drive o YouTube" /></Field>
+                </div>
+                <Button onClick={sendReply} disabled={busy}>Enviar mensaje</Button>
+                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <Field label="Nueva marca"><input style={inputStyle()} type="number" value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} /></Field>
+                    <Field label="Tiebreak"><input style={inputStyle()} type="number" value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} /></Field>
+                  </div>
+                  <Field label="Decision"><textarea style={{ ...inputStyle(), minHeight: 78 }} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" /></Field>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Button onClick={() => resolveAppeal('needs_evidence')} disabled={busy}>Pedir evidencia</Button>
+                    <Button tone="danger" onClick={() => resolveAppeal('rejected')} disabled={busy}>Rechazar</Button>
+                    <Button tone="primary" onClick={() => resolveAppeal('score_adjusted')} disabled={busy}>Ajustar resultado</Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ color: colors.secondary, fontSize: 13 }}>Decision: {active.resolution_note || '-'}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
 export default function JudgeResultsPanel() {
   const [assignment, setAssignment] = useState(null)
   const [phases, setPhases] = useState([])
@@ -324,7 +475,7 @@ export default function JudgeResultsPanel() {
             <span style={{ color: colors.secondary, fontSize: 13 }}>Selecciona WOD, categoria y heat para cargar resultados.</span>
           </section>
         ) : null}
-        {loading ? <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>Cargando...</section> : assignment && phases.length ? <ScoreTable assignment={assignment} phases={phases} notify={notify} /> : <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>No tienes una competencia activa como juez.</section>}
+        {loading ? <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>Cargando...</section> : assignment && phases.length ? <><ScoreTable assignment={assignment} phases={phases} notify={notify} /><AppealsPanel assignment={assignment} notify={notify} /></> : <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>No tienes una competencia activa como juez.</section>}
       </div>
     </main>
   )

@@ -119,19 +119,23 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
     """dict[(phase_id, user_id)] = {sum, count, min, max, min_tiebreak, max_tiebreak}."""
     rows = session.execute(text("""
         SELECT
-            phase_id,
-            user_id,
-            COALESCE(SUM(puntos), 0)::int AS sum_pts,
-            COUNT(id)::int                AS cnt,
-            MIN(marca)                    AS min_mark,
-            MAX(marca)                    AS max_mark,
-            MIN(tiebreak)                 AS min_tiebreak,
-            MAX(tiebreak)                 AS max_tiebreak
-        FROM results
-        WHERE competition_id = :cid
-          AND team_id IS NULL
-          AND user_id IS NOT NULL
-        GROUP BY phase_id, user_id
+            r.phase_id,
+            r.user_id,
+            COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
+            COUNT(r.id)::int                AS cnt,
+            MIN(r.marca)                    AS min_mark,
+            MAX(r.marca)                    AS max_mark,
+            MIN(r.tiebreak)                 AS min_tiebreak,
+            MAX(r.tiebreak)                 AS max_tiebreak,
+            (COUNT(ra.id) > 0)            AS has_active_appeal
+        FROM results r
+        LEFT JOIN result_appeals ra
+          ON ra.result_id = r.id
+         AND ra.status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+        WHERE r.competition_id = :cid
+          AND r.team_id IS NULL
+          AND r.user_id IS NOT NULL
+        GROUP BY r.phase_id, r.user_id
     """), {"cid": competition_id}).mappings().all()
     return {
         (r["phase_id"], int(r["user_id"])): {
@@ -141,6 +145,7 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
             "min_tiebreak": int(r["min_tiebreak"]) if r["min_tiebreak"] is not None else None,
             "max_tiebreak": int(r["max_tiebreak"]) if r["max_tiebreak"] is not None else None,
+            "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
     }
@@ -161,9 +166,13 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
-            MAX(r.marca)                    AS max_mark
+            MAX(r.marca)                    AS max_mark,
+            (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
         JOIN teams t ON t.id = r.team_id
+        LEFT JOIN result_appeals ra
+          ON ra.result_id = r.id
+         AND ra.status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
         WHERE r.competition_id = :cid
           AND t.competition_id = :cid
           AND r.team_id IS NOT NULL
@@ -176,6 +185,7 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
     }
@@ -185,17 +195,21 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
     """dict[(phase_id, team_id)] = {sum, count, min, max}. Team-only results (no participant)."""
     rows = session.execute(text("""
         SELECT
-            phase_id,
-            team_id,
-            COALESCE(SUM(puntos), 0)::int AS sum_pts,
-            COUNT(id)::int                AS cnt,
-            MIN(marca)                    AS min_mark,
-            MAX(marca)                    AS max_mark
-        FROM results
-        WHERE competition_id = :cid
-          AND team_id IS NOT NULL
-          AND user_id IS NULL
-        GROUP BY phase_id, team_id
+            r.phase_id,
+            r.team_id,
+            COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
+            COUNT(r.id)::int                AS cnt,
+            MIN(r.marca)                    AS min_mark,
+            MAX(r.marca)                    AS max_mark,
+            (COUNT(ra.id) > 0)              AS has_active_appeal
+        FROM results r
+        LEFT JOIN result_appeals ra
+          ON ra.result_id = r.id
+         AND ra.status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+        WHERE r.competition_id = :cid
+          AND r.team_id IS NOT NULL
+          AND r.user_id IS NULL
+        GROUP BY r.phase_id, r.team_id
     """), {"cid": competition_id}).mappings().all()
     return {
         (r["phase_id"], int(r["team_id"])): {
@@ -203,6 +217,7 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
     }
@@ -271,7 +286,7 @@ def _build_ind_rows(
     rows: list[dict] = []
     if phase_id is None:
         for p in participants_meta:
-            agg = ind_totals_by_pid.get(p["id"]) or {"sum": 0, "count": 0}
+            agg = ind_totals_by_pid.get(p["id"]) or {"sum": 0, "count": 0, "has_active_appeal": False}
             rows.append({
                 "id": p["id"],
                 "nombre": p["nombre"],
@@ -285,6 +300,7 @@ def _build_ind_rows(
                 "total_puntos": int(agg["sum"]),
                 "total_eventos": int(agg["count"]),
                 "mejor_marca": None,
+                "has_active_appeal": bool(agg.get("has_active_appeal")),
             })
     else:
         for p in participants_meta:
@@ -294,11 +310,13 @@ def _build_ind_rows(
                 tiebreak = data["min_tiebreak"] if tiebreak_lower_is_better else data["max_tiebreak"]
                 total = int(data["sum"])
                 events = int(data["count"])
+                has_active_appeal = bool(data.get("has_active_appeal"))
             else:
                 mark = None
                 tiebreak = None
                 total = 0
                 events = 0
+                has_active_appeal = False
             rows.append({
                 "id": p["id"],
                 "nombre": p["nombre"],
@@ -313,6 +331,7 @@ def _build_ind_rows(
                 "total_eventos": events,
                 "mejor_marca": mark,
                 "tiebreak": tiebreak,
+                "has_active_appeal": has_active_appeal,
             })
     return rows
 
@@ -332,6 +351,7 @@ def _team_members_for_phase(
         tm_data = team_member_points_per_phase.get((phase_id, team_id, pid))
         sum_pts = (ind_data["sum"] if ind_data else 0) + (tm_data["sum"] if tm_data else 0)
         cnt = (ind_data["count"] if ind_data else 0) + (tm_data["count"] if tm_data else 0)
+        has_active_appeal = bool((ind_data or {}).get("has_active_appeal") or (tm_data or {}).get("has_active_appeal"))
         ind_mark = (ind_data["min"] if lower_is_better else ind_data["max"]) if ind_data else None
         tm_mark = (tm_data["min"] if lower_is_better else tm_data["max"]) if tm_data else None
         mark = _combine_mark(ind_mark, tm_mark, lower_is_better)
@@ -348,6 +368,7 @@ def _team_members_for_phase(
             "puntos_propios": int(sum_pts),
             "intentos": int(cnt),
             "mejor_marca": mark,
+            "has_active_appeal": has_active_appeal,
         })
     return out
 
@@ -361,8 +382,8 @@ def _team_global_members(
     out: list[dict] = []
     for member in team_members_by_team.get(team_id, []):
         pid = member["id"]
-        ind_agg = ind_totals_by_pid.get(pid) or {"sum": 0, "count": 0}
-        tm_agg = team_member_totals_by_team_pid.get((team_id, pid)) or {"sum": 0, "count": 0}
+        ind_agg = ind_totals_by_pid.get(pid) or {"sum": 0, "count": 0, "has_active_appeal": False}
+        tm_agg = team_member_totals_by_team_pid.get((team_id, pid)) or {"sum": 0, "count": 0, "has_active_appeal": False}
         out.append({
             "id": pid,
             "nombre": member["nombre"],
@@ -376,6 +397,7 @@ def _team_global_members(
             "puntos_propios": int(ind_agg["sum"] + tm_agg["sum"]),
             "intentos": int(ind_agg["count"] + tm_agg["count"]),
             "mejor_marca": None,
+            "has_active_appeal": bool(ind_agg.get("has_active_appeal") or tm_agg.get("has_active_appeal")),
         })
     return out
 
@@ -457,6 +479,7 @@ def _build_team_rows_for_phase(
             direct_mark = direct["min"] if mark_lower_is_better else direct["max"]
         else:
             direct_mark = None
+        has_active_appeal = bool((direct or {}).get("has_active_appeal") or any(m.get("has_active_appeal") for m in members))
         if mode == "total":
             total_puntos = direct_points
             total_eventos = direct_events
@@ -471,6 +494,7 @@ def _build_team_rows_for_phase(
             "total_puntos": int(total_puntos),
             "total_eventos": int(total_eventos),
             "mejor_marca": total_marca,
+            "has_active_appeal": has_active_appeal,
             "members": members,
         })
     if rank_by_category:
@@ -535,10 +559,11 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     participants_meta = _fetch_participants_meta(session, competition_id)
     ind_points_per_phase = _fetch_ind_points_per_phase(session, competition_id)
 
-    ind_totals_by_pid: dict[int, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+    ind_totals_by_pid: dict[int, dict] = defaultdict(lambda: {"sum": 0, "count": 0, "has_active_appeal": False})
     for (_ph, pid), data in ind_points_per_phase.items():
         ind_totals_by_pid[pid]["sum"] += data["sum"]
         ind_totals_by_pid[pid]["count"] += data["count"]
+        ind_totals_by_pid[pid]["has_active_appeal"] = bool(ind_totals_by_pid[pid]["has_active_appeal"] or data.get("has_active_appeal"))
 
     individual = _rank_by_category(
         _build_ind_rows(participants_meta, ind_points_per_phase, ind_totals_by_pid, phase_id=None, lower_is_better=False),
@@ -559,11 +584,12 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         team_member_points_per_phase = _fetch_team_member_points_per_phase(session, competition_id)
         team_direct_per_phase = _fetch_team_direct_points_per_phase(session, competition_id)
         categories_map = _fetch_categories_map(session, competition_id)
-        team_member_totals_by_team_pid: dict[tuple[int, int], dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+        team_member_totals_by_team_pid: dict[tuple[int, int], dict] = defaultdict(lambda: {"sum": 0, "count": 0, "has_active_appeal": False})
         for (_ph, tid, pid), data in team_member_points_per_phase.items():
             key = (tid, pid)
             team_member_totals_by_team_pid[key]["sum"] += data["sum"]
             team_member_totals_by_team_pid[key]["count"] += data["count"]
+            team_member_totals_by_team_pid[key]["has_active_appeal"] = bool(team_member_totals_by_team_pid[key]["has_active_appeal"] or data.get("has_active_appeal"))
     else:
         teams = []
         team_members_by_team = {}
@@ -637,6 +663,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "team_category": _resolve_team_category(t, global_members, competition_id, categories_map),
             "total_puntos": 0,
             "total_eventos": 0,
+            "has_active_appeal": any(member.get("has_active_appeal") for member in global_members),
             "members": global_members,
         }
 
@@ -647,6 +674,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
                 continue
             base["total_puntos"] += int(tr.get("total_puntos") or 0)
             base["total_eventos"] += int(tr.get("total_eventos") or 0)
+            base["has_active_appeal"] = bool(base.get("has_active_appeal") or tr.get("has_active_appeal"))
 
     teams_values = list(team_totals_map.values())
 

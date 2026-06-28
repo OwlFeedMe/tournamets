@@ -179,6 +179,14 @@ function RankCell({ rank, tvMode = false }) {
 }
 
 // â”€â”€ Movement indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function ReviewBadge() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 20, padding: '3px 7px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.34)', background: 'rgba(0,194,168,0.12)', color: '#00C2A8', fontSize: 10, fontWeight: 850, whiteSpace: 'nowrap' }}>
+      En revision
+    </span>
+  )
+}
+
 function MoveBadge({ delta, tvMode = false }) {
   if (delta === 0 || delta === null) return null
   const size = tvMode ? 14 : 11
@@ -653,6 +661,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <AthleteIdentity athlete={p} compact countryCodeByName={countryCodeByName} />
                         </div>
+                        {p.has_active_appeal ? <ReviewBadge /> : null}
                         <MoveBadge delta={delta} />
                       </div>
 
@@ -721,6 +730,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <AthleteIdentity athlete={p} tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                            {p.has_active_appeal ? <ReviewBadge /> : null}
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
@@ -789,6 +799,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? '#FF9A3D' : THEME.muted }}>#{visibleRank}</span>
                 <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14, color: THEME.ink }}>{teamName}</span>
+                {t.has_active_appeal ? <ReviewBadge /> : null}
                 <MoveBadge delta={delta} />
               </div>
 
@@ -818,6 +829,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                   return (
                     <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
+                      {m.has_active_appeal ? <ReviewBadge /> : null}
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
                         <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
                       )}
@@ -859,6 +871,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
               <td>
                 <div style={{ fontWeight: visibleRank <= 3 ? 700 : 400 }}>
                   {teamName}
+                  {t.has_active_appeal ? <span style={{ marginLeft: 8 }}><ReviewBadge /></span> : null}
                   <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
                 </div>
               </td>
@@ -871,6 +884,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                     return (
                       <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <AthleteIdentity athlete={m} compact tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                        {m.has_active_appeal ? <ReviewBadge /> : null}
                         {phaseMode !== 'total' && (
                           <span style={{ marginLeft: 6, color: THEME.muted }}>
                             {phaseInfo

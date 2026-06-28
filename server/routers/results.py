@@ -1,6 +1,7 @@
 ﻿from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -20,6 +21,7 @@ from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
 router = APIRouter(prefix="/api/results", tags=["results"])
+APPEAL_WINDOW_MINUTES = 90
 PHASE_TIPOS_VALIDOS = {"posicion", "cantidad", "tiempo"}
 PHASE_TIPO_ALIAS = {
     "puntos": "cantidad",
@@ -28,6 +30,10 @@ PHASE_TIPO_ALIAS = {
 }
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
+
+
+def appeal_deadline_from_now() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=APPEAL_WINDOW_MINUTES)
 
 
 def _should_scope_to_authenticated_participant(user: dict | None) -> bool:
@@ -329,7 +335,10 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
 def _enrich(session: Session, result_id: int) -> dict:
     row = session.execute(text("""
-        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.tiebreak, r.puntos, r.posicion, r.created_at,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.tiebreak, r.puntos, r.posicion,
+               r.result_status, r.appeal_deadline_at, r.created_at,
+               ra.id AS active_appeal_id,
+               ra.status AS active_appeal_status,
                p.nombre        AS nombre,
                p.apellido      AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
@@ -342,6 +351,14 @@ def _enrich(session: Session, result_id: int) -> dict:
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN  competitions           c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
+        LEFT JOIN LATERAL (
+            SELECT id, status
+            FROM result_appeals
+            WHERE result_id = r.id
+              AND status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        ) ra ON true
         WHERE r.id = :rid
     """), {"rid": result_id}).mappings().one()
     return dict(row)
@@ -430,7 +447,9 @@ def list_results(
 
     rows = session.execute(text(f"""
         SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id,
-               r.marca, r.tiebreak, r.puntos, r.posicion, r.created_at,
+               r.marca, r.tiebreak, r.puntos, r.posicion, r.result_status, r.appeal_deadline_at, r.created_at,
+               ra.id AS active_appeal_id,
+               ra.status AS active_appeal_status,
                p.nombre   AS nombre,
                p.apellido AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
@@ -443,6 +462,14 @@ def list_results(
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN      competitions       c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
+        LEFT JOIN LATERAL (
+            SELECT id, status
+            FROM result_appeals
+            WHERE result_id = r.id
+              AND status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        ) ra ON true
         {where_clause}
         ORDER BY r.created_at DESC
     """), params).mappings().all()
@@ -536,6 +563,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         payload["puntos"] = int(computed_points)
     if computed_position is not None:
         payload["posicion"] = int(computed_position)
+    payload["result_status"] = "valid"
+    payload["appeal_deadline_at"] = appeal_deadline_from_now()
     result = Result.model_validate(payload)
     session.add(result)
     session.flush()

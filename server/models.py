@@ -1085,6 +1085,11 @@ class Result(SQLModel, table=True):
     tiebreak: Optional[int] = None
     puntos: int = Field(default=0)
     posicion: Optional[int] = None
+    result_status: str = Field(default="valid", index=True)
+    appeal_deadline_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -1092,6 +1097,130 @@ class Result(SQLModel, table=True):
 
 
 # ── Gym domain models ─────────────────────────────────────────────────────────
+
+class ResultAppeal(SQLModel, table=True):
+    __tablename__ = "result_appeals"
+    __table_args__ = (
+        Index("ix_result_appeals_result", "result_id"),
+        Index("ix_result_appeals_competition", "competition_id"),
+        Index("ix_result_appeals_status", "status"),
+        Index("ix_result_appeals_user", "user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    result_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("results.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    phase_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="SET NULL"), nullable=True),
+    )
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    status: str = Field(default="submitted", index=True)
+    reason_type: str = Field(default="score_review")
+    description: str
+    evidence_url: Optional[str] = None
+    user_requested_score: Optional[str] = None
+    assigned_judge_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    original_marca: Optional[int] = None
+    original_tiebreak: Optional[int] = None
+    original_puntos: Optional[int] = None
+    original_posicion: Optional[int] = None
+    final_marca: Optional[int] = None
+    final_tiebreak: Optional[int] = None
+    final_puntos: Optional[int] = None
+    final_posicion: Optional[int] = None
+    resolution_type: Optional[str] = None
+    resolution_note: Optional[str] = None
+    submitted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    resolved_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    resolved_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class ResultAppealMessage(SQLModel, table=True):
+    __tablename__ = "result_appeal_messages"
+    __table_args__ = (
+        Index("ix_result_appeal_messages_appeal", "appeal_id"),
+        Index("ix_result_appeal_messages_author", "author_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    appeal_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("result_appeals.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    author_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    author_role: str = Field(default="athlete")
+    message: str
+    evidence_url: Optional[str] = None
+    is_internal_note: int = Field(default=0)
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class ResultScoreAuditLog(SQLModel, table=True):
+    __tablename__ = "result_score_audit_logs"
+    __table_args__ = (
+        Index("ix_result_score_audit_result", "result_id"),
+        Index("ix_result_score_audit_appeal", "appeal_id"),
+        Index("ix_result_score_audit_actor", "changed_by_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    result_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("results.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    appeal_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("result_appeals.id", ondelete="SET NULL"), nullable=True),
+    )
+    previous_marca: Optional[int] = None
+    previous_tiebreak: Optional[int] = None
+    previous_puntos: Optional[int] = None
+    previous_posicion: Optional[int] = None
+    new_marca: Optional[int] = None
+    new_tiebreak: Optional[int] = None
+    new_puntos: Optional[int] = None
+    new_posicion: Optional[int] = None
+    changed_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    reason: str
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
 
 class Gym(SQLModel, table=True):
     __tablename__ = "gyms"

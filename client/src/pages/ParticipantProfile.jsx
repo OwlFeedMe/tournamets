@@ -700,6 +700,9 @@ export default function ParticipantProfile() {
   const [showForm, setShowForm] = useState(false)
   const [cancelEnrollmentBusy, setCancelEnrollmentBusy] = useState(null)
   const [cancelEnrollmentTarget, setCancelEnrollmentTarget] = useState(null)
+  const [appealTarget, setAppealTarget] = useState(null)
+  const [appealBusy, setAppealBusy] = useState(false)
+  const [appealForm, setAppealForm] = useState({ user_requested_score: '', description: '', evidence_url: '' })
 
   // Modal state
   const [selectedComp, setSelectedComp] = useState(null)
@@ -788,7 +791,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget)
+  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget || appealTarget)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -814,7 +817,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget, appealTarget])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -1191,6 +1194,47 @@ export default function ParticipantProfile() {
     }
   }
 
+  const appealDeadline = (result) => {
+    const value = result?.appeal_deadline_at || (result?.created_at ? new Date(new Date(result.created_at).getTime() + 90 * 60 * 1000).toISOString() : null)
+    if (!value) return null
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  const canAppealResult = (result) => {
+    const deadline = appealDeadline(result)
+    return !!deadline && Date.now() <= deadline.getTime() && !result?.active_appeal_id
+  }
+
+  const openAppeal = (result) => {
+    setAppealTarget(result)
+    setAppealForm({ user_requested_score: '', description: '', evidence_url: '' })
+    setMsg(null)
+  }
+
+  const submitAppeal = async (e) => {
+    e.preventDefault()
+    if (!appealTarget) return
+    setAppealBusy(true)
+    setMsg(null)
+    try {
+      await api.post('/appeals', {
+        result_id: appealTarget.id,
+        reason_type: 'score_review',
+        user_requested_score: appealForm.user_requested_score.trim() || null,
+        description: appealForm.description.trim(),
+        evidence_url: appealForm.evidence_url.trim(),
+      })
+      setAppealTarget(null)
+      setMsg({ type: 'success', text: 'Reclamacion enviada' })
+      await loadResults()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la reclamacion' })
+    } finally {
+      setAppealBusy(false)
+    }
+  }
+
   const acceptInvitation = async (invId) => {
     setInvBusy(invId)
     setInvMsg(null)
@@ -1328,6 +1372,43 @@ export default function ParticipantProfile() {
           onClose={() => !gymLeaveBusy && setGymLeaveTarget(null)}
           onConfirm={leaveGym}
         />
+      )}
+
+      {appealTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 560, maxHeight: '88dvh', borderRadius: 8, background: '#171B21', border: '1px solid #252A33', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#171B21', borderBottom: '1px solid #252A33', padding: '16px 18px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 850 }}>Apelar resultado</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{appealTarget.fase || 'Workout'} - {appealDeadline(appealTarget)?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => !appealBusy && setAppealTarget(null)}>
+                Cerrar
+              </button>
+            </div>
+            <form onSubmit={submitAppeal} style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
+              <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13 }}>
+                Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealTarget.posicion ? `#${appealTarget.posicion}` : appealTarget.puntos}</b>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Resultado solicitado</label>
+                <input value={appealForm.user_requested_score} onChange={e => setAppealForm(f => ({ ...f, user_requested_score: e.target.value }))} placeholder="Ej: 124 reps, 05:32 o posicion 2" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Explica el ajuste</label>
+                <textarea rows={5} value={appealForm.description} onChange={e => setAppealForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe el error y el cambio que debe revisar el juez" required />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Link de evidencia</label>
+                <input type="url" value={appealForm.evidence_url} onChange={e => setAppealForm(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Drive o YouTube" required />
+                <small style={{ color: '#AAB2C0', display: 'block', marginTop: 5 }}>Usa un link visible para el organizador.</small>
+              </div>
+              <button type="submit" className="btn-primary" disabled={appealBusy} style={{ minHeight: 44 }}>
+                {appealBusy ? 'Enviando...' : 'Enviar apelacion'}
+              </button>
+            </form>
+          </div>
+        </div>
       )}
 
       {selectedComp && (
@@ -2181,10 +2262,17 @@ export default function ParticipantProfile() {
           ) : isMobile ? (
             <div style={{ display: 'grid', gap: 8 }}>
               {results.map(r => (
-                <div key={r.id} style={{ border: '1px solid var(--oa-border)', borderRadius: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div key={r.id} style={{ border: '1px solid var(--oa-border)', borderRadius: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.competencia}</div>
                     <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
+                    {r.active_appeal_id ? (
+                      <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>En revision</div>
+                    ) : canAppealResult(r) ? (
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => openAppeal(r)} style={{ marginTop: 8 }}>
+                        Apelar resultado
+                      </button>
+                    ) : null}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                     {r.posicion ? (
@@ -2205,15 +2293,21 @@ export default function ParticipantProfile() {
           ) : (
             <table>
               <thead>
-                <tr><th>Competencia</th><th>Evento</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th></tr>
+                <tr><th>Competencia</th><th>Evento</th><th>Estado</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th><th style={{ textAlign: 'right' }}>Accion</th></tr>
               </thead>
               <tbody>
                 {results.map(r => (
                   <tr key={r.id}>
                     <td>{r.competencia}</td>
                     <td style={{ color: 'var(--oa-text-secondary)', fontSize: 13 }}>{r.fase || '-'}</td>
+                    <td>{r.active_appeal_id ? <span style={{ color: '#00C2A8', fontWeight: 800 }}>En revision</span> : '-'}</td>
                     <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--oa-accent)' }}>{r.posicion ? '-' : r.puntos}</td>
                     <td style={{ textAlign: 'right' }}>{r.posicion || '-'}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      {!r.active_appeal_id && canAppealResult(r) ? (
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => openAppeal(r)}>Apelar</button>
+                      ) : '-'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

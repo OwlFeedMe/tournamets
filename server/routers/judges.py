@@ -34,6 +34,7 @@ from models import (
 )
 from phase_status import recompute_and_persist_phase_status
 from routers.results import (
+    appeal_deadline_from_now,
     _normalize_team_result_mode,
     _participant_team_in_competition,
     _recompute_phase_positions_and_points,
@@ -1240,6 +1241,8 @@ def judge_score_submit(
         tiebreak=tiebreak_int,
         puntos=0,
         posicion=None,
+        result_status="valid",
+        appeal_deadline_at=appeal_deadline_from_now(),
     )
     session.add(result)
     session.flush()
