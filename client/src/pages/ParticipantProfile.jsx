@@ -443,61 +443,74 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   }
 
   const badge = statusBadge(comp.enrollment_estado)
+  const modalColors = {
+    bg: '#0D0F12',
+    top: '#090B0E',
+    surface: '#171B21',
+    border: '#252A33',
+    text: '#F5F7FA',
+    secondary: '#AAB2C0',
+    muted: '#6B7280',
+    primary: '#FF6B00',
+    accent: '#00C2A8',
+    warning: '#F59E0B',
+  }
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
       display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: 1000,
       padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
     }}>
       <div style={{
-        background: '#fff', borderRadius: 16,
+        background: modalColors.surface, borderRadius: 8,
         width: '100%', maxWidth: 600,
         maxHeight: '100%',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+        border: `1px solid ${modalColors.border}`,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.42)',
+        color: modalColors.text,
       }}>
         {/* Header */}
         <div style={{
           padding: isMobile ? '16px 16px 12px' : '20px 24px 14px',
-          borderBottom: '1px solid var(--oa-border)',
-          background: '#171B21',
-          borderRadius: '16px 16px 0 0',
+          borderBottom: `1px solid ${modalColors.border}`,
+          background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-              <div style={{ fontWeight: 800, fontSize: isMobile ? 17 : 20, color: '#fff', lineHeight: 1.2 }}>{comp.nombre}</div>
-              {comp.descripcion && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 4 }}>{comp.descripcion}</div>}
+              <div style={{ fontWeight: 900, fontSize: isMobile ? 17 : 20, color: '#090B0E', lineHeight: 1.2 }}>{comp.nombre}</div>
+              {comp.descripcion && <div style={{ fontSize: 12, color: 'rgba(9,11,14,0.76)', marginTop: 4, fontWeight: 700 }}>{comp.descripcion}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span className={`badge ${badge.cls}`} style={{ fontSize: 11 }}>{badge.label}</span>
-                {comp.activa === 1 && <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>ACTIVA</span>}
+                {comp.activa === 1 && <span style={{ fontSize: 10, background: 'rgba(9,11,14,0.72)', color: '#F5F7FA', borderRadius: 4, padding: '2px 7px', fontWeight: 800 }}>ACTIVA</span>}
                 {comp.enrollment_categoria && (
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Cat: <b style={{ color: '#fff' }}>{comp.enrollment_categoria}</b></span>
+                  <span style={{ fontSize: 11, color: 'rgba(9,11,14,0.78)', fontWeight: 800 }}>Cat: <b style={{ color: '#090B0E' }}>{comp.enrollment_categoria}</b></span>
                 )}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <button onClick={onClose} style={{ background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(9,11,14,0.24)', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#F5F7FA', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               <X size={18} />
             </button>
           </div>
         </div>
 
         {/* Scrollable body */}
-        <div style={{ overflowY: 'auto', flex: 1, padding: isMobile ? '14px 16px' : '18px 24px' }}>
+        <div style={{ overflowY: 'auto', flex: 1, padding: isMobile ? '14px 16px' : '18px 24px', background: modalColors.bg }}>
 
           {/* Team section */}
           {teamLoading ? (
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
+            <div style={{ color: modalColors.secondary, fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
           ) : team ? (
             <div style={{ marginBottom: 18 }}>
               {/* Team header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Users size={15} color="#D6D9E0" />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0' }}>Tu equipo</span>
+                <Users size={15} color={modalColors.secondary} />
+                <span style={{ fontWeight: 800, fontSize: 14, color: modalColors.text }}>Tu equipo</span>
                 {isCaptain && (
-                  <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 7px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 10, background: 'rgba(245,158,11,0.14)', color: '#F8C56E', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 4, padding: '2px 7px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <Crown size={10} /> CAPITAN
                   </span>
                 )}
@@ -523,7 +536,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   </form>
                 ) : (
                   <>
-                    <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--oa-text)' }}>{team.nombre}</span>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: modalColors.text }}>{team.nombre}</span>
                     {isCaptain && (
                       <button className="btn-secondary btn-sm" onClick={() => setShowRename(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <Pencil size={12} /> Renombrar
@@ -540,23 +553,23 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                 {(team.members || []).map(m => (
                   <div key={m.id} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                    borderRadius: 8, border: `1px solid ${m.is_captain ? 'rgba(245, 158, 11, 0.32)' : 'var(--oa-border)'}`,
-                    background: m.is_captain ? 'rgba(245, 158, 11, 0.12)' : m.id === participantId ? 'rgba(0, 194, 168, 0.12)' : 'rgba(255,255,255,0.03)',
+                    borderRadius: 8, border: `1px solid ${m.is_captain ? 'rgba(245, 158, 11, 0.32)' : m.id === participantId ? 'rgba(0,194,168,0.30)' : modalColors.border}`,
+                    background: m.is_captain ? 'rgba(245, 158, 11, 0.10)' : m.id === participantId ? 'rgba(0, 194, 168, 0.10)' : modalColors.surface,
                   }}>
                     <div style={{
                       width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                      background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255,255,255,0.06)',
+                      background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : modalColors.top,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#fbbf24' : '#D6D9E0',
+                      fontSize: 12, fontWeight: 800, color: m.is_captain ? '#F8C56E' : modalColors.secondary,
                     }}>
                       {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
-                      {m.id === participantId && <span style={{ fontSize: 11, color: '#D6D9E0', marginLeft: 6 }}>(tú)</span>}
+                      <span style={{ fontWeight: 700, fontSize: 13, color: modalColors.text }}>{m.nombre} {m.apellido}</span>
+                      {m.id === participantId && <span style={{ fontSize: 11, color: modalColors.secondary, marginLeft: 6 }}>(tú)</span>}
                     </div>
                     {m.is_captain ? (
-                      <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, background: 'rgba(245,158,11,0.14)', color: '#F8C56E', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 4, padding: '2px 6px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                         <Crown size={9} /> Capitán
                       </span>
                     ) : isCaptain && (
@@ -576,8 +589,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 
               {/* Captain: invite section */}
               {isCaptain && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--oa-border)' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ background: modalColors.surface, borderRadius: 8, padding: '12px 14px', border: `1px solid ${modalColors.border}` }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <UserPlus size={14} /> Invitar participante
                   </div>
                   <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
@@ -596,11 +609,11 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   {/* Pending invites sent */}
                   {pendingInvites.length > 0 && (
                     <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--oa-text-secondary)', marginBottom: 6 }}>Invitaciones pendientes:</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: modalColors.secondary, marginBottom: 6 }}>Invitaciones pendientes:</div>
                       <div style={{ display: 'grid', gap: 4 }}>
                         {pendingInvites.map(inv => (
-                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid var(--oa-border)' }}>
-                            <span>{inv.invitee_nombre || inv.invitee_cedula}</span>
+                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: modalColors.top, borderRadius: 6, border: `1px solid ${modalColors.border}` }}>
+                            <span style={{ color: modalColors.text }}>{inv.invitee_nombre || inv.invitee_cedula}</span>
                             <button className="btn-secondary btn-sm" onClick={() => handleCancelInvite(inv.id)} disabled={cancelBusy === inv.id} style={{ fontSize: 11, padding: '2px 8px' }}>
                               {cancelBusy === inv.id ? '...' : 'Cancelar'}
                             </button>
@@ -617,19 +630,19 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           {/* Results section */}
           {compResults.length > 0 && (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: modalColors.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trophy size={14} /> Tus resultados
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
                 {compResults.map(r => (
-                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)' }}>
+                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r.fase || 'Sin fase'}</div>
-                      {r.equipo && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                      <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text }}>{r.fase || 'Sin fase'}</div>
+                      {r.equipo && <div style={{ fontSize: 11, color: modalColors.secondary, marginTop: 2 }}>Equipo: {r.equipo}</div>}
                       {r.active_appeal_id ? (
-                        <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>En revision</div>
+                        <div style={{ display: 'inline-flex', marginTop: 8, padding: '3px 7px', borderRadius: 999, border: `1px solid rgba(0,194,168,0.28)`, background: 'rgba(0,194,168,0.12)', color: modalColors.accent, fontSize: 11, fontWeight: 800 }}>En revision</div>
                       ) : canAppealResult?.(r) ? (
-                        <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8 }}>
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
                           Apelar resultado
                         </button>
                       ) : null}
@@ -637,13 +650,13 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
                         <>
-                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 20 }}>#{r.posicion}</div>
-                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                          <div style={{ fontWeight: 850, color: modalColors.accent, fontSize: 20 }}>#{r.posicion}</div>
+                          <div style={{ fontSize: 10, color: modalColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 22 }}>{r.puntos}</div>
-                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                          <div style={{ fontWeight: 850, color: modalColors.accent, fontSize: 22 }}>{r.puntos}</div>
+                          <div style={{ fontSize: 10, color: modalColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                         </>
                       )}
                     </div>
@@ -654,7 +667,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           )}
 
           {!teamLoading && !team && compResults.length === 0 && (
-            <div style={{ color: 'var(--oa-text-muted)', textAlign: 'center', padding: '20px 0', fontSize: 13 }}>
+            <div style={{ color: modalColors.secondary, textAlign: 'center', padding: '20px 0', fontSize: 13, border: `1px solid ${modalColors.border}`, borderRadius: 8, background: modalColors.surface }}>
               Aun no hay resultados registrados para esta competencia
             </div>
           )}
@@ -663,7 +676,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             {canSeeMySchedule ? (
               <Link
                 to={getCompetitionScheduleHref(comp.id, true)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid rgba(94,234,212,0.24)', background: 'linear-gradient(135deg, rgba(94,234,212,0.12), rgba(13,15,18,0.92))', color: '#DFFFF9', fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: '1px solid rgba(0,194,168,0.28)', background: 'linear-gradient(135deg, rgba(0,194,168,0.16), rgba(9,11,14,0.88))', color: modalColors.text, fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
               >
                 <Clock3 size={16} /> Mi cronograma <ChevronRight size={14} />
               </Link>
@@ -671,13 +684,13 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <Link
                 to={getCompetitionScheduleHref(comp.id)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#F5F7FA', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface, color: modalColors.text, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 <Users size={16} /> Cronograma
               </Link>
               <a
                 href={`/leaderboard/${comp.id}`}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#D6D9E0', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface, color: modalColors.text, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 <Medal size={16} /> Leaderboard
               </a>
