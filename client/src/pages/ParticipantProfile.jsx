@@ -327,7 +327,7 @@ function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
   )
 }
 
-function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile }) {
+function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile, canAppealResult, onAppealResult }) {
   const [team, setTeam] = useState(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [pendingInvites, setPendingInvites] = useState([])
@@ -622,10 +622,17 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
                 {compResults.map(r => (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div>
+                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>{r.fase || 'Sin fase'}</div>
                       {r.equipo && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                      {r.active_appeal_id ? (
+                        <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>En revision</div>
+                      ) : canAppealResult?.(r) ? (
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8 }}>
+                          Apelar resultado
+                        </button>
+                      ) : null}
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
@@ -946,6 +953,32 @@ export default function ParticipantProfile() {
     () => confirmedComps.filter(c => c.activa && c.allow_user_results),
     [confirmedComps]
   )
+
+  const resultsByCompetition = useMemo(() => {
+    const map = {}
+    for (const result of results) {
+      const key = Number(result.competition_id)
+      if (!map[key]) map[key] = []
+      map[key].push(result)
+    }
+    return map
+  }, [results])
+
+  const myEventCards = useMemo(() => (
+    myComps.map((competition) => {
+      const eventResults = resultsByCompetition[Number(competition.id)] || []
+      const activeAppeals = eventResults.filter((result) => result.active_appeal_id).length
+      const latestResult = eventResults[0] || null
+      const totalPoints = eventResults.reduce((sum, result) => sum + Number(result.puntos || 0), 0)
+      return {
+        competition,
+        results: eventResults,
+        activeAppeals,
+        latestResult,
+        totalPoints,
+      }
+    })
+  ), [myComps, resultsByCompetition])
 
   useEffect(() => {
     if (!resultEnabledComps.length) { setForm(f => ({ ...f, competition_id: '', phase_id: '' })); return }
@@ -1424,6 +1457,11 @@ export default function ParticipantProfile() {
           allResults={results}
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}
+          canAppealResult={canAppealResult}
+          onAppealResult={(result) => {
+            setSelectedComp(null)
+            openAppeal(result)
+          }}
         />
       )}
 
@@ -2036,17 +2074,6 @@ export default function ParticipantProfile() {
           </div>
         )}
 
-        {/* Load result CTA */}
-        {resultEnabledComps.length > 0 && !showForm && (
-          <button
-            className="btn-primary"
-            onClick={() => setShowForm(true)}
-            style={{ width: '100%', padding: '14px', fontSize: 15, borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          >
-            <PlusCircle size={18} /> Cargar resultado
-          </button>
-        )}
-
         {/* Result form */}
         {showForm && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
@@ -2122,39 +2149,100 @@ export default function ParticipantProfile() {
           </div>
         )}
 
-        {/* My enrollments */}
+        {/* My events */}
         {dashboardLoading ? (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis eventos</h3>
             <SkeletonList count={3} />
           </div>
-        ) : myComps.length > 0 && (
+        ) : myEventCards.length > 0 && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {myComps.map(c => {
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Mis eventos</h3>
+                <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 3 }}>Inscripciones, resultados y acciones por competencia.</div>
+              </div>
+              {resultEnabledComps.length > 0 && !showForm ? (
+                <button type="button" className="btn-primary btn-sm" onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlusCircle size={14} /> Cargar resultado
+                </button>
+              ) : null}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              {myEventCards.map(({ competition: c, results: eventResults, activeAppeals, latestResult, totalPoints }) => {
                 const badge = statusBadge(c.enrollment_estado)
                 const statusCopy = enrollmentStatusCopy(c)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
                 const isBusy = cancelEnrollmentBusy === c.id
                 const paymentStatus = String(c.payment_status || '').trim().toLowerCase()
                 const canCancel = !c.payment_reference || ['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
+                const canOpen = isConfirmed || eventResults.length > 0
                 return (
                   <div
                     key={c.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)', justifyContent: 'space-between', minHeight: isMobile ? 56 : undefined }}
+                    role={canOpen ? 'button' : undefined}
+                    tabIndex={canOpen ? 0 : undefined}
+                    onClick={() => canOpen && openModal(c)}
+                    onKeyDown={(event) => {
+                      if (!canOpen) return
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openModal(c)
+                      }
+                    }}
+                    style={{
+                      border: '1px solid var(--oa-border)',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: 12,
+                      display: 'grid',
+                      gap: 10,
+                      cursor: canOpen ? 'pointer' : 'default',
+                      minHeight: 154,
+                    }}
                   >
-                    <div style={{ minWidth: 0, flex: 1, cursor: isConfirmed ? 'pointer' : 'default' }} onClick={() => isConfirmed && openModal(c)}>
-                      <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
-                      {c.enrollment_categoria && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
-                      {statusCopy ? <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 3, whiteSpace: 'normal' }}>{statusCopy}</div> : null}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14, color: '#F5F7FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
+                        {c.enrollment_categoria ? <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 3 }}>{c.enrollment_categoria}</div> : null}
+                      </div>
+                      <span className={`badge ${badge.cls}`} style={{ flexShrink: 0 }}>{badge.label}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => setCancelEnrollmentTarget(c)} disabled={isBusy || !canCancel} title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Resultados</div>
+                        <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{eventResults.length}</div>
+                      </div>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Puntos</div>
+                        <div style={{ color: '#00C2A8', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{totalPoints}</div>
+                      </div>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Revision</div>
+                        <div style={{ color: activeAppeals ? '#00C2A8' : '#AAB2C0', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{activeAppeals}</div>
+                      </div>
+                    </div>
+                    <div style={{ minHeight: 34, color: '#AAB2C0', fontSize: 12, lineHeight: 1.4 }}>
+                      {latestResult ? (
+                        <>
+                          Ultimo: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{latestResult.fase || 'Workout'}</span>
+                          {latestResult.posicion ? ` · #${latestResult.posicion}` : ` · ${latestResult.puntos || 0} pts`}
+                        </>
+                      ) : statusCopy ? statusCopy : 'Abre el evento para ver cronograma y detalles.'}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button type="button" className="btn-secondary btn-sm" onClick={(event) => { event.stopPropagation(); openModal(c) }} disabled={!canOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Ver evento <ChevronRight size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={(event) => { event.stopPropagation(); setCancelEnrollmentTarget(c) }}
+                        disabled={isBusy || !canCancel}
+                        title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}
+                      >
                         {isBusy ? 'Cancelando...' : 'Cancelar'}
                       </button>
-                      {isConfirmed && <ChevronRight size={14} color="var(--oa-text-secondary)" />}
                     </div>
                   </div>
                 )
@@ -2255,69 +2343,6 @@ export default function ParticipantProfile() {
                 </button>
               </div>
             </form>
-          )}
-        </div>
-
-        {/* My results */}
-        <div className="card" style={{ padding: isMobile ? 14 : 20 }}>
-          <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Mis resultados</h3>
-          {dashboardLoading ? (
-            <SkeletonList count={4} />
-          ) : results.length === 0 ? (
-            <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
-          ) : isMobile ? (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {results.map(r => (
-                <div key={r.id} style={{ border: '1px solid var(--oa-border)', borderRadius: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.competencia}</div>
-                    <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
-                    {r.active_appeal_id ? (
-                      <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 11, fontWeight: 800 }}>En revision</div>
-                    ) : canAppealResult(r) ? (
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => openAppeal(r)} style={{ marginTop: 8 }}>
-                        Apelar resultado
-                      </button>
-                    ) : null}
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                    {r.posicion ? (
-                      <>
-                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 18 }}>#{r.posicion}</div>
-                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 22 }}>{r.puntos}</div>
-                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <table>
-              <thead>
-                <tr><th>Competencia</th><th>Evento</th><th>Estado</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th><th style={{ textAlign: 'right' }}>Accion</th></tr>
-              </thead>
-              <tbody>
-                {results.map(r => (
-                  <tr key={r.id}>
-                    <td>{r.competencia}</td>
-                    <td style={{ color: 'var(--oa-text-secondary)', fontSize: 13 }}>{r.fase || '-'}</td>
-                    <td>{r.active_appeal_id ? <span style={{ color: '#00C2A8', fontWeight: 800 }}>En revision</span> : '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--oa-accent)' }}>{r.posicion ? '-' : r.puntos}</td>
-                    <td style={{ textAlign: 'right' }}>{r.posicion || '-'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {!r.active_appeal_id && canAppealResult(r) ? (
-                        <button type="button" className="btn-secondary btn-sm" onClick={() => openAppeal(r)}>Apelar</button>
-                      ) : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
         </div>
 
