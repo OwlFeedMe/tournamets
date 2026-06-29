@@ -13,11 +13,13 @@ import {
   MapPin,
   Megaphone,
   MessageSquare,
+  Paperclip,
   Pencil,
   Plus,
   Radio,
   RefreshCw,
   Save,
+  Send,
   Settings2,
   Ticket,
   Trash2,
@@ -3471,34 +3473,38 @@ function AppealsPanel({ bundle, reload, notify }) {
               {active.user_requested_score ? <div style={{ marginTop: 8 }}>Resultado solicitado: <strong style={{ color: colors.text }}>{active.user_requested_score}</strong></div> : null}
             </div>
 
-            <div style={{ display: 'grid', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
-              {(active.messages || []).map((message) => (
-                <div key={message.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 10 }}>
-                  <div style={{ color: colors.secondary, fontSize: 11, fontWeight: 850 }}>{message.author_name || message.author_role} - {message.author_role}</div>
-                  <div style={{ marginTop: 5, color: colors.text, fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
-                  {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
-                </div>
-              ))}
+            <div style={{ display: 'grid', gap: 8, maxHeight: 300, overflowY: 'auto', padding: 10, border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.bg }}>
+              {(active.messages || []).map((message) => {
+                const isAthlete = message.author_role === 'athlete'
+                return (
+                  <div key={message.id} style={{ justifySelf: isAthlete ? 'start' : 'end', width: 'fit-content', maxWidth: 'min(84%, 460px)', border: `1px solid ${isAthlete ? colors.border : 'rgba(0,194,168,0.24)'}`, borderRadius: isAthlete ? '14px 14px 14px 4px' : '14px 14px 4px 14px', background: isAthlete ? colors.surface : '#005A4F', padding: '9px 11px', display: 'grid', gap: 5 }}>
+                    <div style={{ color: isAthlete ? colors.secondary : '#BFFAF1', fontSize: 10, fontWeight: 850 }}>{isAthlete ? (message.author_name || 'Atleta') : 'Organizacion'}</div>
+                    <div style={{ color: colors.text, fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.message}</div>
+                    {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: isAthlete ? colors.accent : '#DFFFF9', fontSize: 12, fontWeight: 850, textDecoration: 'none' }}><Paperclip size={12} /> Abrir link</a> : null}
+                  </div>
+                )
+              })}
             </div>
 
             {activeCanResolve ? (
               <>
-                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 900 }}><MessageSquare size={16} />Responder</div>
-                  <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                    <Field label="Mensaje"><input style={inputStyle()} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" /></Field>
-                    <Field label="Link opcional"><input style={inputStyle()} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Drive o YouTube" /></Field>
+                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
+                    <textarea rows={1} style={{ ...inputStyle(), minHeight: 42, maxHeight: 100, resize: 'none', borderRadius: 20 }} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" />
+                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: colors.primary, color: colors.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 0.55 : 1 }}>
+                      <Send size={18} style={{ display: 'block' }} />
+                    </button>
                   </div>
-                  <Button onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())}>Enviar mensaje</Button>
+                  <input style={{ ...inputStyle(), minHeight: 38, borderRadius: 999 }} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Adjuntar link Drive o YouTube" />
                 </div>
 
-                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 10 }}>
-                  <strong>Decision</strong>
+                <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 12, display: 'grid', gap: 10 }}>
+                  <strong>Herramientas de decision</strong>
                   <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
                     <Field label="Nueva marca"><input type="number" style={inputStyle()} value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} /></Field>
                     <Field label="Tiebreak"><input type="number" style={inputStyle()} value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} /></Field>
                   </div>
-                  <Field label="Nota de decision"><textarea rows={4} style={inputStyle()} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" /></Field>
+                  <Field label="Nota para cerrar"><textarea rows={4} style={inputStyle()} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" /></Field>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Button onClick={() => resolveAppeal('needs_evidence')} disabled={busy}>Pedir evidencia</Button>
                     <Button tone="danger" onClick={() => resolveAppeal('rejected')} disabled={busy}>Rechazar</Button>

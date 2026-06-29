@@ -13,7 +13,7 @@ import {
   utcToCompetitionDateInput,
 } from '../utils/competitionTimeZone'
 import { cedulaInputValue, formatCedula } from '../utils/participantProfile'
-import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2, MoreHorizontal, MessageSquare } from 'lucide-react'
+import { X, Trash2, Pencil, ChevronDown, ChevronRight, ClipboardList, Clock3, Hourglass, Play, Pause, RotateCcw, ArrowLeft, Crown, Info, QrCode, Plus, CheckCircle2, MoreHorizontal, MessageSquare, Paperclip, Send } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_WORKSPACE_SECTIONS } from './adminCompetitionWorkspace'
 import { CompetitionSchedulePanel } from './adminCompetitionSchedulePanel'
@@ -7863,41 +7863,33 @@ function CompetitionAppealsPanel({ competition }) {
               {active.user_requested_score ? <div style={{ marginTop: 8, color: '#AAB2C0' }}>Resultado solicitado: <b style={{ color: '#F5F7FA' }}>{active.user_requested_score}</b></div> : null}
             </div>
 
-            <div style={{ display: 'grid', gap: 8, maxHeight: 240, overflowY: 'auto' }}>
-              {(active.messages || []).map((message) => (
-                <div key={message.id} style={{ border: '1px solid #252A33', borderRadius: 12, background: '#171B21', padding: 12, display: 'grid', gap: 6 }}>
-                  <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 850 }}>
-                    {message.author_name || message.author_role} · {message.author_role}
+            <div style={{ display: 'grid', gap: 8, maxHeight: 300, overflowY: 'auto', padding: 10, border: '1px solid #252A33', borderRadius: 8, background: '#0D0F12' }}>
+              {(active.messages || []).map((message) => {
+                const isAthlete = message.author_role === 'athlete'
+                return (
+                  <div key={message.id} style={{ justifySelf: isAthlete ? 'start' : 'end', width: 'fit-content', maxWidth: 'min(84%, 460px)', border: `1px solid ${isAthlete ? '#252A33' : 'rgba(0,194,168,0.24)'}`, borderRadius: isAthlete ? '14px 14px 14px 4px' : '14px 14px 4px 14px', background: isAthlete ? '#171B21' : '#005A4F', padding: '9px 11px', display: 'grid', gap: 5 }}>
+                    <div style={{ color: isAthlete ? '#AAB2C0' : '#BFFAF1', fontSize: 10, fontWeight: 850 }}>{isAthlete ? (message.author_name || 'Atleta') : 'Organizacion'}</div>
+                    <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.message}</div>
+                    {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: isAthlete ? '#00C2A8' : '#DFFFF9', fontSize: 12, fontWeight: 850, textDecoration: 'none' }}><Paperclip size={12} /> Abrir link</a> : null}
                   </div>
-                  <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
-                  {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {activeOpen ? (
               <>
-                <div style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#F5F7FA', fontWeight: 850 }}>
-                    <MessageSquare size={16} /> Responder
+                <div style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
+                    <textarea rows={1} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" style={{ width: '100%', minHeight: 42, maxHeight: 100, resize: 'none', borderRadius: 20, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '10px 13px', outline: 'none' }} />
+                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 0.55 : 1 }}>
+                      <Send size={18} style={{ display: 'block' }} />
+                    </button>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Mensaje</label>
-                      <input value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Link opcional</label>
-                      <input value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Drive o YouTube" />
-                    </div>
-                  </div>
-                  <button className="btn-secondary" type="button" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())}>
-                    Enviar mensaje
-                  </button>
+                  <input value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Adjuntar link Drive o YouTube" style={{ width: '100%', minHeight: 38, borderRadius: 999, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '8px 12px', outline: 'none' }} />
                 </div>
 
-                <div style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ color: '#F5F7FA', fontWeight: 850 }}>Decision</div>
+                <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
+                  <div style={{ color: '#F5F7FA', fontWeight: 850 }}>Herramientas de decision</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label>Nueva marca</label>
