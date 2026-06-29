@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ExternalLink, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -168,6 +168,12 @@ function ensureBoldButtonLibrary({ reload = false } = {}) {
   })
 }
 
+function isSocialInAppBrowser() {
+  if (typeof navigator === 'undefined') return false
+  const ua = `${navigator.userAgent || ''} ${navigator.vendor || ''}`.toLowerCase()
+  return /instagram|fbav|fb_iab|fban|messenger|line\/|tiktok|musical_ly/.test(ua)
+}
+
 function BoldPaymentButton({ config, onError, onPaymentClick }) {
   const containerRef = useRef(null)
 
@@ -257,6 +263,28 @@ function BoldPaymentButton({ config, onError, onPaymentClick }) {
   }, [config, onError, onPaymentClick])
 
   return <div ref={containerRef} />
+}
+
+function ExternalBrowserPaymentPrompt({ url, copied, onOpen, onCopy }) {
+  return (
+    <div style={{ display: 'grid', gap: 12, borderRadius: 14, border: '1px solid rgba(255,107,0,0.34)', background: 'rgba(255,107,0,0.10)', padding: 14 }}>
+      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 900 }}>Abre el pago en Safari o Chrome</div>
+      <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.55 }}>
+        Instagram puede bloquear la conexion con Bold. Abre este registro en tu navegador y continua el pago desde alli.
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" className="btn-primary" onClick={onOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <ExternalLink size={16} />
+          Abrir registro
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCopy} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Copy size={16} />
+          {copied ? 'Enlace copiado' : 'Copiar enlace'}
+        </button>
+      </div>
+      <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5, wordBreak: 'break-word' }}>{url}</div>
+    </div>
+  )
 }
 
 function parseScheduleItems(raw) {
@@ -413,6 +441,8 @@ export default function CompetitionEnrollmentPage() {
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
   const [appliedDiscount, setAppliedDiscount] = useState(null)
+  const [externalLinkCopied, setExternalLinkCopied] = useState(false)
+  const [socialInAppBrowser] = useState(() => isSocialInAppBrowser())
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -509,6 +539,10 @@ export default function CompetitionEnrollmentPage() {
   const isFreeEnrollment = pricing.totalPrice === 0
   const stageTestPaymentEnabled = isStageEnvironment && !isFreeEnrollment
   const directPaymentsDisabled = paymentsDisabled && !isFreeEnrollment
+  const shouldUseExternalBrowserForBold = socialInAppBrowser && !isFreeEnrollment && !stageTestPaymentEnabled && !directPaymentsDisabled
+  const registrationUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/competitions/${competitionId}/register`
+    : `/competitions/${competitionId}/register`
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
@@ -801,6 +835,21 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const copyRegistrationUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(registrationUrl)
+      setExternalLinkCopied(true)
+      setMsg({ type: 'success', text: 'Enlace copiado. Pegalo en Safari o Chrome para continuar el pago.' })
+    } catch {
+      setMsg({ type: 'error', text: 'No se pudo copiar el enlace. Usa el menu del navegador y abre esta pagina en Safari o Chrome.' })
+    }
+  }
+
+  const openRegistrationExternally = async () => {
+    await copyRegistrationUrl()
+    window.open(registrationUrl, '_blank', 'noopener,noreferrer')
+  }
+
   const confirmFreeEnrollment = async () => {
     if (!competition) return
     const validationError = validateBeforeConfirmation()
@@ -854,7 +903,7 @@ export default function CompetitionEnrollmentPage() {
       const saved = await saveMissingProfileFields()
       if (!saved) return
     }
-    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment && !directPaymentsDisabled) {
+    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment && !directPaymentsDisabled && !shouldUseExternalBrowserForBold) {
       const ready = await prepareBoldCheckout()
       if (!ready) return
     }
@@ -1320,6 +1369,13 @@ export default function CompetitionEnrollmentPage() {
                         >
                           {checkoutLoading ? 'Confirmando...' : 'Confirmar inscripcion gratuita'}
                         </button>
+                      ) : shouldUseExternalBrowserForBold ? (
+                        <ExternalBrowserPaymentPrompt
+                          url={registrationUrl}
+                          copied={externalLinkCopied}
+                          onOpen={openRegistrationExternally}
+                          onCopy={copyRegistrationUrl}
+                        />
                       ) : boldButtonConfig ? (
                         <div style={{ display: 'grid', gap: 10 }}>
                           <BoldPaymentButton
