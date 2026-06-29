@@ -12,6 +12,7 @@ import {
   BarChart3,
   MapPin,
   Megaphone,
+  MessageSquare,
   Pencil,
   Plus,
   Radio,
@@ -246,6 +247,7 @@ function normalizeCompetition(raw, bundle = {}) {
     heats: (bundle.heats?.items || []).length,
     results: (bundle.results || []).length,
     judges: (bundle.judges || []).length,
+    appeals: (bundle.appeals || []).filter((item) => ACTIVE_APPEAL_STATUSES.includes(item.status)).length,
   }
   const steps = buildSteps(raw, summary)
   const health = Math.round(steps.reduce((sum, step) => sum + step.progress, 0) / steps.length)
@@ -270,7 +272,7 @@ function normalizeCompetition(raw, bundle = {}) {
 }
 
 async function loadCompetitionBundle(competitionId) {
-  const [competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, finance, leaderboard] = await Promise.all([
+  const [competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, appeals, finance, leaderboard] = await Promise.all([
     api(`/competitions/${competitionId}`),
     api(`/competitions/${competitionId}/participants`).catch(() => []),
     api(`/competitions/${competitionId}/categories`).catch(() => []),
@@ -284,10 +286,11 @@ async function loadCompetitionBundle(competitionId) {
     api(`/teams?competition_id=${competitionId}`).catch(() => []),
     api(`/competitions/${competitionId}/judges`).catch(() => []),
     api(`/competitions/${competitionId}/judge-audit`).catch(() => []),
+    api(`/appeals?competition_id=${competitionId}`).catch(() => []),
     api(`/finance/competitions/${competitionId}`).catch(() => null),
     api(`/leaderboard/${competitionId}`).catch(() => null),
   ])
-  return { competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, finance, leaderboard }
+  return { competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, appeals, finance, leaderboard }
 }
 
 function Pill({ children, tone = colors.border, filled = false }) {
@@ -3287,6 +3290,232 @@ function JudgesPanel({ bundle, reload, notify }) {
   )
 }
 
+const ACTIVE_APPEAL_STATUSES = ['submitted', 'under_review', 'needs_evidence', 'escalated']
+
+function appealStatusLabel(status) {
+  const labels = {
+    submitted: 'Nueva',
+    under_review: 'En revision',
+    needs_evidence: 'Evidencia solicitada',
+    escalated: 'Escalada',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    score_adjusted: 'Resultado ajustado',
+    closed: 'Cerrada',
+    cancelled: 'Cancelada',
+  }
+  return labels[status] || status || 'Sin estado'
+}
+
+function appealTone(status) {
+  if (status === 'rejected') return colors.error
+  if (status === 'accepted' || status === 'score_adjusted') return colors.success
+  if (status === 'needs_evidence') return colors.warning
+  return colors.accent
+}
+
+function AppealsPanel({ bundle, reload, notify }) {
+  const competition = bundle.competition
+  const [appeals, setAppeals] = useState(bundle.appeals || [])
+  const [active, setActive] = useState(null)
+  const [reply, setReply] = useState({ message: '', evidence_url: '' })
+  const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setAppeals(bundle.appeals || [])
+    setActive(null)
+  }, [competition.id])
+
+  const loadAppeals = async () => {
+    setLoading(true)
+    try {
+      const data = await api(`/appeals?competition_id=${competition.id}`)
+      setAppeals(Array.isArray(data) ? data : [])
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openAppeal = async (appeal) => {
+    setBusy(true)
+    try {
+      const data = await api(`/appeals/${appeal.id}`)
+      setActive(data)
+      setReply({ message: '', evidence_url: '' })
+      setResolution({
+        marca: data.current_marca ?? '',
+        tiebreak: data.current_tiebreak ?? '',
+        resolution_note: '',
+      })
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendReply = async () => {
+    if (!active || (!reply.message.trim() && !reply.evidence_url.trim())) return
+    setBusy(true)
+    try {
+      const data = await api(`/appeals/${active.id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          message: reply.message.trim(),
+          evidence_url: reply.evidence_url.trim() || null,
+        }),
+      })
+      setActive(data)
+      setReply({ message: '', evidence_url: '' })
+      notify('Mensaje enviado')
+      await loadAppeals()
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resolveAppeal = async (resolutionType) => {
+    if (!active) return
+    setBusy(true)
+    try {
+      const payload = {
+        resolution_type: resolutionType,
+        resolution_note: resolution.resolution_note.trim(),
+      }
+      if (resolutionType === 'score_adjusted') {
+        payload.marca = resolution.marca
+        if (String(resolution.tiebreak).trim() !== '') payload.tiebreak = resolution.tiebreak
+      }
+      const data = await api(`/appeals/${active.id}/resolve`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      setActive(data)
+      notify(resolutionType === 'rejected' ? 'Reclamacion rechazada' : resolutionType === 'needs_evidence' ? 'Evidencia solicitada' : 'Resultado actualizado')
+      await loadAppeals()
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openItems = appeals.filter((item) => ACTIVE_APPEAL_STATUSES.includes(item.status))
+  const activeCanResolve = active && ACTIVE_APPEAL_STATUSES.includes(active.status)
+
+  return (
+    <Panel
+      title="Reclamaciones"
+      subtitle="Revision de evidencia, mensajes y ajustes de puntaje."
+      action={<><Pill tone={openItems.length ? colors.warning : colors.accent}>{openItems.length} abiertas</Pill><Button onClick={loadAppeals} disabled={loading}>{loading ? 'Cargando...' : 'Actualizar'}</Button></>}
+    >
+      <div className="fr-appeals-layout" style={{ display: 'grid', gridTemplateColumns: active ? 'minmax(260px, 360px) minmax(0, 1fr)' : '1fr', gap: 12 }}>
+        <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.top }}>
+          {appeals.length ? appeals.map((appeal) => {
+            const tone = appealTone(appeal.status)
+            return (
+              <button
+                key={appeal.id}
+                type="button"
+                onClick={() => openAppeal(appeal)}
+                style={{
+                  width: '100%',
+                  border: 0,
+                  borderBottom: `1px solid ${colors.border}`,
+                  background: active?.id === appeal.id ? 'rgba(255,107,0,0.12)' : colors.top,
+                  color: colors.text,
+                  padding: 12,
+                  textAlign: 'left',
+                  display: 'grid',
+                  gap: 6,
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <strong>{appeal.user_name || 'Atleta'}</strong>
+                  <Pill tone={tone}>{appealStatusLabel(appeal.status)}</Pill>
+                </span>
+                <span style={{ color: colors.secondary, fontSize: 12 }}>{appeal.phase_name || 'Workout'}</span>
+                <span style={{ color: colors.muted, fontSize: 11 }}>Solicita: {appeal.user_requested_score || '-'}</span>
+              </button>
+            )
+          }) : <div style={{ padding: 14, color: colors.secondary, fontSize: 13 }}>Sin reclamaciones.</div>}
+        </div>
+
+        {active ? (
+          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, padding: 12, display: 'grid', gap: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ fontSize: 18 }}>{active.user_name || 'Atleta'}</h3>
+                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>{active.phase_name || 'Workout'} - {appealStatusLabel(active.status)}</div>
+              </div>
+              {active.evidence_url ? <a href={active.evidence_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none' }}><Button>Ver evidencia</Button></a> : null}
+            </div>
+
+            <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+              <MiniStat label="Marca actual" value={active.current_marca ?? '-'} />
+              <MiniStat label="Posicion" value={active.current_posicion ? `#${active.current_posicion}` : '-'} tone={colors.accent} />
+              <MiniStat label="Puntos" value={active.current_puntos ?? '-'} />
+            </div>
+
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 12, color: colors.secondary, fontSize: 13, lineHeight: 1.55 }}>
+              <strong style={{ color: colors.text }}>Solicitud:</strong> {active.description || '-'}
+              {active.user_requested_score ? <div style={{ marginTop: 8 }}>Resultado solicitado: <strong style={{ color: colors.text }}>{active.user_requested_score}</strong></div> : null}
+            </div>
+
+            <div style={{ display: 'grid', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+              {(active.messages || []).map((message) => (
+                <div key={message.id} style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 10 }}>
+                  <div style={{ color: colors.secondary, fontSize: 11, fontWeight: 850 }}>{message.author_name || message.author_role} - {message.author_role}</div>
+                  <div style={{ marginTop: 5, color: colors.text, fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
+                  {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
+                </div>
+              ))}
+            </div>
+
+            {activeCanResolve ? (
+              <>
+                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 10 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 900 }}><MessageSquare size={16} />Responder</div>
+                  <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                    <Field label="Mensaje"><input style={inputStyle()} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" /></Field>
+                    <Field label="Link opcional"><input style={inputStyle()} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Drive o YouTube" /></Field>
+                  </div>
+                  <Button onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())}>Enviar mensaje</Button>
+                </div>
+
+                <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 10 }}>
+                  <strong>Decision</strong>
+                  <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                    <Field label="Nueva marca"><input type="number" style={inputStyle()} value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} /></Field>
+                    <Field label="Tiebreak"><input type="number" style={inputStyle()} value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} /></Field>
+                  </div>
+                  <Field label="Nota de decision"><textarea rows={4} style={inputStyle()} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" /></Field>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Button onClick={() => resolveAppeal('needs_evidence')} disabled={busy}>Pedir evidencia</Button>
+                    <Button tone="danger" onClick={() => resolveAppeal('rejected')} disabled={busy}>Rechazar</Button>
+                    <Button tone="primary" onClick={() => resolveAppeal('score_adjusted')} disabled={busy}>Ajustar resultado</Button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ color: colors.secondary, fontSize: 13 }}>Decision final: {active.resolution_note || '-'}</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    </Panel>
+  )
+}
+
 function BroadcastPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
   const [modalOpen, setModalOpen] = useState(false)
@@ -3347,8 +3576,10 @@ function BroadcastPanel({ bundle, reload, notify }) {
 
 function LivePanel({ bundle, reload, notify }) {
   const [section, setSection] = useState('results')
+  const openAppeals = (bundle.appeals || []).filter((item) => ACTIVE_APPEAL_STATUSES.includes(item.status))
   const modules = [
     { id: 'results', label: 'Resultados', icon: Trophy, count: (bundle.results || []).length },
+    { id: 'appeals', label: 'Reclamaciones', icon: MessageSquare, count: openAppeals.length },
     { id: 'judges', label: 'Jueces', icon: Users, count: (bundle.judges || []).length },
     { id: 'broadcast', label: 'Pantalla', icon: Radio },
   ]
@@ -3356,6 +3587,7 @@ function LivePanel({ bundle, reload, notify }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <ModuleTabs items={modules} active={section} onChange={setSection} />
       {section === 'results' && <ResultsPanel bundle={bundle} reload={reload} notify={notify} />}
+      {section === 'appeals' && <AppealsPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'judges' && <JudgesPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'broadcast' && <BroadcastPanel bundle={bundle} reload={reload} notify={notify} />}
     </div>
@@ -3532,6 +3764,7 @@ function WizardWorkspace({ selectedId, onBack }) {
     heats: (bundle.heats?.items || []).length,
     results: (bundle.results || []).length,
     judges: (bundle.judges || []).length,
+    appeals: (bundle.appeals || []).filter((item) => ACTIVE_APPEAL_STATUSES.includes(item.status)).length,
   }
   const competition = normalizeCompetition(bundle.competition, bundle)
   const steps = buildSteps(bundle.competition, summary)
