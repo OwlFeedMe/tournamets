@@ -9,7 +9,7 @@ import GymSelector from '../components/gyms/GymSelector'
 import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 import {
   Trophy, PlusCircle, Medal, Dumbbell,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck, MessageSquare,
 } from 'lucide-react'
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -124,6 +124,21 @@ function organizerApplicationBadge(status) {
 }
 
 // â”€â”€ Competition Detail Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function appealStatusLabel(status) {
+  const labels = {
+    submitted: 'Nueva',
+    under_review: 'En revision',
+    needs_evidence: 'Evidencia solicitada',
+    escalated: 'Escalada',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    score_adjusted: 'Resultado ajustado',
+    closed: 'Cerrada',
+    cancelled: 'Cancelada',
+  }
+  return labels[status] || status || 'Sin estado'
+}
 
 const PUBLIC_PROFILE_TOGGLES = [
   ['public_profile_enabled', 'Perfil publico', 'Activa tu ficha para compartir tu presencia competitiva.'],
@@ -327,7 +342,7 @@ function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
   )
 }
 
-function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile, canAppealResult, onAppealResult }) {
+function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile, canAppealResult, onAppealResult, onOpenAppealThread }) {
   const [team, setTeam] = useState(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [pendingInvites, setPendingInvites] = useState([])
@@ -640,7 +655,13 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                       <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text }}>{r.fase || 'Sin fase'}</div>
                       {r.equipo && <div style={{ fontSize: 11, color: modalColors.secondary, marginTop: 2 }}>Equipo: {r.equipo}</div>}
                       {r.active_appeal_id ? (
-                        <div style={{ display: 'inline-flex', marginTop: 8, padding: '3px 7px', borderRadius: 999, border: `1px solid rgba(0,194,168,0.28)`, background: 'rgba(0,194,168,0.12)', color: modalColors.accent, fontSize: 11, fontWeight: 800 }}>En revision</div>
+                        <button
+                          type="button"
+                          onClick={() => onOpenAppealThread?.(r)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.12)', color: modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          <MessageSquare size={12} /> Ver reclamacion
+                        </button>
                       ) : canAppealResult?.(r) ? (
                         <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
                           Apelar resultado
@@ -723,6 +744,9 @@ export default function ParticipantProfile() {
   const [appealTarget, setAppealTarget] = useState(null)
   const [appealBusy, setAppealBusy] = useState(false)
   const [appealForm, setAppealForm] = useState({ user_requested_score: '', description: '', evidence_url: '' })
+  const [appealThread, setAppealThread] = useState(null)
+  const [appealThreadBusy, setAppealThreadBusy] = useState(false)
+  const [appealReply, setAppealReply] = useState({ message: '', evidence_url: '' })
 
   // Modal state
   const [selectedComp, setSelectedComp] = useState(null)
@@ -811,7 +835,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget || appealTarget)
+  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget || appealTarget || appealThread)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -837,7 +861,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget, appealTarget])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget, appealTarget, appealThread])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -1287,6 +1311,44 @@ export default function ParticipantProfile() {
     }
   }
 
+  const openAppealThread = async (result) => {
+    const appealId = result?.active_appeal_id
+    if (!appealId) return
+    setSelectedComp(null)
+    setAppealThreadBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.get(`/appeals/${appealId}`)
+      setAppealThread(data)
+      setAppealReply({ message: '', evidence_url: '' })
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion' })
+    } finally {
+      setAppealThreadBusy(false)
+    }
+  }
+
+  const sendAppealReply = async (e) => {
+    e.preventDefault()
+    if (!appealThread || (!appealReply.message.trim() && !appealReply.evidence_url.trim())) return
+    setAppealThreadBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.post(`/appeals/${appealThread.id}/messages`, {
+        message: appealReply.message.trim(),
+        evidence_url: appealReply.evidence_url.trim() || null,
+      })
+      setAppealThread(data)
+      setAppealReply({ message: '', evidence_url: '' })
+      setMsg({ type: 'success', text: 'Mensaje enviado' })
+      await loadResults()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar el mensaje' })
+    } finally {
+      setAppealThreadBusy(false)
+    }
+  }
+
   const acceptInvitation = async (invId) => {
     setInvBusy(invId)
     setInvMsg(null)
@@ -1463,6 +1525,62 @@ export default function ParticipantProfile() {
         </div>
       )}
 
+      {appealThread && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 620, maxHeight: '88dvh', borderRadius: 8, background: '#171B21', border: '1px solid #252A33', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#171B21', borderBottom: '1px solid #252A33', padding: '16px 18px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 850 }}>Reclamacion</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{appealThread.phase_name || 'Workout'} - {appealStatusLabel(appealThread.status)}</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => !appealThreadBusy && setAppealThread(null)}>
+                Cerrar
+              </button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
+              <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13, display: 'grid', gap: 6 }}>
+                <div>Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealThread.current_posicion ? `#${appealThread.current_posicion}` : (appealThread.current_marca ?? appealThread.current_puntos ?? '-')}</b></div>
+                {appealThread.user_requested_score ? <div>Solicitado: <b style={{ color: '#F5F7FA' }}>{appealThread.user_requested_score}</b></div> : null}
+                {appealThread.evidence_url ? <a href={appealThread.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontWeight: 800 }}>Abrir evidencia enviada</a> : null}
+                {appealThread.resolution_note ? <div>Decision: <b style={{ color: '#F5F7FA' }}>{appealThread.resolution_note}</b></div> : null}
+              </div>
+
+              <div style={{ display: 'grid', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+                {(appealThread.messages || []).length ? appealThread.messages.map((message) => {
+                  const isMine = message.author_role === 'athlete'
+                  return (
+                    <div key={message.id} style={{ justifySelf: isMine ? 'end' : 'start', width: 'min(100%, 460px)', border: `1px solid ${isMine ? 'rgba(0,194,168,0.28)' : '#252A33'}`, borderRadius: 8, background: isMine ? 'rgba(0,194,168,0.10)' : '#090B0E', padding: 12, display: 'grid', gap: 6 }}>
+                      <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 850 }}>{isMine ? 'Tu' : (message.author_name || 'Organizacion')}</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
+                      {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
+                    </div>
+                  )
+                }) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay mensajes todavia.</div>}
+              </div>
+
+              {['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(appealThread.status) ? (
+                <form onSubmit={sendAppealReply} style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 10 }}>
+                  <div style={{ color: '#F5F7FA', fontWeight: 850, display: 'flex', alignItems: 'center', gap: 8 }}><MessageSquare size={16} /> Responder</div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Mensaje</label>
+                    <textarea rows={3} value={appealReply.message} onChange={e => setAppealReply(f => ({ ...f, message: e.target.value }))} placeholder="Responde al organizador o juez" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Link adicional</label>
+                    <input type="url" value={appealReply.evidence_url} onChange={e => setAppealReply(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Drive o YouTube" />
+                  </div>
+                  <button type="submit" className="btn-primary" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ minHeight: 44 }}>
+                    {appealThreadBusy ? 'Enviando...' : 'Enviar mensaje'}
+                  </button>
+                </form>
+              ) : (
+                <div style={{ color: '#AAB2C0', fontSize: 13, borderTop: '1px solid #252A33', paddingTop: 12 }}>Esta reclamacion ya esta cerrada.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedComp && (
         <CompetitionDetailModal
           comp={selectedComp}
@@ -1471,6 +1589,7 @@ export default function ParticipantProfile() {
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}
           canAppealResult={canAppealResult}
+          onOpenAppealThread={openAppealThread}
           onAppealResult={(result) => {
             setSelectedComp(null)
             openAppeal(result)
