@@ -1566,18 +1566,18 @@ export default function ParticipantProfile() {
                   {appealLinkOpen ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
                       <input type="url" value={appealReply.evidence_url} onChange={e => setAppealReply(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Pega link de Drive o YouTube" style={{ minHeight: 38, borderRadius: 999, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '8px 12px', outline: 'none' }} />
-                      <button type="button" onClick={() => { setAppealLinkOpen(false); setAppealReply(f => ({ ...f, evidence_url: '' })) }} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #252A33', background: '#090B0E', color: '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                        <X size={16} />
+                      <button type="button" onClick={() => { setAppealLinkOpen(false); setAppealReply(f => ({ ...f, evidence_url: '' })) }} style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, padding: 0, lineHeight: 0, borderRadius: '50%', border: '1px solid #252A33', background: '#090B0E', color: '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <X size={16} style={{ display: 'block' }} />
                       </button>
                     </div>
                   ) : null}
                   <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
-                    <button type="button" aria-label="Adjuntar link" onClick={() => setAppealLinkOpen(open => !open)} style={{ width: 40, height: 40, borderRadius: '50%', border: `1px solid ${appealReply.evidence_url ? 'rgba(0,194,168,0.36)' : '#252A33'}`, background: appealReply.evidence_url ? 'rgba(0,194,168,0.12)' : '#090B0E', color: appealReply.evidence_url ? '#00C2A8' : '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                      <Paperclip size={18} />
+                    <button type="button" aria-label="Adjuntar link" onClick={() => setAppealLinkOpen(open => !open)} style={{ width: 40, height: 40, minWidth: 40, minHeight: 40, padding: 0, lineHeight: 0, borderRadius: '50%', border: `1px solid ${appealReply.evidence_url ? 'rgba(0,194,168,0.36)' : '#252A33'}`, background: appealReply.evidence_url ? 'rgba(0,194,168,0.12)' : '#090B0E', color: appealReply.evidence_url ? '#00C2A8' : '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Paperclip size={18} style={{ display: 'block' }} />
                     </button>
                     <textarea rows={1} value={appealReply.message} onChange={e => setAppealReply(f => ({ ...f, message: e.target.value }))} placeholder="Mensaje" style={{ width: '100%', minHeight: 40, maxHeight: 104, resize: 'none', borderRadius: 20, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '10px 13px', outline: 'none', lineHeight: 1.35 }} />
-                    <button type="submit" aria-label="Enviar mensaje" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'grid', placeItems: 'center', cursor: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 0.55 : 1 }}>
-                      <Send size={18} />
+                    <button type="submit" aria-label="Enviar mensaje" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 0.55 : 1 }}>
+                      <Send size={18} style={{ display: 'block' }} />
                     </button>
                   </div>
                 </form>
