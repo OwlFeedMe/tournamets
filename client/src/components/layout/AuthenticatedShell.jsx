@@ -23,6 +23,21 @@ function formatProfileMissingFields(fields = []) {
     .join(', ')
 }
 
+function appealStatusLabel(status) {
+  const labels = {
+    submitted: 'Nueva',
+    under_review: 'En revision',
+    needs_evidence: 'Evidencia solicitada',
+    escalated: 'Escalada',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    score_adjusted: 'Resultado ajustado',
+    closed: 'Cerrada',
+    cancelled: 'Cancelada',
+  }
+  return labels[status] || status || 'Sin estado'
+}
+
 const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
 const footerLegalLinks = [
   {
@@ -437,6 +452,11 @@ export function AuthenticatedShell() {
           .then(({ data }) => ({ kind: 'enrollmentQuestions', data }))
           .catch(() => ({ kind: 'enrollmentQuestions', data: [] }))
       )
+      requests.push(
+        api.get('/appeals/me')
+          .then(({ data }) => ({ kind: 'appeals', data }))
+          .catch(() => ({ kind: 'appeals', data: [] }))
+      )
     }
 
     Promise.all(requests).then((results) => {
@@ -560,6 +580,46 @@ export function AuthenticatedShell() {
         })
       }
 
+      const appealsResult = results.find((item) => item.kind === 'appeals')
+      if (appealsResult) {
+        const appeals = Array.isArray(appealsResult.data) ? appealsResult.data : []
+        const seenKey = `finalrep:appeals-seen:${userId}`
+        let seenMap = {}
+        try {
+          seenMap = JSON.parse(window.localStorage.getItem(seenKey) || '{}')
+        } catch {
+          seenMap = {}
+        }
+        appeals.forEach((appeal) => {
+          const messages = Array.isArray(appeal.messages) ? appeal.messages : []
+          const lastMessage = messages[messages.length - 1] || null
+          const signatureParts = [
+            appeal.status || '',
+            appeal.resolved_at || '',
+            appeal.resolution_note || '',
+            lastMessage?.id || '',
+            lastMessage?.created_at || '',
+          ]
+          const signature = signatureParts.join('|')
+          const isClosed = ['accepted', 'rejected', 'score_adjusted', 'closed', 'cancelled'].includes(appeal.status)
+          const hasStaffMessage = lastMessage && lastMessage.author_role !== 'athlete'
+          if (!isClosed && !hasStaffMessage) return
+          const title = isClosed ? 'Decision de reclamacion' : 'Mensaje en reclamacion'
+          const text = isClosed
+            ? `${appeal.phase_name || 'Workout'}: ${appealStatusLabel(appeal.status)}${appeal.resolution_note ? ` - ${appeal.resolution_note}` : ''}`
+            : `${appeal.phase_name || 'Workout'} tiene actividad nueva. Revisa el chat de la reclamacion.`
+          dynamicItems.unshift({
+            title,
+            text,
+            tone: isClosed && appeal.status === 'rejected' ? 'danger' : isClosed ? 'success' : 'neutral',
+            actions: [
+              { id: `appeal-${appeal.id}`, label: 'Ver reclamacion', tone: 'primary', actionType: 'go-to-appeal', appealSeenKey: seenKey, appealSignatureKey: String(appeal.id), appealSignature: signature },
+            ],
+          })
+          if (signature && seenMap[String(appeal.id)] !== signature) unread += 1
+        })
+      }
+
       setNotificationItems(dynamicItems)
       setUnreadCount(unread)
     })
@@ -595,6 +655,25 @@ export function AuthenticatedShell() {
     if (Object.keys(questionSeenMap).length) {
       window.localStorage.setItem(questionSeenKey, JSON.stringify(questionSeenMap))
     }
+
+    const appealSeenWrites = {}
+    notificationItems.forEach((item) => {
+      ;(item.actions || []).forEach((action) => {
+        if (action.actionType === 'go-to-appeal' && action.appealSeenKey && action.appealSignatureKey && action.appealSignature) {
+          if (!appealSeenWrites[action.appealSeenKey]) {
+            try {
+              appealSeenWrites[action.appealSeenKey] = JSON.parse(window.localStorage.getItem(action.appealSeenKey) || '{}')
+            } catch {
+              appealSeenWrites[action.appealSeenKey] = {}
+            }
+          }
+          appealSeenWrites[action.appealSeenKey][action.appealSignatureKey] = action.appealSignature
+        }
+      })
+    })
+    Object.entries(appealSeenWrites).forEach(([key, value]) => {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    })
 
     if (!isAthlete) return
     api.get(`/users/${userId}/competitions`)
@@ -648,6 +727,19 @@ export function AuthenticatedShell() {
         setPendingQuestionDraft({})
         setPendingQuestionError('')
         setNotificationsOpen(false)
+      } else if (action.actionType === 'go-to-appeal') {
+        if (action.appealSeenKey && action.appealSignatureKey && action.appealSignature) {
+          let seenMap = {}
+          try {
+            seenMap = JSON.parse(window.localStorage.getItem(action.appealSeenKey) || '{}')
+          } catch {
+            seenMap = {}
+          }
+          seenMap[action.appealSignatureKey] = action.appealSignature
+          window.localStorage.setItem(action.appealSeenKey, JSON.stringify(seenMap))
+        }
+        setNotificationsOpen(false)
+        navigate('/profile', { state: { openAppeals: true } })
       }
     } catch {
     } finally {

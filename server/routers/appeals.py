@@ -173,7 +173,7 @@ def list_my_appeals(session: Session = Depends(get_session), user=Depends(requir
         .where(ResultAppeal.user_id == user_id)
         .order_by(ResultAppeal.created_at.desc(), ResultAppeal.id.desc())
     ).all()
-    return [_appeal_payload(session, row) for row in rows]
+    return [_appeal_payload(session, row, include_messages=True) for row in rows]
 
 
 @router.get("/{appeal_id}")
