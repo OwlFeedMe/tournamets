@@ -275,6 +275,8 @@ function AppealsPanel({ assignment, notify }) {
   const [loading, setLoading] = useState(false)
   const [reply, setReply] = useState({ message: '' })
   const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
+  const [decisionOpen, setDecisionOpen] = useState(false)
+  const [decisionMode, setDecisionMode] = useState('score_adjusted')
   const [busy, setBusy] = useState(false)
 
   const loadAppeals = async () => {
@@ -296,6 +298,8 @@ function AppealsPanel({ assignment, notify }) {
       setActive(data)
       setResolution({ marca: data.current_marca ?? '', tiebreak: data.current_tiebreak ?? '', resolution_note: '' })
       setReply({ message: '' })
+      setDecisionOpen(false)
+      setDecisionMode('score_adjusted')
     } catch (error) {
       notify(error.response?.data?.detail || 'No se pudo abrir la reclamacion.', 'error')
     }
@@ -337,6 +341,7 @@ function AppealsPanel({ assignment, notify }) {
       }
       const { data } = await api.post(`/appeals/${active.id}/resolve`, payload)
       setActive(data)
+      setDecisionOpen(false)
       notify(resolutionType === 'rejected' ? 'Reclamacion rechazada' : resolutionType === 'needs_evidence' ? 'Evidencia solicitada' : 'Resultado actualizado')
       await loadAppeals()
     } catch (error) {
@@ -375,7 +380,10 @@ function AppealsPanel({ assignment, notify }) {
                 <div style={{ fontWeight: 950 }}>{active.user_name || 'Atleta'}</div>
                 <div style={{ color: colors.secondary, fontSize: 12 }}>{active.phase_name || 'Workout'} - Estado: {active.status}</div>
               </div>
-              {active.evidence_url ? <a href={active.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontWeight: 850 }}>Ver evidencia</a> : null}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {active.evidence_url ? <a href={active.evidence_url} target="_blank" rel="noreferrer" style={{ color: colors.accent, fontWeight: 850 }}>Ver evidencia</a> : null}
+                {['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(active.status) ? <Button tone="primary" onClick={() => setDecisionOpen(true)}>Resolver reclamacion</Button> : null}
+              </div>
             </div>
             <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, color: colors.secondary, fontSize: 13, lineHeight: 1.55 }}>
               {active.description}
@@ -402,19 +410,33 @@ function AppealsPanel({ assignment, notify }) {
                     </button>
                   </div>
                 </div>
-                <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 12, display: 'grid', gap: 8 }}>
-                  <div style={{ fontWeight: 900 }}>Herramientas de decision</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <Field label="Nueva marca"><input style={inputStyle()} type="number" value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} /></Field>
-                    <Field label="Tiebreak"><input style={inputStyle()} type="number" value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} /></Field>
+                {decisionOpen ? (
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.74)', display: 'grid', placeItems: 'center', padding: 16 }} onClick={() => !busy && setDecisionOpen(false)}>
+                    <div style={{ width: 'min(620px, 100%)', border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, overflow: 'hidden' }} onClick={(event) => event.stopPropagation()}>
+                      <div style={{ borderBottom: `1px solid ${colors.border}`, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                        <div style={{ fontSize: 18, fontWeight: 950 }}>Resolver reclamacion</div>
+                        <Button onClick={() => setDecisionOpen(false)} disabled={busy}>Cerrar</Button>
+                      </div>
+                      <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                          <Button tone={decisionMode === 'rejected' ? 'danger' : 'secondary'} onClick={() => setDecisionMode('rejected')}>Rechazar</Button>
+                          <Button tone={decisionMode === 'score_adjusted' ? 'primary' : 'secondary'} onClick={() => setDecisionMode('score_adjusted')}>Ajustar resultado</Button>
+                        </div>
+                        {decisionMode === 'score_adjusted' ? (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <Field label="Nueva marca"><input style={inputStyle()} type="number" value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} /></Field>
+                            <Field label="Tiebreak"><input style={inputStyle()} type="number" value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} /></Field>
+                          </div>
+                        ) : null}
+                        <Field label={decisionMode === 'rejected' ? 'Mensaje de cierre' : 'Nota para resolver'}><textarea style={{ ...inputStyle(), minHeight: 92 }} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder={decisionMode === 'rejected' ? 'Explica por que se rechaza la reclamacion' : 'Motivo del ajuste'} /></Field>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                          <Button onClick={() => setDecisionOpen(false)} disabled={busy}>Cancelar</Button>
+                          <Button tone={decisionMode === 'rejected' ? 'danger' : 'primary'} onClick={() => resolveAppeal(decisionMode)} disabled={busy}>{decisionMode === 'rejected' ? 'Enviar cierre' : 'Resolver'}</Button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <Field label="Nota para cerrar"><textarea style={{ ...inputStyle(), minHeight: 78 }} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" /></Field>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <Button onClick={() => resolveAppeal('needs_evidence')} disabled={busy}>Pedir evidencia</Button>
-                    <Button tone="danger" onClick={() => resolveAppeal('rejected')} disabled={busy}>Rechazar</Button>
-                    <Button tone="primary" onClick={() => resolveAppeal('score_adjusted')} disabled={busy}>Ajustar resultado</Button>
-                  </div>
-                </div>
+                ) : null}
               </>
             ) : (
               <div style={{ color: colors.secondary, fontSize: 13 }}>Decision: {active.resolution_note || '-'}</div>

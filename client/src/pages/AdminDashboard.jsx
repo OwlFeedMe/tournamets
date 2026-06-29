@@ -7674,6 +7674,8 @@ function CompetitionAppealsPanel({ competition }) {
   const [msg, setMsg] = useState(null)
   const [reply, setReply] = useState({ message: '' })
   const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
+  const [decisionOpen, setDecisionOpen] = useState(false)
+  const [decisionMode, setDecisionMode] = useState('score_adjusted')
 
   const load = async () => {
     if (!competition?.id) return
@@ -7711,6 +7713,8 @@ function CompetitionAppealsPanel({ competition }) {
         resolution_note: '',
       })
       setReply({ message: '' })
+      setDecisionOpen(false)
+      setDecisionMode('score_adjusted')
       setMsg(null)
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion.' })
@@ -7751,6 +7755,7 @@ function CompetitionAppealsPanel({ competition }) {
       }
       const { data } = await api.post(`/appeals/${active.id}/resolve`, payload)
       setActive(data)
+      setDecisionOpen(false)
       setMsg({
         type: 'success',
         text: resolutionType === 'rejected'
@@ -7834,11 +7839,14 @@ function CompetitionAppealsPanel({ competition }) {
                 <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 900 }}>{active.user_name || 'Atleta'}</div>
                 <div style={{ color: '#AAB2C0', fontSize: 13, marginTop: 4 }}>{active.phase_name || 'Workout'} · {appealStatusLabel(active.status)}</div>
               </div>
-              {active.evidence_url ? (
-                <a href={active.evidence_url} target="_blank" rel="noreferrer" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
-                  Ver evidencia
-                </a>
-              ) : null}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {active.evidence_url ? (
+                  <a href={active.evidence_url} target="_blank" rel="noreferrer" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
+                    Ver evidencia
+                  </a>
+                ) : null}
+                {activeOpen ? <button className="btn-primary btn-sm" type="button" onClick={() => setDecisionOpen(true)}>Resolver reclamacion</button> : null}
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
@@ -7886,28 +7894,36 @@ function CompetitionAppealsPanel({ competition }) {
                   </div>
                 </div>
 
-                <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ color: '#F5F7FA', fontWeight: 850 }}>Herramientas de decision</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Nueva marca</label>
-                      <input type="number" value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} />
+                {decisionOpen ? (
+                  <Modal title="Resolver reclamacion" onClose={() => !busy && setDecisionOpen(false)} width={620}>
+                    <div style={{ display: 'grid', gap: 12 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                        <button className={decisionMode === 'rejected' ? 'btn-danger' : 'btn-secondary'} type="button" onClick={() => setDecisionMode('rejected')}>Rechazar</button>
+                        <button className={decisionMode === 'score_adjusted' ? 'btn-primary' : 'btn-secondary'} type="button" onClick={() => setDecisionMode('score_adjusted')}>Ajustar resultado</button>
+                      </div>
+                      {decisionMode === 'score_adjusted' ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>Nueva marca</label>
+                            <input type="number" value={resolution.marca} onChange={(event) => setResolution((prev) => ({ ...prev, marca: event.target.value }))} />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>Tiebreak</label>
+                            <input type="number" value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} />
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>{decisionMode === 'rejected' ? 'Mensaje de cierre' : 'Nota para resolver'}</label>
+                        <textarea rows={4} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder={decisionMode === 'rejected' ? 'Explica por que se rechaza la reclamacion' : 'Motivo del ajuste'} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                        <button className="btn-secondary" type="button" onClick={() => setDecisionOpen(false)} disabled={busy}>Cancelar</button>
+                        <button className={decisionMode === 'rejected' ? 'btn-danger' : 'btn-primary'} type="button" onClick={() => resolveAppeal(decisionMode)} disabled={busy}>{decisionMode === 'rejected' ? 'Enviar cierre' : 'Resolver'}</button>
+                      </div>
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Tiebreak</label>
-                      <input type="number" value={resolution.tiebreak} onChange={(event) => setResolution((prev) => ({ ...prev, tiebreak: event.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Nota de decision</label>
-                    <textarea rows={4} value={resolution.resolution_note} onChange={(event) => setResolution((prev) => ({ ...prev, resolution_note: event.target.value }))} placeholder="Motivo de la decision" />
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button className="btn-secondary" type="button" onClick={() => resolveAppeal('needs_evidence')} disabled={busy}>Pedir evidencia</button>
-                    <button className="btn-danger" type="button" onClick={() => resolveAppeal('rejected')} disabled={busy}>Rechazar</button>
-                    <button className="btn-primary" type="button" onClick={() => resolveAppeal('score_adjusted')} disabled={busy}>Ajustar resultado</button>
-                  </div>
-                </div>
+                  </Modal>
+                ) : null}
               </>
             ) : (
               <div style={{ border: '1px solid #252A33', borderRadius: 12, padding: 12, color: '#AAB2C0', background: '#090B0E', fontSize: 13 }}>
