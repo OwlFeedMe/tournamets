@@ -9,7 +9,7 @@ import GymSelector from '../components/gyms/GymSelector'
 import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 import {
   Trophy, PlusCircle, Medal, Dumbbell,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck, MessageSquare,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck, MessageSquare, Paperclip, Send,
 } from 'lucide-react'
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -747,6 +747,7 @@ export default function ParticipantProfile() {
   const [appealThread, setAppealThread] = useState(null)
   const [appealThreadBusy, setAppealThreadBusy] = useState(false)
   const [appealReply, setAppealReply] = useState({ message: '', evidence_url: '' })
+  const [appealLinkOpen, setAppealLinkOpen] = useState(false)
 
   // Modal state
   const [selectedComp, setSelectedComp] = useState(null)
@@ -1321,6 +1322,7 @@ export default function ParticipantProfile() {
       const { data } = await api.get(`/appeals/${appealId}`)
       setAppealThread(data)
       setAppealReply({ message: '', evidence_url: '' })
+      setAppealLinkOpen(false)
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion' })
     } finally {
@@ -1340,6 +1342,7 @@ export default function ParticipantProfile() {
       })
       setAppealThread(data)
       setAppealReply({ message: '', evidence_url: '' })
+      setAppealLinkOpen(false)
       setMsg({ type: 'success', text: 'Mensaje enviado' })
       await loadResults()
     } catch (err) {
@@ -1537,44 +1540,49 @@ export default function ParticipantProfile() {
                 Cerrar
               </button>
             </div>
-            <div style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
-              <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13, display: 'grid', gap: 6 }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0D0F12' }}>
+              <div style={{ margin: '14px 14px 0', border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13, display: 'grid', gap: 6 }}>
                 <div>Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealThread.current_posicion ? `#${appealThread.current_posicion}` : (appealThread.current_marca ?? appealThread.current_puntos ?? '-')}</b></div>
                 {appealThread.user_requested_score ? <div>Solicitado: <b style={{ color: '#F5F7FA' }}>{appealThread.user_requested_score}</b></div> : null}
                 {appealThread.evidence_url ? <a href={appealThread.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontWeight: 800 }}>Abrir evidencia enviada</a> : null}
                 {appealThread.resolution_note ? <div>Decision: <b style={{ color: '#F5F7FA' }}>{appealThread.resolution_note}</b></div> : null}
               </div>
 
-              <div style={{ display: 'grid', gap: 8, maxHeight: 300, overflowY: 'auto' }}>
+              <div style={{ flex: 1, minHeight: 220, overflowY: 'auto', padding: 14, display: 'grid', alignContent: 'end', gap: 8 }}>
                 {(appealThread.messages || []).length ? appealThread.messages.map((message) => {
                   const isMine = message.author_role === 'athlete'
                   return (
-                    <div key={message.id} style={{ justifySelf: isMine ? 'end' : 'start', width: 'min(100%, 460px)', border: `1px solid ${isMine ? 'rgba(0,194,168,0.28)' : '#252A33'}`, borderRadius: 8, background: isMine ? 'rgba(0,194,168,0.10)' : '#090B0E', padding: 12, display: 'grid', gap: 6 }}>
-                      <div style={{ color: '#AAB2C0', fontSize: 11, fontWeight: 850 }}>{isMine ? 'Tu' : (message.author_name || 'Organizacion')}</div>
-                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.5 }}>{message.message}</div>
-                      {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontSize: 12, fontWeight: 850 }}>Abrir link</a> : null}
+                    <div key={message.id} style={{ justifySelf: isMine ? 'end' : 'start', width: 'fit-content', maxWidth: 'min(82%, 440px)', border: `1px solid ${isMine ? 'rgba(0,194,168,0.24)' : '#252A33'}`, borderRadius: isMine ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMine ? '#005A4F' : '#171B21', padding: '9px 11px', display: 'grid', gap: 5, boxShadow: '0 8px 22px rgba(0,0,0,0.18)' }}>
+                      <div style={{ color: isMine ? '#BFFAF1' : '#AAB2C0', fontSize: 10, fontWeight: 850 }}>{isMine ? 'Tu' : (message.author_name || 'Organizacion')}</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.message}</div>
+                      {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: isMine ? '#DFFFF9' : '#00C2A8', fontSize: 12, fontWeight: 850, textDecoration: 'none' }}><Paperclip size={12} /> Abrir link</a> : null}
                     </div>
                   )
                 }) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay mensajes todavia.</div>}
               </div>
 
               {['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(appealThread.status) ? (
-                <form onSubmit={sendAppealReply} style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 10 }}>
-                  <div style={{ color: '#F5F7FA', fontWeight: 850, display: 'flex', alignItems: 'center', gap: 8 }}><MessageSquare size={16} /> Responder</div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Mensaje</label>
-                    <textarea rows={3} value={appealReply.message} onChange={e => setAppealReply(f => ({ ...f, message: e.target.value }))} placeholder="Responde al organizador o juez" />
+                <form onSubmit={sendAppealReply} style={{ borderTop: '1px solid #252A33', background: '#171B21', padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))', display: 'grid', gap: 8 }}>
+                  {appealLinkOpen ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                      <input type="url" value={appealReply.evidence_url} onChange={e => setAppealReply(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Pega link de Drive o YouTube" style={{ minHeight: 38, borderRadius: 999, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '8px 12px', outline: 'none' }} />
+                      <button type="button" onClick={() => { setAppealLinkOpen(false); setAppealReply(f => ({ ...f, evidence_url: '' })) }} style={{ width: 38, height: 38, borderRadius: '50%', border: '1px solid #252A33', background: '#090B0E', color: '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
+                    <button type="button" aria-label="Adjuntar link" onClick={() => setAppealLinkOpen(open => !open)} style={{ width: 40, height: 40, borderRadius: '50%', border: `1px solid ${appealReply.evidence_url ? 'rgba(0,194,168,0.36)' : '#252A33'}`, background: appealReply.evidence_url ? 'rgba(0,194,168,0.12)' : '#090B0E', color: appealReply.evidence_url ? '#00C2A8' : '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                      <Paperclip size={18} />
+                    </button>
+                    <textarea rows={1} value={appealReply.message} onChange={e => setAppealReply(f => ({ ...f, message: e.target.value }))} placeholder="Mensaje" style={{ width: '100%', minHeight: 40, maxHeight: 104, resize: 'none', borderRadius: 20, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '10px 13px', outline: 'none', lineHeight: 1.35 }} />
+                    <button type="submit" aria-label="Enviar mensaje" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'grid', placeItems: 'center', cursor: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 0.55 : 1 }}>
+                      <Send size={18} />
+                    </button>
                   </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Link adicional</label>
-                    <input type="url" value={appealReply.evidence_url} onChange={e => setAppealReply(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Drive o YouTube" />
-                  </div>
-                  <button type="submit" className="btn-primary" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ minHeight: 44 }}>
-                    {appealThreadBusy ? 'Enviando...' : 'Enviar mensaje'}
-                  </button>
                 </form>
               ) : (
-                <div style={{ color: '#AAB2C0', fontSize: 13, borderTop: '1px solid #252A33', paddingTop: 12 }}>Esta reclamacion ya esta cerrada.</div>
+                <div style={{ color: '#AAB2C0', fontSize: 13, borderTop: '1px solid #252A33', padding: 12, background: '#171B21' }}>Esta reclamacion ya esta cerrada.</div>
               )}
             </div>
           </div>
