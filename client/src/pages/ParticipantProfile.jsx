@@ -342,7 +342,7 @@ function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
   )
 }
 
-function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile, canAppealResult, onAppealResult, onOpenAppealThread }) {
+function CompetitionDetailModal({ comp, participantId, allResults, appealsByResultId, onClose, isMobile, canAppealResult, onAppealResult, onOpenAppealThread }) {
   const [team, setTeam] = useState(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [pendingInvites, setPendingInvites] = useState([])
@@ -649,18 +649,20 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                 <Trophy size={14} /> Tus resultados
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
-                {compResults.map(r => (
+                {compResults.map(r => {
+                  const resultAppeal = appealsByResultId?.[Number(r.id)] || null
+                  return (
                   <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text }}>{r.fase || 'Sin fase'}</div>
                       {r.equipo && <div style={{ fontSize: 11, color: modalColors.secondary, marginTop: 2 }}>Equipo: {r.equipo}</div>}
-                      {r.active_appeal_id ? (
+                      {resultAppeal ? (
                         <button
                           type="button"
-                          onClick={() => onOpenAppealThread?.(r)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.12)', color: modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => onOpenAppealThread?.(r, resultAppeal)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: `1px solid ${['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.28)' : 'rgba(0,194,168,0.28)'}`, background: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.10)' : 'rgba(0,194,168,0.12)', color: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? modalColors.secondary : modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
                         >
-                          <MessageSquare size={12} /> Ver reclamacion
+                          <MessageSquare size={12} /> Ver reclamacion · {appealStatusLabel(resultAppeal.status)}
                         </button>
                       ) : canAppealResult?.(r) ? (
                         <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
@@ -682,7 +684,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                       )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
@@ -733,6 +736,7 @@ export default function ParticipantProfile() {
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [results, setResults] = useState([])
+  const [myAppeals, setMyAppeals] = useState([])
   const [myComps, setMyComps] = useState([])
   const [phasesByComp, setPhasesByComp] = useState({})
   const [myTeamByComp, setMyTeamByComp] = useState({})
@@ -890,6 +894,13 @@ export default function ParticipantProfile() {
     }
     return api.get('/results', { params: { user_id: userId } }).then(r => setResults(r.data))
   }
+  const loadMyAppeals = () => {
+    if (!userId) {
+      setMyAppeals([])
+      return Promise.resolve()
+    }
+    return api.get('/appeals/me').then(r => setMyAppeals(Array.isArray(r.data) ? r.data : [])).catch(() => setMyAppeals([]))
+  }
   const loadMyCompetitions = async () => { const res = await api.get(`/users/${userId}/competitions`); setMyComps(res.data) }
   const loadMyInvitations = async () => {
     try {
@@ -968,11 +979,12 @@ export default function ParticipantProfile() {
       setMyComps([])
       setPendingInvitations([])
       setResults([])
+      setMyAppeals([])
       setDashboardLoading(false)
       return
     }
     setDashboardLoading(true)
-    Promise.allSettled([loadResults(), loadMyCompetitions(), loadMyInvitations()])
+    Promise.allSettled([loadResults(), loadMyAppeals(), loadMyCompetitions(), loadMyInvitations()])
       .finally(() => setDashboardLoading(false))
   }, [userId])
 
@@ -1001,6 +1013,18 @@ export default function ParticipantProfile() {
     }
     return map
   }, [results])
+
+  const appealsByResultId = useMemo(() => {
+    const map = {}
+    for (const appeal of myAppeals) {
+      const key = Number(appeal.result_id)
+      if (!key) continue
+      if (!map[key] || new Date(appeal.submitted_at || 0).getTime() > new Date(map[key].submitted_at || 0).getTime()) {
+        map[key] = appeal
+      }
+    }
+    return map
+  }, [myAppeals])
 
   const myEventCards = useMemo(() => (
     myComps.map((competition) => {
@@ -1305,6 +1329,7 @@ export default function ParticipantProfile() {
       setAppealTarget(null)
       setMsg({ type: 'success', text: 'Reclamacion enviada' })
       await loadResults()
+      await loadMyAppeals()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la reclamacion' })
     } finally {
@@ -1312,8 +1337,8 @@ export default function ParticipantProfile() {
     }
   }
 
-  const openAppealThread = async (result) => {
-    const appealId = result?.active_appeal_id
+  const openAppealThread = async (result, appeal = null) => {
+    const appealId = appeal?.id || result?.active_appeal_id
     if (!appealId) return
     setSelectedComp(null)
     setAppealThreadBusy(true)
@@ -1345,6 +1370,7 @@ export default function ParticipantProfile() {
       setAppealLinkOpen(false)
       setMsg({ type: 'success', text: 'Mensaje enviado' })
       await loadResults()
+      await loadMyAppeals()
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar el mensaje' })
     } finally {
@@ -1594,6 +1620,7 @@ export default function ParticipantProfile() {
           comp={selectedComp}
         participantId={userId}
           allResults={results}
+          appealsByResultId={appealsByResultId}
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}
           canAppealResult={canAppealResult}
