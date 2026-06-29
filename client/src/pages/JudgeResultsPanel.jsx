@@ -273,7 +273,7 @@ function AppealsPanel({ assignment, notify }) {
   const [appeals, setAppeals] = useState([])
   const [active, setActive] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [reply, setReply] = useState({ message: '', evidence_url: '' })
+  const [reply, setReply] = useState({ message: '' })
   const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
   const [busy, setBusy] = useState(false)
 
@@ -295,7 +295,7 @@ function AppealsPanel({ assignment, notify }) {
       const { data } = await api.get(`/appeals/${appeal.id}`)
       setActive(data)
       setResolution({ marca: data.current_marca ?? '', tiebreak: data.current_tiebreak ?? '', resolution_note: '' })
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
     } catch (error) {
       notify(error.response?.data?.detail || 'No se pudo abrir la reclamacion.', 'error')
     }
@@ -312,10 +312,9 @@ function AppealsPanel({ assignment, notify }) {
     try {
       const { data } = await api.post(`/appeals/${active.id}/messages`, {
         message: reply.message.trim(),
-        evidence_url: reply.evidence_url.trim() || null,
       })
       setActive(data)
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
       await loadAppeals()
     } catch (error) {
       notify(error.response?.data?.detail || 'No se pudo enviar el mensaje.', 'error')
@@ -398,11 +397,10 @@ function AppealsPanel({ assignment, notify }) {
                 <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 8 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
                     <textarea style={{ ...inputStyle(), minHeight: 42, maxHeight: 100, resize: 'none', borderRadius: 20 }} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Responder al atleta" />
-                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: colors.primary, color: colors.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 0.55 : 1 }}>
+                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || !reply.message.trim()} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: colors.primary, color: colors.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || !reply.message.trim() ? 'not-allowed' : 'pointer', opacity: busy || !reply.message.trim() ? 0.55 : 1 }}>
                       <Send size={18} style={{ display: 'block' }} />
                     </button>
                   </div>
-                  <input style={{ ...inputStyle(), minHeight: 38, borderRadius: 999 }} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Adjuntar link Drive o YouTube" />
                 </div>
                 <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 12, display: 'grid', gap: 8 }}>
                   <div style={{ fontWeight: 900 }}>Herramientas de decision</div>

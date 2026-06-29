@@ -3320,7 +3320,7 @@ function AppealsPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
   const [appeals, setAppeals] = useState(bundle.appeals || [])
   const [active, setActive] = useState(null)
-  const [reply, setReply] = useState({ message: '', evidence_url: '' })
+  const [reply, setReply] = useState({ message: '' })
   const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -3347,7 +3347,7 @@ function AppealsPanel({ bundle, reload, notify }) {
     try {
       const data = await api(`/appeals/${appeal.id}`)
       setActive(data)
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
       setResolution({
         marca: data.current_marca ?? '',
         tiebreak: data.current_tiebreak ?? '',
@@ -3361,18 +3361,17 @@ function AppealsPanel({ bundle, reload, notify }) {
   }
 
   const sendReply = async () => {
-    if (!active || (!reply.message.trim() && !reply.evidence_url.trim())) return
+    if (!active || !reply.message.trim()) return
     setBusy(true)
     try {
       const data = await api(`/appeals/${active.id}/messages`, {
         method: 'POST',
         body: JSON.stringify({
           message: reply.message.trim(),
-          evidence_url: reply.evidence_url.trim() || null,
         }),
       })
       setActive(data)
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
       notify('Mensaje enviado')
       await loadAppeals()
       await reload()
@@ -3491,11 +3490,10 @@ function AppealsPanel({ bundle, reload, notify }) {
                 <div style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 12, display: 'grid', gap: 8 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
                     <textarea rows={1} style={{ ...inputStyle(), minHeight: 42, maxHeight: 100, resize: 'none', borderRadius: 20 }} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" />
-                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: colors.primary, color: colors.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 0.55 : 1 }}>
+                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || !reply.message.trim()} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: colors.primary, color: colors.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || !reply.message.trim() ? 'not-allowed' : 'pointer', opacity: busy || !reply.message.trim() ? 0.55 : 1 }}>
                       <Send size={18} style={{ display: 'block' }} />
                     </button>
                   </div>
-                  <input style={{ ...inputStyle(), minHeight: 38, borderRadius: 999 }} value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Adjuntar link Drive o YouTube" />
                 </div>
 
                 <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, padding: 12, display: 'grid', gap: 10 }}>

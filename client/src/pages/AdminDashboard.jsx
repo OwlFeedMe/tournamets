@@ -7672,7 +7672,7 @@ function CompetitionAppealsPanel({ competition }) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
-  const [reply, setReply] = useState({ message: '', evidence_url: '' })
+  const [reply, setReply] = useState({ message: '' })
   const [resolution, setResolution] = useState({ marca: '', tiebreak: '', resolution_note: '' })
 
   const load = async () => {
@@ -7710,7 +7710,7 @@ function CompetitionAppealsPanel({ competition }) {
         tiebreak: data.current_tiebreak ?? '',
         resolution_note: '',
       })
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
       setMsg(null)
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion.' })
@@ -7720,15 +7720,14 @@ function CompetitionAppealsPanel({ competition }) {
   }
 
   const sendReply = async () => {
-    if (!active || (!reply.message.trim() && !reply.evidence_url.trim())) return
+    if (!active || !reply.message.trim()) return
     setBusy(true)
     try {
       const { data } = await api.post(`/appeals/${active.id}/messages`, {
         message: reply.message.trim(),
-        evidence_url: reply.evidence_url.trim() || null,
       })
       setActive(data)
-      setReply({ message: '', evidence_url: '' })
+      setReply({ message: '' })
       setMsg({ type: 'success', text: 'Mensaje enviado.' })
       await load()
     } catch (err) {
@@ -7881,11 +7880,10 @@ function CompetitionAppealsPanel({ competition }) {
                 <div style={{ borderTop: '1px solid #252A33', paddingTop: 12, display: 'grid', gap: 8 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
                     <textarea rows={1} value={reply.message} onChange={(event) => setReply((prev) => ({ ...prev, message: event.target.value }))} placeholder="Mensaje para el atleta" style={{ width: '100%', minHeight: 42, maxHeight: 100, resize: 'none', borderRadius: 20, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '10px 13px', outline: 'none' }} />
-                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || (!reply.message.trim() && !reply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: busy || (!reply.message.trim() && !reply.evidence_url.trim()) ? 0.55 : 1 }}>
+                    <button type="button" aria-label="Enviar mensaje" onClick={sendReply} disabled={busy || !reply.message.trim()} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy || !reply.message.trim() ? 'not-allowed' : 'pointer', opacity: busy || !reply.message.trim() ? 0.55 : 1 }}>
                       <Send size={18} style={{ display: 'block' }} />
                     </button>
                   </div>
-                  <input value={reply.evidence_url} onChange={(event) => setReply((prev) => ({ ...prev, evidence_url: event.target.value }))} placeholder="Adjuntar link Drive o YouTube" style={{ width: '100%', minHeight: 38, borderRadius: 999, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '8px 12px', outline: 'none' }} />
                 </div>
 
                 <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#171B21', padding: 12, display: 'grid', gap: 10 }}>
