@@ -1459,6 +1459,29 @@ export default function ParticipantProfile() {
     }
   }, [highlightedMissingFields, highlightedMissingFieldSet, location.state, primaryGymMembership])
 
+  useEffect(() => {
+    const appealId = Number(location.state?.openAppealId || 0)
+    if (!appealId) return
+    let cancelled = false
+    setSelectedComp(null)
+    setAppealTarget(null)
+    setAppealThreadBusy(true)
+    api.get(`/appeals/${appealId}`)
+      .then(({ data }) => {
+        if (cancelled) return
+        setAppealThread(data)
+        setAppealReply({ message: '', evidence_url: '' })
+        setAppealLinkOpen(false)
+      })
+      .catch((err) => {
+        if (!cancelled) setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion' })
+      })
+      .finally(() => {
+        if (!cancelled) setAppealThreadBusy(false)
+      })
+    return () => { cancelled = true }
+  }, [location.state?.openAppealId, location.state?.notificationNonce])
+
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
   const phasesLoading = phasesRaw === undefined

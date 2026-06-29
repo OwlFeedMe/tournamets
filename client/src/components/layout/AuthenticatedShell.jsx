@@ -613,7 +613,7 @@ export function AuthenticatedShell() {
             text,
             tone: isClosed && appeal.status === 'rejected' ? 'danger' : isClosed ? 'success' : 'neutral',
             actions: [
-              { id: `appeal-${appeal.id}`, label: 'Ver reclamacion', tone: 'primary', actionType: 'go-to-appeal', appealSeenKey: seenKey, appealSignatureKey: String(appeal.id), appealSignature: signature },
+              { id: `appeal-${appeal.id}`, label: 'Ver reclamacion', tone: 'primary', actionType: 'go-to-appeal', appealId: appeal.id, appealSeenKey: seenKey, appealSignatureKey: String(appeal.id), appealSignature: signature },
             ],
           })
           if (signature && seenMap[String(appeal.id)] !== signature) unread += 1
@@ -739,7 +739,7 @@ export function AuthenticatedShell() {
           window.localStorage.setItem(action.appealSeenKey, JSON.stringify(seenMap))
         }
         setNotificationsOpen(false)
-        navigate('/profile', { state: { openAppeals: true } })
+        navigate('/profile', { state: { openAppealId: action.appealId, openAppeals: true, notificationNonce: Date.now() } })
       }
     } catch {
     } finally {
