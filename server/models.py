@@ -1082,6 +1082,7 @@ class Result(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="SET NULL"), nullable=True),
     )
     marca: Optional[int] = None  # valor bruto de la prueba (metros, reps, peso, segundos, etc.)
+    extra: Optional[int] = None
     tiebreak: Optional[int] = None
     puntos: int = Field(default=0)
     posicion: Optional[int] = None
@@ -1816,6 +1817,7 @@ class ResultCreate(SQLModel):
     team_id: Optional[int] = None
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    extra: Optional[int] = None
     tiebreak: Optional[int] = None
     puntos: int = 0
     posicion: Optional[int] = None
@@ -1824,6 +1826,7 @@ class ResultCreate(SQLModel):
 class ResultUpdate(SQLModel):
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    extra: Optional[int] = None
     tiebreak: Optional[int] = None
     puntos: Optional[int] = None
     posicion: Optional[int] = None

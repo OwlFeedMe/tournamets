@@ -142,6 +142,11 @@ function ScoreTable({ assignment, phases, notify }) {
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'tiebreak')) return marks[key].tiebreak
     return row.existing_tiebreak ?? ''
   }
+  const extraValue = (row) => {
+    const key = rowKey(phaseId, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
+    return row.existing_extra ?? ''
+  }
   const isDnf = (row) => {
     const key = rowKey(phaseId, row)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
@@ -156,6 +161,9 @@ function ScoreTable({ assignment, phases, notify }) {
       const draft = marks[key] || {}
       const dnf = !!draft.dnf
       const marca = dnf ? dnfMark() : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : item.existing_mark
+      const extra = phase?.extra_enabled && !dnf
+        ? Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : item.existing_extra
+        : null
       const tiebreak = phase?.tie_break_enabled && !dnf
         ? Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? draft.tiebreak : item.existing_tiebreak
         : null
@@ -163,6 +171,7 @@ function ScoreTable({ assignment, phases, notify }) {
         key,
         category: item.category || 'Sin categoria',
         marca: marca === '' || marca == null ? null : Number(marca),
+        extra: extra === '' || extra == null ? null : Number(extra),
         tiebreak: tiebreak === '' || tiebreak == null ? null : Number(tiebreak),
       }
     }).filter((item) => item.marca !== null && !Number.isNaN(item.marca))
@@ -180,14 +189,22 @@ function ScoreTable({ assignment, phases, notify }) {
         const mark = ordered[index].marca
         const sameMark = []
         while (index < ordered.length && ordered[index].marca === mark) sameMark.push(ordered[index++])
-        const chunks = sameMark.length > 1 && sameMark.every((item) => item.tiebreak != null && !Number.isNaN(item.tiebreak))
-          ? [...sameMark].sort((a, b) => tbLb ? a.tiebreak - b.tiebreak : b.tiebreak - a.tiebreak).reduce((list, item) => {
+        const extraChunks = sameMark.length > 1 && sameMark.every((item) => item.extra != null && !Number.isNaN(item.extra))
+          ? [...sameMark].sort((a, b) => a.extra - b.extra).reduce((list, item) => {
+              const last = list[list.length - 1]
+              if (last && last[0].extra === item.extra) last.push(item)
+              else list.push([item])
+              return list
+            }, [])
+          : [sameMark]
+        const chunks = extraChunks.flatMap((extraChunk) => extraChunk.length > 1 && extraChunk.every((item) => item.tiebreak != null && !Number.isNaN(item.tiebreak))
+          ? [...extraChunk].sort((a, b) => tbLb ? a.tiebreak - b.tiebreak : b.tiebreak - a.tiebreak).reduce((list, item) => {
               const last = list[list.length - 1]
               if (last && last[0].tiebreak === item.tiebreak) last.push(item)
               else list.push([item])
               return list
             }, [])
-          : [sameMark]
+          : [extraChunk])
         chunks.forEach((chunk) => {
           const points = ordered.length - pos + 1
           chunk.forEach((item) => { out[item.key] = { posicion: pos, puntos: points } })
@@ -202,6 +219,7 @@ function ScoreTable({ assignment, phases, notify }) {
     const dnf = isDnf(row)
     const mark = markValue(row)
     if (!dnf && mark === '') return notify('Ingresa una marca o DNF', 'error')
+    const extra = extraValue(row)
     const tiebreak = tbValue(row)
     const existing = row.status === 'scored' || row.existing_mark != null
     try {
@@ -211,6 +229,7 @@ function ScoreTable({ assignment, phases, notify }) {
         user_id: row.user_id ?? null,
         team_id: row.team_id ?? null,
         marca_raw: String(dnf ? dnfMark() : mark).trim(),
+        extra_raw: phase?.extra_enabled && !dnf && extra !== '' ? String(extra).trim() : undefined,
         tiebreak_raw: phase?.tie_break_enabled && !dnf && tiebreak !== '' ? String(tiebreak).trim() : undefined,
         station: 'Panel juez',
       })
@@ -239,8 +258,8 @@ function ScoreTable({ assignment, phases, notify }) {
       </div>
       <div style={{ overflow: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
         <div style={{ minWidth: 900 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 130px 130px 90px 90px 120px', gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
-            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>Tiebreak</span><span>Pos</span><span>Puntos</span><span>Accion</span>
+          <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px', gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
+            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>Extra</span><span>Tiebreak</span><span>Pos</span><span>Puntos</span><span>Accion</span>
           </div>
           {rows.length ? rows.map((row) => {
             const key = rowKey(phaseId, row)
@@ -249,11 +268,12 @@ function ScoreTable({ assignment, phases, notify }) {
             const dnf = isDnf(row)
             const rank = preview[key]
             return (
-              <div key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 130px 130px 90px 90px 120px', gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
+              <div key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px', gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
                 <span style={{ color: colors.muted, fontWeight: 900 }}>{row.lane_number || '-'}</span>
                 <span style={{ fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name || 'Atleta'}</span>
                 <span style={{ color: colors.secondary, fontSize: 12 }}>{row.heat_name || '-'}</span>
                 {editable ? <input style={inputStyle()} type="number" value={dnf ? '' : markValue(row)} disabled={dnf} placeholder={dnf ? 'DNF' : 'Valor'} onChange={(event) => setField(row, 'marca', event.target.value)} /> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
+                {editable && phase?.extra_enabled ? <input style={inputStyle()} type="number" step="1" value={dnf ? '' : extraValue(row)} disabled={dnf} placeholder="Reps" onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.extra_enabled && !dnf ? extraValue(row) || '-' : '-'}</span>}
                 {editable && phase?.tie_break_enabled ? <input style={inputStyle()} type="number" value={dnf ? '' : tbValue(row)} disabled={dnf} placeholder="Opcional" onChange={(event) => setField(row, 'tiebreak', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.tie_break_enabled && !dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span>}
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.posicion ?? '-'}</span>
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.puntos ?? '-'}</span>

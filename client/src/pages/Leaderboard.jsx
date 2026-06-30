@@ -129,6 +129,26 @@ function TieBreakLine({ value, phaseInfo, compact = false }) {
   )
 }
 
+function ExtraLine({ value, compact = false }) {
+  if (value == null) return null
+  return (
+    <span
+      title="Repeticiones extra al time cap"
+      style={{
+        display: compact ? 'inline' : 'block',
+        marginTop: compact ? 0 : 3,
+        marginLeft: compact ? 6 : 0,
+        color: THEME.primary,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      Extra {value}
+    </span>
+  )
+}
+
 function phaseStatusIcon(estado, size = 14) {
   if (estado === 'finalizada') return <CheckCircle2 size={size} style={{ color: '#2e7d32' }} />
   if (estado === 'en_progreso') return <Clock3 size={size} style={{ color: '#b26a00' }} />
@@ -398,6 +418,7 @@ function athletePhaseResults(data, athleteId) {
         rank: row.rank,
         points: Number(row.total_puntos || 0),
         mark: row.mejor_marca,
+        extra: row.extra,
         tiebreak: row.tiebreak,
         attempts: Number(row.total_eventos || 0),
       }
@@ -625,6 +646,11 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
           && item?.mejor_marca != null
           && markCounts[String(item.mejor_marca)] > 1
         )
+        const shouldShowExtra = (item) => (
+          item?.extra != null
+          && item?.mejor_marca != null
+          && markCounts[String(item.mejor_marca)] > 1
+        )
         return (
           <div key={cat} style={{ marginBottom: isMobile ? 20 : 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -684,6 +710,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         {phaseInfo && p.mejor_marca != null && (
                           <span style={{ color: THEME.ink, fontWeight: 500 }}>
                             {phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b>
+                            {shouldShowExtra(p) ? <ExtraLine value={p.extra} compact /> : null}
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
                           </span>
                         )}
@@ -737,6 +764,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         {phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
                             <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValue(p.mejor_marca, phaseInfo)}</div>
+                            {shouldShowExtra(p) ? <ExtraLine value={p.extra} /> : null}
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} /> : null}
                           </td>
                         )}

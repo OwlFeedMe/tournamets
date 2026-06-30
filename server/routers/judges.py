@@ -191,6 +191,7 @@ def _score_payload(session: Session, *, competition_id: int, phase_id: int, user
             "result_id": int(result.id),
             "marca": int(result.marca) if result.marca is not None else None,
             "formatted_mark": _format_mark_for_phase(result.marca, phase),
+            "extra": int(getattr(result, "extra", 0)) if getattr(result, "extra", None) is not None else None,
             "tiebreak": int(result.tiebreak) if result.tiebreak is not None else None,
             "formatted_tiebreak": _format_tiebreak_for_phase(result.tiebreak, phase),
             "puntos": int(result.puntos or 0),
@@ -265,6 +266,7 @@ def _score_payload_for_entity(
             "result_id": int(result.id),
             "marca": int(result.marca) if result.marca is not None else None,
             "formatted_mark": _format_mark_for_phase(result.marca, phase),
+            "extra": int(getattr(result, "extra", 0)) if getattr(result, "extra", None) is not None else None,
             "tiebreak": int(result.tiebreak) if result.tiebreak is not None else None,
             "formatted_tiebreak": _format_tiebreak_for_phase(result.tiebreak, phase),
             "puntos": int(result.puntos or 0),
@@ -311,10 +313,13 @@ def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
     extra_enabled = _extra_reps_enabled(phase)
     return {
         "workout_format": str(getattr(phase, "workout_format", None) or method).strip().lower(),
-        "tie_break_enabled": 1 if (_tie_break_enabled(phase) or extra_enabled) else 0,
+        "extra_enabled": 1 if extra_enabled else 0,
+        "extra_label": "Extra" if extra_enabled else None,
+        "extra_helper": "Repeticiones al time cap" if extra_enabled else None,
+        "tie_break_enabled": 1 if _tie_break_enabled(phase) else 0,
         "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
-        "tie_break_label": "Extra" if extra_enabled else "Tie break",
-        "tie_break_helper": "Repeticiones al time cap" if extra_enabled else None,
+        "tie_break_label": "Tie break",
+        "tie_break_helper": None,
         "heat_transition_seconds": int(getattr(phase, "heat_transition_seconds", 0) or 0),
         "category_transition_seconds": int(getattr(phase, "category_transition_seconds", 0) or 0),
     }
@@ -408,21 +413,21 @@ def _format_mark_for_phase(mark: int | None, phase: CompetitionPhase | None) -> 
 def _format_tiebreak_for_phase(mark: int | None, phase: CompetitionPhase | None) -> str | None:
     if mark is None:
         return None
-    if _extra_reps_enabled(phase):
-        return str(int(mark))
     return _format_mark_for_phase(mark, _tie_break_phase_proxy(phase))
 
 
 def _parse_tiebreak_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
-    if _extra_reps_enabled(phase):
-        try:
-            value = int(str(raw).strip())
-        except Exception:
-            raise HTTPException(400, "Extra debe ser un numero entero")
-        if value < 0:
-            raise HTTPException(400, "Extra no puede ser negativo")
-        return value
     return _parse_mark_for_phase(raw, _tie_break_phase_proxy(phase))
+
+
+def _parse_extra_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
+    try:
+        value = int(str(raw).strip())
+    except Exception:
+        raise HTTPException(400, "Extra debe ser un numero entero")
+    if value < 0:
+        raise HTTPException(400, "Extra no puede ser negativo")
+    return value
 
 
 def _result_for_entity(
@@ -1086,6 +1091,7 @@ def list_judge_score_manual_options(
                     "lane_number": int(getattr(assignment, "lane_number", 0) or 0) if assignment else 0,
                     "existing_mark": int(existing.marca) if existing and existing.marca is not None else None,
                     "existing_formatted": _format_mark_for_phase(existing.marca if existing else None, phase),
+                    "existing_extra": int(getattr(existing, "extra", 0)) if existing and getattr(existing, "extra", None) is not None else None,
                     "existing_tiebreak": int(existing.tiebreak) if existing and existing.tiebreak is not None else None,
                     "existing_tiebreak_formatted": _format_tiebreak_for_phase(existing.tiebreak if existing else None, phase),
                     "status": item_status,
@@ -1160,6 +1166,7 @@ def list_judge_score_manual_options(
                 "lane_number": int(getattr(assignment, "lane_number", 0) or 0) if assignment else 0,
                 "existing_mark": int(existing.marca) if existing and existing.marca is not None else None,
                 "existing_formatted": _format_mark_for_phase(existing.marca if existing else None, phase),
+                "existing_extra": int(getattr(existing, "extra", 0)) if existing and getattr(existing, "extra", None) is not None else None,
                 "existing_tiebreak": int(existing.tiebreak) if existing and existing.tiebreak is not None else None,
                 "existing_tiebreak_formatted": _format_tiebreak_for_phase(existing.tiebreak if existing else None, phase),
                 "status": item_status,
@@ -1226,9 +1233,13 @@ def judge_score_submit(
     if raw_mark is None or str(raw_mark).strip() == "":
         raise HTTPException(400, "Debes indicar la puntuacion (marca)")
     mark_int = _parse_mark_for_phase(raw_mark, phase)
+    raw_extra = body.get("extra_raw", body.get("extra"))
+    extra_int = None
+    if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
+        extra_int = _parse_extra_for_phase(raw_extra, phase)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
-    if (_tie_break_enabled(phase) or _extra_reps_enabled(phase)) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
+    if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
         tiebreak_int = _parse_tiebreak_for_phase(raw_tiebreak, phase)
 
     existing = _result_for_entity(
@@ -1259,6 +1270,7 @@ def judge_score_submit(
         team_id=team_id,
         phase_id=int(phase.id),
         marca=mark_int,
+        extra=extra_int,
         tiebreak=tiebreak_int,
         puntos=0,
         posicion=None,
@@ -1283,6 +1295,7 @@ def judge_score_submit(
             "user_id": user_id,
             "team_id": team_id,
             "marca": mark_int,
+            "extra": extra_int,
             "tiebreak": tiebreak_int,
             "source": "qr" if raw_token else "manual",
             "marca_raw": str(raw_mark).strip(),
@@ -1320,9 +1333,13 @@ def judge_score_edit(
     if raw_mark is None or str(raw_mark).strip() == "":
         raise HTTPException(400, "Debes indicar la nueva puntuacion (marca)")
     mark_int = _parse_mark_for_phase(raw_mark, phase)
+    raw_extra = body.get("extra_raw", body.get("extra"))
+    extra_int = None
+    if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
+        extra_int = _parse_extra_for_phase(raw_extra, phase)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
-    if (_tie_break_enabled(phase) or _extra_reps_enabled(phase)) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
+    if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
         tiebreak_int = _parse_tiebreak_for_phase(raw_tiebreak, phase)
 
     existing = _result_for_entity(
@@ -1337,6 +1354,7 @@ def judge_score_edit(
         raise HTTPException(404, "No existe un resultado previo para editar")
 
     existing.marca = mark_int
+    existing.extra = extra_int
     existing.tiebreak = tiebreak_int
     session.add(existing)
     session.flush()
@@ -1356,6 +1374,7 @@ def judge_score_edit(
             "user_id": user_id,
             "team_id": team_id,
             "marca": mark_int,
+            "extra": extra_int,
             "tiebreak": tiebreak_int,
             "source": "qr" if raw_token else "manual",
             "marca_raw": str(raw_mark).strip(),

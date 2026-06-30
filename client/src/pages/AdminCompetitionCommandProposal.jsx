@@ -2994,6 +2994,12 @@ function ResultsPanel({ bundle, reload, notify }) {
     const existing = existingResultFor(item)
     return existing?.tiebreak ?? ''
   }
+  const extraValue = (item) => {
+    const key = resultKey(scoreDraft.phase_id, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
+    const existing = existingResultFor(item)
+    return existing?.extra ?? ''
+  }
   const lowerIsBetter = (() => {
     const winnerRule = String(selectedPhase?.winner_rule || '').trim().toLowerCase()
     if (winnerRule === 'lower_wins') return true
@@ -3002,7 +3008,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   })()
   const isTimePhase = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || '').trim().toLowerCase()) || String(selectedPhase?.tipo || '').trim().toLowerCase() === 'tiempo'
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(String(selectedPhase?.tie_break_method || 'for_time').trim().toLowerCase())
-  const showExtraField = isTimePhase || Number(selectedPhase?.tie_break_enabled || 0) === 1
+  const showExtraField = isTimePhase
   const scoreLowerIsBetter = String(competition.scoring_mode || '').trim().toLowerCase() === 'lowest_wins'
   const parseTimeToSeconds = (value) => {
     const raw = String(value ?? '').trim()
@@ -3050,11 +3056,13 @@ function ResultsPanel({ bundle, reload, notify }) {
       const draftDnf = !!draft.dnf
       const rawMarca = Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
       const marca = draftDnf ? dnfMark() : parseMarkValue(rawMarca)
+      const extra = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : existing?.extra
       const tiebreak = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? draft.tiebreak : existing?.tiebreak
       return {
         key,
         category: categoryMap[resultEntityKey(item)] || 'Todas',
         marca: marca === '' || marca === null || marca === undefined ? null : Number(marca),
+        extra: extra === '' || extra === null || extra === undefined ? null : Number(extra),
         tiebreak: tiebreak === '' || tiebreak === null || tiebreak === undefined ? null : Number(tiebreak),
       }
     }).filter((item) => item.marca !== null && !Number.isNaN(item.marca))
@@ -3079,9 +3087,25 @@ function ResultsPanel({ bundle, reload, notify }) {
           markGroup.push(ordered[index])
           index += 1
         }
+        let extraGroups = [markGroup]
+        if (markGroup.length > 1 && markGroup.every((item) => item.extra !== null && !Number.isNaN(item.extra))) {
+          const sortedExtra = [...markGroup].sort((a, b) => a.extra - b.extra)
+          extraGroups = []
+          let extraIndex = 0
+          while (extraIndex < sortedExtra.length) {
+            const extraValue = sortedExtra[extraIndex].extra
+            const extraItems = []
+            while (extraIndex < sortedExtra.length && sortedExtra[extraIndex].extra === extraValue) {
+              extraItems.push(sortedExtra[extraIndex])
+              extraIndex += 1
+            }
+            extraGroups.push(extraItems)
+          }
+        }
         const positionedGroups = []
-        if (markGroup.length > 1 && markGroup.every((item) => item.tiebreak !== null && !Number.isNaN(item.tiebreak))) {
-          const sortedTie = [...markGroup].sort((a, b) => tiebreakLowerIsBetter ? a.tiebreak - b.tiebreak : b.tiebreak - a.tiebreak)
+        extraGroups.forEach((extraGroup) => {
+        if (extraGroup.length > 1 && extraGroup.every((item) => item.tiebreak !== null && !Number.isNaN(item.tiebreak))) {
+          const sortedTie = [...extraGroup].sort((a, b) => tiebreakLowerIsBetter ? a.tiebreak - b.tiebreak : b.tiebreak - a.tiebreak)
           let tieIndex = 0
           while (tieIndex < sortedTie.length) {
             const tieValue = sortedTie[tieIndex].tiebreak
@@ -3093,8 +3117,9 @@ function ResultsPanel({ bundle, reload, notify }) {
             positionedGroups.push(tieItems)
           }
         } else {
-          positionedGroups.push(markGroup)
+          positionedGroups.push(extraGroup)
         }
+        })
         positionedGroups.forEach((items) => {
           const points = scoreLowerIsBetter ? position : ordered.length - position + 1
           items.forEach((item) => { out[item.key] = { posicion: position, puntos: points } })
@@ -3113,6 +3138,7 @@ function ResultsPanel({ bundle, reload, notify }) {
       for (const row of changed) {
         const value = markValue(row)
         if (value === '') continue
+        const extra = extraValue(row)
         const tiebreak = tiebreakValue(row)
         const existing = existingResultFor(row)
         const rowDraft = marks[resultKey(scoreDraft.phase_id, row)] || {}
@@ -3122,7 +3148,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         if (existing) {
           await api(`/results/${existing.id}`, {
             method: 'PUT',
-            body: JSON.stringify({ marca: parsedMark, tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak) }),
+            body: JSON.stringify({ marca: parsedMark, extra: extra === '' || rowDnf || !showExtraField ? null : Number(extra), tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak) }),
           })
         } else {
           await api('/results', {
@@ -3133,6 +3159,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               user_id: row.user_id ? Number(row.user_id) : null,
               team_id: row.team_id ? Number(row.team_id) : null,
               marca: parsedMark,
+              extra: extra === '' || rowDnf || !showExtraField ? null : Number(extra),
               tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak),
             }),
           })
@@ -3153,6 +3180,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     const rowDnf = !!rowDraft.dnf
     const value = markValue(row)
     if (!rowDnf && value === '') return notify('Ingresa una marca o marca DNF', 'error')
+    const extra = extraValue(row)
     const tiebreak = tiebreakValue(row)
     const existing = existingResultFor(row)
     const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
@@ -3161,7 +3189,7 @@ function ResultsPanel({ bundle, reload, notify }) {
       if (existing) {
         await api(`/results/${existing.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ marca: parsedMark, tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak) }),
+          body: JSON.stringify({ marca: parsedMark, extra: extra === '' || rowDnf || !showExtraField ? null : Number(extra), tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak) }),
         })
       } else {
         await api('/results', {
@@ -3172,6 +3200,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             user_id: row.user_id ? Number(row.user_id) : null,
             team_id: row.team_id ? Number(row.team_id) : null,
             marca: parsedMark,
+            extra: extra === '' || rowDnf || !showExtraField ? null : Number(extra),
             tiebreak: tiebreak === '' || rowDnf ? null : Number(tiebreak),
           }),
         })
@@ -3190,7 +3219,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const resultCountForPhase = rows.filter((row) => existingResultFor(row)).length
   const markLabel = isTimePhase ? 'Tiempo' : selectedPhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
-  const extraLabel = isTimePhase ? 'Extra' : 'Tiebreak'
+  const extraLabel = 'Extra'
   const resultFormatLabels = {
     for_time: 'Tiempo / For time',
     tiempo: 'Tiempo',
@@ -3204,7 +3233,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const phaseFormatValue = String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || 'marca').trim().toLowerCase()
   const phaseFormatLabel = selectedPhase ? (resultFormatLabels[phaseFormatValue] || selectedPhase.measurement_method || selectedPhase.workout_format || selectedPhase.tipo || 'Marca') : 'Sin WOD'
   const markRuleLabel = lowerIsBetter ? 'Menor marca gana' : 'Mayor marca gana'
-  const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
+  const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata; luego tiebreak' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
   const scoringRuleLabel = scoreLowerIsBetter ? 'Menos puntos es mejor' : 'Mas puntos es mejor'
   return (
     <Panel title="Resultados" subtitle="Carga por categoria y heat con guardado por atleta." action={<Pill tone={colors.accent}>{resultCountForPhase} cargados</Pill>}>
@@ -3236,11 +3265,11 @@ function ResultsPanel({ bundle, reload, notify }) {
           <Pill tone={colors.accent}>{markRuleLabel}</Pill>
           <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill>
           <Pill tone={colors.secondary}>{scoringRuleLabel}</Pill>
-          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? 'Extra son repeticiones al time cap; desempata solo cuando el tiempo esta empatado.' : 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.'}</span>
+          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? 'Extra son repeticiones al time cap; si sigue el empate, aplica tiebreak.' : 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.'}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
-          <div className="fr-results-header" style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 120px 120px 90px 90px 120px', gap: 8, padding: '9px 10px', borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
-            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>{extraLabel}</span><span>Posicion</span><span>Puntos</span><span>Accion</span>
+          <div className="fr-results-header" style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 110px 90px 110px 90px 90px 120px', gap: 8, padding: '9px 10px', borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
+            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>{extraLabel}</span><span>Tiebreak</span><span>Posicion</span><span>Puntos</span><span>Accion</span>
           </div>
           <div className="fr-results-list" style={{ display: 'grid', maxHeight: 520, overflowY: 'auto' }}>
             {rows.length ? rows.map((row) => {
@@ -3251,7 +3280,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               const editable = !existing || editingRows[key] || dirty
               const rowDnf = isDnfValue(row)
               return (
-                <div className="fr-result-row" key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 120px 120px 90px 90px 120px', gap: 8, alignItems: 'center', padding: '8px 10px', borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
+                <div className="fr-result-row" key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 110px 90px 110px 90px 90px 120px', gap: 8, alignItems: 'center', padding: '8px 10px', borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
                   <span className="fr-result-lane" style={{ color: colors.muted, fontSize: 12, fontWeight: 900 }}>{row.lane_number || '-'}</span>
                   <span className="fr-result-athlete" style={{ color: colors.text, fontSize: 13, fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{participantName(row)}</span>
                   <span className="fr-result-heat" style={{ color: colors.secondary, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat'}</span>
@@ -3266,10 +3295,18 @@ function ResultsPanel({ bundle, reload, notify }) {
                   {editable ? (
                     <label className="fr-result-input-wrap">
                       <span className="fr-result-mobile-label">{extraLabel}</span>
-                      <input className="fr-result-tiebreak" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder={isTimePhase ? 'Reps' : 'Opcional'} disabled={rowDnf || !showExtraField} />
+                      <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : extraValue(row)} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" disabled={rowDnf || !showExtraField} />
                     </label>
                   ) : (
-                    <span className="fr-result-readonly" data-label={extraLabel} style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : tiebreakValue(row) || '-'}</span>
+                    <span className="fr-result-readonly" data-label={extraLabel} style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : extraValue(row) || '-'}</span>
+                  )}
+                  {editable ? (
+                    <label className="fr-result-input-wrap">
+                      <span className="fr-result-mobile-label">Tiebreak</span>
+                      <input className="fr-result-tiebreak" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder="Opcional" disabled={rowDnf} />
+                    </label>
+                  ) : (
+                    <span className="fr-result-readonly" data-label="Tiebreak" style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : tiebreakValue(row) || '-'}</span>
                   )}
                   <span className="fr-result-position" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 12, fontWeight: dirty ? 900 : 700 }}>{preview?.posicion ?? existing?.posicion ?? '-'}</span>
                   <span className="fr-result-points" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 12, fontWeight: dirty ? 900 : 700 }}>{preview?.puntos ?? existing?.puntos ?? '-'}</span>
@@ -4132,6 +4169,7 @@ function ResponsiveStyles() {
           content: attr(data-label);
         }
         .fr-result-mark,
+        .fr-result-extra,
         .fr-result-tiebreak {
           width: 100% !important;
         }

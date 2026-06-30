@@ -90,9 +90,10 @@ def _ranking_value(value: int | None, *, lower_is_better: bool) -> tuple[int, in
     return (0, int(value) if lower_is_better else -int(value))
 
 
-def _result_rank_key(result: Result, *, lower_is_better: bool, tiebreak_lower_is_better: bool) -> tuple[int, int, int, int, int]:
+def _result_rank_key(result: Result, *, lower_is_better: bool, tiebreak_lower_is_better: bool) -> tuple[int, int, int, int, int, int, int]:
     return (
         *_ranking_value(result.marca, lower_is_better=lower_is_better),
+        *_ranking_value(getattr(result, "extra", None), lower_is_better=True),
         *_ranking_value(result.tiebreak, lower_is_better=tiebreak_lower_is_better),
         int(result.id or 0),
     )
@@ -102,10 +103,30 @@ def _ranked_position_groups(
     rows: list,
     *,
     mark_getter,
+    extra_getter=None,
     tiebreak_getter,
     lower_is_better: bool,
     tiebreak_lower_is_better: bool,
 ) -> list[tuple[int, list]]:
+    def split_by_optional_metric(items: list, getter, *, metric_lower_is_better: bool) -> list[list]:
+        if len(items) <= 1 or getter is None or not all(getter(item) is not None for item in items):
+            return [items]
+        ordered_items = sorted(items, key=lambda item: (
+            _ranking_value(getter(item), lower_is_better=metric_lower_is_better),
+            int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
+        ))
+        groups: list[list] = []
+        idx = 0
+        while idx < len(ordered_items):
+            value = getter(ordered_items[idx])
+            value_group = [ordered_items[idx]]
+            idx += 1
+            while idx < len(ordered_items) and getter(ordered_items[idx]) == value:
+                value_group.append(ordered_items[idx])
+                idx += 1
+            groups.append(value_group)
+        return groups
+
     ordered = sorted(rows, key=lambda item: (
         _ranking_value(mark_getter(item), lower_is_better=lower_is_better),
         int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
@@ -121,24 +142,12 @@ def _ranked_position_groups(
             mark_group.append(ordered[index])
             index += 1
 
-        if len(mark_group) > 1 and all(tiebreak_getter(item) is not None for item in mark_group):
-            mark_group.sort(key=lambda item: (
-                _ranking_value(tiebreak_getter(item), lower_is_better=tiebreak_lower_is_better),
-                int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
-            ))
-            tie_index = 0
-            while tie_index < len(mark_group):
-                tie_value = tiebreak_getter(mark_group[tie_index])
-                tie_items = [mark_group[tie_index]]
-                tie_index += 1
-                while tie_index < len(mark_group) and tiebreak_getter(mark_group[tie_index]) == tie_value:
-                    tie_items.append(mark_group[tie_index])
-                    tie_index += 1
+        extra_groups = split_by_optional_metric(mark_group, extra_getter, metric_lower_is_better=True)
+        for extra_group in extra_groups:
+            tiebreak_groups = split_by_optional_metric(extra_group, tiebreak_getter, metric_lower_is_better=tiebreak_lower_is_better)
+            for tie_items in tiebreak_groups:
                 positioned.append((position, tie_items))
                 position += len(tie_items)
-        else:
-            positioned.append((position, mark_group))
-            position += len(mark_group)
     return positioned
 
 
@@ -236,7 +245,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped.setdefault(int(r.team_id), []).append(r)
 
         team_category = _team_categories_map(session, competition_id, set(grouped.keys())) if rank_by_category else {}
-        entities_by_category: dict[str, list[tuple[int, int, int | None, list[Result]]]] = {}
+        entities_by_category: dict[str, list[tuple[int, int, int | None, int | None, list[Result]]]] = {}
         for team_id, items in grouped.items():
             marks = [int(x.marca) for x in items if x.marca is not None]
             if not marks:
@@ -245,10 +254,12 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 team_mark = min(marks) if lower_is_better else max(marks)
             else:
                 team_mark = sum(marks)
+            extra_values = [int(getattr(x, "extra", 0)) for x in items if getattr(x, "extra", None) is not None]
+            team_extra = min(extra_values) if extra_values else None
             tie_values = [int(x.tiebreak) for x in items if x.tiebreak is not None]
             team_tiebreak = (min(tie_values) if tiebreak_lower_is_better else max(tie_values)) if tie_values else None
             category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
-            entities_by_category.setdefault(category, []).append((team_id, team_mark, team_tiebreak, items))
+            entities_by_category.setdefault(category, []).append((team_id, team_mark, team_extra, team_tiebreak, items))
 
         ranked_team_ids = set()
         for category_entities in entities_by_category.values():
@@ -256,12 +267,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             for position, positioned_items in _ranked_position_groups(
                 category_entities,
                 mark_getter=lambda item: item[1],
-                tiebreak_getter=lambda item: item[2],
+                extra_getter=lambda item: item[2],
+                tiebreak_getter=lambda item: item[3],
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
             ):
                 pts = position if score_lower_is_better else (total - position + 1)
-                for team_id, _team_mark, _team_tiebreak, items in positioned_items:
+                for team_id, _team_mark, _team_extra, _team_tiebreak, items in positioned_items:
                     ranked_team_ids.add(team_id)
                     for r in items:
                         r.posicion = position
@@ -305,6 +317,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             for position, positioned_items in _ranked_position_groups(
                 category_rows,
                 mark_getter=lambda item: item.marca,
+                extra_getter=lambda item: getattr(item, "extra", None),
                 tiebreak_getter=lambda item: item.tiebreak,
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
@@ -319,6 +332,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
         for position, positioned_items in _ranked_position_groups(
             with_metric,
             mark_getter=lambda item: item.marca,
+            extra_getter=lambda item: getattr(item, "extra", None),
             tiebreak_getter=lambda item: item.tiebreak,
             lower_is_better=lower_is_better,
             tiebreak_lower_is_better=tiebreak_lower_is_better,
@@ -335,7 +349,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
 
 def _enrich(session: Session, result_id: int) -> dict:
     row = session.execute(text("""
-        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.tiebreak, r.puntos, r.posicion,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.extra, r.tiebreak, r.puntos, r.posicion,
                r.result_status, r.appeal_deadline_at, r.created_at,
                ra.id AS active_appeal_id,
                ra.status AS active_appeal_status,
@@ -447,7 +461,7 @@ def list_results(
 
     rows = session.execute(text(f"""
         SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id,
-               r.marca, r.tiebreak, r.puntos, r.posicion, r.result_status, r.appeal_deadline_at, r.created_at,
+               r.marca, r.extra, r.tiebreak, r.puntos, r.posicion, r.result_status, r.appeal_deadline_at, r.created_at,
                ra.id AS active_appeal_id,
                ra.status AS active_appeal_status,
                p.nombre   AS nombre,

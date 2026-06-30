@@ -116,7 +116,7 @@ def _fetch_participants_meta(session: Session, competition_id: int) -> list[dict
 
 
 def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
-    """dict[(phase_id, user_id)] = {sum, count, min, max, min_tiebreak, max_tiebreak}."""
+    """dict[(phase_id, user_id)] = {sum, count, min, max, min_extra, max_extra, min_tiebreak, max_tiebreak}."""
     rows = session.execute(text("""
         SELECT
             r.phase_id,
@@ -125,6 +125,8 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
+            MIN(r.extra)                    AS min_extra,
+            MAX(r.extra)                    AS max_extra,
             MIN(r.tiebreak)                 AS min_tiebreak,
             MAX(r.tiebreak)                 AS max_tiebreak,
             (COUNT(ra.id) > 0)            AS has_active_appeal
@@ -143,6 +145,8 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "min_extra": int(r["min_extra"]) if r["min_extra"] is not None else None,
+            "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "min_tiebreak": int(r["min_tiebreak"]) if r["min_tiebreak"] is not None else None,
             "max_tiebreak": int(r["max_tiebreak"]) if r["max_tiebreak"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
@@ -307,12 +311,14 @@ def _build_ind_rows(
             data = ind_points_per_phase.get((phase_id, p["id"]))
             if data:
                 mark = data["min"] if lower_is_better else data["max"]
+                extra = data["min_extra"]
                 tiebreak = data["min_tiebreak"] if tiebreak_lower_is_better else data["max_tiebreak"]
                 total = int(data["sum"])
                 events = int(data["count"])
                 has_active_appeal = bool(data.get("has_active_appeal"))
             else:
                 mark = None
+                extra = None
                 tiebreak = None
                 total = 0
                 events = 0
@@ -330,6 +336,7 @@ def _build_ind_rows(
                 "total_puntos": total,
                 "total_eventos": events,
                 "mejor_marca": mark,
+                "extra": extra,
                 "tiebreak": tiebreak,
                 "has_active_appeal": has_active_appeal,
             })

@@ -113,14 +113,6 @@ function scoreInputConfig(phase) {
 }
 
 function tieBreakInputConfig(phase) {
-  if (String(phase?.tie_break_label || '').trim().toLowerCase() === 'extra') {
-    return {
-      type: 'number',
-      placeholder: 'Reps',
-      label: 'Extra',
-      helper: phase?.tie_break_helper || 'Repeticiones al time cap',
-    }
-  }
   return scoreInputConfig({
     measurement_method: phase?.tie_break_method || 'for_time',
     tipo: isTimeMeasurement(phase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
@@ -174,6 +166,8 @@ function ScannerModal({
   scoreContext,
   scoreValue,
   onScoreValueChange,
+  scoreExtraValue,
+  onScoreExtraValueChange,
   scoreTieBreakValue,
   onScoreTieBreakValueChange,
   scoreBusy,
@@ -406,6 +400,11 @@ function ScannerModal({
                     <div style={{ color: '#F5F7FA', fontWeight: 700, fontSize: 14 }}>
                       Puntuacion actual: {scoreContext.existing.formatted_mark || (scoreContext.existing.marca ?? '-')}
                     </div>
+                    {scoreContext?.phase?.extra_enabled ? (
+                      <div style={{ color: '#AAB2C0', fontSize: 12 }}>
+                        Extra: {scoreContext.existing.extra ?? '-'}
+                      </div>
+                    ) : null}
                     {scoreContext?.phase?.tie_break_enabled ? (
                       <div style={{ color: '#AAB2C0', fontSize: 12 }}>
                         {(scoreContext?.phase?.tie_break_label || 'Tie break')}: {scoreContext.existing.formatted_tiebreak || (scoreContext.existing.tiebreak ?? '-')}
@@ -446,6 +445,26 @@ function ScannerModal({
                           }}
                         />
                         {scoreInputHelper ? <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreInputHelper}</div> : null}
+                        {scoreContext?.phase?.extra_enabled ? (
+                          <>
+                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>Extra</label>
+                            <input
+                              type="number"
+                              value={scoreExtraValue || ''}
+                              onChange={(event) => onScoreExtraValueChange?.(event.target.value)}
+                              placeholder="Reps"
+                              style={{
+                                borderRadius: 12,
+                                border: '1px solid #252A33',
+                                background: '#0D0F12',
+                                color: '#F5F7FA',
+                                padding: '10px 12px',
+                                fontSize: 14,
+                              }}
+                            />
+                            <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreContext?.phase?.extra_helper || 'Repeticiones al time cap'}</div>
+                          </>
+                        ) : null}
                         {scoreContext?.phase?.tie_break_enabled ? (
                           <>
                             <label style={{ color: '#AAB2C0', fontSize: 12 }}>{scoreContext?.phase?.tie_break_label || 'Tie break'}</label>
@@ -578,6 +597,7 @@ export default function JudgeHub() {
   const [scanError, setScanError] = useState('')
   const [scoreContext, setScoreContext] = useState(null)
   const [scoreValue, setScoreValue] = useState('')
+  const [scoreExtraValue, setScoreExtraValue] = useState('')
   const [scoreTieBreakValue, setScoreTieBreakValue] = useState('')
   const [scoreBusy, setScoreBusy] = useState(false)
   const [scoreMsg, setScoreMsg] = useState(null)
@@ -911,6 +931,7 @@ export default function JudgeHub() {
         setScanResult(parseCheckinScanResponse(data))
         setScoreContext(null)
         setScoreValue('')
+        setScoreExtraValue('')
         setScoreTieBreakValue('')
         setEditingScore(false)
       } else {
@@ -923,6 +944,7 @@ export default function JudgeHub() {
         setScanResult(parseScoreScanResponse(data))
         setScoreContext({ ...data, token: data?.token || nextToken })
         setScoreValue(data?.existing?.formatted_mark || (data?.existing?.marca != null ? String(data.existing.marca) : ''))
+        setScoreExtraValue(data?.existing?.extra != null ? String(data.existing.extra) : '')
         setScoreTieBreakValue(data?.existing?.formatted_tiebreak || (data?.existing?.tiebreak != null ? String(data.existing.tiebreak) : ''))
         setEditingScore(false)
         setScannerModalOpen(true)
@@ -950,28 +972,25 @@ export default function JudgeHub() {
       })
       return
     }
-    const usesExtra = String(scoreContext?.phase?.tie_break_label || '').trim().toLowerCase() === 'extra'
+    const extraValue = String(scoreExtraValue || '').trim()
+    const parsedExtra = scoreContext?.phase?.extra_enabled && extraValue ? Number(extraValue) : null
+    if (scoreContext?.phase?.extra_enabled && extraValue && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) {
+      setScoreMsg({ type: 'error', text: 'Extra debe ser un numero entero.' })
+      return
+    }
     const tieBreakPhase = {
       measurement_method: scoreContext?.phase?.tie_break_method || 'for_time',
       tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
     }
     const tieBreakValue = String(scoreTieBreakValue || '').trim()
-    const parsedTieBreak = scoreContext?.phase?.tie_break_enabled && tieBreakValue
-      ? (usesExtra ? Number(tieBreakValue) : parseMetricByPhase(tieBreakValue, tieBreakPhase))
-      : null
+    const parsedTieBreak = scoreContext?.phase?.tie_break_enabled && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
     if (scoreContext?.phase?.tie_break_enabled && tieBreakValue && parsedTieBreak == null) {
       setScoreMsg({
         type: 'error',
-        text: usesExtra
-          ? 'Extra debe ser un numero entero.'
-          : isTimeMeasurement(tieBreakPhase.measurement_method)
+        text: isTimeMeasurement(tieBreakPhase.measurement_method)
           ? 'Ingresa un tie break valido. Usa HH:MM:SS, MM:SS o segundos.'
           : 'Ingresa un tie break numerico valido.',
       })
-      return
-    }
-    if (usesExtra && tieBreakValue && (!Number.isInteger(parsedTieBreak) || parsedTieBreak < 0)) {
-      setScoreMsg({ type: 'error', text: 'Extra debe ser un numero entero.' })
       return
     }
     setScoreBusy(true)
@@ -982,6 +1001,7 @@ export default function JudgeHub() {
         ? {
             token: scoreContext.token,
             marca_raw: String(scoreValue).trim(),
+            extra_raw: scoreContext?.phase?.extra_enabled ? extraValue : undefined,
             tiebreak_raw: scoreContext?.phase?.tie_break_enabled ? tieBreakValue : undefined,
             station: String(station || '').trim() || null,
             device_id: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 180) : null,
@@ -992,6 +1012,7 @@ export default function JudgeHub() {
             user_id: scoreContext?.user?.id ?? scoreContext?.participant?.id ?? scoreContext?.user_id ?? null,
             team_id: scoreContext?.team?.id ?? null,
             marca_raw: String(scoreValue).trim(),
+            extra_raw: scoreContext?.phase?.extra_enabled ? extraValue : undefined,
             tiebreak_raw: scoreContext?.phase?.tie_break_enabled ? tieBreakValue : undefined,
             station: String(station || '').trim() || null,
             device_id: typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 180) : null,
@@ -1003,6 +1024,7 @@ export default function JudgeHub() {
       setScanResult(parseScoreScanResponse(data))
       setEditingScore(false)
       setScoreValue(data?.existing?.formatted_mark || formatMarkForPhase(parsed, scoreContext.phase))
+      setScoreExtraValue(data?.existing?.extra != null ? String(data.existing.extra) : (parsedExtra != null ? String(parsedExtra) : ''))
       setScoreTieBreakValue(data?.existing?.formatted_tiebreak || (parsedTieBreak != null ? formatMarkForPhase(parsedTieBreak, tieBreakPhase) : ''))
       if (data?.status === 'created') {
         setScoreMsg({ type: 'success', text: 'Puntuacion cargada correctamente.' })
@@ -1036,6 +1058,7 @@ export default function JudgeHub() {
       })
       setScoreContext(data)
       setScoreValue(data?.existing?.formatted_mark || '')
+      setScoreExtraValue(data?.existing?.extra != null ? String(data.existing.extra) : '')
       setScoreTieBreakValue(data?.existing?.formatted_tiebreak || '')
       setEditingScore(false)
       setScanResult(parseScoreScanResponse(data))
@@ -1176,6 +1199,7 @@ export default function JudgeHub() {
     setScoreMsg(null)
     setEditingScore(false)
     setScoreValue('')
+    setScoreExtraValue('')
     setScoreTieBreakValue('')
     scanLockRef.current = false
     if (scoreEntryMode === 'manual') {
@@ -1204,6 +1228,8 @@ export default function JudgeHub() {
         scoreContext={scoreContext}
         scoreValue={scoreValue}
         onScoreValueChange={setScoreValue}
+        scoreExtraValue={scoreExtraValue}
+        onScoreExtraValueChange={setScoreExtraValue}
         scoreTieBreakValue={scoreTieBreakValue}
         onScoreTieBreakValueChange={setScoreTieBreakValue}
         scoreBusy={scoreBusy}
@@ -1212,12 +1238,14 @@ export default function JudgeHub() {
         onStartEditScore={() => {
           setEditingScore(true)
           setScoreValue(scoreContext?.existing?.formatted_mark || '')
+          setScoreExtraValue(scoreContext?.existing?.extra != null ? String(scoreContext.existing.extra) : '')
           setScoreTieBreakValue(scoreContext?.existing?.formatted_tiebreak || '')
           setScoreMsg(null)
         }}
         onCancelEditScore={() => {
           setEditingScore(false)
           setScoreValue(scoreContext?.existing?.formatted_mark || '')
+          setScoreExtraValue(scoreContext?.existing?.extra != null ? String(scoreContext.existing.extra) : '')
           setScoreTieBreakValue(scoreContext?.existing?.formatted_tiebreak || '')
         }}
         onSubmitScore={submitScore}
