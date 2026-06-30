@@ -294,6 +294,10 @@ def _tie_break_enabled(phase: CompetitionPhase | None) -> bool:
     return bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
 
 
+def _extra_reps_enabled(phase: CompetitionPhase | None) -> bool:
+    return _phase_uses_time_input(phase)
+
+
 def _tie_break_phase_proxy(phase: CompetitionPhase | None) -> dict:
     method = normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo")
     return {
@@ -304,10 +308,13 @@ def _tie_break_phase_proxy(phase: CompetitionPhase | None) -> dict:
 
 def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
     method = _phase_measurement_method(phase)
+    extra_enabled = _extra_reps_enabled(phase)
     return {
         "workout_format": str(getattr(phase, "workout_format", None) or method).strip().lower(),
-        "tie_break_enabled": 1 if _tie_break_enabled(phase) else 0,
+        "tie_break_enabled": 1 if (_tie_break_enabled(phase) or extra_enabled) else 0,
         "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
+        "tie_break_label": "Extra" if extra_enabled else "Tie break",
+        "tie_break_helper": "Repeticiones al time cap" if extra_enabled else None,
         "heat_transition_seconds": int(getattr(phase, "heat_transition_seconds", 0) or 0),
         "category_transition_seconds": int(getattr(phase, "category_transition_seconds", 0) or 0),
     }
@@ -401,7 +408,21 @@ def _format_mark_for_phase(mark: int | None, phase: CompetitionPhase | None) -> 
 def _format_tiebreak_for_phase(mark: int | None, phase: CompetitionPhase | None) -> str | None:
     if mark is None:
         return None
+    if _extra_reps_enabled(phase):
+        return str(int(mark))
     return _format_mark_for_phase(mark, _tie_break_phase_proxy(phase))
+
+
+def _parse_tiebreak_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
+    if _extra_reps_enabled(phase):
+        try:
+            value = int(str(raw).strip())
+        except Exception:
+            raise HTTPException(400, "Extra debe ser un numero entero")
+        if value < 0:
+            raise HTTPException(400, "Extra no puede ser negativo")
+        return value
+    return _parse_mark_for_phase(raw, _tie_break_phase_proxy(phase))
 
 
 def _result_for_entity(
@@ -1207,8 +1228,8 @@ def judge_score_submit(
     mark_int = _parse_mark_for_phase(raw_mark, phase)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
-    if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
-        tiebreak_int = _parse_mark_for_phase(raw_tiebreak, _tie_break_phase_proxy(phase))
+    if (_tie_break_enabled(phase) or _extra_reps_enabled(phase)) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
+        tiebreak_int = _parse_tiebreak_for_phase(raw_tiebreak, phase)
 
     existing = _result_for_entity(
         session,
@@ -1301,8 +1322,8 @@ def judge_score_edit(
     mark_int = _parse_mark_for_phase(raw_mark, phase)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
-    if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
-        tiebreak_int = _parse_mark_for_phase(raw_tiebreak, _tie_break_phase_proxy(phase))
+    if (_tie_break_enabled(phase) or _extra_reps_enabled(phase)) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
+        tiebreak_int = _parse_tiebreak_for_phase(raw_tiebreak, phase)
 
     existing = _result_for_entity(
         session,

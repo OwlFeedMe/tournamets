@@ -70,6 +70,7 @@ class HeatGenerateInput(BaseModel):
     phase_id: int
     categoria: Optional[str] = None
     generation_mode: str = "mixed"
+    heat_numbering_mode: str = "by_category"
     seed_mode: str = "auto"
     lane_count: int = 8
     heat_count: Optional[int] = None
@@ -144,6 +145,11 @@ def _normalize_generation_mode(value: str | None, categoria: str | None) -> str:
     if raw in {"mixed", "all_mixed", "todos_mezclados", "all"}:
         return "mixed"
     return "single_category" if _normalize_category_label(categoria) else "mixed"
+
+
+def _uses_continuous_heat_numbers(value: str | None) -> bool:
+    raw = str(value or "").strip().lower()
+    return raw in {"continuous", "global", "global_continuous", "sequential", "ascending"}
 
 
 def _category_order_map(session: Session, competition_id: int, modality: str | None) -> dict[str, tuple[int, str]]:
@@ -698,6 +704,8 @@ def _build_heat_generation_preview(
     lane_order = _build_lane_order(lane_count)
     current_start = first_start
     previous_category: str | None = None
+    continuous_numbers = _uses_continuous_heat_numbers(body.heat_numbering_mode)
+    next_heat_number = 1
     out: list[dict] = []
 
     for plan_item in plan_items:
@@ -708,7 +716,9 @@ def _build_heat_generation_preview(
         for heat_index, current_chunk in enumerate(chunks):
             if not current_chunk:
                 continue
-            display_number = heat_index + 1
+            display_number = next_heat_number if continuous_numbers else heat_index + 1
+            if continuous_numbers:
+                next_heat_number += 1
             current_category = str(plan_item["heat_categoria"] or "")
             start_at = current_start
             if (
@@ -1091,6 +1101,8 @@ def generate_heats(
     created_ids: list[int] = []
     current_start = first_start
     previous_category: str | None = None
+    continuous_numbers = _uses_continuous_heat_numbers(body.heat_numbering_mode)
+    next_heat_number = 1
     for plan_item in plan_items:
         entries = plan_item["entries"]
         chunks = [entries[i:i + lane_count] for i in range(0, len(entries), lane_count)]
@@ -1099,7 +1111,9 @@ def generate_heats(
         for heat_index, current_chunk in enumerate(chunks):
             if not current_chunk:
                 continue
-            display_number = heat_index + 1
+            display_number = next_heat_number if continuous_numbers else heat_index + 1
+            if continuous_numbers:
+                next_heat_number += 1
             current_category = str(plan_item["heat_categoria"] or "")
             start_at = current_start
             if (

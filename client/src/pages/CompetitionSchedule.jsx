@@ -46,6 +46,18 @@ function formatDateTime(value, timeZone) {
   })
 }
 
+const wodColorPalette = ['#FF6B00', '#00C2A8', '#D4A537', '#8B5CF6', '#38BDF8', '#F59E0B', '#EF4444', '#22C55E']
+
+function wodColorFor(value) {
+  const raw = String(value ?? 'wod').trim() || 'wod'
+  let hash = 0
+  for (let index = 0; index < raw.length; index += 1) {
+    hash = ((hash << 5) - hash) + raw.charCodeAt(index)
+    hash |= 0
+  }
+  return wodColorPalette[Math.abs(hash) % wodColorPalette.length]
+}
+
 function formatDateRange(start, end, timeZone) {
   const startLabel = formatDateTime(start, timeZone)
   const endLabel = formatDateTime(end, timeZone)
@@ -194,17 +206,19 @@ async function fetchWithFallback(urls) {
 function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
   const participants = item.participants || []
   const firstParticipant = participants[0]
+  const wodTone = wodColorFor(item.phaseId || item.phaseName || item.title)
   return (
     <div className="fr-cut-card" style={{
-      border: `1px solid ${theme.border}`,
-      background: hexToRgba(theme.background, 0.62),
+      border: `1px solid ${hexToRgba(wodTone, 0.56)}`,
+      borderLeft: `6px solid ${wodTone}`,
+      background: `linear-gradient(135deg, ${hexToRgba(wodTone, 0.13)}, ${hexToRgba(theme.background, 0.62)} 46%)`,
       padding: 16,
       display: 'grid',
       gap: 10,
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+          <div style={{ color: wodTone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {item.kind === 'heat' ? 'Heat' : item.kind === 'block' ? 'Bloque' : 'Salida'}
             {item.heatNumber != null ? ` ${item.heatNumber}` : ''}
           </div>
@@ -225,7 +239,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       <div style={{ display: 'grid', gap: 8 }}>
         {(item.startAt || item.endAt) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
-            <Clock3 size={14} color={theme.accent} />
+            <Clock3 size={14} color={wodTone} />
             {formatDateRange(item.startAt, item.endAt, timeZone)}
           </div>
         ) : null}
@@ -236,7 +250,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
         ) : null}
         {item.locationName || item.locationDetail ? (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
-            <MapPin size={14} color={theme.accent} style={{ marginTop: 2, flexShrink: 0 }} />
+            <MapPin size={14} color={wodTone} style={{ marginTop: 2, flexShrink: 0 }} />
             <span>
               {item.locationName || 'Ubicacion por confirmar'}
               {item.locationDetail ? <span style={{ color: theme.textSecondary }}> · {item.locationDetail}</span> : null}
@@ -256,8 +270,9 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
                 key={participant.id}
                 style={{
                   borderRadius: 6,
-                  border: `1px solid ${theme.border}`,
-                  background: participant.note ? hexToRgba(theme.accent, 0.08) : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${hexToRgba(wodTone, 0.38)}`,
+                  borderLeft: `4px solid ${wodTone}`,
+                  background: participant.note ? hexToRgba(wodTone, 0.10) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -274,7 +289,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
                   ) : null}
                 </div>
                 {participant.lane != null ? (
-                  <span style={{ color: theme.accent, fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
+                  <span style={{ color: wodTone, fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
                 ) : null}
               </div>
             ))}

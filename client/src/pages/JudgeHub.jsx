@@ -112,6 +112,21 @@ function scoreInputConfig(phase) {
   }
 }
 
+function tieBreakInputConfig(phase) {
+  if (String(phase?.tie_break_label || '').trim().toLowerCase() === 'extra') {
+    return {
+      type: 'number',
+      placeholder: 'Reps',
+      label: 'Extra',
+      helper: phase?.tie_break_helper || 'Repeticiones al time cap',
+    }
+  }
+  return scoreInputConfig({
+    measurement_method: phase?.tie_break_method || 'for_time',
+    tipo: isTimeMeasurement(phase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
+  })
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false,
@@ -393,7 +408,7 @@ function ScannerModal({
                     </div>
                     {scoreContext?.phase?.tie_break_enabled ? (
                       <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                        Tie break: {scoreContext.existing.formatted_tiebreak || (scoreContext.existing.tiebreak ?? '-')}
+                        {(scoreContext?.phase?.tie_break_label || 'Tie break')}: {scoreContext.existing.formatted_tiebreak || (scoreContext.existing.tiebreak ?? '-')}
                       </div>
                     ) : null}
                     <div style={{ color: '#AAB2C0', fontSize: 12 }}>
@@ -433,7 +448,7 @@ function ScannerModal({
                         {scoreInputHelper ? <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreInputHelper}</div> : null}
                         {scoreContext?.phase?.tie_break_enabled ? (
                           <>
-                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>Tie break</label>
+                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>{scoreContext?.phase?.tie_break_label || 'Tie break'}</label>
                             <input
                               type={tieBreakInputType || 'text'}
                               value={scoreTieBreakValue || ''}
@@ -935,19 +950,28 @@ export default function JudgeHub() {
       })
       return
     }
+    const usesExtra = String(scoreContext?.phase?.tie_break_label || '').trim().toLowerCase() === 'extra'
     const tieBreakPhase = {
       measurement_method: scoreContext?.phase?.tie_break_method || 'for_time',
       tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
     }
     const tieBreakValue = String(scoreTieBreakValue || '').trim()
-    const parsedTieBreak = scoreContext?.phase?.tie_break_enabled && tieBreakValue ? parseMetricByPhase(tieBreakValue, tieBreakPhase) : null
+    const parsedTieBreak = scoreContext?.phase?.tie_break_enabled && tieBreakValue
+      ? (usesExtra ? Number(tieBreakValue) : parseMetricByPhase(tieBreakValue, tieBreakPhase))
+      : null
     if (scoreContext?.phase?.tie_break_enabled && tieBreakValue && parsedTieBreak == null) {
       setScoreMsg({
         type: 'error',
-        text: isTimeMeasurement(tieBreakPhase.measurement_method)
+        text: usesExtra
+          ? 'Extra debe ser un numero entero.'
+          : isTimeMeasurement(tieBreakPhase.measurement_method)
           ? 'Ingresa un tie break valido. Usa HH:MM:SS, MM:SS o segundos.'
           : 'Ingresa un tie break numerico valido.',
       })
+      return
+    }
+    if (usesExtra && tieBreakValue && (!Number.isInteger(parsedTieBreak) || parsedTieBreak < 0)) {
+      setScoreMsg({ type: 'error', text: 'Extra debe ser un numero entero.' })
       return
     }
     setScoreBusy(true)
@@ -1202,22 +1226,10 @@ export default function JudgeHub() {
         scoreInputLabel={scoreFieldConfig.label}
         scoreInputPlaceholder={scoreFieldConfig.placeholder}
         scoreInputHelper={scoreFieldConfig.helper}
-        tieBreakInputType={scoreInputConfig({
-          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
-          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
-        }).type}
-        tieBreakInputLabel={scoreInputConfig({
-          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
-          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
-        }).label}
-        tieBreakInputPlaceholder={scoreInputConfig({
-          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
-          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
-        }).placeholder}
-        tieBreakInputHelper={scoreInputConfig({
-          measurement_method: scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time',
-          tipo: isTimeMeasurement(scoreContext?.phase?.tie_break_method || activeManualPhase?.tie_break_method || 'for_time') ? 'tiempo' : 'cantidad',
-        }).helper}
+        tieBreakInputType={tieBreakInputConfig(scoreContext?.phase || activeManualPhase).type}
+        tieBreakInputLabel={tieBreakInputConfig(scoreContext?.phase || activeManualPhase).label}
+        tieBreakInputPlaceholder={tieBreakInputConfig(scoreContext?.phase || activeManualPhase).placeholder}
+        tieBreakInputHelper={tieBreakInputConfig(scoreContext?.phase || activeManualPhase).helper}
       />
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: outerPadding, display: 'grid', gap: gridGap }}>
         <SectionCard

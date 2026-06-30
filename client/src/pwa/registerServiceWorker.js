@@ -3,6 +3,13 @@ export async function registerServiceWorker() {
 
   try {
     const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return
+      refreshing = true
+      window.location.reload()
+    })
+    registration.update().catch(() => {})
     return registration
   } catch {
     return null
