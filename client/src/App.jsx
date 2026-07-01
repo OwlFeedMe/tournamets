@@ -171,7 +171,7 @@ export default function App() {
                   path="/organizer/command-proposal"
                   element={
                     <RoleGate allowedRoles={['organizer', 'admin']}>
-                      <AdminCompetitionCommandProposal />
+                      <Navigate to="/admin" replace />
                     </RoleGate>
                   }
                 />
@@ -179,7 +179,7 @@ export default function App() {
                   path="/organizer"
                   element={
                     <RoleGate allowedRoles={['organizer', 'admin']}>
-                      <AdminDashboard />
+                      <Navigate to="/admin" replace />
                     </RoleGate>
                   }
                 />
@@ -187,7 +187,7 @@ export default function App() {
                   path="/organizer/*"
                   element={
                     <RoleGate allowedRoles={['organizer', 'admin']}>
-                      <AdminDashboard />
+                      <Navigate to="/admin" replace />
                     </RoleGate>
                   }
                 />
