@@ -3130,6 +3130,24 @@ function ResultsPanel({ bundle, reload, notify }) {
     })
     return out
   })()
+  const persistedTieKeys = (() => {
+    const categoryMap = previewPool.reduce((map, item) => {
+      map[resultEntityKey(item)] = item.categoria || 'Todas'
+      return map
+    }, {})
+    const groups = (bundle.results || [])
+      .filter((result) => String(result.phase_id) === String(scoreDraft.phase_id) && !isDnfMark(result.marca))
+      .reduce((map, result) => {
+        const key = result.team_id ? `team-${result.team_id}` : `user-${result.user_id}`
+        const mark = Number(result.marca)
+        if (!Number.isFinite(mark)) return map
+        const groupKey = `${categoryMap[key] || result.categoria || 'Todas'}:${mark}`
+        if (!map[groupKey]) map[groupKey] = []
+        map[groupKey].push(resultKey(scoreDraft.phase_id, { user_id: result.user_id, team_id: result.team_id }))
+        return map
+      }, {})
+    return new Set(Object.values(groups).filter((items) => items.length > 1).flat())
+  })()
   const saveFastResults = async () => {
     if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
     const changed = rows.filter((row) => Object.prototype.hasOwnProperty.call(marks, resultKey(scoreDraft.phase_id, row)))
@@ -3277,6 +3295,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               const preview = previewRankMap[key]
               const editable = !existing || editingRows[key] || dirty
               const rowDnf = isDnfValue(row)
+              const showTiebreakWarning = persistedTieKeys.has(key)
               return (
                 <div className="fr-result-row" key={key} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: dirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
                   <div className="fr-result-card-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center' }}>
@@ -3312,22 +3331,26 @@ function ResultsPanel({ bundle, reload, notify }) {
                       <span className="fr-result-readonly" data-label={extraLabel} style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : extraValue(row) || '-'}</span>
                     )}
                     {editable ? (
-                      <label className="fr-result-input-wrap fr-result-tiebreak-field">
-                        <span className="fr-result-mobile-label fr-result-label-with-help">
+                      <label className={`fr-result-input-wrap${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`}>
+                        <span className={`fr-result-mobile-label${showTiebreakWarning ? ' fr-result-label-with-help' : ''}`}>
                           Tiebreak
-                          <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="El tiebreak es opcional. Solo se usa para desempatar cuando la marca queda empatada." title="Opcional: solo se usa si la marca queda empatada.">
-                            <AlertTriangle size={13} />
-                          </span>
+                          {showTiebreakWarning ? (
+                            <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="Hay empate en la marca. El tiebreak puede usarse para desempatar." title="Hay empate en la marca. El tiebreak puede desempatar.">
+                              <AlertTriangle size={13} />
+                            </span>
+                          ) : null}
                         </span>
                         <input className="fr-result-tiebreak" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder="Opcional" disabled={rowDnf} />
                       </label>
                     ) : (
-                      <span className="fr-result-readonly fr-result-tiebreak-field" data-label="Tiebreak" style={{ color: colors.secondary, fontSize: 13 }}>
+                      <span className={`fr-result-readonly${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`} data-label="Tiebreak" style={{ color: colors.secondary, fontSize: 13 }}>
                         <span className="fr-result-value-with-help">
                           {rowDnf ? '-' : tiebreakValue(row) || '-'}
-                          <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="El tiebreak es opcional. Solo se usa para desempatar cuando la marca queda empatada." title="Opcional: solo se usa si la marca queda empatada.">
-                            <AlertTriangle size={13} />
-                          </span>
+                          {showTiebreakWarning ? (
+                            <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="Hay empate en la marca. El tiebreak puede usarse para desempatar." title="Hay empate en la marca. El tiebreak puede desempatar.">
+                              <AlertTriangle size={13} />
+                            </span>
+                          ) : null}
                         </span>
                       </span>
                     )}
@@ -4086,7 +4109,7 @@ function ResponsiveStyles() {
         cursor: help;
       }
       .fr-tiebreak-help::after {
-        content: "Opcional: solo se usa si la marca queda empatada.";
+        content: "Hay empate en la marca. El tiebreak puede desempatar.";
         position: absolute;
         left: 50%;
         top: calc(100% + 8px);
