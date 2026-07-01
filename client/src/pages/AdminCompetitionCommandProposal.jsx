@@ -2968,7 +2968,15 @@ function ResultsPanel({ bundle, reload, notify }) {
   const fallbackRows = scoreDraft.phase_id && !scoreRows.length
     ? allConfirmedRows.filter((participant) => String(participant.categoria || 'Todas') === String(activeCategory || 'Todas'))
     : []
-  const rows = scoreRows.length ? scoreRows : fallbackRows
+  const rows = [...(scoreRows.length ? scoreRows : fallbackRows)].sort((a, b) => {
+    const laneA = Number(a.lane_number)
+    const laneB = Number(b.lane_number)
+    const hasLaneA = Number.isFinite(laneA) && laneA > 0
+    const hasLaneB = Number.isFinite(laneB) && laneB > 0
+    if (hasLaneA && hasLaneB && laneA !== laneB) return laneA - laneB
+    if (hasLaneA !== hasLaneB) return hasLaneA ? -1 : 1
+    return participantName(a).localeCompare(participantName(b))
+  })
   const setResultField = (item, field, value) => {
     const key = resultKey(scoreDraft.phase_id, item)
     setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
