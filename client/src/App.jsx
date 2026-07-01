@@ -218,7 +218,7 @@ export default function App() {
                 <Route
                   path="/admin"
                   element={
-                    <RoleGate allowedRoles={['admin']}>
+                    <RoleGate allowedRoles={['organizer', 'admin']}>
                       <AdminCompetitionCommandProposal />
                     </RoleGate>
                   }
@@ -226,7 +226,7 @@ export default function App() {
                 <Route
                   path="/admin/*"
                   element={
-                    <RoleGate allowedRoles={['admin']}>
+                    <RoleGate allowedRoles={['organizer', 'admin']}>
                       <AdminCompetitionCommandProposal />
                     </RoleGate>
                   }

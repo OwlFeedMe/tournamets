@@ -87,7 +87,7 @@ function toNumber(value) {
 export function getHomePath(role) {
   const normalized = normalizeRole(role)
   if (normalized === 'admin') return '/admin'
-  if (normalized === 'organizer') return '/organizer'
+  if (normalized === 'organizer') return '/admin'
   if (normalized === 'judge') return '/judge'
   return '/'
 }
