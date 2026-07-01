@@ -682,7 +682,7 @@ def get_public_competition_detail(
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, time_cap_seconds, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
@@ -704,6 +704,7 @@ def get_public_competition_detail(
         item["workout_format"] = str(item.get("workout_format") or item["measurement_method"] or "for_time").strip().lower()
         item["tie_break_enabled"] = 1 if int(item.get("tie_break_enabled") or 0) else 0
         item["tie_break_method"] = normalize_phase_measurement_method(item.get("tie_break_method"), "tiempo")
+        item["time_cap_seconds"] = int(item.get("time_cap_seconds")) if item.get("time_cap_seconds") is not None else None
         item["heat_transition_seconds"] = int(item.get("heat_transition_seconds") or 0)
         item["category_transition_seconds"] = int(item.get("category_transition_seconds") or 0)
         phase_format = str(item.get("phase_format") or "activity").strip().lower()
@@ -745,6 +746,7 @@ def get_public_competition_detail(
                 "workout_format": item.get("workout_format"),
                 "tie_break_enabled": item.get("tie_break_enabled"),
                 "tie_break_method": item.get("tie_break_method"),
+                "time_cap_seconds": item.get("time_cap_seconds"),
                 "heat_transition_seconds": item.get("heat_transition_seconds"),
                 "category_transition_seconds": item.get("category_transition_seconds"),
                 "orden": 0,

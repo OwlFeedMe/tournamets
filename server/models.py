@@ -504,6 +504,7 @@ class CompetitionPhase(SQLModel, table=True):
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
     tie_break_enabled: int = Field(default=0)
     tie_break_method: str = Field(default="for_time")
+    time_cap_seconds: Optional[int] = None
     heat_transition_seconds: int = Field(default=0)
     category_transition_seconds: int = Field(default=0)
     estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
@@ -1895,6 +1896,7 @@ class PhaseCreate(SQLModel):
     team_result_mode: str = "sum_two"
     tie_break_enabled: int = 0
     tie_break_method: str = "for_time"
+    time_cap_seconds: Optional[int] = None
     heat_transition_seconds: int = 0
     category_transition_seconds: int = 0
     estado: str = EstadoFase.PENDIENTE
@@ -1922,6 +1924,7 @@ class PhaseUpdate(SQLModel):
     team_result_mode: Optional[str] = None
     tie_break_enabled: Optional[int] = None
     tie_break_method: Optional[str] = None
+    time_cap_seconds: Optional[int] = None
     heat_transition_seconds: Optional[int] = None
     category_transition_seconds: Optional[int] = None
     estado: Optional[str] = None

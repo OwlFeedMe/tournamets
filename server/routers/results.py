@@ -84,6 +84,29 @@ def _phase_tiebreak_lower_is_better(phase: CompetitionPhase | None) -> bool:
     return method in {"for_time", "tiempo_hms", "tiempo", "posicion"}
 
 
+def _phase_is_time(phase: CompetitionPhase | None) -> bool:
+    if phase is None:
+        return False
+    method = str(getattr(phase, "measurement_method", None) or getattr(phase, "workout_format", None) or "").strip().lower()
+    phase_type = _normalize_phase_type(getattr(phase, "tipo", None))
+    return phase_type == "tiempo" or method in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _validate_time_cap_result(phase: CompetitionPhase | None, mark: int | None, extra: int | None) -> int | None:
+    cap = getattr(phase, "time_cap_seconds", None)
+    if not _phase_is_time(phase) or cap is None or mark is None:
+        return extra
+    cap_seconds = int(cap)
+    if int(mark) > cap_seconds:
+        minutes, seconds = divmod(cap_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        label = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+        raise HTTPException(400, f"El tiempo no puede superar el cap de {label}")
+    if int(mark) != cap_seconds:
+        return None
+    return extra
+
+
 def _ranking_value(value: int | None, *, lower_is_better: bool) -> tuple[int, int]:
     if value is None:
         return (1, 0)
@@ -549,6 +572,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         # simplified global flow: position + points are auto from mark
         if computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
+        body.extra = _validate_time_cap_result(phase, computed_mark, body.extra)
 
         if phase_mode == "total" and resolved_team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -603,6 +627,7 @@ def update_result(result_id: int, body: ResultUpdate,
     computed_points: int | None = None
     computed_position: int | None = body.posicion if body.posicion is not None else r.posicion
     computed_mark: int | None = body.marca if body.marca is not None else (body.puntos if body.puntos is not None else r.marca)
+    computed_extra: int | None = body.extra if body.extra is not None else r.extra
     phase_id = body.phase_id if body.phase_id is not None else r.phase_id
     phase_mode = ""
     if phase_id:
@@ -619,6 +644,7 @@ def update_result(result_id: int, body: ResultUpdate,
         # simplified global flow: position + points are auto from mark
         if computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
+        computed_extra = _validate_time_cap_result(phase, computed_mark, computed_extra)
 
         if phase_mode == "total" and r.team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -643,6 +669,7 @@ def update_result(result_id: int, body: ResultUpdate,
     if phase_mode == "total" and r.team_id is not None:
         r.user_id = None
     r.marca = computed_mark
+    r.extra = computed_extra
     if computed_points is not None:
         r.puntos = int(computed_points)
     if computed_position is not None:
