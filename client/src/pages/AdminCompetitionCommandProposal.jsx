@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarDays,
   CheckCircle2,
@@ -3268,10 +3269,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? 'Extra son repeticiones al time cap; si sigue el empate, aplica tiebreak.' : 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.'}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
-          <div className="fr-results-header" style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 110px 90px 110px 90px 90px 120px', gap: 8, padding: '9px 10px', borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
-            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>{extraLabel}</span><span>Tiebreak</span><span>Posicion</span><span>Puntos</span><span>Accion</span>
-          </div>
-          <div className="fr-results-list" style={{ display: 'grid', maxHeight: 520, overflowY: 'auto' }}>
+          <div className="fr-results-list" style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
             {rows.length ? rows.map((row) => {
               const existing = existingResultFor(row)
               const key = resultKey(scoreDraft.phase_id, row)
@@ -3280,45 +3278,61 @@ function ResultsPanel({ bundle, reload, notify }) {
               const editable = !existing || editingRows[key] || dirty
               const rowDnf = isDnfValue(row)
               return (
-                <div className="fr-result-row" key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1.5fr) minmax(110px, 0.75fr) 110px 90px 110px 90px 90px 120px', gap: 8, alignItems: 'center', padding: '8px 10px', borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
-                  <span className="fr-result-lane" style={{ color: colors.muted, fontSize: 12, fontWeight: 900 }}>{row.lane_number || '-'}</span>
-                  <span className="fr-result-athlete" style={{ color: colors.text, fontSize: 13, fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{participantName(row)}</span>
-                  <span className="fr-result-heat" style={{ color: colors.secondary, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat'}</span>
-                  {editable ? (
-                    <label className="fr-result-input-wrap">
-                      <span className="fr-result-mobile-label">{markLabel}</span>
-                      <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? '12:00' : 'Valor'} disabled={rowDnf} />
-                    </label>
-                  ) : (
-                    <span className="fr-result-readonly" data-label={markLabel} style={{ color: rowDnf ? colors.error : colors.text, fontSize: 13, fontWeight: 850 }}>{rowDnf ? 'DNF' : markValue(row) || '-'}</span>
-                  )}
-                  {editable ? (
-                    <label className="fr-result-input-wrap">
-                      <span className="fr-result-mobile-label">{extraLabel}</span>
-                      <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : extraValue(row)} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" disabled={rowDnf || !showExtraField} />
-                    </label>
-                  ) : (
-                    <span className="fr-result-readonly" data-label={extraLabel} style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : extraValue(row) || '-'}</span>
-                  )}
-                  {editable ? (
-                    <label className="fr-result-input-wrap">
-                      <span className="fr-result-mobile-label">Tiebreak</span>
-                      <input className="fr-result-tiebreak" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder="Opcional" disabled={rowDnf} />
-                    </label>
-                  ) : (
-                    <span className="fr-result-readonly" data-label="Tiebreak" style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : tiebreakValue(row) || '-'}</span>
-                  )}
-                  <span className="fr-result-position" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 12, fontWeight: dirty ? 900 : 700 }}>{preview?.posicion ?? existing?.posicion ?? '-'}</span>
-                  <span className="fr-result-points" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 12, fontWeight: dirty ? 900 : 700 }}>{preview?.puntos ?? existing?.puntos ?? '-'}</span>
-                  <div className="fr-result-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <div className="fr-result-row" key={key} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: dirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
+                  <div className="fr-result-card-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center' }}>
+                    <span className="fr-result-lane" style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
+                    <span className="fr-result-athlete" style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
+                    <div className="fr-result-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      {editable ? (
+                        <>
+                          <Button onClick={() => setResultField(row, 'dnf', !rowDnf)} tone={rowDnf ? 'danger' : 'default'}>DNF</Button>
+                          <Button tone="primary" onClick={() => saveRowResult(row)}><Save size={14} /></Button>
+                        </>
+                      ) : (
+                        <Button onClick={() => setEditingRows((prev) => ({ ...prev, [key]: true }))}><Pencil size={14} /></Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="fr-result-card-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))', gap: 10, alignItems: 'stretch' }}>
+                    <span className="fr-result-heat fr-result-card-field" data-label="Heat" style={{ color: colors.secondary, fontSize: 13, overflowWrap: 'anywhere' }}>{row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat'}</span>
                     {editable ? (
-                      <>
-                        <Button onClick={() => setResultField(row, 'dnf', !rowDnf)} tone={rowDnf ? 'danger' : 'default'}>DNF</Button>
-                        <Button tone="primary" onClick={() => saveRowResult(row)}><Save size={14} /></Button>
-                      </>
+                      <label className="fr-result-input-wrap">
+                        <span className="fr-result-mobile-label">{markLabel}</span>
+                        <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? '12:00' : 'Valor'} disabled={rowDnf} />
+                      </label>
                     ) : (
-                      <Button onClick={() => setEditingRows((prev) => ({ ...prev, [key]: true }))}><Pencil size={14} /></Button>
+                      <span className="fr-result-readonly" data-label={markLabel} style={{ color: rowDnf ? colors.error : colors.text, fontSize: 13, fontWeight: 850 }}>{rowDnf ? 'DNF' : markValue(row) || '-'}</span>
                     )}
+                    {editable ? (
+                      <label className="fr-result-input-wrap">
+                        <span className="fr-result-mobile-label">{extraLabel}</span>
+                        <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : extraValue(row)} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" disabled={rowDnf || !showExtraField} />
+                      </label>
+                    ) : (
+                      <span className="fr-result-readonly" data-label={extraLabel} style={{ color: colors.secondary, fontSize: 13 }}>{rowDnf ? '-' : extraValue(row) || '-'}</span>
+                    )}
+                    {editable ? (
+                      <label className="fr-result-input-wrap fr-result-tiebreak-field">
+                        <span className="fr-result-mobile-label fr-result-label-with-help">
+                          Tiebreak
+                          <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="El tiebreak es opcional. Solo se usa para desempatar cuando la marca queda empatada." title="Opcional: solo se usa si la marca queda empatada.">
+                            <AlertTriangle size={13} />
+                          </span>
+                        </span>
+                        <input className="fr-result-tiebreak" type="number" step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder="Opcional" disabled={rowDnf} />
+                      </label>
+                    ) : (
+                      <span className="fr-result-readonly fr-result-tiebreak-field" data-label="Tiebreak" style={{ color: colors.secondary, fontSize: 13 }}>
+                        <span className="fr-result-value-with-help">
+                          {rowDnf ? '-' : tiebreakValue(row) || '-'}
+                          <span className="fr-tiebreak-help" tabIndex={0} role="button" aria-label="El tiebreak es opcional. Solo se usa para desempatar cuando la marca queda empatada." title="Opcional: solo se usa si la marca queda empatada.">
+                            <AlertTriangle size={13} />
+                          </span>
+                        </span>
+                      </span>
+                    )}
+                    <span className="fr-result-position fr-result-card-field" data-label="Posicion" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 13, fontWeight: dirty ? 900 : 800 }}>{preview?.posicion ?? existing?.posicion ?? '-'}</span>
+                    <span className="fr-result-points fr-result-card-field" data-label="Puntos" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 13, fontWeight: dirty ? 900 : 800 }}>{preview?.puntos ?? existing?.puntos ?? '-'}</span>
                   </div>
                 </div>
               )
@@ -4017,7 +4031,92 @@ function ResponsiveStyles() {
   return (
     <style>{`
       .fr-result-mobile-label {
-        display: none;
+        display: block;
+        color: ${colors.muted};
+        font-size: 10px;
+        font-weight: 900;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .fr-result-input-wrap,
+      .fr-result-readonly,
+      .fr-result-card-field {
+        display: grid;
+        align-content: center;
+        min-width: 0;
+        min-height: 58px;
+        padding: 8px 10px;
+        border: 1px solid ${colors.border};
+        border-radius: 8px;
+        background: ${colors.surface};
+      }
+      .fr-result-readonly::before,
+      .fr-result-card-field::before {
+        content: attr(data-label);
+        display: block;
+        color: ${colors.muted};
+        font-size: 10px;
+        font-weight: 900;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }
+      .fr-result-tiebreak-field {
+        border-color: rgba(245,158,11,0.36) !important;
+        background: rgba(245,158,11,0.08) !important;
+      }
+      .fr-result-label-with-help,
+      .fr-result-value-with-help {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+      }
+      .fr-tiebreak-help {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        border: 1px solid rgba(245,158,11,0.42);
+        border-radius: 999px;
+        color: ${colors.warning};
+        background: rgba(245,158,11,0.12);
+        cursor: help;
+      }
+      .fr-tiebreak-help::after {
+        content: "Opcional: solo se usa si la marca queda empatada.";
+        position: absolute;
+        left: 50%;
+        top: calc(100% + 8px);
+        z-index: 20;
+        width: max-content;
+        max-width: min(260px, 72vw);
+        padding: 8px 10px;
+        border: 1px solid rgba(245,158,11,0.42);
+        border-radius: 8px;
+        background: ${colors.top};
+        color: ${colors.text};
+        box-shadow: 0 14px 34px rgba(0,0,0,0.38);
+        font-size: 11px;
+        font-weight: 850;
+        line-height: 1.35;
+        text-transform: none;
+        transform: translate(-50%, -4px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.14s ease, transform 0.14s ease;
+        white-space: normal;
+      }
+      .fr-tiebreak-help:hover::after,
+      .fr-tiebreak-help:focus-visible::after {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .fr-tiebreak-help:focus-visible {
+        outline: 2px solid rgba(245,158,11,0.55);
+        outline-offset: 2px;
       }
       @media (max-width: 1120px) {
         .fr-wizard-layout,
@@ -4107,17 +4206,15 @@ function ResponsiveStyles() {
           line-height: 1.35 !important;
         }
         .fr-result-row {
-          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
           gap: 10px !important;
           align-items: stretch !important;
-          padding: 12px !important;
-          border: 1px solid ${colors.border};
-          border-radius: 8px;
-          margin: 10px;
-          background: ${colors.top} !important;
+          margin: 0;
         }
-        .fr-result-row + .fr-result-row {
-          margin-top: 0;
+        .fr-result-card-head {
+          grid-template-columns: minmax(0, 1fr) auto !important;
+        }
+        .fr-result-card-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
         }
         .fr-result-athlete {
           grid-column: 1 / -1;
@@ -4137,7 +4234,7 @@ function ResponsiveStyles() {
           width: fit-content;
         }
         .fr-result-lane::before {
-          content: "Carril ";
+          content: none;
           color: ${colors.muted};
           font-weight: 700;
         }
@@ -4152,14 +4249,11 @@ function ResponsiveStyles() {
         }
         .fr-result-input-wrap,
         .fr-result-readonly {
-          display: grid;
           gap: 5px;
-          min-width: 0;
           order: 4;
         }
         .fr-result-mobile-label,
         .fr-result-readonly::before {
-          display: block;
           color: ${colors.muted};
           font-size: 10px;
           font-weight: 900;
