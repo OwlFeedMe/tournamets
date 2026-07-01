@@ -102,6 +102,21 @@ function metricValue(v, phaseInfo) {
   return v
 }
 
+function shouldMergeExtraWithMetric(mark, extra, phaseInfo) {
+  if (mark == null || extra == null) return false
+  if (Number(mark) === DNF_MARK_HIGH || Number(mark) === DNF_MARK_LOW) return false
+  const method = (phaseInfo?.measurement_method || '').toString().toLowerCase()
+  const type = (phaseInfo?.tipo || '').toString().toLowerCase()
+  const cap = Number(phaseInfo?.time_cap_seconds)
+  const isTime = method === 'for_time' || method === 'tiempo_hms' || method === 'tiempo' || type === 'tiempo'
+  return isTime && Number.isFinite(cap) && cap > 0 && Number(mark) === cap
+}
+
+function metricValueWithExtra(mark, extra, phaseInfo) {
+  const value = metricValue(mark, phaseInfo)
+  return shouldMergeExtraWithMetric(mark, extra, phaseInfo) ? `${value} + ${extra}` : value
+}
+
 function tieBreakValue(value, phaseInfo) {
   if (value == null) return ''
   const method = (phaseInfo?.tie_break_method || 'for_time').toString().toLowerCase()
@@ -590,7 +605,7 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
                     <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{item.phase.estado || 'pendiente'}</div>
                   </div>
                   <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
-                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValue(item.mark, item.phase)}</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}</div>
                   <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
                 </div>
               )) : (
@@ -709,8 +724,8 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap' }}>
                         {phaseInfo && p.mejor_marca != null && (
                           <span style={{ color: THEME.ink, fontWeight: 500 }}>
-                            {phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b>
-                            {shouldShowExtra(p) ? <ExtraLine value={p.extra} compact /> : null}
+                            {phaseMetricLabel(phaseInfo)}: <b>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</b>
+                            {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} compact /> : null}
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
                           </span>
                         )}
@@ -763,8 +778,8 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         </td>
                         {phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
-                            <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValue(p.mejor_marca, phaseInfo)}</div>
-                            {shouldShowExtra(p) ? <ExtraLine value={p.extra} /> : null}
+                            <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</div>
+                            {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} /> : null}
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} /> : null}
                           </td>
                         )}
@@ -837,7 +852,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                   <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
                   <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{t.total_puntos}</div>
                   {phaseInfo && t.mejor_marca != null && (
-                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValue(t.mejor_marca, phaseInfo)}</div>
+                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
                   )}
                 </div>
                 {isPhaseView && (
@@ -859,7 +874,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                       <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
                       {m.has_active_appeal ? <ReviewBadge /> : null}
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
-                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
+                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)}</span>
                       )}
                     </div>
                   )
@@ -916,7 +931,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                         {phaseMode !== 'total' && (
                           <span style={{ marginLeft: 6, color: THEME.muted }}>
                             {phaseInfo
-                              ? `(${phaseMetricLabel(phaseInfo)}: ${metricValue(m.mejor_marca, phaseInfo)})`
+                              ? `(${phaseMetricLabel(phaseInfo)}: ${metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)})`
                               : ''}
                           </span>
                         )}
@@ -925,7 +940,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                   })}
                 </div>
               </td>
-              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
+              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
               <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                 {t.total_puntos}
               </td>

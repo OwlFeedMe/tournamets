@@ -171,6 +171,8 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
+            MIN(r.extra)                    AS min_extra,
+            MAX(r.extra)                    AS max_extra,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
         JOIN teams t ON t.id = r.team_id
@@ -189,6 +191,8 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "min_extra": int(r["min_extra"]) if r["min_extra"] is not None else None,
+            "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
@@ -361,7 +365,10 @@ def _team_members_for_phase(
         has_active_appeal = bool((ind_data or {}).get("has_active_appeal") or (tm_data or {}).get("has_active_appeal"))
         ind_mark = (ind_data["min"] if lower_is_better else ind_data["max"]) if ind_data else None
         tm_mark = (tm_data["min"] if lower_is_better else tm_data["max"]) if tm_data else None
+        ind_extra = (ind_data["min_extra"] if lower_is_better else ind_data["max_extra"]) if ind_data else None
+        tm_extra = (tm_data["min_extra"] if lower_is_better else tm_data["max_extra"]) if tm_data else None
         mark = _combine_mark(ind_mark, tm_mark, lower_is_better)
+        extra = ind_extra if mark == ind_mark else tm_extra if mark == tm_mark else None
         out.append({
             "id": pid,
             "nombre": member["nombre"],
@@ -375,6 +382,7 @@ def _team_members_for_phase(
             "puntos_propios": int(sum_pts),
             "intentos": int(cnt),
             "mejor_marca": mark,
+            "extra": extra,
             "has_active_appeal": has_active_appeal,
         })
     return out
@@ -484,16 +492,20 @@ def _build_team_rows_for_phase(
         direct_events = int(direct["count"]) if direct else 0
         if direct:
             direct_mark = direct["min"] if mark_lower_is_better else direct["max"]
+            direct_extra = direct["min_extra"] if mark_lower_is_better else direct["max_extra"]
         else:
             direct_mark = None
+            direct_extra = None
         has_active_appeal = bool((direct or {}).get("has_active_appeal") or any(m.get("has_active_appeal") for m in members))
         if mode == "total":
             total_puntos = direct_points
             total_eventos = direct_events
             total_marca = direct_mark
+            total_extra = direct_extra
         else:
             total_puntos += direct_points
             total_eventos += direct_events
+            total_extra = None
         rows.append({
             "id": t.id,
             "nombre": (t.nombre or "").strip() or f"Equipo {t.id}",
@@ -501,6 +513,7 @@ def _build_team_rows_for_phase(
             "total_puntos": int(total_puntos),
             "total_eventos": int(total_eventos),
             "mejor_marca": total_marca,
+            "extra": total_extra,
             "has_active_appeal": has_active_appeal,
             "members": members,
         })
@@ -646,6 +659,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "winner_rule": getattr(phase, "winner_rule", None),
             "tie_break_enabled": int(getattr(phase, "tie_break_enabled", 0) or 0),
             "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
+            "time_cap_seconds": int(getattr(phase, "time_cap_seconds")) if getattr(phase, "time_cap_seconds", None) is not None else None,
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_status_map.get(int(phase.id), phase.estado),
             "descripcion": phase.descripcion,
