@@ -3179,13 +3179,22 @@ function ResultsPanel({ bundle, reload, notify }) {
       map[resultEntityKey(item)] = item.categoria || 'Todas'
       return map
     }, {})
+    const persistedTieGroupKey = (result) => {
+      const key = result.team_id ? `team-${result.team_id}` : `user-${result.user_id}`
+      const mark = Number(result.marca)
+      if (!Number.isFinite(mark)) return null
+      const category = categoryMap[key] || result.categoria || 'Todas'
+      if (timeCapSeconds && mark === timeCapSeconds) {
+        const extra = Number(result.extra)
+        return `${category}:${mark}:extra-${Number.isFinite(extra) ? extra : 'none'}`
+      }
+      return `${category}:${mark}`
+    }
     const groups = (bundle.results || [])
       .filter((result) => String(result.phase_id) === String(scoreDraft.phase_id) && !isDnfMark(result.marca))
       .reduce((map, result) => {
-        const key = result.team_id ? `team-${result.team_id}` : `user-${result.user_id}`
-        const mark = Number(result.marca)
-        if (!Number.isFinite(mark)) return map
-        const groupKey = `${categoryMap[key] || result.categoria || 'Todas'}:${mark}`
+        const groupKey = persistedTieGroupKey(result)
+        if (!groupKey) return map
         if (!map[groupKey]) map[groupKey] = []
         map[groupKey].push(resultKey(scoreDraft.phase_id, { user_id: result.user_id, team_id: result.team_id }))
         return map
