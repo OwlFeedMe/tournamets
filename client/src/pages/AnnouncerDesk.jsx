@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Radio, RefreshCw, Trophy, Users } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Radio, RefreshCw, Trophy, Users } from 'lucide-react'
 import api from '../api/axios'
 
 const colors = {
@@ -119,6 +119,8 @@ export default function AnnouncerDesk() {
   const [live, setLive] = useState(null)
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [liveMode, setLiveMode] = useState(true)
+  const [manualHeatId, setManualHeatId] = useState('')
 
   const activeAssignments = assignments.filter((item) => item.status === 'active')
   const pendingAssignments = assignments.filter((item) => item.status === 'pending')
@@ -179,13 +181,39 @@ export default function AnnouncerDesk() {
     }
   }
 
-  const currentHeat = useMemo(() => selectCurrentHeat(live?.heats || []), [live])
+  const heatItems = live?.heats || []
+  const liveHeat = useMemo(() => selectCurrentHeat(heatItems), [heatItems])
+  const currentHeat = useMemo(() => {
+    if (liveMode) return liveHeat
+    return heatItems.find((heat) => String(heat.id) === String(manualHeatId)) || liveHeat
+  }, [heatItems, liveHeat, liveMode, manualHeatId])
+  const currentHeatIndex = useMemo(
+    () => heatItems.findIndex((heat) => String(heat.id) === String(currentHeat?.id)),
+    [heatItems, currentHeat],
+  )
   const nextHeat = useMemo(() => {
-    const heats = live?.heats || []
-    const index = heats.findIndex((heat) => String(heat.id) === String(currentHeat?.id))
-    return index >= 0 ? heats[index + 1] : null
-  }, [currentHeat, live])
+    return currentHeatIndex >= 0 ? heatItems[currentHeatIndex + 1] : null
+  }, [currentHeatIndex, heatItems])
   const rankRows = useMemo(() => rankRowsForHeat(live, currentHeat), [live, currentHeat])
+
+  useEffect(() => {
+    if (!manualHeatId || !heatItems.length) return
+    if (!heatItems.some((heat) => String(heat.id) === String(manualHeatId))) {
+      setManualHeatId('')
+      setLiveMode(true)
+    }
+  }, [heatItems, manualHeatId])
+
+  const goToHeat = (heatId) => {
+    if (!heatId) return
+    setManualHeatId(String(heatId))
+    setLiveMode(false)
+  }
+
+  const goLive = () => {
+    setManualHeatId('')
+    setLiveMode(true)
+  }
 
   return (
     <main style={{ minHeight: '100vh', background: colors.bg, color: colors.text, padding: isMobile ? '12px 12px 104px' : 18 }}>
@@ -225,6 +253,39 @@ export default function AnnouncerDesk() {
         {!activeAssignments.length && !pendingAssignments.length ? (
           <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 18, color: colors.secondary }}>
             No tienes competencias asignadas como locutor.
+          </section>
+        ) : null}
+
+        {live && heatItems.length ? (
+          <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: isMobile ? 12 : 14, display: 'grid', gap: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Pill tone={liveMode ? colors.accent : colors.border}>{liveMode ? 'En vivo' : 'Explorando'}</Pill>
+                <span style={{ color: colors.secondary, fontSize: 13 }}>{heatItems.length} heats disponibles</span>
+              </div>
+              <Button tone="primary" onClick={goLive} disabled={liveMode}><Radio size={15} />En vivo</Button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'auto minmax(260px, 1fr) auto auto', gap: 8, alignItems: 'center' }}>
+              <Button onClick={() => currentHeatIndex > 0 && goToHeat(heatItems[currentHeatIndex - 1]?.id)} disabled={currentHeatIndex <= 0}>
+                <ChevronLeft size={15} />Anterior
+              </Button>
+              <select
+                value={currentHeat?.id || ''}
+                onChange={(event) => goToHeat(event.target.value)}
+                style={{ minHeight: 38, border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, color: colors.text, padding: '8px 10px', fontWeight: 800, minWidth: 0, width: '100%' }}
+                aria-label="Seleccionar heat"
+              >
+                {heatItems.map((heat) => (
+                  <option key={heat.id} value={heat.id}>
+                    {`${heat.phase_name || 'WOD'} - ${heat.category || 'Sin categoria'} - Heat ${heat.heat_number}`}
+                  </option>
+                ))}
+              </select>
+              <Button onClick={() => currentHeatIndex >= 0 && currentHeatIndex < heatItems.length - 1 && goToHeat(heatItems[currentHeatIndex + 1]?.id)} disabled={currentHeatIndex < 0 || currentHeatIndex >= heatItems.length - 1}>
+                Siguiente<ChevronRight size={15} />
+              </Button>
+              <Button onClick={() => loadLive()} disabled={!competitionId || loading}><RefreshCw size={15} />Actualizar</Button>
+            </div>
           </section>
         ) : null}
 
