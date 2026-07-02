@@ -46,12 +46,14 @@ function flattenIndividual(individual = {}) {
 function rankRowsForHeat(live, heat) {
   if (!live || !heat) return []
   const phase = (live.leaderboard?.phases || []).find((item) => String(item.id) === String(heat.phase_id))
-  const source = phase?.individual && Object.keys(phase.individual || {}).length ? phase.individual : live.leaderboard?.individual
-  const rows = flattenIndividual(source)
   const category = String(heat.category || '').trim()
-  return rows
-    .filter((row) => !category || String(row.categoria || row.category || '').trim() === category)
-    .slice(0, 8)
+  const phaseRows = category && Array.isArray(phase?.individual?.[category]) ? phase.individual[category] : null
+  const totalRows = category && Array.isArray(live.leaderboard?.individual?.[category]) ? live.leaderboard.individual[category] : null
+  if (phaseRows) return phaseRows.slice(0, 8)
+  if (totalRows) return totalRows.slice(0, 8)
+
+  const source = phase?.individual && Object.keys(phase.individual || {}).length ? phase.individual : live.leaderboard?.individual
+  return flattenIndividual(source).slice(0, 8)
 }
 
 function selectCurrentHeat(heats = []) {
@@ -233,7 +235,8 @@ export default function AnnouncerDesk() {
 
             <aside style={{ display: 'grid', gap: 16 }}>
               <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 14 }}>
-                <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 16 }}><Trophy size={17} />Top actual</h2>
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: 16 }}><Trophy size={17} />Top de categoria</h2>
+                <div style={{ marginTop: 6, color: colors.secondary, fontSize: 12 }}>{currentHeat.category || 'Categoria general'} - {currentHeat.phase_name}</div>
                 <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
                   {rankRows.map((row) => (
                     <div key={row.id} style={{ display: 'grid', gridTemplateColumns: '44px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', borderBottom: `1px solid ${colors.border}`, paddingBottom: 8 }}>
@@ -245,7 +248,7 @@ export default function AnnouncerDesk() {
                       <div style={{ color: colors.primary, fontWeight: 950 }}>{row.total_puntos}</div>
                     </div>
                   ))}
-                  {!rankRows.length ? <div style={{ color: colors.secondary }}>Sin ranking para este heat.</div> : null}
+                  {!rankRows.length ? <div style={{ color: colors.secondary }}>Sin ranking para esta categoria.</div> : null}
                 </div>
               </section>
 
