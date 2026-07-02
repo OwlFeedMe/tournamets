@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, Clock3, Flame, MapPin, Medal, QrCode, X } from 'lucide-react'
+import { ArrowRight, Bell, CalendarDays, Clock3, Flame, MapPin, Medal, QrCode, Trash2, X } from 'lucide-react'
 import api from '../api/axios'
 import {
   CommandStrip,
@@ -30,6 +30,7 @@ import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
 import { formatCompetitionDateTime } from '../utils/competitionTimeZone'
+import { readSpectatorFollows, readSpectatorSnapshots, subscribeSpectatorFollows, unfollowAthlete } from '../utils/spectatorFollow'
 
 const premium = {
   bg: '#0F1114',
@@ -757,6 +758,50 @@ function PersonalHome({
   )
 }
 
+function SpectatorFollowPanel({ follows, onUnfollow }) {
+  if (!follows.length) return null
+  const snapshots = readSpectatorSnapshots()
+
+  return (
+    <section style={{ border: `1px solid ${premium.border}`, background: 'rgba(23,26,32,0.86)', borderRadius: 12, padding: 16, marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <Bell size={17} color="#FF6B00" />
+          <div style={{ color: premium.text, fontWeight: 900 }}>Atletas seguidos</div>
+        </div>
+        <Link to="/notifications" style={{ color: premium.teal, textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>
+          Ver actividad
+        </Link>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+        {follows.slice(0, 4).map((follow) => {
+          const snapshot = snapshots[`${follow.competitionId}:${follow.athleteId}`]
+          return (
+            <div key={`${follow.competitionId}:${follow.athleteId}`} style={{ border: '1px solid rgba(214,217,224,0.12)', background: '#0D0F12', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: premium.text, fontWeight: 900, overflowWrap: 'anywhere' }}>{follow.athleteName}</div>
+                <div style={{ color: premium.textMuted, fontSize: 12, marginTop: 3, overflowWrap: 'anywhere' }}>{follow.competitionName}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: premium.textSoft, fontSize: 12 }}>
+                {snapshot?.rank ? <span>#{snapshot.rank}</span> : null}
+                {snapshot?.totalPoints != null ? <span>{snapshot.totalPoints} pts</span> : null}
+                {follow.category ? <span>{follow.category}</span> : null}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
+                {follow.username ? <Link to={`/a/${follow.username}`} style={{ color: premium.teal, textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
+                <button type="button" aria-label="Dejar de seguir" onClick={() => onUnfollow(follow)} style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8, border: `1px solid ${premium.border}`, background: '#171A20', color: premium.textMuted, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 export default function HomeVariants({ variant = 1 }) {
   const navigate = useNavigate()
   const { session, role, userId, isAthlete } = useAuth()
@@ -773,6 +818,7 @@ export default function HomeVariants({ variant = 1 }) {
   const [qrError, setQrError] = useState('')
   const [qrPayload, setQrPayload] = useState(null)
   const [qrCompetitionName, setQrCompetitionName] = useState('')
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
   useEffect(() => {
@@ -780,6 +826,8 @@ export default function HomeVariants({ variant = 1 }) {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
 
   useEffect(() => {
     let active = true
@@ -954,6 +1002,11 @@ export default function HomeVariants({ variant = 1 }) {
         />
 
         <CommandStrip items={commandItems} isMobile={isMobile} />
+
+        <SpectatorFollowPanel
+          follows={spectatorFollows}
+          onUnfollow={(follow) => setSpectatorFollows(unfollowAthlete(follow.competitionId, follow.athleteId))}
+        />
 
         <section>
           <CompetitionSectionHeader totalVisible={competitionCards.length} query={query} />
