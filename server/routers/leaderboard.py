@@ -57,17 +57,44 @@ def _rank_by_category(rows, *, lower_is_better: bool = False) -> dict:
 
     result: dict[str, list] = {}
     for cat, members in by_cat.items():
-        if lower_is_better:
-            sorted_m = sorted(members, key=lambda x: (
-                1 if (x.get("total_eventos") or 0) == 0 else 0,
-                x["total_puntos"]
-            ))
-        else:
-            sorted_m = sorted(members, key=lambda x: x["total_puntos"], reverse=True)
+        sorted_m = _sort_total_rows(members, lower_is_better=lower_is_better)
         for rank, p in enumerate(sorted_m, 1):
             p["rank"] = rank
         result[cat] = sorted_m
     return result
+
+
+def _position_count_tiebreak_key(row: dict, max_position: int) -> tuple[int, ...]:
+    positions = [
+        int(value)
+        for value in (row.get("total_position_tiebreak") or [])
+        if value is not None and int(value) > 0
+    ]
+    counts: dict[int, int] = defaultdict(int)
+    for position in positions:
+        counts[position] += 1
+    return tuple(-counts.get(position, 0) for position in range(1, max_position + 1))
+
+
+def _sort_total_rows(rows: list[dict], *, lower_is_better: bool = False) -> list[dict]:
+    max_position = 0
+    for row in rows:
+        for value in row.get("total_position_tiebreak") or []:
+            if value is not None:
+                max_position = max(max_position, int(value))
+    max_position = max(max_position, 1)
+
+    def key(row: dict) -> tuple:
+        total_points = int(row.get("total_puntos") or 0)
+        point_key = total_points if lower_is_better else -total_points
+        return (
+            1 if (row.get("total_eventos") or 0) == 0 else 0,
+            point_key,
+            _position_count_tiebreak_key(row, max_position),
+            int(row.get("id") or 0),
+        )
+
+    return sorted(rows, key=key)
 
 
 def _competition_has_categories(session: Session, competition_id: int) -> bool:
@@ -129,6 +156,7 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             MAX(r.extra)                    AS max_extra,
             MIN(r.tiebreak)                 AS min_tiebreak,
             MAX(r.tiebreak)                 AS max_tiebreak,
+            MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)            AS has_active_appeal
         FROM results r
         LEFT JOIN result_appeals ra
@@ -149,6 +177,7 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "min_tiebreak": int(r["min_tiebreak"]) if r["min_tiebreak"] is not None else None,
             "max_tiebreak": int(r["max_tiebreak"]) if r["max_tiebreak"] is not None else None,
+            "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
@@ -173,6 +202,7 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             MAX(r.marca)                    AS max_mark,
             MIN(r.extra)                    AS min_extra,
             MAX(r.extra)                    AS max_extra,
+            MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
         JOIN teams t ON t.id = r.team_id
@@ -193,6 +223,7 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
             "min_extra": int(r["min_extra"]) if r["min_extra"] is not None else None,
             "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
+            "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
@@ -209,6 +240,7 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
+            MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
         LEFT JOIN result_appeals ra
@@ -225,6 +257,7 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
         }
         for r in rows
@@ -308,6 +341,7 @@ def _build_ind_rows(
                 "sexo": p["sexo"],
                 "total_puntos": int(agg["sum"]),
                 "total_eventos": int(agg["count"]),
+                "total_position_tiebreak": list(agg.get("positions") or []),
                 "mejor_marca": None,
                 "has_active_appeal": bool(agg.get("has_active_appeal")),
             })
@@ -580,10 +614,12 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     participants_meta = _fetch_participants_meta(session, competition_id)
     ind_points_per_phase = _fetch_ind_points_per_phase(session, competition_id)
 
-    ind_totals_by_pid: dict[int, dict] = defaultdict(lambda: {"sum": 0, "count": 0, "has_active_appeal": False})
+    ind_totals_by_pid: dict[int, dict] = defaultdict(lambda: {"sum": 0, "count": 0, "positions": [], "has_active_appeal": False})
     for (_ph, pid), data in ind_points_per_phase.items():
         ind_totals_by_pid[pid]["sum"] += data["sum"]
         ind_totals_by_pid[pid]["count"] += data["count"]
+        if data.get("best_position") is not None:
+            ind_totals_by_pid[pid]["positions"].append(int(data["best_position"]))
         ind_totals_by_pid[pid]["has_active_appeal"] = bool(ind_totals_by_pid[pid]["has_active_appeal"] or data.get("has_active_appeal"))
 
     individual = _rank_by_category(
@@ -605,11 +641,13 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         team_member_points_per_phase = _fetch_team_member_points_per_phase(session, competition_id)
         team_direct_per_phase = _fetch_team_direct_points_per_phase(session, competition_id)
         categories_map = _fetch_categories_map(session, competition_id)
-        team_member_totals_by_team_pid: dict[tuple[int, int], dict] = defaultdict(lambda: {"sum": 0, "count": 0, "has_active_appeal": False})
+        team_member_totals_by_team_pid: dict[tuple[int, int], dict] = defaultdict(lambda: {"sum": 0, "count": 0, "positions": [], "has_active_appeal": False})
         for (_ph, tid, pid), data in team_member_points_per_phase.items():
             key = (tid, pid)
             team_member_totals_by_team_pid[key]["sum"] += data["sum"]
             team_member_totals_by_team_pid[key]["count"] += data["count"]
+            if data.get("best_position") is not None:
+                team_member_totals_by_team_pid[key]["positions"].append(int(data["best_position"]))
             team_member_totals_by_team_pid[key]["has_active_appeal"] = bool(team_member_totals_by_team_pid[key]["has_active_appeal"] or data.get("has_active_appeal"))
     else:
         teams = []
@@ -686,6 +724,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "team_category": _resolve_team_category(t, global_members, competition_id, categories_map),
             "total_puntos": 0,
             "total_eventos": 0,
+            "total_position_tiebreak": [],
             "has_active_appeal": any(member.get("has_active_appeal") for member in global_members),
             "members": global_members,
         }
@@ -697,6 +736,8 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
                 continue
             base["total_puntos"] += int(tr.get("total_puntos") or 0)
             base["total_eventos"] += int(tr.get("total_eventos") or 0)
+            if tr.get("rank") is not None:
+                base["total_position_tiebreak"].append(int(tr["rank"]))
             base["has_active_appeal"] = bool(base.get("has_active_appeal") or tr.get("has_active_appeal"))
 
     teams_values = list(team_totals_map.values())
@@ -708,24 +749,12 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         teams_list: list[dict] = []
         for cat in sorted(by_cat.keys()):
             cat_rows = by_cat[cat]
-            if comp_lower_is_better:
-                cat_rows.sort(key=lambda x: (
-                    1 if (x.get("total_eventos") or 0) == 0 else 0,
-                    x["total_puntos"]
-                ))
-            else:
-                cat_rows.sort(key=lambda x: x["total_puntos"], reverse=True)
+            cat_rows = _sort_total_rows(cat_rows, lower_is_better=comp_lower_is_better)
             for idx, row in enumerate(cat_rows, 1):
                 row["rank"] = idx
             teams_list.extend(cat_rows)
     else:
-        if comp_lower_is_better:
-            teams_list = sorted(teams_values, key=lambda x: (
-                1 if (x.get("total_eventos") or 0) == 0 else 0,
-                x["total_puntos"]
-            ))
-        else:
-            teams_list = sorted(teams_values, key=lambda x: x["total_puntos"], reverse=True)
+        teams_list = _sort_total_rows(teams_values, lower_is_better=comp_lower_is_better)
         for idx, row in enumerate(teams_list, 1):
             row["rank"] = idx
 
