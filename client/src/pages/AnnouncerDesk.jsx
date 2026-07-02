@@ -76,12 +76,14 @@ export default function AnnouncerDesk() {
 
   const activeAssignments = assignments.filter((item) => item.status === 'active')
   const pendingAssignments = assignments.filter((item) => item.status === 'pending')
+  const activeAssignment = activeAssignments[0] || null
 
   const loadAssignments = async () => {
     const { data } = await api.get('/me/announcer-assignments')
     const items = Array.isArray(data) ? data : []
     setAssignments(items)
-    setCompetitionId((current) => current || items.find((item) => item.status === 'active')?.competition_id || '')
+    const active = items.find((item) => item.status === 'active')
+    setCompetitionId(active?.competition_id || '')
   }
 
   const loadLive = async (id = competitionId) => {
@@ -146,14 +148,9 @@ export default function AnnouncerDesk() {
           <div>
             <div style={{ color: colors.primary, fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 1.2 }}>Locutor</div>
             <h1 style={{ margin: '4px 0 0', fontSize: 28 }}>Cabina en vivo</h1>
-            <div style={{ color: colors.secondary, marginTop: 4 }}>{live?.competition?.nombre || 'Selecciona una competencia'}</div>
+            <div style={{ color: colors.secondary, marginTop: 4 }}>{live?.competition?.nombre || activeAssignment?.competition_name || 'Sin competencia activa'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {activeAssignments.length ? (
-              <select value={competitionId} onChange={(event) => setCompetitionId(event.target.value)} style={{ minHeight: 38, border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, color: colors.text, padding: '8px 10px', fontWeight: 800 }}>
-                {activeAssignments.map((item) => <option key={item.id} value={item.competition_id}>{item.competition_name}</option>)}
-              </select>
-            ) : null}
             <Button onClick={() => loadLive()} disabled={!competitionId || loading}><RefreshCw size={15} />Actualizar</Button>
             {competitionId ? <Link to={`/leaderboard/${competitionId}`} target="_blank" style={{ textDecoration: 'none' }}><Button><Trophy size={15} />Leaderboard</Button></Link> : null}
           </div>
