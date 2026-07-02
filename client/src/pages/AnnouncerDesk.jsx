@@ -67,7 +67,19 @@ function selectCurrentHeat(heats = []) {
   return heats.find((heat) => Number(heat.scored_lanes || 0) < Number(heat.total_lanes || 0)) || heats[0] || null
 }
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 780 : false))
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const onResize = () => setIsMobile(window.innerWidth < 780)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return isMobile
+}
+
 export default function AnnouncerDesk() {
+  const isMobile = useIsMobile()
   const [assignments, setAssignments] = useState([])
   const [competitionId, setCompetitionId] = useState('')
   const [live, setLive] = useState(null)
@@ -142,15 +154,15 @@ export default function AnnouncerDesk() {
   const rankRows = useMemo(() => rankRowsForHeat(live, currentHeat), [live, currentHeat])
 
   return (
-    <main style={{ minHeight: '100vh', background: colors.bg, color: colors.text, padding: 18 }}>
+    <main style={{ minHeight: '100vh', background: colors.bg, color: colors.text, padding: isMobile ? '12px 12px 104px' : 18 }}>
       <div style={{ maxWidth: 1280, margin: '0 auto', display: 'grid', gap: 16 }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 16 }}>
-          <div>
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: isMobile ? 12 : 16 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ color: colors.primary, fontSize: 12, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 1.2 }}>Locutor</div>
-            <h1 style={{ margin: '4px 0 0', fontSize: 28 }}>Cabina en vivo</h1>
-            <div style={{ color: colors.secondary, marginTop: 4 }}>{live?.competition?.nombre || activeAssignment?.competition_name || 'Sin competencia activa'}</div>
+            <h1 style={{ margin: '4px 0 0', fontSize: isMobile ? 23 : 28, lineHeight: 1.08 }}>Cabina en vivo</h1>
+            <div style={{ color: colors.secondary, marginTop: 4, overflowWrap: 'anywhere' }}>{live?.competition?.nombre || activeAssignment?.competition_name || 'Sin competencia activa'}</div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
             <Button onClick={() => loadLive()} disabled={!competitionId || loading}><RefreshCw size={15} />Actualizar</Button>
             {competitionId ? <Link to={`/leaderboard/${competitionId}`} target="_blank" style={{ textDecoration: 'none' }}><Button><Trophy size={15} />Leaderboard</Button></Link> : null}
           </div>
@@ -183,37 +195,37 @@ export default function AnnouncerDesk() {
         ) : null}
 
         {live && currentHeat ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.45fr) minmax(320px, 0.8fr)', gap: 16 }}>
-            <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.45fr) minmax(320px, 0.8fr)', gap: 16 }}>
+            <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: isMobile ? 12 : 16, display: 'grid', gap: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <Pill tone={colors.primary}><Radio size={13} /> Heat {currentHeat.heat_number}</Pill>
                     <Pill tone={colors.accent}>{currentHeat.category || 'Sin categoria'}</Pill>
                     <Pill>{currentHeat.scored_lanes}/{currentHeat.total_lanes} resultados</Pill>
                   </div>
-                  <h2 style={{ margin: '10px 0 0', fontSize: 24 }}>{currentHeat.phase_name}</h2>
-                  <div style={{ color: colors.secondary, marginTop: 4 }}>{currentHeat.name || `Heat ${currentHeat.heat_number}`}{currentHeat.location_name ? ` · ${currentHeat.location_name}` : ''}</div>
+                  <h2 style={{ margin: '10px 0 0', fontSize: isMobile ? 20 : 24, lineHeight: 1.12, overflowWrap: 'anywhere' }}>{currentHeat.phase_name}</h2>
+                  <div style={{ color: colors.secondary, marginTop: 4 }}>{currentHeat.name || `Heat ${currentHeat.heat_number}`}{currentHeat.location_name ? ` - ${currentHeat.location_name}` : ''}</div>
                 </div>
                 {nextHeat ? (
-                  <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, minWidth: 220 }}>
+                  <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, minWidth: isMobile ? 0 : 220, width: isMobile ? '100%' : 'auto' }}>
                     <div style={{ color: colors.muted, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>Siguiente</div>
                     <div style={{ fontWeight: 900, marginTop: 4 }}>{nextHeat.phase_name}</div>
-                    <div style={{ color: colors.secondary, fontSize: 12 }}>{nextHeat.category || 'Sin categoria'} · Heat {nextHeat.heat_number}</div>
+                    <div style={{ color: colors.secondary, fontSize: 12 }}>{nextHeat.category || 'Sin categoria'} - Heat {nextHeat.heat_number}</div>
                   </div>
                 ) : null}
               </div>
 
               <div style={{ display: 'grid', gap: 8 }}>
                 {currentHeat.assignments.map((item) => (
-                  <div key={`${item.lane_number}-${item.user_id || item.team_id}`} style={{ display: 'grid', gridTemplateColumns: '70px minmax(0, 1fr) 120px 100px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
-                    <div style={{ color: colors.primary, fontSize: 18, fontWeight: 950 }}>#{item.lane_number || '-'}</div>
+                  <div key={`${item.lane_number}-${item.user_id || item.team_id}`} style={{ display: 'grid', gridTemplateColumns: isMobile ? '44px minmax(0, 1fr)' : '70px minmax(0, 1fr) 120px 100px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
+                    <div style={{ color: colors.primary, fontSize: isMobile ? 16 : 18, fontWeight: 950 }}>#{item.lane_number || '-'}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 950, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{athleteName(item)}</div>
-                      <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{[item.box, item.team_name].filter(Boolean).join(' · ') || 'Sin box confirmado'}</div>
+                      <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{[item.box, item.team_name].filter(Boolean).join(' - ') || 'Sin box confirmado'}</div>
                     </div>
-                    <div style={{ color: item.result ? colors.accent : colors.secondary, fontWeight: 900 }}>{scoreLabel(item.result)}</div>
-                    <div style={{ textAlign: 'right', color: colors.secondary, fontWeight: 850 }}>{item.result?.posicion ? `P${item.result.posicion}` : '-'}</div>
+                    <div style={{ color: item.result ? colors.accent : colors.secondary, fontWeight: 900, gridColumn: isMobile ? '1 / span 1' : 'auto' }}>{scoreLabel(item.result)}</div>
+                    <div style={{ textAlign: isMobile ? 'left' : 'right', color: colors.secondary, fontWeight: 850 }}>{item.result?.posicion ? `P${item.result.posicion}` : '-'}</div>
                   </div>
                 ))}
               </div>
