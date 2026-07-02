@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CheckCircle2, Clock3, Circle, ExternalLink, X } from 'lucide-react'
+import { Bell, Check, CheckCircle2, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { loadCountries, parseCityCountry } from '../utils/locations'
+import { followAthlete, isFollowingAthlete, readSpectatorFollows, subscribeSpectatorFollows, unfollowAthlete } from '../utils/spectatorFollow'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
@@ -506,7 +507,7 @@ function summaryMetric(label, value, accent = THEME.ink) {
   )
 }
 
-function AthleteSummaryModal({ summary, onClose, isMobile }) {
+function AthleteSummaryModal({ summary, onClose, isMobile, following = false, onToggleFollow }) {
   useEffect(() => {
     if (!summary) return undefined
     const previousOverflow = document.body.style.overflow
@@ -630,6 +631,10 @@ function AthleteSummaryModal({ summary, onClose, isMobile }) {
           </div>
 
           <div className="lb-athlete-summary-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => onToggleFollow?.(athlete)} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: following ? '1px solid rgba(0,194,168,0.34)' : '1px solid rgba(255,107,0,0.34)', background: following ? 'rgba(0,194,168,0.14)' : 'rgba(255,107,0,0.14)', color: following ? '#B9FFF4' : '#FF9A3D', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {following ? <Check size={15} /> : <Bell size={15} />}
+              {following ? 'Siguiendo' : 'Seguir'}
+            </button>
             <button type="button" onClick={onClose} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, fontWeight: 800, cursor: 'pointer' }}>
               Cerrar
             </button>
@@ -1097,6 +1102,7 @@ export default function Leaderboard() {
   const [timerClockOffsetMs, setTimerClockOffsetMs] = useState(null)
   const [qrModalOpen, setQrModalOpen] = useState(false)
   const [selectedAthleteSummary, setSelectedAthleteSummary] = useState(null)
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [tvScrollableHeight, setTvScrollableHeight] = useState(null)
   const [countryCodeByName, setCountryCodeByName] = useState({})
   const intervalRef = useRef(null)
@@ -1123,6 +1129,8 @@ export default function Leaderboard() {
       .catch(() => {})
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
 
   useEffect(() => {
     api.get('/competitions?scope=public').then(r => {
@@ -1287,6 +1295,23 @@ export default function Leaderboard() {
   const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''
+
+  const toggleFollowAthlete = useCallback((athlete) => {
+    if (!selectedComp || !athlete?.id) return
+    if (isFollowingAthlete(selectedComp, athlete.id, spectatorFollows)) {
+      setSpectatorFollows(unfollowAthlete(selectedComp, athlete.id))
+      return
+    }
+    setSpectatorFollows(followAthlete({
+      competitionId: selectedComp,
+      competitionName: compName,
+      athleteId: athlete.id,
+      athleteName: athleteDisplayName(athlete),
+      username: athlete.username,
+      category: athlete.categoria,
+      avatarUrl: athlete.profile_photo_url,
+    }))
+  }, [compName, selectedComp, spectatorFollows])
 
   const openAthleteSummary = useCallback((athlete) => {
     if (tvMode) return
@@ -2265,7 +2290,13 @@ export default function Leaderboard() {
           )}
         </div>
       </div>
-      <AthleteSummaryModal summary={selectedAthleteSummary} onClose={closeAthleteSummary} isMobile={isMobile} />
+      <AthleteSummaryModal
+        summary={selectedAthleteSummary}
+        onClose={closeAthleteSummary}
+        isMobile={isMobile}
+        following={isFollowingAthlete(selectedComp, selectedAthleteSummary?.athlete?.id, spectatorFollows)}
+        onToggleFollow={toggleFollowAthlete}
+      />
       {qrModalOpen && !tvMode && selectedComp && (
         <div
           onClick={() => setQrModalOpen(false)}

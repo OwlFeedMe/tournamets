@@ -141,7 +141,6 @@ function appealStatusLabel(status) {
 }
 
 const PUBLIC_PROFILE_TOGGLES = [
-  ['public_profile_enabled', 'Perfil publico', 'Activa tu ficha para compartir tu presencia competitiva.'],
   ['public_profile_indexable', 'Indexacion', 'Permite que tu URL aparezca en busquedas externas.'],
   ['public_show_city', 'Ciudad', 'Muestra tu ciudad y pais en la ficha publica.'],
   ['public_show_gym', 'Gym', 'Muestra el gym que representas actualmente.'],
@@ -924,9 +923,9 @@ export default function ParticipantProfile() {
         ciudad_pais: res.data.ciudad_pais || '',
         username: res.data.username || '',
         display_name: res.data.display_name || '',
-        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_enabled: true,
         public_profile_indexable: !!res.data.public_profile_indexable,
-        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_profile_visibility: 'public',
         public_bio: res.data.public_bio || '',
         public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
         public_show_city: !!res.data.public_show_city,
@@ -1081,9 +1080,9 @@ export default function ParticipantProfile() {
     }
     publicPayload.username = (editForm.username || '').trim()
     publicPayload.display_name = (editForm.display_name || '').trim()
-    publicPayload.public_profile_enabled = editForm.public_profile_enabled ? 1 : 0
+    publicPayload.public_profile_enabled = 1
     publicPayload.public_profile_indexable = editForm.public_profile_indexable ? 1 : 0
-    publicPayload.public_profile_visibility = editForm.public_profile_visibility || 'private'
+    publicPayload.public_profile_visibility = 'public'
     publicPayload.public_bio = (editForm.public_bio || '').trim() || null
     publicPayload.public_cover_url = normalizePublicCoverPreset(editForm.public_cover_url)
     publicPayload.public_show_city = editForm.public_show_city ? 1 : 0
@@ -1122,9 +1121,9 @@ export default function ParticipantProfile() {
         ciudad_pais: res.data.ciudad_pais || '',
         username: res.data.username || '',
         display_name: res.data.display_name || '',
-        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_enabled: true,
         public_profile_indexable: !!res.data.public_profile_indexable,
-        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_profile_visibility: 'public',
         public_bio: res.data.public_bio || '',
         public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
         public_show_city: !!res.data.public_show_city,
@@ -1442,7 +1441,7 @@ export default function ParticipantProfile() {
   const gymHistory = gymMemberships.filter(m => m.id !== primaryGymMembership?.id)
   const canOpenOrganizerRequest = !organizerApplication || organizerApplication.status === 'rejected'
   const publicProfilePath = myProfile?.username ? `/a/${myProfile.username}` : ''
-  const isPublicProfileLive = Boolean(myProfile?.public_profile_enabled) && (myProfile?.public_profile_visibility || 'private') === 'public'
+  const isPublicProfileLive = Boolean(myProfile?.username)
   const canPreviewPublicProfile = Boolean(myProfile?.username)
   const profileRequirementNotice = location.state?.profileRequiredForEnrollment
     ? `Completa tu perfil antes de participar${location.state?.competitionName ? ` en ${location.state.competitionName}` : ''}. Faltan: ${formatMissingParticipantProfileFields(location.state?.missingFields || [])}.`
@@ -2083,14 +2082,10 @@ export default function ParticipantProfile() {
                         Define tu identidad visible y la URL de tu ficha competitiva.
                       </div>
                     </div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 999, border: `1px solid ${editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.34)' : editForm.username ? 'rgba(0,194,168,0.28)' : 'rgba(37,42,51,1)'}`, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.12)' : editForm.username ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.72)' }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 999, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#FF6B00' : editForm.username ? '#00C2A8' : '#6B7280', boxShadow: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '0 0 14px rgba(255,107,0,0.45)' : editForm.username ? '0 0 12px rgba(0,194,168,0.34)' : 'none' }} />
-                      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#F5F7FA' : editForm.username ? '#D7DEE8' : '#8B94A3' }}>
-                        {editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public'
-                          ? 'Visible'
-                          : editForm.username
-                            ? 'Vista previa'
-                            : 'Sin publicar'}
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 999, border: `1px solid ${editForm.username ? 'rgba(255,107,0,0.34)' : 'rgba(37,42,51,1)'}`, background: editForm.username ? 'rgba(255,107,0,0.12)' : 'rgba(9,11,14,0.72)' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: editForm.username ? '#FF6B00' : '#6B7280', boxShadow: editForm.username ? '0 0 14px rgba(255,107,0,0.45)' : 'none' }} />
+                      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: editForm.username ? '#F5F7FA' : '#8B94A3' }}>
+                        {editForm.username ? 'Visible' : 'Sin username'}
                       </span>
                     </div>
                   </div>
@@ -2135,13 +2130,6 @@ export default function ParticipantProfile() {
                           )
                         })}
                       </div>
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Visibilidad</label>
-                      <select value={editForm.public_profile_visibility || 'private'} onChange={e => setEditForm(f => ({ ...f, public_profile_visibility: e.target.value }))}>
-                        <option value="private">Privado</option>
-                        <option value="public">Publico</option>
-                      </select>
                     </div>
                     <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
                       {PUBLIC_PROFILE_TOGGLES.map(([field, label, description]) => (

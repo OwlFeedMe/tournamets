@@ -41,9 +41,9 @@ class User(SQLModel, table=True):
     estado: str = Field(default=EstadoParticipante.ACTIVO)
     username: Optional[str] = Field(default=None, index=True)
     display_name: Optional[str] = None
-    public_profile_enabled: int = Field(default=0)
+    public_profile_enabled: int = Field(default=1)
     public_profile_indexable: int = Field(default=1)
-    public_profile_visibility: str = Field(default=AthleteProfileVisibility.PRIVATE)
+    public_profile_visibility: str = Field(default=AthleteProfileVisibility.PUBLIC)
     public_bio: Optional[str] = None
     public_cover_url: Optional[str] = None
     public_show_city: int = Field(default=1)
@@ -1653,9 +1653,9 @@ class ParticipantProfile(SQLModel):
     estado: str = EstadoParticipante.ACTIVO
     username: Optional[str] = None
     display_name: Optional[str] = None
-    public_profile_enabled: int = 0
+    public_profile_enabled: int = 1
     public_profile_indexable: int = 1
-    public_profile_visibility: str = AthleteProfileVisibility.PRIVATE
+    public_profile_visibility: str = AthleteProfileVisibility.PUBLIC
     public_bio: Optional[str] = None
     public_cover_url: Optional[str] = None
     public_show_city: int = 1

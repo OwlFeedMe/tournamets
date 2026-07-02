@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { MapPin, Users, Search, X, LayoutGrid, List, ChevronRight } from 'lucide-react'
+import { Bell, Check, MapPin, Users, Search, X, LayoutGrid, List, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../../api/axios'
 import { SkeletonBlock, SkeletonCardGrid, SkeletonMetricGrid } from '../layout/Skeleton'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../../utils/competitionLayout'
 import { hexToRgba, resolveCompetitionTheme } from '../../utils/competitionTheme'
 import { loadCountries, parseCityCountry } from '../../utils/locations'
+import { followAthlete, isFollowingAthlete, readSpectatorFollows, subscribeSpectatorFollows, unfollowAthlete } from '../../utils/spectatorFollow'
 
 const INITIAL_VISIBLE_COUNT = 12
 
@@ -344,7 +345,37 @@ function CatDropdown({ activeCat, setActiveCat, options, allCount, theme }) {
   )
 }
 
-function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, compact = false }) {
+function FollowButton({ active, onClick, compact = false }) {
+  return (
+    <button
+      type="button"
+      aria-label={active ? 'Dejar de seguir atleta' : 'Seguir atleta'}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      style={{
+        minHeight: compact ? 34 : 38,
+        padding: compact ? '0 9px' : '0 12px',
+        borderRadius: 8,
+        border: active ? '1px solid rgba(0,194,168,0.36)' : '1px solid rgba(255,107,0,0.32)',
+        background: active ? 'rgba(0,194,168,0.16)' : 'rgba(255,107,0,0.14)',
+        color: active ? '#B9FFF4' : '#FF9A3D',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        fontSize: 12,
+        fontWeight: 900,
+        cursor: 'pointer',
+      }}
+    >
+      {active ? <Check size={14} /> : <Bell size={14} />}
+      {compact ? '' : (active ? 'Siguiendo' : 'Seguir')}
+    </button>
+  )
+}
+
+function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, onToggleFollow, following = false, compact = false }) {
   const displayName = getDisplayName(item)
   const subtitle = item.type === 'team'
     ? `${item.members?.length || 0} integrante${(item.members?.length || 0) === 1 ? '' : 's'}`
@@ -419,6 +450,11 @@ function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, compact = false }
             {getInitials(displayName)}
           </div>
         )}
+        {item.type === 'participant' ? (
+          <div style={{ position: 'absolute', right: compact ? 8 : 10, bottom: compact ? 8 : 10, zIndex: 3 }}>
+            <FollowButton active={following} onClick={() => onToggleFollow(item)} compact={compact} />
+          </div>
+        ) : null}
       </div>
       <div style={{ padding: compact ? '11px 11px 12px' : '14px 14px 16px' }}>
         <div style={{ fontFamily: '"Bebas Neue", sans-serif', fontSize: compact ? 20 : 26, lineHeight: 1.02, letterSpacing: '0.04em', marginBottom: compact ? 6 : 8, overflowWrap: 'anywhere' }}>
@@ -443,7 +479,7 @@ function AthleteCard({ item, itemIndex, tone, flagUrl, onOpen, compact = false }
   )
 }
 
-function AthleteListRow({ item, tone, flagUrl, onOpen }) {
+function AthleteListRow({ item, tone, flagUrl, onOpen, onToggleFollow, following = false }) {
   const displayName = getDisplayName(item)
   const subtitle = item.type === 'team'
     ? `${item.members?.length || 0} integrante${(item.members?.length || 0) === 1 ? '' : 's'}`
@@ -510,6 +546,7 @@ function AthleteListRow({ item, tone, flagUrl, onOpen }) {
         </div>
       </div>
       <div style={{ display: 'grid', justifyItems: 'end', gap: 8, flexShrink: 0 }}>
+        {item.type === 'participant' ? <FollowButton active={following} onClick={() => onToggleFollow(item)} compact /> : null}
         <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 8px', borderRadius: 999, border: `1px solid ${tone.pillBorder}`, background: tone.pillBg, color: tone.text, fontFamily: '"Barlow Condensed", sans-serif', fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', maxWidth: 120, overflowWrap: 'anywhere' }}>
           {item.categoryName}
         </span>
@@ -519,7 +556,7 @@ function AthleteListRow({ item, tone, flagUrl, onOpen }) {
   )
 }
 
-function AthleteModal({ item, onClose, tone, countryCodeByName }) {
+function AthleteModal({ item, onClose, tone, countryCodeByName, onToggleFollow, following = false }) {
   if (!item) return null
   const displayName = getDisplayName(item)
   const info = getCountryInfo(item.ciudad_pais, countryCodeByName)
@@ -627,6 +664,12 @@ function AthleteModal({ item, onClose, tone, countryCodeByName }) {
                 </div>
               </div>
             ) : null}
+            {item.type === 'participant' ? (
+              <button type="button" onClick={() => onToggleFollow(item)} style={{ width: '100%', minHeight: 44, borderRadius: 10, border: following ? '1px solid rgba(0,194,168,0.34)' : '1px solid rgba(255,107,0,0.34)', background: following ? 'rgba(0,194,168,0.14)' : 'rgba(255,107,0,0.14)', color: following ? '#B9FFF4' : '#FF9A3D', fontFamily: '"Barlow Condensed", sans-serif', fontSize: 13, fontWeight: 900, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                {following ? <Check size={16} /> : <Bell size={16} />}
+                {following ? 'Siguiendo atleta' : 'Seguir atleta'}
+              </button>
+            ) : null}
             <button type="button" onClick={onClose} style={{ width: '100%', minHeight: 44, borderRadius: 10, border: `1px solid ${hexToRgba(tone.text, 0.24)}`, background: hexToRgba(tone.text, 0.08), color: tone.text, fontFamily: '"Barlow Condensed", sans-serif', fontSize: 13, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
               Cerrar ficha
             </button>
@@ -652,12 +695,15 @@ export function CompetitionRosterPanel({
   const [searchQuery, setSearchQuery] = useState('')
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT)
   const [selectedParticipant, setSelectedParticipant] = useState(null)
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [mobileView, setMobileView] = useState('cards')
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
   }, [])
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -764,6 +810,23 @@ export function CompetitionRosterPanel({
 
   const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount])
 
+  const toggleFollow = (item) => {
+    if (!item || item.type !== 'participant') return
+    if (isFollowingAthlete(competitionId, item.id, spectatorFollows)) {
+      setSpectatorFollows(unfollowAthlete(competitionId, item.id))
+      return
+    }
+    setSpectatorFollows(followAthlete({
+      competitionId,
+      competitionName: competition?.nombre,
+      athleteId: item.id,
+      athleteName: getDisplayName(item),
+      username: item.username,
+      category: item.categoryName,
+      avatarUrl: item.profile_photo_url,
+    }))
+  }
+
   const categoryTabs = useMemo(() => {
     const tabs = [{
       key: 'all',
@@ -808,12 +871,14 @@ export function CompetitionRosterPanel({
           {items.map((item) => {
             const countryInfo = getCountryInfo(item.ciudad_pais, countryCodeByName)
             return (
-              <AthleteListRow
+                <AthleteListRow
                 key={`${sectionKey}-${item.id}`}
                 item={item}
                 tone={buildCategoryTone(item.categoryName, theme)}
                 flagUrl={countryInfo.flagUrl}
                 onOpen={setSelectedParticipant}
+                onToggleFollow={toggleFollow}
+                following={isFollowingAthlete(competitionId, item.id, spectatorFollows)}
               />
             )
           })}
@@ -833,6 +898,8 @@ export function CompetitionRosterPanel({
               tone={buildCategoryTone(item.categoryName, theme)}
               flagUrl={countryInfo.flagUrl}
               onOpen={setSelectedParticipant}
+              onToggleFollow={toggleFollow}
+              following={isFollowingAthlete(competitionId, item.id, spectatorFollows)}
               compact={isMobile}
             />
           )
@@ -1075,6 +1142,8 @@ export function CompetitionRosterPanel({
         onClose={() => setSelectedParticipant(null)}
         tone={selectedItemTone}
         countryCodeByName={countryCodeByName}
+        onToggleFollow={toggleFollow}
+        following={isFollowingAthlete(competitionId, selectedParticipant?.id, spectatorFollows)}
       />
     </div>
   )

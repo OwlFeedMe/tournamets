@@ -1,9 +1,10 @@
-import { CalendarDays, ChevronRight, Copy, MapPin, Medal, ShieldCheck, Trophy, UserRound, X } from 'lucide-react'
+import { Bell, CalendarDays, Check, ChevronRight, Copy, MapPin, Medal, ShieldCheck, Trophy, UserRound, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import { followAthlete, isFollowingAthlete, readSpectatorFollows, subscribeSpectatorFollows, unfollowAthlete } from '../utils/spectatorFollow'
 
 const COVER_PRESET_BACKGROUNDS = {
   ember: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
@@ -228,6 +229,7 @@ export default function AthletePublicProfile() {
   const [copied, setCopied] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [photoModalOpen, setPhotoModalOpen] = useState(false)
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
 
   useEffect(() => {
     let active = true
@@ -247,6 +249,8 @@ export default function AthletePublicProfile() {
       })
     return () => { active = false }
   }, [navigate, username])
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
 
   useEffect(() => {
     if (!profile) return
@@ -278,6 +282,23 @@ export default function AthletePublicProfile() {
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1600)
     } catch {}
+  }
+
+  const toggleFollowEvent = (event) => {
+    if (!profile?.id || !event?.id) return
+    if (isFollowingAthlete(event.id, profile.id, spectatorFollows)) {
+      setSpectatorFollows(unfollowAthlete(event.id, profile.id))
+      return
+    }
+    setSpectatorFollows(followAthlete({
+      competitionId: event.id,
+      competitionName: event.name,
+      athleteId: profile.id,
+      athleteName: profile.display_name,
+      username: profile.username,
+      category: event.category || profile.categoria,
+      avatarUrl: profile.avatar_url,
+    }))
   }
 
   if (error) {
@@ -382,6 +403,32 @@ export default function AthletePublicProfile() {
                         </div>
                         <ChevronRight size={18} color="#AAB2C0" style={{ flexShrink: 0 }} />
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={(clickEvent) => {
+                          clickEvent.stopPropagation()
+                          toggleFollowEvent(event)
+                        }}
+                        style={{
+                          minHeight: 36,
+                          justifySelf: 'start',
+                          borderRadius: 8,
+                          border: isFollowingAthlete(event.id, profile.id, spectatorFollows) ? '1px solid rgba(0,194,168,0.34)' : '1px solid rgba(255,107,0,0.34)',
+                          background: isFollowingAthlete(event.id, profile.id, spectatorFollows) ? 'rgba(0,194,168,0.14)' : 'rgba(255,107,0,0.14)',
+                          color: isFollowingAthlete(event.id, profile.id, spectatorFollows) ? '#B9FFF4' : '#FF9A3D',
+                          padding: '0 11px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 7,
+                          fontSize: 12,
+                          fontWeight: 900,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {isFollowingAthlete(event.id, profile.id, spectatorFollows) ? <Check size={14} /> : <Bell size={14} />}
+                        {isFollowingAthlete(event.id, profile.id, spectatorFollows) ? 'Siguiendo' : 'Seguir'}
+                      </button>
 
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                         <span style={{ padding: '5px 8px', borderRadius: 999, background: 'rgba(0,194,168,0.12)', border: '1px solid rgba(0,194,168,0.22)', color: '#B9FFF4', fontSize: 12, fontWeight: 800 }}>{eventSummary(event)}</span>

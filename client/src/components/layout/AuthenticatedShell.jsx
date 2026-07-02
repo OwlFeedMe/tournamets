@@ -5,6 +5,14 @@ import { BottomDock } from './BottomDock'
 import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api/axios'
+import {
+  buildAthleteLeaderboardSnapshot,
+  describeSnapshotChanges,
+  readSpectatorFollows,
+  readSpectatorSnapshots,
+  subscribeSpectatorFollows,
+  writeSpectatorSnapshot,
+} from '../../utils/spectatorFollow'
 
 const profileFieldLabels = {
   email: 'email',
@@ -447,6 +455,27 @@ export function AuthenticatedShell() {
         .catch(() => ({ kind: 'competitor', data: [] }))
     )
     if (session) {
+      const spectatorFollows = readSpectatorFollows()
+      if (spectatorFollows.length) {
+        const byCompetition = new Map()
+        spectatorFollows.forEach((follow) => {
+          const list = byCompetition.get(follow.competitionId) || []
+          list.push(follow)
+          byCompetition.set(follow.competitionId, list)
+        })
+        requests.push(
+          Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
+            try {
+              const { data } = await api.get(`/leaderboard/${competitionId}`)
+              return follows.map((follow) => ({ follow, leaderboard: data }))
+            } catch {
+              return []
+            }
+          }))
+            .then((groups) => ({ kind: 'spectatorFollows', data: groups.flat(), follows: spectatorFollows }))
+            .catch(() => ({ kind: 'spectatorFollows', data: [], follows: spectatorFollows }))
+        )
+      }
       requests.push(
         api.get('/users/me/profile-completeness')
           .then(({ data }) => ({ kind: 'profile', data }))
@@ -559,6 +588,42 @@ export function AuthenticatedShell() {
         unread += pendingCompetitorInvites.length
       }
 
+      const spectatorResult = results.find((item) => item.kind === 'spectatorFollows')
+      if (spectatorResult) {
+        const snapshots = readSpectatorSnapshots()
+        const followRows = Array.isArray(spectatorResult.data) ? spectatorResult.data : []
+        const follows = Array.isArray(spectatorResult.follows) ? spectatorResult.follows : []
+        followRows.forEach(({ follow, leaderboard }) => {
+          const snapshot = buildAthleteLeaderboardSnapshot(leaderboard, follow.athleteId)
+          if (!snapshot) return
+          const key = `${follow.competitionId}:${follow.athleteId}`
+          const changes = describeSnapshotChanges(snapshots[key], snapshot)
+          writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
+          changes.forEach((change) => {
+            dynamicItems.unshift({
+              title: change.title,
+              text: `${follow.competitionName}: ${change.body}`,
+              tone: change.type === 'rank_down' ? 'neutral' : 'success',
+              actions: [
+                { id: `spectator-board-${key}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: follow.competitionId },
+                ...(snapshot.username || follow.username ? [{ id: `spectator-profile-${key}`, label: 'Perfil', tone: 'secondary', actionType: 'go-to-athlete-profile', username: snapshot.username || follow.username }] : []),
+              ],
+            })
+            unread += 1
+          })
+        })
+        if (follows.length) {
+          dynamicItems.push({
+            title: `${follows.length} atleta${follows.length === 1 ? '' : 's'} en seguimiento`,
+            text: 'Revisa posiciones, resultados y proximos heats de amigos o competidores que sigues.',
+            tone: 'neutral',
+            actions: [
+              { id: 'spectator-follow-center', label: 'Ver seguimiento', tone: 'primary', actionType: 'go-to-notifications' },
+            ],
+          })
+        }
+      }
+
       const profileResult = results.find((item) => item.kind === 'profile')
       if (profileResult && !profileResult.data.complete) {
         const { missing_fields: missing = [], total_fields: total = 6, filled_fields: filled = 0 } = profileResult.data
@@ -650,6 +715,10 @@ export function AuthenticatedShell() {
       active = false
     }
   }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick])
+
+  useEffect(() => subscribeSpectatorFollows(() => {
+    setNotificationsRefreshTick((current) => current + 1)
+  }), [])
 
   const openNotifications = () => {
     setNotificationsRefreshTick((current) => current + 1)
@@ -772,6 +841,15 @@ export function AuthenticatedShell() {
         }
         setNotificationsOpen(false)
         navigate('/profile', { state: { openAppealId: action.appealId, openAppeals: true, notificationNonce: Date.now() } })
+      } else if (action.actionType === 'go-to-leaderboard') {
+        setNotificationsOpen(false)
+        navigate(`/leaderboard/${action.competitionId}`)
+      } else if (action.actionType === 'go-to-athlete-profile') {
+        setNotificationsOpen(false)
+        navigate(`/a/${action.username}`)
+      } else if (action.actionType === 'go-to-notifications') {
+        setNotificationsOpen(false)
+        navigate('/notifications')
       }
     } catch {
     } finally {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
+import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, Trash2, Trophy, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonCardGrid, SkeletonList } from '../components/layout/Skeleton'
@@ -12,6 +12,15 @@ import {
 } from '../components/home/homeModel'
 import { useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import {
+  buildAthleteLeaderboardSnapshot,
+  describeSnapshotChanges,
+  readSpectatorFollows,
+  readSpectatorSnapshots,
+  subscribeSpectatorFollows,
+  unfollowAthlete,
+  writeSpectatorSnapshot,
+} from '../utils/spectatorFollow'
 
 const pageStyle = {
   minHeight: '100vh',
@@ -534,19 +543,184 @@ export function MyEventsPage() {
   )
 }
 
+function formatNotificationTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function findNextScheduledHeat(schedule, athleteId) {
+  const now = Date.now()
+  return (schedule?.items || [])
+    .map((item) => {
+      const participant = (item.participants || []).find((entry) => String(entry.user_id ?? entry.id) === String(athleteId))
+      if (!participant) return null
+      const startMs = Date.parse(item.start_at || '')
+      return {
+        heatLabel: item.heat_label || `Heat ${item.heat_number || ''}`.trim(),
+        phaseName: item.phase_name || 'Workout',
+        startAt: item.start_at || '',
+        lane: participant.lane_number || participant.lane || '',
+        location: [item.location_name, item.location_detail].filter(Boolean).join(' · '),
+        sortTime: Number.isFinite(startMs) ? startMs : Number.MAX_SAFE_INTEGER,
+      }
+    })
+    .filter(Boolean)
+    .filter((item) => item.sortTime >= now || !item.startAt)
+    .sort((a, b) => a.sortTime - b.sortTime)[0] || null
+}
+
+function formatHeatTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
 export function NotificationsPage() {
   const { session, displayName } = useAuth()
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
+  const [spectatorFeed, setSpectatorFeed] = useState([])
+  const [nextHeats, setNextHeats] = useState({})
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
+
+  useEffect(() => {
+    if (!spectatorFollows.length) {
+      setSpectatorFeed([])
+      setNextHeats({})
+      setChecking(false)
+      return undefined
+    }
+    let active = true
+    const refresh = async () => {
+      setChecking(true)
+      const snapshots = readSpectatorSnapshots()
+      const feed = []
+      const byCompetition = new Map()
+      spectatorFollows.forEach((follow) => {
+        const list = byCompetition.get(follow.competitionId) || []
+        list.push(follow)
+        byCompetition.set(follow.competitionId, list)
+      })
+
+      const heatMap = {}
+      await Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
+        try {
+          const [{ data }, scheduleResult] = await Promise.all([
+            api.get(`/leaderboard/${competitionId}`),
+            api.get(`/competitions/${competitionId}/schedule`).catch(() => ({ data: null })),
+          ])
+          follows.forEach((follow) => {
+            const snapshot = buildAthleteLeaderboardSnapshot(data, follow.athleteId)
+            const nextHeat = findNextScheduledHeat(scheduleResult.data, follow.athleteId)
+            if (nextHeat) heatMap[`${follow.competitionId}:${follow.athleteId}`] = nextHeat
+            if (!snapshot) return
+            const key = `${follow.competitionId}:${follow.athleteId}`
+            const changes = describeSnapshotChanges(snapshots[key], snapshot)
+            writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
+            changes.forEach((change) => {
+              feed.push({
+                ...change,
+                id: `${key}:${change.type}:${Date.now()}`,
+                competitionId: follow.competitionId,
+                competitionName: follow.competitionName,
+                athleteId: follow.athleteId,
+                username: snapshot.username || follow.username,
+                createdAt: new Date().toISOString(),
+              })
+            })
+          })
+        } catch {}
+      }))
+
+      if (!active) return
+      setSpectatorFeed(feed)
+      setNextHeats(heatMap)
+      setChecking(false)
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 30000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [spectatorFollows])
 
   return (
     <div style={pageStyle}>
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Notificaciones"
-          title="Avisos clave de competencias y actividad reciente."
-          text="Encuentra novedades importantes, aperturas, cambios de evento y actualizaciones relacionadas con tu cuenta o con los eventos visibles."
+          title="Seguimiento de atletas y actividad reciente."
+          text="Mira cambios de puesto, puntos y resultados de los atletas que sigues en este navegador."
         />
 
         <section style={{ display: 'grid', gap: 14 }}>
+          <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Trophy size={18} color="#FF6B00" />
+                <div style={{ fontWeight: 900 }}>Atletas seguidos</div>
+              </div>
+              <div style={{ color: checking ? '#00C2A8' : '#6B7280', fontSize: 12, fontWeight: 800 }}>
+                {checking ? 'Actualizando' : `${spectatorFollows.length} activos`}
+              </div>
+            </div>
+            {!spectatorFollows.length ? (
+              <div style={{ marginTop: 12, color: '#AAB2C0', lineHeight: 1.6 }}>
+                Entra a una competencia, abre inscritos o leaderboard y toca Seguir en el atleta.
+              </div>
+            ) : (
+              <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
+                {spectatorFollows.map((follow) => (
+                  <div key={`${follow.competitionId}:${follow.athleteId}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: '1px solid #252A33', background: '#0D0F12', borderRadius: 12, padding: 12 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#F5F7FA', fontWeight: 900, overflowWrap: 'anywhere' }}>{follow.athleteName}</div>
+                      <div style={{ marginTop: 3, color: '#AAB2C0', fontSize: 12, overflowWrap: 'anywhere' }}>{follow.competitionName}{follow.category ? ` · ${follow.category}` : ''}</div>
+                      {nextHeats[`${follow.competitionId}:${follow.athleteId}`] ? (
+                        <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 12, fontWeight: 800, overflowWrap: 'anywhere' }}>
+                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].phaseName} · {nextHeats[`${follow.competitionId}:${follow.athleteId}`].heatLabel}
+                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].lane ? ` · Lane ${nextHeats[`${follow.competitionId}:${follow.athleteId}`].lane}` : ''}
+                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].startAt ? ` · ${formatHeatTime(nextHeats[`${follow.competitionId}:${follow.athleteId}`].startAt)}` : ''}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
+                      {follow.username ? <Link to={`/a/${follow.username}`} style={{ color: '#00C2A8', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
+                      <button type="button" aria-label="Dejar de seguir" onClick={() => setSpectatorFollows(unfollowAthlete(follow.competitionId, follow.athleteId))} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #252A33', background: '#171B21', color: '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Bell size={18} color="#00C2A8" />
+              <div style={{ fontWeight: 900 }}>Actividad detectada</div>
+            </div>
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              {spectatorFeed.length ? spectatorFeed.map((item) => (
+                <div key={item.id} style={{ border: '1px solid rgba(0,194,168,0.22)', background: 'rgba(0,194,168,0.08)', borderRadius: 12, padding: 12 }}>
+                  <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.title}</div>
+                  <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.45 }}>{item.body}</div>
+                  <div style={{ marginTop: 8, color: '#6B7280', fontSize: 12 }}>{item.competitionName} · {formatNotificationTime(item.createdAt)}</div>
+                </div>
+              )) : (
+                <div style={{ color: '#AAB2C0', lineHeight: 1.6 }}>
+                  {spectatorFollows.length ? 'Sin cambios nuevos desde la ultima revision.' : 'Sigue atletas para ver actividad aqui.'}
+                </div>
+              )}
+            </div>
+          </article>
+
           <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Bell size={18} color="#D6D9E0" />
@@ -555,7 +729,7 @@ export function NotificationsPage() {
             <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
               {session
                 ? 'Revisa aperturas de eventos, recordatorios de evento, movimientos del leaderboard y mensajes relacionados con tu participacion.'
-                : 'Consulta novedades generales e ingresa para ver alertas personalizadas de tus competencias.'}
+                : 'Este seguimiento se guarda solo en este navegador. Para avisos push reales se necesitara activar notificaciones del dispositivo.'}
             </div>
           </article>
 

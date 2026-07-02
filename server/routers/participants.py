@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_current_user_optional, get_effective_user_id, has_admin_access, invalidate_user, is_end_user, require_admin, require_auth
+from auth import get_current_user_optional, get_effective_user_id, invalidate_user, is_end_user, require_admin, require_auth
 from constants import AthleteProfileVisibility, GymMembershipStatus
 from database import get_session
 from models import AthleteUsernameAlias, Competition, CompetitionParticipant, CompetitionPhase, Gym, GymMembership, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, Result
@@ -504,8 +504,8 @@ def update_my_public_profile(
 
     payload = body.model_dump(exclude_unset=True)
     previous_username = participant.username
-    if "public_profile_visibility" in payload and payload["public_profile_visibility"] not in AthleteProfileVisibility.ALL:
-        raise HTTPException(400, "La visibilidad del perfil no es valida")
+    payload["public_profile_enabled"] = 1
+    payload["public_profile_visibility"] = AthleteProfileVisibility.PUBLIC
     if "display_name" in payload:
         payload["display_name"] = str(payload["display_name"] or "").strip() or build_default_display_name(participant)
     if "username" in payload:
@@ -561,15 +561,15 @@ def get_public_profile(
     if not participant:
         raise HTTPException(404, "Atleta no encontrado")
 
-    requester_user_id = get_effective_user_id(user) if user and is_end_user(user) else None
-    is_owner_preview = requester_user_id == int(participant.id or 0)
-    is_admin_preview = has_admin_access(user)
-    is_public = bool(
-        int(participant.public_profile_enabled or 0)
-        and participant.public_profile_visibility == AthleteProfileVisibility.PUBLIC
-    )
-    if not is_public and not is_owner_preview and not is_admin_preview:
-        raise HTTPException(404, "Atleta no encontrado")
+    if not participant.username:
+        participant.username = ensure_unique_username(
+            session,
+            build_public_username_seed(participant),
+            exclude_user_id=participant.id,
+        )
+        session.add(participant)
+        session.commit()
+        session.refresh(participant)
 
     return _serialize_public_profile(session, participant, requested_username=normalized)
 
