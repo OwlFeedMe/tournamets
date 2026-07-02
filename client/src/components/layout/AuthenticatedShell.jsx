@@ -437,6 +437,11 @@ export function AuthenticatedShell() {
         .catch(() => ({ kind: 'judge', data: [] }))
     )
     requests.push(
+      api.get('/me/announcer-assignments')
+        .then(({ data }) => ({ kind: 'announcer', data }))
+        .catch(() => ({ kind: 'announcer', data: [] }))
+    )
+    requests.push(
       api.get('/me/competitor-invitations')
         .then(({ data }) => ({ kind: 'competitor', data }))
         .catch(() => ({ kind: 'competitor', data: [] }))
@@ -514,6 +519,23 @@ export function AuthenticatedShell() {
             actions: [
               { id: `accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'accept' },
               { id: `reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'reject' },
+            ],
+          })
+        }
+        unread += pendingInvites.length
+      }
+
+      const announcerResult = results.find((item) => item.kind === 'announcer')
+      if (announcerResult) {
+        const pendingInvites = (Array.isArray(announcerResult.data) ? announcerResult.data : []).filter((item) => item.status === 'pending')
+        for (const invite of pendingInvites) {
+          dynamicItems.unshift({
+            title: `Invitacion de locutor: ${invite.competition_name}`,
+            text: 'Te invitaron a seguir esta competencia desde la cabina en vivo. Puedes aceptar o rechazar ahora.',
+            tone: 'neutral',
+            actions: [
+              { id: `announcer-accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'announcer-accept' },
+              { id: `announcer-reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'announcer-reject' },
             ],
           })
         }
@@ -697,11 +719,21 @@ export function AuthenticatedShell() {
         await api.post(`/judge-assignments/${action.assignmentId}/accept`)
         const me = await api.get('/auth/me')
         persistAuthSession({ ...me.data, access_token: session?.token })
-        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => ['accept', 'reject'].includes(row.actionType) && row.assignmentId === action.assignmentId)))
         setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'reject') {
         await api.post(`/judge-assignments/${action.assignmentId}/reject`)
-        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => ['accept', 'reject'].includes(row.actionType) && row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'announcer-accept') {
+        await api.post(`/announcer-assignments/${action.assignmentId}/accept`)
+        const me = await api.get('/auth/me')
+        persistAuthSession({ ...me.data, access_token: session?.token })
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.actionType?.startsWith('announcer-') && row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'announcer-reject') {
+        await api.post(`/announcer-assignments/${action.assignmentId}/reject`)
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.actionType?.startsWith('announcer-') && row.assignmentId === action.assignmentId)))
         setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'competitor-enroll') {
         setNotificationsOpen(false)
