@@ -1,4 +1,4 @@
-import { CalendarDays, Dumbbell, Gavel, House, LogIn, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { CalendarDays, Dumbbell, Gavel, House, LogIn, Radio, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
@@ -22,7 +22,7 @@ function buildDockItems(session) {
     ]
   }
 
-  const hasExtra = !!(session.organizerEnabled || session.judgeEnabled)
+  const hasExtra = !!(session.organizerEnabled || session.judgeEnabled || session.announcerEnabled)
   const items = [
     { label: 'Inicio', icon: House, to: '/' },
     { label: 'Gyms', icon: Dumbbell, to: '/gyms' },
@@ -41,6 +41,9 @@ function buildDockItems(session) {
   if (session.judgeEnabled) {
     items.push({ label: 'Juez', icon: Gavel, to: '/judge' })
   }
+  if (session.announcerEnabled) {
+    items.push({ label: 'Locutor', icon: Radio, to: '/announcer' })
+  }
   items.push({ label: 'Perfil', icon: UserCircle2, to: '/profile' })
   return items
 }
@@ -53,6 +56,7 @@ function isActivePath(pathname, target) {
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')
   if (target === '/judge') return pathname.startsWith('/judge')
+  if (target === '/announcer') return pathname.startsWith('/announcer')
   if (target === '/profile') return pathname.startsWith('/profile')
   return pathname === target || pathname.startsWith(`${target}?`)
 }

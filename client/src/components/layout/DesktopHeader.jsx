@@ -1,4 +1,4 @@
-import { Bell, CalendarDays, Dumbbell, Gavel, House, LogIn, LogOut, ShieldCheck, UserCircle2 } from 'lucide-react'
+import { Bell, CalendarDays, Dumbbell, Gavel, House, LogIn, LogOut, Radio, ShieldCheck, UserCircle2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../../utils/competitionLayout'
@@ -37,6 +37,9 @@ function buildNavItems(session) {
   if (session.judgeEnabled) {
     items.push({ label: 'Juez', icon: Gavel, to: '/judge' })
   }
+  if (session.announcerEnabled) {
+    items.push({ label: 'Locutor', icon: Radio, to: '/announcer' })
+  }
   items.push({ label: 'Perfil', icon: UserCircle2, to: '/profile' })
   return items
 }
@@ -50,6 +53,7 @@ function isActivePath(pathname, target) {
   if (target === '/admin') return pathname.startsWith('/admin')
   if (target === '/organizer') return pathname.startsWith('/organizer')
   if (target === '/judge') return pathname.startsWith('/judge')
+  if (target === '/announcer') return pathname.startsWith('/announcer')
   if (target === '/profile') return pathname.startsWith('/profile')
   return pathname === target || pathname.startsWith(`${target}?`)
 }

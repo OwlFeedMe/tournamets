@@ -178,7 +178,11 @@ export default function App() {
                 />
                 <Route
                   path="/announcer"
-                  element={<AnnouncerDesk />}
+                  element={
+                    <RoleGate allowedRoles={['announcer', 'admin']}>
+                      <AnnouncerDesk />
+                    </RoleGate>
+                  }
                 />
                 <Route
                   path="/organizer"
