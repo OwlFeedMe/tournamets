@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowRight, Bell, CalendarDays, Clock3, Flame, MapPin, Medal, QrCode, Trash2, X } from 'lucide-react'
+import { ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3, Flame, MapPin, Medal, QrCode, TrendingDown, TrendingUp, Trash2, X } from 'lucide-react'
 import api from '../api/axios'
 import {
   CommandStrip,
@@ -30,7 +30,15 @@ import { getHomePath, useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
 import { formatCompetitionDateTime } from '../utils/competitionTimeZone'
-import { readSpectatorFollows, readSpectatorSnapshots, subscribeSpectatorFollows, unfollowAthlete } from '../utils/spectatorFollow'
+import {
+  buildAthleteLeaderboardSnapshot,
+  describeSnapshotChanges,
+  readSpectatorFollows,
+  readSpectatorSnapshots,
+  subscribeSpectatorFollows,
+  unfollowAthlete,
+  writeSpectatorSnapshot,
+} from '../utils/spectatorFollow'
 
 const premium = {
   bg: '#0F1114',
@@ -758,7 +766,55 @@ function PersonalHome({
   )
 }
 
-function SpectatorFollowPanel({ follows, onUnfollow }) {
+function findNextPublicHeat(schedule, athleteId) {
+  const now = Date.now()
+  return (schedule?.items || [])
+    .map((item) => {
+      const participant = (item.participants || []).find((entry) => String(entry.user_id ?? entry.id) === String(athleteId))
+      if (!participant) return null
+      const startMs = Date.parse(item.start_at || '')
+      return {
+        phaseName: item.phase_name || 'Workout',
+        heatLabel: item.heat_label || `Heat ${item.heat_number || ''}`.trim(),
+        startAt: item.start_at || '',
+        lane: participant.lane_number || participant.lane || '',
+        location: [item.location_name, item.location_detail].filter(Boolean).join(' · '),
+        sortTime: Number.isFinite(startMs) ? startMs : Number.MAX_SAFE_INTEGER,
+      }
+    })
+    .filter(Boolean)
+    .filter((item) => item.sortTime >= now || !item.startAt)
+    .sort((a, b) => a.sortTime - b.sortTime)[0] || null
+}
+
+function formatFollowHeatTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function followStatus(snapshot) {
+  if (!snapshot) return { label: 'Pendiente', tone: premium.textMuted, icon: Clock3 }
+  if (snapshot.rank && snapshot.rank <= 3) return { label: 'Zona podio', tone: '#D4A537', icon: Medal }
+  if (snapshot.resultsCount > 0) return { label: 'En competencia', tone: premium.teal, icon: CheckCircle2 }
+  return { label: 'Sin resultados', tone: premium.textMuted, icon: Clock3 }
+}
+
+function bestFollowWorkout(snapshot) {
+  const rows = (snapshot?.phaseResults || []).filter((item) => item.rank != null)
+  if (!rows.length) return null
+  return [...rows].sort((a, b) => Number(a.rank) - Number(b.rank))[0]
+}
+
+function changeTone(change) {
+  if (change?.type === 'rank_up') return { color: premium.teal, icon: TrendingUp }
+  if (change?.type === 'rank_down') return { color: '#F59E0B', icon: TrendingDown }
+  if (change?.type === 'new_result') return { color: '#FF9A3D', icon: Flame }
+  return { color: premium.textMuted, icon: Bell }
+}
+
+function SpectatorFollowPanel({ follows, detailsByKey, onUnfollow, isMobile }) {
   if (!follows.length) return null
   const snapshots = readSpectatorSnapshots()
 
@@ -773,24 +829,88 @@ function SpectatorFollowPanel({ follows, onUnfollow }) {
           Ver actividad
         </Link>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
         {follows.slice(0, 4).map((follow) => {
-          const snapshot = snapshots[`${follow.competitionId}:${follow.athleteId}`]
+          const key = `${follow.competitionId}:${follow.athleteId}`
+          const detail = detailsByKey[key] || {}
+          const snapshot = detail.snapshot || snapshots[key]
+          const nextHeat = detail.nextHeat || null
+          const bestWorkout = bestFollowWorkout(snapshot)
+          const completed = Number(snapshot?.resultsCount || 0)
+          const total = Math.max(completed, Number(snapshot?.phaseResults?.length || 0))
+          const progressPct = total ? Math.min(100, Math.round((completed / total) * 100)) : 0
+          const status = followStatus(snapshot)
+          const StatusIcon = status.icon
+          const latestChange = detail.latestChange || null
+          const latestTone = changeTone(latestChange)
+          const ChangeIcon = latestTone.icon
           return (
-            <div key={`${follow.competitionId}:${follow.athleteId}`} style={{ border: '1px solid rgba(214,217,224,0.12)', background: '#0D0F12', borderRadius: 10, padding: 12, display: 'grid', gap: 9 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ color: premium.text, fontWeight: 900, overflowWrap: 'anywhere' }}>{follow.athleteName}</div>
-                <div style={{ color: premium.textMuted, fontSize: 12, marginTop: 3, overflowWrap: 'anywhere' }}>{follow.competitionName}</div>
+            <div key={key} style={{ border: '1px solid rgba(214,217,224,0.12)', background: '#0D0F12', borderRadius: 10, padding: 12, display: 'grid', gap: 11 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ color: premium.text, fontWeight: 900, overflowWrap: 'anywhere' }}>{follow.athleteName}</div>
+                  <div style={{ color: premium.textMuted, fontSize: 12, marginTop: 3, overflowWrap: 'anywhere' }}>{follow.competitionName}</div>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: status.tone, border: `1px solid ${status.tone}33`, background: `${status.tone}14`, borderRadius: 999, padding: '5px 8px', fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                  <StatusIcon size={12} />
+                  {status.label}
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: premium.textSoft, fontSize: 12 }}>
-                {snapshot?.rank ? <span>#{snapshot.rank}</span> : null}
-                {snapshot?.totalPoints != null ? <span>{snapshot.totalPoints} pts</span> : null}
-                {follow.category ? <span>{follow.category}</span> : null}
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                <div style={{ border: `1px solid ${premium.border}`, borderRadius: 8, padding: '8px 9px', background: '#111419' }}>
+                  <div style={{ color: premium.textMuted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puesto</div>
+                  <div style={{ color: snapshot?.rank ? '#FF9A3D' : premium.textMuted, fontSize: 18, fontWeight: 900, marginTop: 2 }}>#{snapshot?.rank ?? '-'}</div>
+                </div>
+                <div style={{ border: `1px solid ${premium.border}`, borderRadius: 8, padding: '8px 9px', background: '#111419' }}>
+                  <div style={{ color: premium.textMuted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puntos</div>
+                  <div style={{ color: premium.teal, fontSize: 18, fontWeight: 900, marginTop: 2 }}>{snapshot?.totalPoints ?? '-'}</div>
+                </div>
+                <div style={{ border: `1px solid ${premium.border}`, borderRadius: 8, padding: '8px 9px', background: '#111419' }}>
+                  <div style={{ color: premium.textMuted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>WODs</div>
+                  <div style={{ color: premium.text, fontSize: 18, fontWeight: 900, marginTop: 2 }}>{total ? `${completed}/${total}` : '-'}</div>
+                </div>
               </div>
+
+              {total ? (
+                <div style={{ height: 6, borderRadius: 999, background: 'rgba(214,217,224,0.10)', overflow: 'hidden' }}>
+                  <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+                </div>
+              ) : null}
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ border: `1px solid ${latestTone.color}30`, background: `${latestTone.color}10`, borderRadius: 8, padding: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: latestTone.color, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+                    <ChangeIcon size={13} />
+                    Ultimo cambio
+                  </div>
+                  <div style={{ color: premium.textSoft, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+                    {latestChange ? `${latestChange.title}. ${latestChange.body}` : 'Sin cambios nuevos desde la ultima revision.'}
+                  </div>
+                </div>
+
+                <div style={{ border: `1px solid ${premium.border}`, background: '#111419', borderRadius: 8, padding: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: premium.teal, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+                    <Clock3 size={13} />
+                    Proximo heat
+                  </div>
+                  <div style={{ color: premium.textSoft, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+                    {nextHeat
+                      ? `${nextHeat.phaseName} · ${nextHeat.heatLabel}${nextHeat.lane ? ` · Lane ${nextHeat.lane}` : ''}${nextHeat.startAt ? ` · ${formatFollowHeatTime(nextHeat.startAt)}` : ''}`
+                      : 'Sin heat publicado por ahora.'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: premium.textMuted, fontSize: 12 }}>
+                  {bestWorkout ? <span>Mejor: {bestWorkout.phaseName} #{bestWorkout.rank}</span> : null}
+                  {follow.category ? <span>{follow.category}</span> : null}
+                </div>
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
                 {follow.username ? <Link to={`/a/${follow.username}`} style={{ color: premium.teal, textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
-                <button type="button" aria-label="Dejar de seguir" onClick={() => onUnfollow(follow)} style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8, border: `1px solid ${premium.border}`, background: '#171A20', color: premium.textMuted, display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <button type="button" aria-label="Dejar de seguir" onClick={() => onUnfollow(follow)} style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8, border: `1px solid ${premium.border}`, background: '#171A20', color: premium.textMuted, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 0, cursor: 'pointer' }}>
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -819,6 +939,7 @@ export default function HomeVariants({ variant = 1 }) {
   const [qrPayload, setQrPayload] = useState(null)
   const [qrCompetitionName, setQrCompetitionName] = useState('')
   const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
+  const [spectatorDetails, setSpectatorDetails] = useState({})
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
 
   useEffect(() => {
@@ -828,6 +949,53 @@ export default function HomeVariants({ variant = 1 }) {
   }, [])
 
   useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
+
+  useEffect(() => {
+    if (!spectatorFollows.length) {
+      setSpectatorDetails({})
+      return undefined
+    }
+    let active = true
+    const refresh = async () => {
+      const snapshots = readSpectatorSnapshots()
+      const byCompetition = new Map()
+      spectatorFollows.forEach((follow) => {
+        const list = byCompetition.get(follow.competitionId) || []
+        list.push(follow)
+        byCompetition.set(follow.competitionId, list)
+      })
+
+      const nextDetails = {}
+      await Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
+        try {
+          const [{ data: leaderboard }, scheduleResult] = await Promise.all([
+            api.get(`/leaderboard/${competitionId}`),
+            api.get(`/competitions/${competitionId}/schedule`).catch(() => ({ data: null })),
+          ])
+          follows.forEach((follow) => {
+            const key = `${follow.competitionId}:${follow.athleteId}`
+            const snapshot = buildAthleteLeaderboardSnapshot(leaderboard, follow.athleteId)
+            const nextHeat = findNextPublicHeat(scheduleResult.data, follow.athleteId)
+            const changes = snapshot ? describeSnapshotChanges(snapshots[key], snapshot) : []
+            if (snapshot) writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
+            nextDetails[key] = {
+              snapshot: snapshot || snapshots[key] || null,
+              nextHeat,
+              latestChange: changes.find((change) => change.type !== 'tracking_started') || null,
+            }
+          })
+        } catch {}
+      }))
+      if (active) setSpectatorDetails(nextDetails)
+    }
+
+    refresh()
+    const timer = window.setInterval(refresh, 30000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [spectatorFollows])
 
   useEffect(() => {
     let active = true
@@ -1005,6 +1173,8 @@ export default function HomeVariants({ variant = 1 }) {
 
         <SpectatorFollowPanel
           follows={spectatorFollows}
+          detailsByKey={spectatorDetails}
+          isMobile={isMobile}
           onUnfollow={(follow) => setSpectatorFollows(unfollowAthlete(follow.competitionId, follow.athleteId))}
         />
 
