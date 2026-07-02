@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, Trash2, Trophy, X } from 'lucide-react'
+import { Bell, CalendarDays, CheckCircle2, ChevronRight, Clock3, Flame, Lock, MapPin, Medal, QrCode, Trash2, TrendingDown, TrendingUp, Trophy, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonCardGrid, SkeletonList } from '../components/layout/Skeleton'
@@ -13,14 +13,11 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import {
-  buildAthleteLeaderboardSnapshot,
-  describeSnapshotChanges,
   readSpectatorFollows,
-  readSpectatorSnapshots,
   subscribeSpectatorFollows,
   unfollowAthlete,
-  writeSpectatorSnapshot,
 } from '../utils/spectatorFollow'
+import { fetchFollowSummary } from '../utils/followSummary'
 
 const pageStyle = {
   minHeight: '100vh',
@@ -578,11 +575,119 @@ function formatHeatTime(value) {
   return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+function followStatus(snapshot) {
+  if (!snapshot) return { label: 'Pendiente', tone: '#6B7280', icon: Clock3 }
+  if (snapshot.rank && snapshot.rank <= 3) return { label: 'Zona podio', tone: '#D4A537', icon: Medal }
+  if (snapshot.resultsCount > 0) return { label: 'En competencia', tone: '#00C2A8', icon: CheckCircle2 }
+  return { label: 'Sin resultados', tone: '#6B7280', icon: Clock3 }
+}
+
+function bestFollowWorkout(snapshot) {
+  const rows = (snapshot?.phaseResults || []).filter((item) => item.rank != null)
+  if (!rows.length) return null
+  return [...rows].sort((a, b) => Number(a.rank) - Number(b.rank))[0]
+}
+
+function changeTone(change) {
+  if (change?.type === 'rank_up') return { color: '#00C2A8', icon: TrendingUp }
+  if (change?.type === 'rank_down') return { color: '#F59E0B', icon: TrendingDown }
+  if (change?.type === 'new_result') return { color: '#FF6B00', icon: Flame }
+  return { color: '#6B7280', icon: Bell }
+}
+
+function FollowDetailCard({ follow, detail, onUnfollow }) {
+  const snapshot = detail?.snapshot || null
+  const nextHeat = detail?.nextHeat || null
+  const bestWorkout = bestFollowWorkout(snapshot)
+  const completed = Number(snapshot?.resultsCount || 0)
+  const total = Math.max(completed, Number(snapshot?.phaseResults?.length || 0))
+  const progressPct = total ? Math.min(100, Math.round((completed / total) * 100)) : 0
+  const status = followStatus(snapshot)
+  const StatusIcon = status.icon
+  const latestChange = detail?.latestChange || null
+  const latestTone = changeTone(latestChange)
+  const ChangeIcon = latestTone.icon
+  const username = detail?.username || follow.username
+
+  return (
+    <article style={{ border: '1px solid #252A33', background: '#0D0F12', borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 900, overflowWrap: 'anywhere' }}>{detail?.athleteName || follow.athleteName}</div>
+          <div style={{ marginTop: 3, color: '#AAB2C0', fontSize: 12, overflowWrap: 'anywhere' }}>
+            {detail?.competitionName || follow.competitionName}{(detail?.category || follow.category) ? ` · ${detail?.category || follow.category}` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: status.tone, border: `1px solid ${status.tone}42`, background: `${status.tone}18`, borderRadius: 999, padding: '6px 9px', fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap' }}>
+          <StatusIcon size={12} />
+          {status.label}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puesto</div>
+          <div style={{ color: snapshot?.rank ? '#FF9A3D' : '#6B7280', fontSize: 20, fontWeight: 900 }}>#{snapshot?.rank ?? '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puntos</div>
+          <div style={{ color: '#00C2A8', fontSize: 20, fontWeight: 900 }}>{snapshot?.totalPoints ?? '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>WODs</div>
+          <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 900 }}>{total ? `${completed}/${total}` : '-'}</div>
+        </div>
+      </div>
+
+      {total ? (
+        <div style={{ height: 7, borderRadius: 999, background: 'rgba(245,247,250,0.10)', overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ border: `1px solid ${latestTone.color}33`, background: `${latestTone.color}12`, borderRadius: 10, padding: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: latestTone.color, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+            <ChangeIcon size={13} />
+            Ultimo cambio
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+            {latestChange ? `${latestChange.title}. ${latestChange.body}` : 'Sin cambios nuevos desde la ultima revision.'}
+          </div>
+        </div>
+        <div style={{ border: '1px solid #252A33', background: '#171B21', borderRadius: 10, padding: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#00C2A8', fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+            <Clock3 size={13} />
+            Proximo heat
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+            {nextHeat
+              ? `${nextHeat.phaseName} · ${nextHeat.heatLabel}${nextHeat.lane ? ` · Lane ${nextHeat.lane}` : ''}${nextHeat.startAt ? ` · ${formatHeatTime(nextHeat.startAt)}` : ''}`
+              : 'Sin heat publicado por ahora.'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: '#6B7280', fontSize: 12 }}>
+        {bestWorkout ? <span>Mejor WOD: {bestWorkout.phaseName} #{bestWorkout.rank}</span> : null}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
+        {username ? <Link to={`/a/${username}`} style={{ color: '#00C2A8', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
+        <button type="button" aria-label="Dejar de seguir" onClick={() => onUnfollow(follow)} style={{ marginLeft: 'auto', width: 34, height: 34, borderRadius: 9, border: '1px solid #252A33', background: '#171B21', color: '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 0, cursor: 'pointer' }}>
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
 export function NotificationsPage() {
   const { session, displayName } = useAuth()
   const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [spectatorFeed, setSpectatorFeed] = useState([])
-  const [nextHeats, setNextHeats] = useState({})
+  const [detailsByKey, setDetailsByKey] = useState({})
   const [checking, setChecking] = useState(false)
 
   useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
@@ -590,56 +695,25 @@ export function NotificationsPage() {
   useEffect(() => {
     if (!spectatorFollows.length) {
       setSpectatorFeed([])
-      setNextHeats({})
+      setDetailsByKey({})
       setChecking(false)
       return undefined
     }
     let active = true
     const refresh = async () => {
       setChecking(true)
-      const snapshots = readSpectatorSnapshots()
-      const feed = []
-      const byCompetition = new Map()
-      spectatorFollows.forEach((follow) => {
-        const list = byCompetition.get(follow.competitionId) || []
-        list.push(follow)
-        byCompetition.set(follow.competitionId, list)
-      })
-
-      const heatMap = {}
-      await Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
-        try {
-          const [{ data }, scheduleResult] = await Promise.all([
-            api.get(`/leaderboard/${competitionId}`),
-            api.get(`/competitions/${competitionId}/schedule`).catch(() => ({ data: null })),
-          ])
-          follows.forEach((follow) => {
-            const snapshot = buildAthleteLeaderboardSnapshot(data, follow.athleteId)
-            const nextHeat = findNextScheduledHeat(scheduleResult.data, follow.athleteId)
-            if (nextHeat) heatMap[`${follow.competitionId}:${follow.athleteId}`] = nextHeat
-            if (!snapshot) return
-            const key = `${follow.competitionId}:${follow.athleteId}`
-            const changes = describeSnapshotChanges(snapshots[key], snapshot)
-            writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
-            changes.forEach((change) => {
-              feed.push({
-                ...change,
-                id: `${key}:${change.type}:${Date.now()}`,
-                competitionId: follow.competitionId,
-                competitionName: follow.competitionName,
-                athleteId: follow.athleteId,
-                username: snapshot.username || follow.username,
-                createdAt: new Date().toISOString(),
-              })
-            })
-          })
-        } catch {}
-      }))
-
-      if (!active) return
-      setSpectatorFeed(feed)
-      setNextHeats(heatMap)
-      setChecking(false)
+      try {
+        const { detailsByKey: nextDetails, activity } = await fetchFollowSummary(spectatorFollows)
+        if (!active) return
+        setDetailsByKey(nextDetails)
+        setSpectatorFeed(activity)
+      } catch {
+        if (!active) return
+        setDetailsByKey({})
+        setSpectatorFeed([])
+      } finally {
+        if (active) setChecking(false)
+      }
     }
     refresh()
     const timer = window.setInterval(refresh, 30000)
@@ -674,28 +748,14 @@ export function NotificationsPage() {
                 Entra a una competencia, abre inscritos o leaderboard y toca Seguir en el atleta.
               </div>
             ) : (
-              <div style={{ marginTop: 14, display: 'grid', gap: 10 }}>
+              <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
                 {spectatorFollows.map((follow) => (
-                  <div key={`${follow.competitionId}:${follow.athleteId}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: '1px solid #252A33', background: '#0D0F12', borderRadius: 12, padding: 12 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ color: '#F5F7FA', fontWeight: 900, overflowWrap: 'anywhere' }}>{follow.athleteName}</div>
-                      <div style={{ marginTop: 3, color: '#AAB2C0', fontSize: 12, overflowWrap: 'anywhere' }}>{follow.competitionName}{follow.category ? ` · ${follow.category}` : ''}</div>
-                      {nextHeats[`${follow.competitionId}:${follow.athleteId}`] ? (
-                        <div style={{ marginTop: 6, color: '#00C2A8', fontSize: 12, fontWeight: 800, overflowWrap: 'anywhere' }}>
-                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].phaseName} · {nextHeats[`${follow.competitionId}:${follow.athleteId}`].heatLabel}
-                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].lane ? ` · Lane ${nextHeats[`${follow.competitionId}:${follow.athleteId}`].lane}` : ''}
-                          {nextHeats[`${follow.competitionId}:${follow.athleteId}`].startAt ? ` · ${formatHeatTime(nextHeats[`${follow.competitionId}:${follow.athleteId}`].startAt)}` : ''}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
-                      {follow.username ? <Link to={`/a/${follow.username}`} style={{ color: '#00C2A8', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
-                      <button type="button" aria-label="Dejar de seguir" onClick={() => setSpectatorFollows(unfollowAthlete(follow.competitionId, follow.athleteId))} style={{ width: 34, height: 34, borderRadius: 8, border: '1px solid #252A33', background: '#171B21', color: '#AAB2C0', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
+                  <FollowDetailCard
+                    key={`${follow.competitionId}:${follow.athleteId}`}
+                    follow={follow}
+                    detail={detailsByKey[`${follow.competitionId}:${follow.athleteId}`]}
+                    onUnfollow={(item) => setSpectatorFollows(unfollowAthlete(item.competitionId, item.athleteId))}
+                  />
                 ))}
               </div>
             )}

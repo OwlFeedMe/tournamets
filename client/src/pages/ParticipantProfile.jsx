@@ -341,7 +341,7 @@ function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
   )
 }
 
-function CompetitionDetailModal({ comp, participantId, allResults, appealsByResultId, onClose, isMobile, canAppealResult, onAppealResult, onOpenAppealThread }) {
+function CompetitionDetailModal({ comp, participantId, allResults, appealsByResultId, onClose, isMobile, appealDeadline, canAppealResult, onAppealResult, onOpenAppealThread }) {
   const [team, setTeam] = useState(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [pendingInvites, setPendingInvites] = useState([])
@@ -650,6 +650,9 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
               <div style={{ display: 'grid', gap: 6 }}>
                 {compResults.map(r => {
                   const resultAppeal = appealsByResultId?.[Number(r.id)] || null
+                  const deadline = appealDeadline?.(r)
+                  const appealExpired = !!deadline && Date.now() > deadline.getTime() && !r.active_appeal_id
+                  const deadlineLabel = deadline ? deadline.toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
                   return (
                   <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface }}>
                     <div style={{ minWidth: 0 }}>
@@ -667,6 +670,10 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
                         <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
                           Apelar resultado
                         </button>
+                      ) : appealExpired ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', color: '#F59E0B', fontSize: 11, fontWeight: 800 }}>
+                          <Clock3 size={12} /> Plazo vencido desde {deadlineLabel}
+                        </div>
                       ) : null}
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
@@ -1645,6 +1652,7 @@ export default function ParticipantProfile() {
           appealsByResultId={appealsByResultId}
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}
+          appealDeadline={appealDeadline}
           canAppealResult={canAppealResult}
           onOpenAppealThread={openAppealThread}
           onAppealResult={(result) => {

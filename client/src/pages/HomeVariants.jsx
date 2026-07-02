@@ -31,14 +31,12 @@ import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 import { getCompetitionEnrollmentNavigationTarget } from '../utils/enrollmentNavigation'
 import { formatCompetitionDateTime } from '../utils/competitionTimeZone'
 import {
-  buildAthleteLeaderboardSnapshot,
-  describeSnapshotChanges,
   readSpectatorFollows,
   readSpectatorSnapshots,
   subscribeSpectatorFollows,
   unfollowAthlete,
-  writeSpectatorSnapshot,
 } from '../utils/spectatorFollow'
+import { fetchFollowSummary } from '../utils/followSummary'
 
 const premium = {
   bg: '#0F1114',
@@ -902,7 +900,7 @@ function SpectatorFollowPanel({ follows, detailsByKey, onUnfollow, isMobile }) {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: premium.textMuted, fontSize: 12 }}>
-                  {bestWorkout ? <span>Mejor: {bestWorkout.phaseName} #{bestWorkout.rank}</span> : null}
+                  {bestWorkout ? <span>Mejor WOD: {bestWorkout.phaseName} #{bestWorkout.rank}</span> : null}
                   {follow.category ? <span>{follow.category}</span> : null}
                 </div>
               </div>
@@ -957,36 +955,12 @@ export default function HomeVariants({ variant = 1 }) {
     }
     let active = true
     const refresh = async () => {
-      const snapshots = readSpectatorSnapshots()
-      const byCompetition = new Map()
-      spectatorFollows.forEach((follow) => {
-        const list = byCompetition.get(follow.competitionId) || []
-        list.push(follow)
-        byCompetition.set(follow.competitionId, list)
-      })
-
-      const nextDetails = {}
-      await Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
-        try {
-          const [{ data: leaderboard }, scheduleResult] = await Promise.all([
-            api.get(`/leaderboard/${competitionId}`),
-            api.get(`/competitions/${competitionId}/schedule`).catch(() => ({ data: null })),
-          ])
-          follows.forEach((follow) => {
-            const key = `${follow.competitionId}:${follow.athleteId}`
-            const snapshot = buildAthleteLeaderboardSnapshot(leaderboard, follow.athleteId)
-            const nextHeat = findNextPublicHeat(scheduleResult.data, follow.athleteId)
-            const changes = snapshot ? describeSnapshotChanges(snapshots[key], snapshot) : []
-            if (snapshot) writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
-            nextDetails[key] = {
-              snapshot: snapshot || snapshots[key] || null,
-              nextHeat,
-              latestChange: changes.find((change) => change.type !== 'tracking_started') || null,
-            }
-          })
-        } catch {}
-      }))
-      if (active) setSpectatorDetails(nextDetails)
+      try {
+        const { detailsByKey } = await fetchFollowSummary(spectatorFollows)
+        if (active) setSpectatorDetails(detailsByKey)
+      } catch {
+        if (active) setSpectatorDetails({})
+      }
     }
 
     refresh()
@@ -1143,22 +1117,32 @@ export default function HomeVariants({ variant = 1 }) {
     <div style={{ minHeight: '100vh', background: homePageBg, color: premium.text }}>
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '18px 14px 112px' : '24px 18px 72px' }}>
         {session && isAthlete && userId ? (
-          <PersonalHome
-            isMobile={isMobile}
-            myComps={myComps}
-            publicCompetitions={featuredCompetitions}
-            primaryCompetition={primaryCompetition}
-            hasCurrentOrFuture={hasCurrentOrFuture}
-            leaderboard={leaderboardSummary}
-            results={myResults}
-            nextHeat={nextHeat}
-            loading={loading}
-            detailsLoading={detailsLoading}
-            onOpenQr={openQrModal}
-            onParticipate={handleParticipate}
-            enrollmentByComp={enrollmentByComp}
-            isAthlete={isAthlete}
-          />
+          <>
+            <PersonalHome
+              isMobile={isMobile}
+              myComps={myComps}
+              publicCompetitions={featuredCompetitions}
+              primaryCompetition={primaryCompetition}
+              hasCurrentOrFuture={hasCurrentOrFuture}
+              leaderboard={leaderboardSummary}
+              results={myResults}
+              nextHeat={nextHeat}
+              loading={loading}
+              detailsLoading={detailsLoading}
+              onOpenQr={openQrModal}
+              onParticipate={handleParticipate}
+              enrollmentByComp={enrollmentByComp}
+              isAthlete={isAthlete}
+            />
+            <div style={{ marginTop: 18 }}>
+              <SpectatorFollowPanel
+                follows={spectatorFollows}
+                detailsByKey={spectatorDetails}
+                isMobile={isMobile}
+                onUnfollow={(follow) => setSpectatorFollows(unfollowAthlete(follow.competitionId, follow.athleteId))}
+              />
+            </div>
+          </>
         ) : (
         <>
         <HomeVariantTop
