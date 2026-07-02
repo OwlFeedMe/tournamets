@@ -46,6 +46,22 @@ function normalizeProfileDraft(profile) {
   }
 }
 
+function profileDraftWithLocation(profileDraft, countries) {
+  if (!profileDraft) return profileDraft
+  const city = String(profileDraft._city || '').trim()
+  const countryCode = String(profileDraft._country || '').trim()
+  const selectedCountry = countries.find(c => c.code === countryCode)
+  const hasLocationDraft = Boolean(city || countryCode)
+  const ciudadPais = hasLocationDraft
+    ? buildCityCountry(city, selectedCountry?.name || '')
+    : String(profileDraft.ciudad_pais || '').trim()
+
+  return {
+    ...profileDraft,
+    ciudad_pais: ciudadPais,
+  }
+}
+
 const SHIRT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 
 const inputStyle = {
@@ -123,8 +139,8 @@ export default function CompetitionInvitationEnrollPage() {
   const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])
   const missingFields = useMemo(() => {
     if (!profileDraft) return []
-    return getMissingParticipantProfileFields(profileDraft)
-  }, [profileDraft])
+    return getMissingParticipantProfileFields(profileDraftWithLocation(profileDraft, countries))
+  }, [countries, profileDraft])
 
   const setP = (k, v) => setProfileDraft(prev => ({ ...prev, [k]: v }))
 
@@ -146,19 +162,18 @@ export default function CompetitionInvitationEnrollPage() {
     setSubmitErr('')
     setBusy(true)
     try {
-      const selectedCountry = countries.find(c => c.code === profileDraft._country)
-      const cityCountry = buildCityCountry(profileDraft._city, selectedCountry?.name || profileDraft._country)
+      const normalizedProfileDraft = profileDraftWithLocation(profileDraft, countries)
       const profilePayload = {
-        nombre: profileDraft.nombre,
-        apellido: profileDraft.apellido,
-        celular: profileDraft.celular,
-        sexo: profileDraft.sexo,
-        genero: profileDraft.genero,
-        cedula: profileDraft.cedula,
-        fecha_nacimiento: profileDraft.fecha_nacimiento || null,
-        ciudad_pais: cityCountry || profileDraft.ciudad_pais || null,
-        box: profileDraft.box || null,
-        talla_camiseta: profileDraft.talla_camiseta || null,
+        nombre: normalizedProfileDraft.nombre,
+        apellido: normalizedProfileDraft.apellido,
+        celular: normalizedProfileDraft.celular,
+        sexo: normalizedProfileDraft.sexo,
+        genero: normalizedProfileDraft.genero,
+        cedula: normalizedProfileDraft.cedula,
+        fecha_nacimiento: normalizedProfileDraft.fecha_nacimiento || null,
+        ciudad_pais: normalizedProfileDraft.ciudad_pais || null,
+        box: normalizedProfileDraft.box || null,
+        talla_camiseta: normalizedProfileDraft.talla_camiseta || null,
       }
       const answersPayload = questions.map(q => ({
         question_id: q.id,
