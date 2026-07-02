@@ -177,6 +177,49 @@ function EventDetailModal({ event, onClose }) {
   )
 }
 
+function ProfilePhotoModal({ imageUrl, displayName, onClose }) {
+  useEffect(() => {
+    if (!imageUrl) return undefined
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.body.classList.add('fr-modal-open')
+    window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: true } }))
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.classList.remove('fr-modal-open')
+      window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [imageUrl, onClose])
+
+  if (!imageUrl) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Foto de perfil de ${displayName}`}
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, zIndex: 95, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(18px + env(safe-area-inset-top, 0px)) 14px calc(18px + env(safe-area-inset-bottom, 0px))' }}
+    >
+      <div
+        onClick={(event) => event.stopPropagation()}
+        style={{ position: 'relative', width: 'min(100%, 760px)', maxHeight: 'calc(100dvh - 36px)', overflowY: 'auto', background: '#171B21', border: '1px solid #252A33', borderRadius: 8, boxShadow: '0 28px 90px rgba(0,0,0,0.56)' }}
+      >
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'flex-end', padding: 10, background: 'linear-gradient(180deg, rgba(23,27,33,0.98), rgba(23,27,33,0.72))' }}>
+          <button type="button" onClick={onClose} aria-label="Cerrar foto" style={{ width: 40, height: 40, borderRadius: 8, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', display: 'grid', placeItems: 'center', padding: 0, cursor: 'pointer' }}>
+            <X size={19} />
+          </button>
+        </div>
+        <div style={{ padding: '0 14px 14px', display: 'grid', placeItems: 'center' }}>
+          <img src={imageUrl} alt={displayName} style={{ display: 'block', width: '100%', maxHeight: 'calc(100dvh - 110px)', objectFit: 'contain', borderRadius: 8, background: '#090B0E' }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AthletePublicProfile() {
   const { username } = useParams()
   const navigate = useNavigate()
@@ -184,6 +227,7 @@ export default function AthletePublicProfile() {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState(null)
+  const [photoModalOpen, setPhotoModalOpen] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -277,9 +321,15 @@ export default function AthletePublicProfile() {
         <div className="fr-cut-card" style={{ overflow: 'hidden', border: '1px solid #252A33', background: '#171B21', marginBottom: 18 }}>
           <div style={{ minHeight: 220, background: coverBackground, padding: 24, display: 'flex', alignItems: 'flex-end' }}>
             <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', width: '100%', flexWrap: 'wrap' }}>
-              <div style={{ width: 92, height: 92, borderRadius: '50%', border: '3px solid rgba(245,247,250,0.24)', background: 'rgba(13,15,18,0.5)', overflow: 'hidden', display: 'grid', placeItems: 'center', fontSize: 34, fontWeight: 800 }}>
-                {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <UserRound size={40} />}
-              </div>
+              {profile.avatar_url ? (
+                <button type="button" onClick={() => setPhotoModalOpen(true)} aria-label={`Ver foto de ${profile.display_name}`} style={{ width: 92, height: 92, borderRadius: '50%', border: '3px solid rgba(245,247,250,0.24)', background: 'rgba(13,15,18,0.5)', overflow: 'hidden', display: 'grid', placeItems: 'center', fontSize: 34, fontWeight: 800, padding: 0, cursor: 'zoom-in' }}>
+                  <img src={profile.avatar_url} alt={profile.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </button>
+              ) : (
+                <div style={{ width: 92, height: 92, borderRadius: '50%', border: '3px solid rgba(245,247,250,0.24)', background: 'rgba(13,15,18,0.5)', overflow: 'hidden', display: 'grid', placeItems: 'center', fontSize: 34, fontWeight: 800 }}>
+                  <UserRound size={40} />
+                </div>
+              )}
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ fontFamily: '"Bebas Neue", monospace', fontSize: 42, lineHeight: 1, letterSpacing: '0.03em' }}>{profile.display_name}</div>
@@ -373,6 +423,7 @@ export default function AthletePublicProfile() {
         </div>
       </div>
       <EventDetailModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      <ProfilePhotoModal imageUrl={photoModalOpen ? profile.avatar_url : ''} displayName={profile.display_name} onClose={() => setPhotoModalOpen(false)} />
     </div>
   )
 }
