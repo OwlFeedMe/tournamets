@@ -39,6 +39,38 @@ function scoreLabel(result) {
   return [result.marca, result.extra != null ? `+${result.extra}` : null].filter(Boolean).join(' ') || 'Cargado'
 }
 
+function timeCapLabel(seconds) {
+  const value = Number(seconds || 0)
+  if (!Number.isFinite(value) || value <= 0) return ''
+  const minutes = Math.floor(value / 60)
+  const rest = value % 60
+  return rest ? `${minutes}:${String(rest).padStart(2, '0')}` : `${minutes}:00`
+}
+
+function WodBrief({ wod }) {
+  const parts = Array.isArray(wod?.parts) ? wod.parts.filter((item) => item?.description) : []
+  return (
+    <section style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: 15 }}>WOD de la categoria</h3>
+        <Pill tone={wod?.source === 'category' ? colors.accent : colors.border}>{wod?.source === 'category' ? 'Especifico' : 'Base'}</Pill>
+      </div>
+      {parts.length ? parts.map((part, index) => {
+        const cap = timeCapLabel(part.time_cap)
+        return (
+          <div key={`${part.label || 'wod'}-${index}`} style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              <div style={{ color: colors.primary, fontSize: 11, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 0.8 }}>{part.label || 'WOD'}</div>
+              {cap ? <div style={{ color: colors.secondary, fontSize: 11, fontWeight: 850 }}>Cap {cap}</div> : null}
+            </div>
+            <div style={{ color: colors.secondary, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>{part.description}</div>
+          </div>
+        )
+      }) : <div style={{ color: colors.secondary, fontSize: 13 }}>WOD por publicar.</div>}
+    </section>
+  )
+}
+
 function flattenIndividual(individual = {}) {
   return Object.entries(individual).flatMap(([category, rows]) => (rows || []).map((row) => ({ ...row, category })))
 }
@@ -217,6 +249,8 @@ export default function AnnouncerDesk() {
                   </div>
                 ) : null}
               </div>
+
+              <WodBrief wod={currentHeat.wod} />
 
               <div style={{ display: 'grid', gap: 8 }}>
                 {currentHeat.assignments.map((item) => (

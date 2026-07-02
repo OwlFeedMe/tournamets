@@ -1,3 +1,4 @@
+import json
 import re
 import os
 from datetime import datetime, timezone
@@ -10,7 +11,7 @@ from sqlmodel import Session, select
 from access import get_user_id, require_competition_access
 from auth import invalidate_user, require_auth, require_staff
 from database import get_session
-from models import Competition, CompetitionAnnouncerAssignment, Participant
+from models import Competition, CompetitionAnnouncerAssignment, CompetitionCategory, Participant
 from routers.leaderboard import _build_leaderboard_results_snapshot
 from services.emailer import send_email
 from services.email_templates import render_announcer_invitation
@@ -22,6 +23,70 @@ EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _parse_activity_items(raw: str | None) -> list[dict]:
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    return [dict(item) for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+
+def _text_value(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _wod_payload_for_heat(row: dict, category_ids_by_name: dict[str, int]) -> dict:
+    activities = _parse_activity_items(row.get("phase_activities"))
+    category_name = _text_value(row.get("categoria"))
+    category_key = category_name.lower()
+    category_id = category_ids_by_name.get(category_key)
+
+    base_activities = [item for item in activities if not item.get("_cat")]
+    category_activity = None
+    for item in activities:
+        if not item.get("_cat"):
+            continue
+        if category_id is not None and _text_value(item.get("_cat")) == str(category_id):
+            category_activity = item
+            break
+        if category_key and _text_value(item.get("_cat_name")).lower() == category_key:
+            category_activity = item
+            break
+
+    wod_a = (
+        _text_value(category_activity.get("descripcion")) if category_activity else ""
+    ) or (
+        _text_value(base_activities[0].get("descripcion")) if base_activities else ""
+    ) or _text_value(row.get("phase_description"))
+    wod_b = (
+        _text_value(category_activity.get("part_b_descripcion")) if category_activity else ""
+    ) or (
+        _text_value(base_activities[1].get("descripcion")) if len(base_activities) > 1 else ""
+    )
+
+    parts: list[dict] = []
+    if wod_a:
+        parts.append({
+            "label": "Parte A" if wod_b else "WOD",
+            "description": wod_a,
+            "time_cap": category_activity.get("time_cap") if category_activity else base_activities[0].get("time_cap") if base_activities else None,
+        })
+    if wod_b:
+        parts.append({
+            "label": "Parte B",
+            "description": wod_b,
+            "time_cap": category_activity.get("part_b_time_cap") if category_activity else base_activities[1].get("time_cap") if len(base_activities) > 1 else None,
+        })
+
+    return {
+        "category": category_name or None,
+        "source": "category" if category_activity else "base",
+        "parts": parts,
+    }
 
 
 def _normalize_email(value: str | None) -> str:
@@ -345,6 +410,8 @@ def announcer_live_view(
             h.location_detail,
             h.note,
             p.nombre AS phase_name,
+            p.descripcion AS phase_description,
+            p.activities AS phase_activities,
             p.estado AS phase_status,
             p.modality AS phase_modality,
             p.team_result_mode,
@@ -369,6 +436,15 @@ def announcer_live_view(
         GROUP BY h.id, p.id
         ORDER BY COALESCE(h.start_at, p.start_at), p.orden, h.heat_number, h.id
     """), {"cid": competition_id}).mappings().all()
+
+    categories = session.exec(
+        select(CompetitionCategory).where(CompetitionCategory.competition_id == competition_id)
+    ).all()
+    category_ids_by_name = {
+        str(category.nombre or "").strip().lower(): int(category.id)
+        for category in categories
+        if category.id is not None and str(category.nombre or "").strip()
+    }
 
     heat_ids = [int(row["id"]) for row in heats]
     assignments_by_heat: dict[int, list[dict]] = {heat_id: [] for heat_id in heat_ids}
@@ -444,6 +520,7 @@ def announcer_live_view(
             "phase_status": row["phase_status"],
             "phase_modality": row["phase_modality"],
             "team_result_mode": row["team_result_mode"],
+            "wod": _wod_payload_for_heat(row, category_ids_by_name),
             "category": row["categoria"],
             "name": row["nombre"],
             "heat_number": row["heat_number"],
