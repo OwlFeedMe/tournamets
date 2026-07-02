@@ -37,6 +37,11 @@ function inputStyle() {
   return { width: '100%', minHeight: 38, border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, color: colors.text, padding: '8px 10px', fontWeight: 750 }
 }
 
+function preventNumberInputWheel(event) {
+  if (event.currentTarget?.type !== 'number') return
+  event.currentTarget.blur()
+}
+
 function isTimePhase(phase) {
   return ['for_time', 'tiempo_hms', 'tiempo'].includes(String(phase?.measurement_method || phase?.tipo || '').toLowerCase())
 }
@@ -242,6 +247,9 @@ function ScoreTable({ assignment, phases, notify }) {
 
   const markLabel = isTimePhase(phase) ? 'Tiempo' : String(phase?.tipo || '').toLowerCase() === 'posicion' ? 'Posicion' : 'Marca'
   const loadedCount = rows.filter((row) => row.status === 'scored' || row.existing_mark != null).length
+  const scoreGridColumns = phase?.tie_break_enabled
+    ? '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px'
+    : '56px minmax(180px, 1fr) 120px 120px 90px 90px 90px 120px'
 
   return (
     <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
@@ -253,13 +261,13 @@ function ScoreTable({ assignment, phases, notify }) {
       </div>
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Pill tone={colors.primary}>{lowerIsBetter(phase) ? 'Menor marca gana' : 'Mayor marca gana'}</Pill>
-        {phase?.tie_break_enabled ? <Pill tone={colors.accent}>{tiebreakLowerIsBetter(phase) ? 'Menor tiebreak gana' : 'Mayor tiebreak gana'}</Pill> : <Pill>Sin tiebreak</Pill>}
+        {phase?.tie_break_enabled ? <Pill tone={colors.accent}>{tiebreakLowerIsBetter(phase) ? 'Menor tiebreak gana' : 'Mayor tiebreak gana'}</Pill> : null}
         {loading ? <span style={{ color: colors.secondary, fontSize: 12 }}>Cargando atletas...</span> : null}
       </div>
       <div style={{ overflow: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
         <div style={{ minWidth: 900 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px', gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
-            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>Extra</span><span>Tiebreak</span><span>Pos</span><span>Puntos</span><span>Accion</span>
+          <div style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
+            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>Extra</span>{phase?.tie_break_enabled ? <span>Tiebreak</span> : null}<span>Pos</span><span>Puntos</span><span>Accion</span>
           </div>
           {rows.length ? rows.map((row) => {
             const key = rowKey(phaseId, row)
@@ -268,13 +276,13 @@ function ScoreTable({ assignment, phases, notify }) {
             const dnf = isDnf(row)
             const rank = preview[key]
             return (
-              <div key={key} style={{ display: 'grid', gridTemplateColumns: '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px', gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
+              <div key={key} style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
                 <span style={{ color: colors.muted, fontWeight: 900 }}>{row.lane_number || '-'}</span>
                 <span style={{ fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name || 'Atleta'}</span>
                 <span style={{ color: colors.secondary, fontSize: 12 }}>{row.heat_name || '-'}</span>
-                {editable ? <input style={inputStyle()} type="number" value={dnf ? '' : markValue(row)} disabled={dnf} placeholder={dnf ? 'DNF' : 'Valor'} onChange={(event) => setField(row, 'marca', event.target.value)} /> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
-                {editable && phase?.extra_enabled ? <input style={inputStyle()} type="number" step="1" value={dnf ? '' : extraValue(row)} disabled={dnf} placeholder="Reps" onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.extra_enabled && !dnf ? extraValue(row) || '-' : '-'}</span>}
-                {editable && phase?.tie_break_enabled ? <input style={inputStyle()} type="number" value={dnf ? '' : tbValue(row)} disabled={dnf} placeholder="Opcional" onChange={(event) => setField(row, 'tiebreak', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.tie_break_enabled && !dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span>}
+                {editable ? <input style={inputStyle()} type="number" value={dnf ? '' : markValue(row)} disabled={dnf} placeholder={dnf ? 'DNF' : 'Valor'} onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'marca', event.target.value)} /> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
+                {editable && phase?.extra_enabled ? <input style={inputStyle()} type="number" step="1" value={dnf ? '' : extraValue(row)} disabled={dnf} placeholder="Reps" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.extra_enabled && !dnf ? extraValue(row) || '-' : '-'}</span>}
+                {phase?.tie_break_enabled ? (editable ? <input style={inputStyle()} type="number" value={dnf ? '' : tbValue(row)} disabled={dnf} placeholder="Opcional" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'tiebreak', event.target.value)} /> : <span style={{ color: colors.secondary }}>{!dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span>) : null}
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.posicion ?? '-'}</span>
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.puntos ?? '-'}</span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

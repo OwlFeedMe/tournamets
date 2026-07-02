@@ -390,6 +390,21 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
         >
           {athleteDisplayName(athlete)}
         </span>
+        {athlete?.box ? (
+          <span
+            style={{
+              color: THEME.soft,
+              fontSize: tvMode ? 14 : compact ? 11 : 12,
+              fontWeight: 700,
+              lineHeight: 1.15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {athlete.box}
+          </span>
+        ) : null}
         {countryLabel || flagUrl ? (
           <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
             {flagUrl ? (
@@ -657,7 +672,8 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
           return acc
         }, {})
         const shouldShowTiebreak = (item) => (
-          item?.tiebreak != null
+          !!phaseInfo?.tie_break_enabled
+          && item?.tiebreak != null
           && item?.mejor_marca != null
           && markCounts[String(item.mejor_marca)] > 1
         )

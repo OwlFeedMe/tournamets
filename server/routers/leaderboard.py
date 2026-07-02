@@ -290,6 +290,7 @@ def _build_ind_rows(
     phase_id: int | None,
     lower_is_better: bool,
     tiebreak_lower_is_better: bool = True,
+    tiebreak_enabled: bool = False,
 ) -> list[dict]:
     rows: list[dict] = []
     if phase_id is None:
@@ -316,7 +317,7 @@ def _build_ind_rows(
             if data:
                 mark = data["min"] if lower_is_better else data["max"]
                 extra = data["min_extra"]
-                tiebreak = data["min_tiebreak"] if tiebreak_lower_is_better else data["max_tiebreak"]
+                tiebreak = (data["min_tiebreak"] if tiebreak_lower_is_better else data["max_tiebreak"]) if tiebreak_enabled else None
                 total = int(data["sum"])
                 events = int(data["count"])
                 has_active_appeal = bool(data.get("has_active_appeal"))
@@ -629,6 +630,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             phase_id=int(phase.id),
             lower_is_better=phase_lower_is_better,
             tiebreak_lower_is_better=phase_tiebreak_lower_is_better,
+            tiebreak_enabled=bool(int(getattr(phase, "tie_break_enabled", 0) or 0)),
         ) if show_individual else []
         phase_mode = (phase.team_result_mode or "sum_two").strip().lower()
         if phase_mode not in {"sum_two", "single_member", "total"}:

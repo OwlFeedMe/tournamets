@@ -54,6 +54,11 @@ function AthleteNameLink({ username, children, style }) {
   )
 }
 
+function preventNumberInputWheel(event) {
+  if (event.currentTarget?.type !== 'number') return
+  event.currentTarget.blur()
+}
+
 function SuccessToast({ text, onDone }) {
   useEffect(() => {
     const t = setTimeout(onDone, 2800)
@@ -6721,6 +6726,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                           ref={node => { if (node) inputRefs.current[key] = node }}
                           type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
                           value={drafts[key] ?? ''}
+                          onWheel={preventNumberInputWheel}
                           onChange={event => changeDraft(item, event.target.value)}
                           onKeyDown={event => {
                             if (event.key === 'Enter') {
@@ -6753,6 +6759,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                           ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
                           type={tieBreakInputConfig.type}
                           value={tieBreakDrafts[key] ?? ''}
+                          onWheel={preventNumberInputWheel}
                           onChange={event => changeTieBreakDraft(item, event.target.value)}
                           onKeyDown={event => {
                             if (event.key === 'Enter') {
@@ -6805,6 +6812,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                             ref={node => { if (node) inputRefs.current[key] = node }}
                             type={isDnfValue(drafts[key]) ? 'text' : inputConfig.type}
                             value={drafts[key] ?? ''}
+                            onWheel={preventNumberInputWheel}
                             onChange={event => changeDraft(item, event.target.value)}
                             onKeyDown={event => {
                               if (event.key === 'Enter') {
@@ -6829,6 +6837,7 @@ function HeatResultsEntryPanel({ competition, isMobile = false }) {
                                 ref={node => { if (node) inputRefs.current[`tb-${key}`] = node }}
                                 type={tieBreakInputConfig.type}
                                 value={tieBreakDrafts[key] ?? ''}
+                                onWheel={preventNumberInputWheel}
                                 onChange={event => changeTieBreakDraft(item, event.target.value)}
                                 onKeyDown={event => {
                                   if (event.key === 'Enter') {

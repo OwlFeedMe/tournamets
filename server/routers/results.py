@@ -242,6 +242,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
         return
     phase = session.get(CompetitionPhase, phase_id)
     lower_is_better = _phase_lower_is_better(phase, comp)
+    tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
     tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
     score_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
 
@@ -291,7 +292,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 category_entities,
                 mark_getter=lambda item: item[1],
                 extra_getter=lambda item: item[2],
-                tiebreak_getter=lambda item: item[3],
+                tiebreak_getter=(lambda item: item[3]) if tiebreak_enabled else None,
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
             ):
@@ -341,7 +342,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 category_rows,
                 mark_getter=lambda item: item.marca,
                 extra_getter=lambda item: getattr(item, "extra", None),
-                tiebreak_getter=lambda item: item.tiebreak,
+                tiebreak_getter=(lambda item: item.tiebreak) if tiebreak_enabled else None,
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
             ):
@@ -356,7 +357,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             with_metric,
             mark_getter=lambda item: item.marca,
             extra_getter=lambda item: getattr(item, "extra", None),
-            tiebreak_getter=lambda item: item.tiebreak,
+            tiebreak_getter=(lambda item: item.tiebreak) if tiebreak_enabled else None,
             lower_is_better=lower_is_better,
             tiebreak_lower_is_better=tiebreak_lower_is_better,
         ):

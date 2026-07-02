@@ -59,6 +59,11 @@ function wodColorFor(value) {
   return wodColorPalette[Math.abs(hash) % wodColorPalette.length]
 }
 
+function preventNumberInputWheel(event) {
+  if (event.currentTarget?.type !== 'number') return
+  event.currentTarget.blur()
+}
+
 const stepTemplates = [
   {
     id: 'identity',
@@ -3049,6 +3054,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const timeCapSeconds = isTimePhase && Number(selectedPhase?.time_cap_seconds) > 0 ? Number(selectedPhase.time_cap_seconds) : null
   const timeCapLabel = timeCapSeconds ? formatSeconds(timeCapSeconds) : ''
   const tiebreakMethod = String(selectedPhase?.tie_break_method || 'for_time').trim().toLowerCase()
+  const tieBreakActive = !!Number(selectedPhase?.tie_break_enabled || 0)
   const isTiebreakTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(tiebreakMethod)
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(tiebreakMethod)
   const showExtraField = isTimePhase && !!timeCapSeconds
@@ -3102,7 +3108,7 @@ function ResultsPanel({ bundle, reload, notify }) {
       const rawMarca = Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
       const marca = draftDnf ? dnfMark() : parseMarkValue(rawMarca)
       const extra = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : existing?.extra
-      const tiebreak = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? parseTiebreakValue(draft.tiebreak) : existing?.tiebreak
+      const tiebreak = tieBreakActive && !draftDnf ? Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? parseTiebreakValue(draft.tiebreak) : existing?.tiebreak : null
       return {
         key,
         category: categoryMap[resultEntityKey(item)] || 'Todas',
@@ -3149,7 +3155,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         }
         const positionedGroups = []
         extraGroups.forEach((extraGroup) => {
-        if (extraGroup.length > 1 && extraGroup.every((item) => item.tiebreak !== null && !Number.isNaN(item.tiebreak))) {
+        if (tieBreakActive && extraGroup.length > 1 && extraGroup.every((item) => item.tiebreak !== null && !Number.isNaN(item.tiebreak))) {
           const sortedTie = [...extraGroup].sort((a, b) => tiebreakLowerIsBetter ? a.tiebreak - b.tiebreak : b.tiebreak - a.tiebreak)
           let tieIndex = 0
           while (tieIndex < sortedTie.length) {
@@ -3175,6 +3181,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     return out
   })()
   const persistedTieKeys = (() => {
+    if (!tieBreakActive) return new Set()
     const categoryMap = previewPool.reduce((map, item) => {
       map[resultEntityKey(item)] = item.categoria || 'Todas'
       return map
@@ -3211,21 +3218,21 @@ function ResultsPanel({ bundle, reload, notify }) {
         const value = markValue(row)
         if (value === '') continue
         const extra = extraValue(row)
-        const tiebreak = tiebreakValue(row)
+        const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
         const existing = existingResultFor(row)
         const rowDraft = marks[resultKey(scoreDraft.phase_id, row)] || {}
         const rowDnf = !!rowDraft.dnf
         const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
         if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
         if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
-        const parsedTiebreak = rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
-        if (!rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
+        const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
+        if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
         const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
         if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
         if (existing) {
           await api(`/results/${existing.id}`, {
             method: 'PUT',
-            body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: parsedTiebreak }),
+            body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null }),
           })
         } else {
           await api('/results', {
@@ -3237,7 +3244,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               team_id: row.team_id ? Number(row.team_id) : null,
               marca: parsedMark,
               extra: parsedExtra,
-              tiebreak: parsedTiebreak,
+              tiebreak: tieBreakActive ? parsedTiebreak : null,
             }),
           })
         }
@@ -3258,20 +3265,20 @@ function ResultsPanel({ bundle, reload, notify }) {
     const value = markValue(row)
     if (!rowDnf && value === '') return notify('Ingresa una marca o marca DNF', 'error')
     const extra = extraValue(row)
-    const tiebreak = tiebreakValue(row)
+    const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
     const existing = existingResultFor(row)
     const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
     if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
     if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
-    const parsedTiebreak = rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
-    if (!rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
+    const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
+    if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
     const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
     if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
     try {
       if (existing) {
         await api(`/results/${existing.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: parsedTiebreak }),
+          body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null }),
         })
       } else {
         await api('/results', {
@@ -3283,7 +3290,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             team_id: row.team_id ? Number(row.team_id) : null,
             marca: parsedMark,
             extra: parsedExtra,
-            tiebreak: parsedTiebreak,
+            tiebreak: tieBreakActive ? parsedTiebreak : null,
           }),
         })
       }
@@ -3317,6 +3324,9 @@ function ResultsPanel({ bundle, reload, notify }) {
   const markRuleLabel = lowerIsBetter ? 'Menor marca gana' : 'Mayor marca gana'
   const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata; luego tiebreak' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
   const scoringRuleLabel = scoreLowerIsBetter ? 'Menos puntos es mejor' : 'Mas puntos es mejor'
+  const resultCardGridColumns = tieBreakActive
+    ? 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))'
+    : 'minmax(120px, 1.1fr) repeat(4, minmax(90px, 1fr))'
   return (
     <Panel title="Resultados" subtitle="Carga por categoria y heat con guardado por atleta." action={<Pill tone={colors.accent}>{resultCountForPhase} cargados</Pill>}>
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
@@ -3346,9 +3356,9 @@ function ResultsPanel({ bundle, reload, notify }) {
           <Pill tone={colors.primary}>Formato {phaseFormatLabel}</Pill>
           {timeCapSeconds ? <Pill tone={colors.primary}>Cap {timeCapLabel}</Pill> : null}
           <Pill tone={colors.accent}>{markRuleLabel}</Pill>
-          <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill>
+          {tieBreakActive ? <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill> : null}
           <Pill tone={colors.secondary}>{scoringRuleLabel}</Pill>
-          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Extra aparece solo al cap y se guarda como tiempo + reps.' : 'Configura un cap para usar extra al time cap.') : 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.'}</span>
+          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Extra aparece solo al cap y se guarda como tiempo + reps.' : 'Configura un cap para usar extra al time cap.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
           <div className="fr-results-list" style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
@@ -3377,13 +3387,13 @@ function ResultsPanel({ bundle, reload, notify }) {
                       )}
                     </div>
                   </div>
-                  <div className="fr-result-card-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))', gap: 10, alignItems: 'stretch' }}>
+                  <div className="fr-result-card-grid" style={{ display: 'grid', gridTemplateColumns: resultCardGridColumns, gap: 10, alignItems: 'stretch' }}>
                     <span className="fr-result-heat fr-result-card-field" data-label="Heat" style={{ color: colors.secondary, fontSize: 13, overflowWrap: 'anywhere' }}>{row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat'}</span>
                     {editable ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{markLabel}</span>
                         <span style={{ display: 'grid', gridTemplateColumns: timeCapSeconds ? 'minmax(0, 1fr) auto' : '1fr', gap: 6 }}>
-                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf} />
+                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf} />
                           {timeCapSeconds ? <Button onClick={() => setCapResult(row)} disabled={rowDnf}>CAP</Button> : null}
                         </span>
                       </label>
@@ -3393,10 +3403,10 @@ function ResultsPanel({ bundle, reload, notify }) {
                     {showExtraInput ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{extraLabel}</span>
-                        <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={extraValue(row)} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" />
+                        <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={extraValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" />
                       </label>
                     ) : null}
-                    {editable ? (
+                    {tieBreakActive && editable ? (
                       <label className={`fr-result-input-wrap${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`}>
                         <span className={`fr-result-mobile-label${showTiebreakWarning ? ' fr-result-label-with-help' : ''}`}>
                           {tiebreakLabel}
@@ -3406,9 +3416,9 @@ function ResultsPanel({ bundle, reload, notify }) {
                             </span>
                           ) : null}
                         </span>
-                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
+                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
                       </label>
-                    ) : (
+                    ) : tieBreakActive ? (
                       <span className={`fr-result-readonly${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`} data-label={tiebreakLabel} style={{ color: colors.secondary, fontSize: 13 }}>
                         <span className="fr-result-value-with-help">
                           {rowDnf ? '-' : tiebreakValue(row) || '-'}
@@ -3419,7 +3429,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                           ) : null}
                         </span>
                       </span>
-                    )}
+                    ) : null}
                     <span className="fr-result-position fr-result-card-field" data-label="Posicion" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 13, fontWeight: dirty ? 900 : 800 }}>{preview?.posicion ?? existing?.posicion ?? '-'}</span>
                     <span className="fr-result-points fr-result-card-field" data-label="Puntos" style={{ color: dirty ? colors.primary : colors.secondary, fontSize: 13, fontWeight: dirty ? 900 : 800 }}>{preview?.puntos ?? existing?.puntos ?? '-'}</span>
                   </div>
