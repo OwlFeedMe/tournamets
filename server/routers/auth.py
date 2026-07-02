@@ -36,6 +36,8 @@ def _user_extra_roles(user: User | None) -> list[str]:
         extra_roles.append(Role.ORGANIZER)
     if int(user.judge_enabled or 0):
         extra_roles.append(Role.JUDGE)
+    if int(user.announcer_enabled or 0):
+        extra_roles.append(Role.ANNOUNCER)
     if int(user.admin_enabled or 0):
         extra_roles.append(Role.ADMIN)
     return extra_roles
@@ -48,6 +50,8 @@ def _effective_role(base_role: str, extra_roles: list[str]) -> str:
         return Role.ORGANIZER
     if Role.JUDGE in extra_roles:
         return Role.JUDGE
+    if Role.ANNOUNCER in extra_roles:
+        return Role.ANNOUNCER
     return base_role
 
 
@@ -69,6 +73,7 @@ def _session_token_payload(user: User) -> dict:
         "username": user.username,
         "organizer_enabled": bool(user.organizer_enabled),
         "judge_enabled": bool(user.judge_enabled),
+        "announcer_enabled": bool(user.announcer_enabled),
         "admin_enabled": bool(user.admin_enabled),
     }
 
@@ -86,6 +91,7 @@ def _token_response(user: User) -> TokenResponse:
         username=payload["username"],
         organizer_enabled=payload["organizer_enabled"],
         judge_enabled=payload["judge_enabled"],
+        announcer_enabled=payload["announcer_enabled"],
         admin_enabled=payload["admin_enabled"],
     )
 
@@ -102,6 +108,7 @@ def _me_response(user: User) -> MeResponse:
         username=payload["username"],
         organizer_enabled=payload["organizer_enabled"],
         judge_enabled=payload["judge_enabled"],
+        announcer_enabled=payload["announcer_enabled"],
         admin_enabled=payload["admin_enabled"],
     )
 

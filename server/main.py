@@ -23,6 +23,7 @@ from routers import (
     interest_notifications,
     checkin_qr,
     judges,
+    announcers,
     judge_cards,
     ticketing,
     discounts,
@@ -65,6 +66,7 @@ app.include_router(system_status.router)
 app.include_router(interest_notifications.router)
 app.include_router(checkin_qr.router)
 app.include_router(judges.router)
+app.include_router(announcers.router)
 app.include_router(judge_cards.router)
 app.include_router(ticketing.router)
 app.include_router(discounts.router)

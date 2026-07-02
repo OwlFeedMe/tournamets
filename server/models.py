@@ -55,6 +55,7 @@ class User(SQLModel, table=True):
     password_hash: Optional[str] = None
     organizer_enabled: int = Field(default=0)
     judge_enabled: int = Field(default=0)
+    announcer_enabled: int = Field(default=0)
     admin_enabled: int = Field(default=0)
     is_active: int = Field(default=1)
     created_at: Optional[datetime] = Field(
@@ -634,6 +635,50 @@ class CompetitionJudgeAssignment(SQLModel, table=True):
         UniqueConstraint("competition_id", "invited_email", name="uq_comp_judge_assignment_email"),
         Index("ix_comp_judge_assignment_competition", "competition_id"),
         Index("ix_comp_judge_assignment_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    invited_email: str = Field(index=True)
+    status: str = Field(default="pending", index=True)  # pending | active | rejected | revoked
+    invited_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    accepted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    rejected_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionAnnouncerAssignment(SQLModel, table=True):
+    __tablename__ = "competition_announcer_assignments"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "user_id", name="uq_comp_announcer_assignment_user"),
+        UniqueConstraint("competition_id", "invited_email", name="uq_comp_announcer_assignment_email"),
+        Index("ix_comp_announcer_assignment_competition", "competition_id"),
+        Index("ix_comp_announcer_assignment_status", "status"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -1537,6 +1582,7 @@ class TokenResponse(SQLModel):
     username: Optional[str] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
+    announcer_enabled: bool = False
     admin_enabled: bool = False
 
 
@@ -1550,6 +1596,7 @@ class MeResponse(SQLModel):
     username: Optional[str] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
+    announcer_enabled: bool = False
     admin_enabled: bool = False
 
 

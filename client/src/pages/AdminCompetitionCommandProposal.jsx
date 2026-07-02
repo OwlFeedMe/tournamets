@@ -292,7 +292,7 @@ function normalizeCompetition(raw, bundle = {}) {
 }
 
 async function loadCompetitionBundle(competitionId) {
-  const [competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, appeals, finance, leaderboard] = await Promise.all([
+  const [competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard] = await Promise.all([
     api(`/competitions/${competitionId}`),
     api(`/competitions/${competitionId}/participants`).catch(() => []),
     api(`/competitions/${competitionId}/categories`).catch(() => []),
@@ -305,12 +305,13 @@ async function loadCompetitionBundle(competitionId) {
     api(`/results?competition_id=${competitionId}`).catch(() => []),
     api(`/teams?competition_id=${competitionId}`).catch(() => []),
     api(`/competitions/${competitionId}/judges`).catch(() => []),
+    api(`/competitions/${competitionId}/announcers`).catch(() => []),
     api(`/competitions/${competitionId}/judge-audit`).catch(() => []),
     api(`/appeals?competition_id=${competitionId}`).catch(() => []),
     api(`/finance/competitions/${competitionId}`).catch(() => null),
     api(`/leaderboard/${competitionId}`).catch(() => null),
   ])
-  return { competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, judgeAudit, appeals, finance, leaderboard }
+  return { competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard }
 }
 
 function Pill({ children, tone = colors.border, filled = false }) {
@@ -3492,6 +3493,58 @@ function JudgesPanel({ bundle, reload, notify }) {
   )
 }
 
+function AnnouncersPanel({ bundle, reload, notify }) {
+  const competition = bundle.competition
+  const [email, setEmail] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
+  const invite = async () => {
+    try {
+      await api(`/competitions/${competition.id}/announcers/invite`, { method: 'POST', body: JSON.stringify({ email }) })
+      notify('Locutor invitado')
+      setEmail('')
+      setModalOpen(false)
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    }
+  }
+  const revoke = async (announcer) => {
+    try {
+      await api(`/competitions/${competition.id}/announcers/${announcer.id}`, { method: 'DELETE' })
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    }
+  }
+  return (
+    <Panel title="Locutores" subtitle="Acceso de solo lectura para narrar la competencia en vivo." action={<Button tone="primary" onClick={() => setModalOpen(true)}>Invitar locutor</Button>}>
+      {modalOpen ? (
+        <Modal title="Invitar locutor" onClose={() => setModalOpen(false)}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <Field label="Email del locutor"><input style={inputStyle()} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+            <div style={{ color: colors.secondary, fontSize: 12 }}>El locutor podra ver cabina en vivo, heats, carriles y leaderboard sin editar resultados.</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
+              <Button tone="primary" onClick={invite}>Enviar invitacion</Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+      {(bundle.announcers || []).map((announcer) => (
+        <div key={announcer.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
+          <div>
+            <strong>{announcer.announcer_display_name || announcer.announcer_participant_name || announcer.invited_email}</strong>
+            <div style={{ color: colors.secondary, fontSize: 12 }}>{announcer.announcer_username || announcer.invited_email}</div>
+          </div>
+          <Pill tone={announcer.status === 'active' ? colors.accent : colors.warning}>{announcer.status || 'pendiente'}</Pill>
+          <Button tone="danger" onClick={() => revoke(announcer)}>Revocar</Button>
+        </div>
+      ))}
+      {!(bundle.announcers || []).length ? <div style={{ color: colors.secondary, fontSize: 13 }}>Aun no hay locutores invitados.</div> : null}
+    </Panel>
+  )
+}
+
 const ACTIVE_APPEAL_STATUSES = ['submitted', 'under_review', 'needs_evidence', 'escalated']
 
 function appealStatusLabel(status) {
@@ -3805,6 +3858,7 @@ function LivePanel({ bundle, reload, notify }) {
     { id: 'results', label: 'Resultados', icon: Trophy, count: (bundle.results || []).length },
     { id: 'appeals', label: 'Reclamaciones', icon: MessageSquare, count: openAppeals.length },
     { id: 'judges', label: 'Jueces', icon: Users, count: (bundle.judges || []).length },
+    { id: 'announcers', label: 'Locutores', icon: Radio, count: (bundle.announcers || []).length },
     { id: 'broadcast', label: 'Pantalla', icon: Radio },
   ]
   return (
@@ -3813,6 +3867,7 @@ function LivePanel({ bundle, reload, notify }) {
       {section === 'results' && <ResultsPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'appeals' && <AppealsPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'judges' && <JudgesPanel bundle={bundle} reload={reload} notify={notify} />}
+      {section === 'announcers' && <AnnouncersPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'broadcast' && <BroadcastPanel bundle={bundle} reload={reload} notify={notify} />}
     </div>
   )

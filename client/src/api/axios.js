@@ -26,6 +26,7 @@ api.interceptors.response.use(
           localStorage.removeItem('user_id')
           localStorage.removeItem('organizer_enabled')
           localStorage.removeItem('judge_enabled')
+          localStorage.removeItem('announcer_enabled')
           localStorage.removeItem('admin_enabled')
           window.dispatchEvent(new Event('finalrep:session-changed'))
           window.location.href = '/login'

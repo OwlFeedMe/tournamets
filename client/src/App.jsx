@@ -18,6 +18,7 @@ const HomeVariants = lazy(() => import('./pages/HomeVariants'))
 const Leaderboard = lazy(() => import('./pages/Leaderboard'))
 const JudgeHub = lazy(() => import('./pages/JudgeHub'))
 const JudgeResultsPanel = lazy(() => import('./pages/JudgeResultsPanel'))
+const AnnouncerDesk = lazy(() => import('./pages/AnnouncerDesk'))
 const Login = lazy(() => import('./pages/Login'))
 const MyEventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.MyEventsPage })))
 const NotificationsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.NotificationsPage })))
@@ -174,6 +175,10 @@ export default function App() {
                       <Navigate to="/admin" replace />
                     </RoleGate>
                   }
+                />
+                <Route
+                  path="/announcer"
+                  element={<AnnouncerDesk />}
                 />
                 <Route
                   path="/organizer"

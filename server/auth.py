@@ -37,6 +37,7 @@ _USER_CACHE_FIELDS = (
     "role",
     "organizer_enabled",
     "judge_enabled",
+    "announcer_enabled",
     "admin_enabled",
     "is_active",
 )
@@ -58,6 +59,7 @@ def _deserialize_user(data: dict) -> User:
         password_hash=None,
         organizer_enabled=int(data.get("organizer_enabled") or 0),
         judge_enabled=int(data.get("judge_enabled") or 0),
+        announcer_enabled=int(data.get("announcer_enabled") or 0),
         admin_enabled=int(data.get("admin_enabled") or 0),
         is_active=int(data.get("is_active") or 0),
     )
@@ -153,6 +155,8 @@ def _effective_role(base_role: str, user: User) -> str:
         return Role.ORGANIZER
     if int(user.judge_enabled or 0):
         return Role.JUDGE
+    if int(user.announcer_enabled or 0):
+        return Role.ANNOUNCER
     return base_role
 
 
@@ -176,6 +180,8 @@ def _refresh_user_access(payload: dict, session: Session) -> dict:
         extra_roles.append(Role.ORGANIZER)
     if int(user.judge_enabled or 0):
         extra_roles.append(Role.JUDGE)
+    if int(user.announcer_enabled or 0):
+        extra_roles.append(Role.ANNOUNCER)
     if int(user.admin_enabled or 0):
         extra_roles.append(Role.ADMIN)
 
@@ -188,6 +194,7 @@ def _refresh_user_access(payload: dict, session: Session) -> dict:
     refreshed["role"] = _effective_role(user.role, user)
     refreshed["organizer_enabled"] = bool(user.organizer_enabled)
     refreshed["judge_enabled"] = bool(user.judge_enabled)
+    refreshed["announcer_enabled"] = bool(user.announcer_enabled)
     refreshed["admin_enabled"] = bool(user.admin_enabled)
     return refreshed
 
@@ -249,6 +256,14 @@ def has_judge_access(user: dict | None) -> bool:
     return bool(user.get("judge_enabled"))
 
 
+def has_announcer_access(user: dict | None) -> bool:
+    if not user:
+        return False
+    if user.get("role") == Role.ANNOUNCER:
+        return True
+    return bool(user.get("announcer_enabled"))
+
+
 def require_staff(user: dict = Depends(get_current_user)):
     if has_admin_access(user):
         return user
@@ -264,7 +279,7 @@ def is_end_user(user: dict) -> bool:
         return True
     return (
         get_current_user_id(user) is not None
-        and (has_organizer_access(user) or has_admin_access(user) or has_judge_access(user))
+        and (has_organizer_access(user) or has_admin_access(user) or has_judge_access(user) or has_announcer_access(user))
     )
 
 

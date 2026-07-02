@@ -10684,6 +10684,7 @@ function ParticipantsTab() {
       admin: { label: 'Admin', bg: 'rgba(214,217,224,0.14)', border: 'rgba(214,217,224,0.32)', color: '#FFB36F' },
       organizer: { label: 'Organizador', bg: 'rgba(94,234,212,0.12)', border: 'rgba(94,234,212,0.28)', color: '#8DF1E4' },
       judge: { label: 'Juez', bg: 'rgba(212,165,55,0.14)', border: 'rgba(212,165,55,0.28)', color: '#E9CB78' },
+      announcer: { label: 'Locutor', bg: 'rgba(0,194,168,0.12)', border: 'rgba(0,194,168,0.28)', color: '#8DF1E4' },
     }
     const item = map[value] || { label: 'Atleta', bg: 'rgba(255,255,255,0.04)', border: '#252A33', color: '#F5F7FA' }
     return (
@@ -10848,6 +10849,7 @@ function ParticipantsTab() {
                   <option value="">Atleta</option>
                   <option value="organizer">Organizador</option>
                   <option value="judge">Juez</option>
+                  <option value="announcer">Locutor</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>

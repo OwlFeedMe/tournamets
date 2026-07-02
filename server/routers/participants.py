@@ -593,6 +593,8 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
             extra_role = "organizer"
         elif int(participant.judge_enabled or 0):
             extra_role = "judge"
+        elif int(getattr(participant, "announcer_enabled", 0) or 0):
+            extra_role = "announcer"
 
         payload = participant.model_dump()
         payload["user_id"] = participant.id
@@ -602,6 +604,7 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
         payload["extra_role"] = extra_role
         payload["organizer_enabled"] = bool(int(participant.organizer_enabled or 0))
         payload["judge_enabled"] = bool(int(participant.judge_enabled or 0))
+        payload["announcer_enabled"] = bool(int(getattr(participant, "announcer_enabled", 0) or 0))
         payload["admin_enabled"] = bool(int(participant.admin_enabled or 0))
         items.append(payload)
     return items
@@ -619,12 +622,13 @@ def update_participant_role(
         raise HTTPException(404, "Usuario no encontrado")
 
     extra_role = str(body.get("extra_role") or "").strip().lower()
-    if extra_role not in {"", "user", "organizer", "judge", "admin"}:
+    if extra_role not in {"", "user", "organizer", "judge", "announcer", "admin"}:
         raise HTTPException(400, "Rol invalido")
 
     participant.role = "user"
     participant.organizer_enabled = 1 if extra_role == "organizer" else 0
     participant.judge_enabled = 1 if extra_role == "judge" else 0
+    participant.announcer_enabled = 1 if extra_role == "announcer" else 0
     participant.admin_enabled = 1 if extra_role == "admin" else 0
     session.add(participant)
     session.commit()
