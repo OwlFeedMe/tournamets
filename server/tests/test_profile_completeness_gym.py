@@ -2,7 +2,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from routers.participants import _get_missing_profile_fields
+from fastapi import HTTPException
+
+from routers.participants import _get_missing_profile_fields, _require_profile_phone
 
 
 def _profile(**extra):
@@ -31,6 +33,13 @@ class ProfileCompletenessGymTests(unittest.TestCase):
     def test_active_gym_membership_completes_gym_requirement(self):
         with patch("routers.participants._has_active_gym_membership", return_value=True):
             self.assertNotIn("gym", _get_missing_profile_fields(_profile(), session=object()))
+
+    def test_profile_phone_is_required_when_updating_profile(self):
+        with self.assertRaises(HTTPException) as ctx:
+            _require_profile_phone({"celular": ""}, _profile(celular="3001234567"))
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.detail, "El celular es obligatorio")
 
 
 if __name__ == "__main__":

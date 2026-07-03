@@ -1085,6 +1085,12 @@ export default function ParticipantProfile() {
       const trimmed = typeof v === 'string' ? v.trim() : v
       if (trimmed) payload[k] = trimmed
     }
+    payload.celular = (editForm.celular || '').trim()
+    if (!payload.celular) {
+      setEditBusy(false)
+      setEditMsg({ type: 'error', text: 'Ingresa tu celular para guardar el perfil' })
+      return
+    }
     publicPayload.username = (editForm.username || '').trim()
     publicPayload.display_name = (editForm.display_name || '').trim()
     publicPayload.public_profile_enabled = 1
@@ -1995,7 +2001,7 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
-                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" style={inputHighlightStyle(shouldHighlightField('celular'))} />
+                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" required style={inputHighlightStyle(shouldHighlightField('celular'))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Email</label>
