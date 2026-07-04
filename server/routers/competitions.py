@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from PIL import Image, UnidentifiedImageError
 import qrcode
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
@@ -23,16 +23,28 @@ from database import MAX_TEAM_SIZE, get_session
 from models import (
     Competition,
     CompetitionCategory,
+    CompetitionPhase,
     CompetitionCreate,
     CompetitionParticipant,
     CompetitionUpdate,
     Participant,
+    Result,
     Team,
     TeamMember,
 )
 from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import (
+    normalize_scoring_direction,
+    normalize_scoring_scope,
+    normalize_scoring_system,
+    normalize_scoring_table,
+    normalize_scoring_tiebreak,
+    scoring_mode_for_system,
+    scoring_summary_payload,
+    serialize_scoring_table,
+)
 from services.category_registration import get_category_usage, serialize_category_with_registration
 from timezones import DEFAULT_COMPETITION_TIMEZONE, competition_timezone, normalize_timezone, to_utc_from_competition_time
 
@@ -56,6 +68,7 @@ MODALITY_ALIAS = {
     "equipos": "teams",
     "por_equipo": "teams",
 }
+SCORING_SYSTEM_VALIDOS = {"dynamic_points", "placement", "fixed_table", "cumulative"}
 COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "competition_assets"
 COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 COMPETITION_ASSET_SPECS = {
@@ -330,6 +343,34 @@ def _normalize_competition_visibility(payload: dict):
 def _normalize_rm_unit_field(payload: dict):
     if "rm_unit" in payload:
         payload["rm_unit"] = normalize_rm_unit(payload.get("rm_unit"))
+
+
+def _normalize_competition_scoring(payload: dict) -> None:
+    touched = any(key in payload for key in (
+        "scoring_system",
+        "scoring_scope",
+        "scoring_table",
+        "scoring_tiebreak",
+        "cumulative_direction",
+    ))
+    if "scoring_system" in payload:
+        payload["scoring_system"] = normalize_scoring_system(payload.get("scoring_system"))
+    if "scoring_scope" in payload:
+        payload["scoring_scope"] = normalize_scoring_scope(payload.get("scoring_scope"))
+    if "scoring_tiebreak" in payload:
+        payload["scoring_tiebreak"] = normalize_scoring_tiebreak(payload.get("scoring_tiebreak"))
+    if "cumulative_direction" in payload:
+        payload["cumulative_direction"] = normalize_scoring_direction(payload.get("cumulative_direction"))
+    if "scoring_table" in payload:
+        payload["scoring_table"] = serialize_scoring_table(payload.get("scoring_table"))
+    if touched:
+        system = payload.get("scoring_system", "dynamic_points")
+        direction = payload.get("cumulative_direction", "higher_wins")
+        payload["scoring_mode"] = scoring_mode_for_system(system, direction)
+    elif payload.get("scoring_mode") == "higher_wins":
+        payload["scoring_mode"] = "highest_wins"
+    elif payload.get("scoring_mode") == "lower_wins":
+        payload["scoring_mode"] = "lowest_wins"
 
 
 def _delete_local_competition_asset(asset_url: Optional[str]) -> None:
@@ -945,6 +986,7 @@ def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_sessi
 @router.post("", response_model=Competition, status_code=201)
 def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
     payload = body.model_dump()
+    _normalize_competition_scoring(payload)
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     _normalize_competition_team_settings(payload)
@@ -994,6 +1036,10 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     c = require_competition_access(session, competition_id, user)
 
     data = body.model_dump(exclude_unset=True)
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+        data.setdefault("scoring_system", getattr(c, "scoring_system", None))
+        data.setdefault("cumulative_direction", getattr(c, "cumulative_direction", None))
+    _normalize_competition_scoring(data)
     if "scoring_mode" in data and data["scoring_mode"] not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     if user.get("role") != "admin":
@@ -1045,6 +1091,75 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     session.refresh(c)
     invalidate_leaderboard_results_snapshot(competition_id)
     return c
+
+
+class CompetitionScoringUpdate(BaseModel):
+    scoring_system: Optional[str] = None
+    scoring_scope: Optional[str] = None
+    scoring_table: Optional[list[dict]] = None
+    scoring_tiebreak: Optional[str] = None
+    cumulative_direction: Optional[str] = None
+    recalculate: int = 0
+
+
+@router.get("/{competition_id}/scoring")
+def get_competition_scoring(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    phases = session.exec(
+        select(CompetitionPhase)
+        .where(CompetitionPhase.competition_id == competition_id)
+        .order_by(CompetitionPhase.orden, CompetitionPhase.id)
+    ).all()
+    results_count = session.exec(
+        select(func.count())
+        .select_from(Result)
+        .where(Result.competition_id == competition_id)
+    ).one()
+    return scoring_summary_payload(competition, phases, int(results_count or 0))
+
+
+@router.put("/{competition_id}/scoring")
+def update_competition_scoring(
+    competition_id: int,
+    body: CompetitionScoringUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    data = body.model_dump(exclude_unset=True)
+    recalculate = bool(int(data.pop("recalculate", 0) or 0))
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+        data.setdefault("scoring_system", getattr(competition, "scoring_system", None))
+        data.setdefault("cumulative_direction", getattr(competition, "cumulative_direction", None))
+    _normalize_competition_scoring(data)
+    for field, value in data.items():
+        setattr(competition, field, value)
+    session.add(competition)
+    session.flush()
+
+    phases = session.exec(
+        select(CompetitionPhase)
+        .where(CompetitionPhase.competition_id == competition_id)
+        .order_by(CompetitionPhase.orden, CompetitionPhase.id)
+    ).all()
+    if recalculate:
+        from routers.results import _recompute_phase_positions_and_points
+
+        for phase in phases:
+            _recompute_phase_positions_and_points(session, competition_id, int(phase.id))
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    session.refresh(competition)
+    results_count = session.exec(
+        select(func.count())
+        .select_from(Result)
+        .where(Result.competition_id == competition_id)
+    ).one()
+    return scoring_summary_payload(competition, phases, int(results_count or 0))
 
 
 @router.delete("/{competition_id}", status_code=204)

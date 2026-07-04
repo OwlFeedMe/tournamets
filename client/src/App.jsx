@@ -3,7 +3,6 @@ import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom
 import { AuthProvider, getHomePath, useAuth } from './context/AuthContext'
 import { AuthenticatedShell } from './components/layout/AuthenticatedShell'
 
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'))
 const AdminCompetitionCommandProposal = lazy(() => import('./pages/AdminCompetitionCommandProposal'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))
 const CompetitionLanding = lazy(() => import('./pages/CompetitionLanding'))
@@ -205,22 +204,6 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['admin']}>
                       <AdminGymsPanel />
-                    </RoleGate>
-                  }
-                />
-                <Route
-                  path="/admin-legacy"
-                  element={
-                    <RoleGate allowedRoles={['admin']}>
-                      <AdminDashboard />
-                    </RoleGate>
-                  }
-                />
-                <Route
-                  path="/admin-legacy/*"
-                  element={
-                    <RoleGate allowedRoles={['admin']}>
-                      <AdminDashboard />
                     </RoleGate>
                   }
                 />

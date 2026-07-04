@@ -13,6 +13,12 @@ from services.leaderboard_cache import (
     get_leaderboard_results_snapshot,
     set_leaderboard_results_snapshot,
 )
+from services.scoring import (
+    competition_total_lower_is_better,
+    normalize_scoring_scope,
+    normalize_scoring_tiebreak,
+    phase_scoring_config,
+)
 
 router = APIRouter(prefix="/api/leaderboard", tags=["leaderboard"])
 
@@ -49,7 +55,7 @@ def _phase_lower_is_better(phase: CompetitionPhase | None) -> bool:
     return phase_type in {"tiempo", "posicion"}
 
 
-def _rank_by_category(rows, *, lower_is_better: bool = False) -> dict:
+def _rank_by_category(rows, *, lower_is_better: bool = False, tiebreak: str = "best_positions") -> dict:
     by_cat: dict[str, list] = defaultdict(list)
     for row in rows:
         entry = dict(row)
@@ -57,7 +63,7 @@ def _rank_by_category(rows, *, lower_is_better: bool = False) -> dict:
 
     result: dict[str, list] = {}
     for cat, members in by_cat.items():
-        sorted_m = _sort_total_rows(members, lower_is_better=lower_is_better)
+        sorted_m = _sort_total_rows(members, lower_is_better=lower_is_better, tiebreak=tiebreak)
         for rank, p in enumerate(sorted_m, 1):
             p["rank"] = rank
         result[cat] = sorted_m
@@ -76,7 +82,7 @@ def _position_count_tiebreak_key(row: dict, max_position: int) -> tuple[int, ...
     return tuple(-counts.get(position, 0) for position in range(1, max_position + 1))
 
 
-def _sort_total_rows(rows: list[dict], *, lower_is_better: bool = False) -> list[dict]:
+def _sort_total_rows(rows: list[dict], *, lower_is_better: bool = False, tiebreak: str = "best_positions") -> list[dict]:
     max_position = 0
     for row in rows:
         for value in row.get("total_position_tiebreak") or []:
@@ -87,10 +93,22 @@ def _sort_total_rows(rows: list[dict], *, lower_is_better: bool = False) -> list
     def key(row: dict) -> tuple:
         total_points = int(row.get("total_puntos") or 0)
         point_key = total_points if lower_is_better else -total_points
+        positions = [
+            int(value)
+            for value in (row.get("total_position_tiebreak") or [])
+            if value is not None and int(value) > 0
+        ]
+        final_position = positions[-1] if positions else 999999
+        if tiebreak == "first_places":
+            tie_key = (-positions.count(1), _position_count_tiebreak_key(row, max_position))
+        elif tiebreak == "final_workout":
+            tie_key = (final_position, _position_count_tiebreak_key(row, max_position))
+        else:
+            tie_key = (_position_count_tiebreak_key(row, max_position),)
         return (
             1 if (row.get("total_eventos") or 0) == 0 else 0,
             point_key,
-            _position_count_tiebreak_key(row, max_position),
+            tie_key,
             int(row.get("id") or 0),
         )
 
@@ -585,7 +603,8 @@ def _build_team_rows_for_phase(
 
 def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -> dict:
     comp = session.get(Competition, competition_id)
-    comp_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
+    comp_lower_is_better = competition_total_lower_is_better(comp)
+    comp_tiebreak = normalize_scoring_tiebreak(getattr(comp, "scoring_tiebreak", None))
     individual_enabled = bool(getattr(comp, "individual_enabled", 1)) if comp else True
     team_enabled = bool(getattr(comp, "team_enabled", 0)) if comp else False
     show_individual = bool(comp.show_individual_leaderboard) if comp else True
@@ -609,7 +628,10 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     tv_static_phase_id = getattr(comp, "tv_static_phase_id", None) if comp else None
     tv_static_individual_category = (getattr(comp, "tv_static_individual_category", None) or None) if comp else None
     tv_static_team_category_mode = (getattr(comp, "tv_static_team_category_mode", "__by_category__") or "__by_category__") if comp else "__by_category__"
-    rank_by_category = _competition_has_categories(session, competition_id)
+    rank_by_category = (
+        _competition_has_categories(session, competition_id)
+        and normalize_scoring_scope(getattr(comp, "scoring_scope", None)) == "category"
+    )
 
     participants_meta = _fetch_participants_meta(session, competition_id)
     ind_points_per_phase = _fetch_ind_points_per_phase(session, competition_id)
@@ -625,6 +647,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     individual = _rank_by_category(
         _build_ind_rows(participants_meta, ind_points_per_phase, ind_totals_by_pid, phase_id=None, lower_is_better=False),
         lower_is_better=comp_lower_is_better,
+        tiebreak=comp_tiebreak,
     ) if show_individual else {}
 
     phases = session.exec(
@@ -700,12 +723,13 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "tie_break_enabled": int(getattr(phase, "tie_break_enabled", 0) or 0),
             "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
             "time_cap_seconds": int(getattr(phase, "time_cap_seconds")) if getattr(phase, "time_cap_seconds", None) is not None else None,
+            "scoring": phase_scoring_config(comp, phase),
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_status_map.get(int(phase.id), phase.estado),
             "descripcion": phase.descripcion,
             "allow_multiple_results": phase.allow_multiple_results,
             "team_result_mode": phase_mode,
-            "individual": _rank_by_category(phase_rows, lower_is_better=comp_lower_is_better) if (getattr(phase, "modality", "individual") or "individual") == "individual" and show_individual else {},
+            "individual": _rank_by_category(phase_rows, lower_is_better=comp_lower_is_better, tiebreak=comp_tiebreak) if (getattr(phase, "modality", "individual") or "individual") == "individual" and show_individual else {},
             "teams": team_phase_rows if (getattr(phase, "modality", "individual") or "individual") == "teams" and team_enabled else [],
         })
 
@@ -749,12 +773,12 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         teams_list: list[dict] = []
         for cat in sorted(by_cat.keys()):
             cat_rows = by_cat[cat]
-            cat_rows = _sort_total_rows(cat_rows, lower_is_better=comp_lower_is_better)
+            cat_rows = _sort_total_rows(cat_rows, lower_is_better=comp_lower_is_better, tiebreak=comp_tiebreak)
             for idx, row in enumerate(cat_rows, 1):
                 row["rank"] = idx
             teams_list.extend(cat_rows)
     else:
-        teams_list = _sort_total_rows(teams_values, lower_is_better=comp_lower_is_better)
+        teams_list = _sort_total_rows(teams_values, lower_is_better=comp_lower_is_better, tiebreak=comp_tiebreak)
         for idx, row in enumerate(teams_list, 1):
             row["rank"] = idx
 
@@ -780,6 +804,10 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         "tv_static_team_category_mode": tv_static_team_category_mode,
         "show_event_count": False,
         "scoring_mode": getattr(comp, "scoring_mode", "highest_wins") if comp else "highest_wins",
+        "scoring_system": getattr(comp, "scoring_system", "dynamic_points") if comp else "dynamic_points",
+        "scoring_scope": normalize_scoring_scope(getattr(comp, "scoring_scope", None)) if comp else "category",
+        "scoring_tiebreak": comp_tiebreak,
+        "cumulative_direction": getattr(comp, "cumulative_direction", "higher_wins") if comp else "higher_wins",
         "teams": teams_list,
         "has_teams": team_enabled and len(teams_list) > 0,
     }

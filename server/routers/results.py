@@ -19,6 +19,10 @@ from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import (
+    compute_result_points,
+    normalize_scoring_scope,
+)
 
 router = APIRouter(prefix="/api/results", tags=["results"])
 APPEAL_WINDOW_MINUTES = 90
@@ -244,7 +248,6 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     lower_is_better = _phase_lower_is_better(phase, comp)
     tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
     tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
-    score_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
 
     rows = session.exec(
         select(Result)
@@ -254,7 +257,10 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     if not rows:
         return
 
-    rank_by_category = _competition_has_categories(session, competition_id)
+    rank_by_category = (
+        _competition_has_categories(session, competition_id)
+        and normalize_scoring_scope(getattr(comp, "scoring_scope", None)) == "category"
+    )
     phase_mode = ((getattr(phase, "team_result_mode", None) or "").strip().lower()) if phase else ""
     phase_modality = ((getattr(phase, "modality", None) or "individual").strip().lower()) if phase else "individual"
     is_team_entity_phase = phase_modality == "teams" and phase_mode in {"sum_two", "single_member"}
@@ -296,7 +302,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
             ):
-                pts = position if score_lower_is_better else (total - position + 1)
+                pts = compute_result_points(
+                    position=position,
+                    total_ranked=total,
+                    mark=positioned_items[0][1] if positioned_items else None,
+                    competition=comp,
+                    phase=phase,
+                )
                 for team_id, _team_mark, _team_extra, _team_tiebreak, items in positioned_items:
                     ranked_team_ids.add(team_id)
                     for r in items:
@@ -309,11 +321,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 continue
             for r in items:
                 r.posicion = None
+                r.puntos = 0
                 session.add(r)
 
         # Keep legacy non-team rows harmless in this mode.
         for r in non_team_rows:
             r.posicion = None
+            r.puntos = 0
             session.add(r)
         return
 
@@ -346,7 +360,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 lower_is_better=lower_is_better,
                 tiebreak_lower_is_better=tiebreak_lower_is_better,
             ):
-                pts = position if score_lower_is_better else (total - position + 1)
+                pts = compute_result_points(
+                    position=position,
+                    total_ranked=total,
+                    mark=positioned_items[0].marca if positioned_items else None,
+                    competition=comp,
+                    phase=phase,
+                )
                 for r in positioned_items:
                     r.posicion = position
                     r.puntos = int(pts)
@@ -361,13 +381,20 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             lower_is_better=lower_is_better,
             tiebreak_lower_is_better=tiebreak_lower_is_better,
         ):
-            pts = position if score_lower_is_better else (total - position + 1)
+            pts = compute_result_points(
+                position=position,
+                total_ranked=total,
+                mark=positioned_items[0].marca if positioned_items else None,
+                competition=comp,
+                phase=phase,
+            )
             for r in positioned_items:
                 r.posicion = position
                 r.puntos = int(pts)
                 session.add(r)
     for r in without_metric:
         r.posicion = None
+        r.puntos = 0
         session.add(r)
 
 

@@ -4,7 +4,7 @@ import unittest
 
 SCHEDULE_ROUTER_PATH = Path(__file__).resolve().parents[1] / "routers" / "schedule.py"
 CATEGORIES_ROUTER_PATH = Path(__file__).resolve().parents[1] / "routers" / "categories_phases.py"
-SCHEDULE_PANEL_PATH = Path(__file__).resolve().parents[2] / "client" / "src" / "pages" / "adminCompetitionSchedulePanel.jsx"
+COMMAND_PAGE_PATH = Path(__file__).resolve().parents[2] / "client" / "src" / "pages" / "AdminCompetitionCommandProposal.jsx"
 
 
 class ScheduleHeatGenerationContractTests(unittest.TestCase):
@@ -26,18 +26,18 @@ class ScheduleHeatGenerationContractTests(unittest.TestCase):
         self.assertIn('"source_empty"', source)
 
     def test_frontend_uses_explicit_generation_labels(self):
-        source = SCHEDULE_PANEL_PATH.read_text(encoding="utf-8")
+        source = COMMAND_PAGE_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("Generar por categoria", source)
-        self.assertIn("Generar una categoria", source)
-        self.assertIn("Generar todos mezclados", source)
-        self.assertIn("Ver resumen", source)
-        self.assertIn("Mover atleta", source)
+        self.assertIn("Generar heats", source)
+        self.assertIn("Por categoria", source)
+        self.assertIn("Mixto", source)
+        self.assertIn("Previsualizar plan", source)
+        self.assertIn("move-assignment", source)
         self.assertNotIn("Todas / sin categoria", source)
 
     def test_category_order_has_dedicated_endpoint(self):
         backend = CATEGORIES_ROUTER_PATH.read_text(encoding="utf-8")
-        frontend = SCHEDULE_PANEL_PATH.read_text(encoding="utf-8")
+        frontend = COMMAND_PAGE_PATH.read_text(encoding="utf-8")
 
         self.assertIn("/categories/order", backend)
         self.assertIn("CategoryOrderUpdate", backend)

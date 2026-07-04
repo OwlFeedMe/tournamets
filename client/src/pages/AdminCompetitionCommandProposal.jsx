@@ -292,11 +292,12 @@ function normalizeCompetition(raw, bundle = {}) {
 }
 
 async function loadCompetitionBundle(competitionId) {
-  const [competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard] = await Promise.all([
+  const [competition, participants, categories, phases, scoring, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard] = await Promise.all([
     api(`/competitions/${competitionId}`),
     api(`/competitions/${competitionId}/participants`).catch(() => []),
     api(`/competitions/${competitionId}/categories`).catch(() => []),
     api(`/competitions/${competitionId}/phases`).catch(() => []),
+    api(`/competitions/${competitionId}/scoring`).catch(() => null),
     api(`/competitions/${competitionId}/discounts`).catch(() => []),
     api(`/competitions/${competitionId}/competitor-invitations`).catch(() => []),
     api(`/competitions/${competitionId}/ticketing-config`).catch(() => null),
@@ -311,7 +312,7 @@ async function loadCompetitionBundle(competitionId) {
     api(`/finance/competitions/${competitionId}`).catch(() => null),
     api(`/leaderboard/${competitionId}`).catch(() => null),
   ])
-  return { competition, participants, categories, phases, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard }
+  return { competition, participants, categories, phases, scoring, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard }
 }
 
 function Pill({ children, tone = colors.border, filled = false }) {
@@ -2942,10 +2943,257 @@ function TeamsPanel({ bundle, reload, notify }) {
   )
 }
 
+const scoringModeOptions = [
+  {
+    id: 'dynamic_points',
+    label: 'Puntos dinamicos',
+    summary: 'Gana mayor total. Cada WOD reparte puntos segun atletas con resultado.',
+    example: ['10 atletas', '1o = 10 pts', '2o = 9 pts', '10o = 1 pt'],
+    warning: 'Si un WOD tiene menos resultados cargados, reparte menos puntos.',
+  },
+  {
+    id: 'placement',
+    label: 'Posicion',
+    summary: 'Gana menor total. La posicion se convierte directamente en puntos.',
+    example: ['1o = 1 pt', '2o = 2 pts', '3o = 3 pts'],
+    warning: 'Modelo simple tipo Open. Puede empatar mas en divisiones pequenas.',
+  },
+  {
+    id: 'fixed_table',
+    label: 'Tabla fija',
+    summary: 'Gana mayor total. Cada posicion tiene puntos definidos.',
+    example: ['1o = 100 pts', '2o = 95 pts', '3o = 90 pts'],
+    warning: 'Todos los WODs pesan igual aunque falten resultados.',
+  },
+  {
+    id: 'cumulative',
+    label: 'Puntos acumulados',
+    summary: 'Suma marcas crudas. Usalo solo si todos los WODs comparten unidad.',
+    example: ['120 reps + 95 reps', 'Total = 215 reps'],
+    warning: 'No recomendado si mezclas tiempo, reps y peso.',
+  },
+]
+
+const defaultScoringTable = [
+  { rank: 1, points: 100 },
+  { rank: 2, points: 95 },
+  { rank: 3, points: 90 },
+  { rank: 4, points: 85 },
+  { rank: 5, points: 80 },
+  { rank: 6, points: 75 },
+  { rank: 7, points: 70 },
+  { rank: 8, points: 65 },
+  { rank: 9, points: 60 },
+  { rank: 10, points: 55 },
+]
+
+function normalizeScoringTableInput(value) {
+  if (Array.isArray(value)) return value.map((item) => ({ rank: Number(item.rank || 0), points: Number(item.points || 0) })).filter((item) => item.rank > 0)
+  if (!value) return []
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    return normalizeScoringTableInput(parsed)
+  } catch {
+    return []
+  }
+}
+
+function scoringTablePoints(table, position) {
+  const row = normalizeScoringTableInput(table).find((item) => Number(item.rank) === Number(position))
+  return row ? Number(row.points || 0) : 0
+}
+
+function previewPointsForScoring(config, position, totalRanked, mark) {
+  if (Number(mark) === 2147483647 || Number(mark) === -2147483648) return 0
+  const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
+  let base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1)
+  if (system === 'placement') base = Number(position || 0)
+  if (system === 'fixed_table') base = scoringTablePoints(config?.table || config?.scoring_table || defaultScoringTable, position)
+  if (system === 'cumulative') base = Number(mark || 0)
+  const weight = Number(config?.weight_percent ?? config?.scoring_weight_percent ?? 100)
+  return Math.round(base * weight / 100)
+}
+
+function scoringPreviewLabel(config) {
+  const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
+  if (system === 'placement') return 'Posicion: menor total gana'
+  if (system === 'fixed_table') return 'Tabla fija: mayor total gana'
+  if (system === 'cumulative') return String(config?.cumulative_direction || '').toLowerCase() === 'lower_wins' ? 'Acumulado: menor total gana' : 'Acumulado: mayor total gana'
+  return 'Puntos dinamicos: mayor total gana'
+}
+
+function ScoringPanel({ bundle, reload, notify }) {
+  const competition = bundle.competition
+  const scoring = bundle.scoring || {}
+  const resultsCount = Number(scoring.results_count ?? (bundle.results || []).length)
+  const [draft, setDraft] = useState(() => ({
+    scoring_system: scoring.scoring_system || competition.scoring_system || 'dynamic_points',
+    scoring_scope: scoring.scoring_scope || competition.scoring_scope || 'category',
+    scoring_tiebreak: scoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
+    cumulative_direction: scoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
+    scoring_table: normalizeScoringTableInput(scoring.scoring_table || competition.scoring_table || defaultScoringTable),
+  }))
+  const [saving, setSaving] = useState(false)
+  const updateDraft = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }))
+  const selectedMode = scoringModeOptions.find((item) => item.id === draft.scoring_system) || scoringModeOptions[0]
+  const tableRows = draft.scoring_table.length ? draft.scoring_table : defaultScoringTable
+  const setTableRow = (index, key, value) => {
+    const next = [...tableRows]
+    next[index] = { ...next[index], [key]: Number(value || 0) }
+    updateDraft('scoring_table', next)
+  }
+  const addTableRow = () => {
+    const nextRank = Math.max(0, ...tableRows.map((item) => Number(item.rank || 0))) + 1
+    updateDraft('scoring_table', [...tableRows, { rank: nextRank, points: 0 }])
+  }
+  const save = async () => {
+    const shouldRecalculate = resultsCount > 0
+      ? window.confirm(`Hay ${resultsCount} resultado(s) cargado(s). Guardar esta configuracion recalculara puntos y posiciones.`)
+      : true
+    if (!shouldRecalculate) return
+    setSaving(true)
+    try {
+      await api(`/competitions/${competition.id}/scoring`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          ...draft,
+          scoring_table: draft.scoring_system === 'fixed_table' ? tableRows : [],
+          recalculate: resultsCount > 0 ? 1 : 0,
+        }),
+      })
+      notify(resultsCount > 0 ? 'Puntuacion guardada y recalculada' : 'Puntuacion guardada')
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const updatePhaseScoring = async (phase, patch) => {
+    try {
+      await api(`/competitions/${competition.id}/phases/${phase.id}`, {
+        method: 'PUT',
+        body: JSON.stringify(patch),
+      })
+      notify('Puntuacion del WOD actualizada')
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    }
+  }
+  return (
+    <Panel title="Puntuacion" subtitle="Define como las posiciones de cada WOD se convierten en puntos del leaderboard." action={<Button tone="primary" onClick={save} disabled={saving}><Save size={16} />{saving ? 'Guardando...' : 'Guardar regla'}</Button>}>
+      {resultsCount > 0 ? (
+        <div style={{ border: `1px solid rgba(245,158,11,0.45)`, background: 'rgba(245,158,11,0.10)', borderRadius: 8, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', color: colors.text }}>
+          <AlertTriangle size={18} color={colors.warning} />
+          <div>
+            <strong>{resultsCount} resultado(s) cargado(s)</strong>
+            <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Guardar cambios recalcula puntos y posiciones de los WODs con resultados.</div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+        {scoringModeOptions.map((item) => {
+          const active = draft.scoring_system === item.id
+          return (
+            <button key={item.id} type="button" onClick={() => updateDraft('scoring_system', item.id)} style={{ textAlign: 'left', border: `1px solid ${active ? colors.primary : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, borderRadius: 8, padding: 12, display: 'grid', gap: 9 }}>
+              <span style={{ fontSize: 14, fontWeight: 950 }}>{item.label}</span>
+              <span style={{ color: colors.secondary, fontSize: 12, lineHeight: 1.45 }}>{item.summary}</span>
+              <span style={{ color: active ? '#FFB36F' : colors.muted, fontSize: 11, lineHeight: 1.45 }}>{item.example.join(' | ')}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ fontSize: 16 }}>{selectedMode.label}</h3>
+            <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>{selectedMode.warning}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <Field label="Agrupar por">
+              <select style={inputStyle()} value={draft.scoring_scope} onChange={(event) => updateDraft('scoring_scope', event.target.value)}>
+                <option value="category">Categoria</option>
+                <option value="global">Global</option>
+              </select>
+            </Field>
+            <Field label="Desempate general">
+              <select style={inputStyle()} value={draft.scoring_tiebreak} onChange={(event) => updateDraft('scoring_tiebreak', event.target.value)}>
+                <option value="best_positions">Mejores posiciones</option>
+                <option value="first_places">Mas primeros lugares</option>
+                <option value="final_workout">WOD final</option>
+              </select>
+            </Field>
+            {draft.scoring_system === 'cumulative' ? (
+              <Field label="Total acumulado">
+                <select style={inputStyle()} value={draft.cumulative_direction} onChange={(event) => updateDraft('cumulative_direction', event.target.value)}>
+                  <option value="higher_wins">Mayor total gana</option>
+                  <option value="lower_wins">Menor total gana</option>
+                </select>
+              </Field>
+            ) : null}
+          </div>
+        </div>
+
+        {draft.scoring_system === 'fixed_table' ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <strong>Tabla de puntos</strong>
+              <Button onClick={addTableRow}><Plus size={15} />Agregar posicion</Button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+              {tableRows.map((item, index) => (
+                <div key={`${item.rank}-${index}`} style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <input type="number" min="1" style={inputStyle()} value={item.rank} onWheel={preventNumberInputWheel} onChange={(event) => setTableRow(index, 'rank', event.target.value)} />
+                  <input type="number" min="0" style={inputStyle()} value={item.points} onWheel={preventNumberInputWheel} onChange={(event) => setTableRow(index, 'points', event.target.value)} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+        <div>
+          <h3 style={{ fontSize: 16 }}>Overrides por WOD</h3>
+          <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>Usa el peso para finales o WODs decisivos. 200% duplica los puntos de ese WOD.</div>
+        </div>
+        {(bundle.phases || []).length ? (bundle.phases || []).map((phase) => {
+          const phaseScoring = (scoring.phases || []).find((item) => String(item.id) === String(phase.id)) || phase
+          const override = Number(phaseScoring.scoring_override_enabled || phase.scoring_override_enabled || 0) ? 1 : 0
+          const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
+          const phaseWeight = Number(phaseScoring.scoring_weight_percent ?? phase.scoring_weight_percent ?? 100)
+          return (
+            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 160px 130px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
+              <div>
+                <strong>{phase.nombre}</strong>
+                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Personalizado' : 'Regla de la competencia'}</div>
+              </div>
+              <select style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
+                <option value="event">Regla evento</option>
+                <option value="custom">Personalizado</option>
+              </select>
+              <input type="number" min="0" max="1000" step="25" style={inputStyle()} value={phaseWeight} disabled={!override} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_weight_percent: Number(event.target.value || 0) })} />
+              <select style={inputStyle()} value={phaseSystem} disabled={!override} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
+                {scoringModeOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+            </div>
+          )
+        }) : (
+          <div style={{ color: colors.secondary, fontSize: 13 }}>Crea fases antes de configurar overrides.</div>
+        )}
+      </div>
+    </Panel>
+  )
+}
+
 function PreparePanel({ bundle, reload, notify }) {
   const [section, setSection] = useState('phases')
   const modules = [
     { id: 'phases', label: 'Fases', icon: CalendarDays, count: (bundle.phases || []).length },
+    { id: 'scoring', label: 'Puntuacion', icon: Trophy },
     { id: 'heats', label: 'Heats', icon: Zap, count: (bundle.heats?.items || []).length },
     { id: 'teams', label: 'Equipos', icon: Users, count: (bundle.teams || []).length },
   ]
@@ -2953,6 +3201,7 @@ function PreparePanel({ bundle, reload, notify }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <ModuleTabs items={modules} active={section} onChange={setSection} />
       {section === 'phases' && <PhasesPanel bundle={bundle} reload={reload} notify={notify} />}
+      {section === 'scoring' && <ScoringPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'heats' && <HeatsPanel bundle={bundle} reload={reload} notify={notify} />}
       {section === 'teams' && <TeamsPanel bundle={bundle} reload={reload} notify={notify} />}
     </div>
@@ -3059,7 +3308,16 @@ function ResultsPanel({ bundle, reload, notify }) {
   const isTiebreakTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(tiebreakMethod)
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(tiebreakMethod)
   const showExtraField = isTimePhase && !!timeCapSeconds
-  const scoreLowerIsBetter = String(competition.scoring_mode || '').trim().toLowerCase() === 'lowest_wins'
+  const competitionScoring = bundle.scoring || {}
+  const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(selectedPhase?.id))
+  const effectiveScoring = {
+    system: selectedPhaseScoring?.scoring_system || selectedPhase?.scoring_system || competitionScoring.scoring_system || competition.scoring_system || 'dynamic_points',
+    scope: competitionScoring.scoring_scope || competition.scoring_scope || 'category',
+    table: selectedPhaseScoring?.scoring_table || selectedPhase?.scoring_table || competitionScoring.scoring_table || competition.scoring_table || defaultScoringTable,
+    tiebreak: competitionScoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
+    cumulative_direction: competitionScoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
+    weight_percent: selectedPhaseScoring?.scoring_weight_percent ?? selectedPhase?.scoring_weight_percent ?? 100,
+  }
   const formatMarkValue = (value) => isTimePhase && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
   const parseMarkValue = (value) => {
     if (isTimePhase) return parseTimeInput(value)
@@ -3119,7 +3377,7 @@ function ResultsPanel({ bundle, reload, notify }) {
       }
     }).filter((item) => item.marca !== null && !Number.isNaN(item.marca))
     const groups = entities.reduce((map, item) => {
-      const category = item.category || 'Todas'
+      const category = effectiveScoring.scope === 'global' ? '__global__' : (item.category || 'Todas')
       if (!map[category]) map[category] = []
       map[category].push(item)
       return map
@@ -3173,7 +3431,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         }
         })
         positionedGroups.forEach((items) => {
-          const points = scoreLowerIsBetter ? position : ordered.length - position + 1
+          const points = previewPointsForScoring(effectiveScoring, position, ordered.length, items[0]?.marca)
           items.forEach((item) => { out[item.key] = { posicion: position, puntos: points } })
           position += items.length
         })
@@ -3324,7 +3582,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const phaseFormatLabel = selectedPhase ? (resultFormatLabels[phaseFormatValue] || selectedPhase.measurement_method || selectedPhase.workout_format || selectedPhase.tipo || 'Marca') : 'Sin WOD'
   const markRuleLabel = lowerIsBetter ? 'Menor marca gana' : 'Mayor marca gana'
   const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata; luego tiebreak' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
-  const scoringRuleLabel = scoreLowerIsBetter ? 'Menos puntos es mejor' : 'Mas puntos es mejor'
+  const scoringRuleLabel = scoringPreviewLabel(effectiveScoring)
   const resultCardGridColumns = tieBreakActive
     ? 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))'
     : 'minmax(120px, 1.1fr) repeat(4, minmax(90px, 1fr))'
@@ -4686,10 +4944,7 @@ export default function AdminCompetitionCommandProposal() {
       {toast ? <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 10020, border: `1px solid ${toast.type === 'error' ? colors.error : colors.accent}`, background: colors.surface, borderRadius: 8, padding: '11px 13px' }}>{toast.text}</div> : null}
       {createOpen ? <CreateCompetitionModal onClose={() => setCreateOpen(false)} notify={notify} onCreated={(created) => { setCreateOpen(false); setSelectedId(created.id); setView('wizard') }} /> : null}
       <div className="fr-command-page" style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '22px 16px 34px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
-          <Link to="/admin-legacy" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: colors.secondary, fontSize: 13, fontWeight: 800 }}>
-            <ArrowLeft size={16} /> Admin legacy
-          </Link>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button onClick={loadPortfolio}><RefreshCw size={16} />Refrescar</Button>
             <Pill tone={colors.accent}>Wizard</Pill>

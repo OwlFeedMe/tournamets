@@ -69,6 +69,36 @@ function isDnfMark(value) {
   return Number(value) === DNF_MARK_HIGH || Number(value) === DNF_MARK_LOW
 }
 
+const defaultScoringTable = [
+  { rank: 1, points: 100 },
+  { rank: 2, points: 95 },
+  { rank: 3, points: 90 },
+  { rank: 4, points: 85 },
+  { rank: 5, points: 80 },
+  { rank: 6, points: 75 },
+  { rank: 7, points: 70 },
+  { rank: 8, points: 65 },
+  { rank: 9, points: 60 },
+  { rank: 10, points: 55 },
+]
+
+function scoringTablePoints(table, position) {
+  const rows = Array.isArray(table) && table.length ? table : defaultScoringTable
+  const row = rows.find((item) => Number(item.rank) === Number(position))
+  return row ? Number(row.points || 0) : 0
+}
+
+function previewPointsForScoring(config, position, totalRanked, mark) {
+  if (isDnfMark(mark)) return 0
+  const system = String(config?.system || 'dynamic_points').trim().toLowerCase()
+  let base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1)
+  if (system === 'placement') base = Number(position || 0)
+  if (system === 'fixed_table') base = scoringTablePoints(config?.table, position)
+  if (system === 'cumulative') base = Number(mark || 0)
+  const weight = Number(config?.weight_percent ?? 100)
+  return Math.round(base * weight / 100)
+}
+
 function ScoreTable({ assignment, phases, notify }) {
   const [phaseId, setPhaseId] = useState(phases[0]?.id ? String(phases[0].id) : '')
   const [options, setOptions] = useState({ items: [], heats: [] })
@@ -161,6 +191,7 @@ function ScoreTable({ assignment, phases, notify }) {
   const preview = useMemo(() => {
     const lb = lowerIsBetter(phase)
     const tbLb = tiebreakLowerIsBetter(phase)
+    const scoring = phase?.scoring || { system: 'dynamic_points', scope: 'category', weight_percent: 100, table: [] }
     const pool = (options.items || []).map((item) => {
       const key = rowKey(phaseId, item)
       const draft = marks[key] || {}
@@ -174,7 +205,7 @@ function ScoreTable({ assignment, phases, notify }) {
         : null
       return {
         key,
-        category: item.category || 'Sin categoria',
+        category: scoring.scope === 'global' ? '__global__' : (item.category || 'Sin categoria'),
         marca: marca === '' || marca == null ? null : Number(marca),
         extra: extra === '' || extra == null ? null : Number(extra),
         tiebreak: tiebreak === '' || tiebreak == null ? null : Number(tiebreak),
@@ -211,7 +242,7 @@ function ScoreTable({ assignment, phases, notify }) {
             }, [])
           : [extraChunk])
         chunks.forEach((chunk) => {
-          const points = ordered.length - pos + 1
+          const points = previewPointsForScoring(scoring, pos, ordered.length, chunk[0]?.marca)
           chunk.forEach((item) => { out[item.key] = { posicion: pos, puntos: points } })
           pos += chunk.length
         })

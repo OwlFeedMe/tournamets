@@ -25,6 +25,12 @@ from models import (
     CompetitionHeat,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import (
+    normalize_scoring_system,
+    normalize_scoring_table,
+    normalize_weight_percent,
+    serialize_scoring_table,
+)
 from services.category_registration import (
     get_category_usage,
     normalize_capacity,
@@ -153,6 +159,15 @@ def _normalize_time_cap_seconds(raw: object) -> int | None:
     except Exception:
         return None
     return max(1, min(value, 24 * 60 * 60))
+
+
+def _normalize_scoring_override_enabled(raw: object) -> int:
+    if isinstance(raw, bool):
+        return 1 if raw else 0
+    try:
+        return 1 if int(raw or 0) else 0
+    except Exception:
+        return 0
 
 
 def _normalize_phase_status(raw: str | None) -> str:
@@ -475,6 +490,10 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload["tie_break_enabled"] = 1 if int(getattr(phase, "tie_break_enabled", 0) or 0) else 0
     payload["tie_break_method"] = _normalize_measurement_method(getattr(phase, "tie_break_method", None), "tiempo")
     payload["time_cap_seconds"] = _normalize_time_cap_seconds(getattr(phase, "time_cap_seconds", None))
+    payload["scoring_override_enabled"] = _normalize_scoring_override_enabled(getattr(phase, "scoring_override_enabled", 0))
+    payload["scoring_system"] = normalize_scoring_system(getattr(phase, "scoring_system", None), fallback="dynamic_points") if payload["scoring_override_enabled"] else getattr(phase, "scoring_system", None)
+    payload["scoring_weight_percent"] = normalize_weight_percent(getattr(phase, "scoring_weight_percent", 100))
+    payload["scoring_table"] = normalize_scoring_table(getattr(phase, "scoring_table", None))
     payload["heat_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "heat_transition_seconds", 0))
     payload["category_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "category_transition_seconds", 0))
     payload["is_visible"] = normalize_phase_visibility(getattr(phase, "is_visible", 1))
@@ -778,6 +797,10 @@ def create_phase(competition_id: int, body: PhaseCreate,
         tie_break_enabled=1 if body.tie_break_enabled else 0,
         tie_break_method=_normalize_measurement_method(body.tie_break_method, "tiempo"),
         time_cap_seconds=_normalize_time_cap_seconds(body.time_cap_seconds),
+        scoring_override_enabled=_normalize_scoring_override_enabled(body.scoring_override_enabled),
+        scoring_system=normalize_scoring_system(body.scoring_system, fallback="dynamic_points") if body.scoring_system else None,
+        scoring_weight_percent=normalize_weight_percent(body.scoring_weight_percent),
+        scoring_table=serialize_scoring_table(body.scoring_table),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
         estado=phase_status,
@@ -801,6 +824,12 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
     if not phase or phase.competition_id != competition_id:
         raise HTTPException(404, "Fase no encontrada")
     data = body.model_dump(exclude_unset=True)
+    scoring_changed = any(key in data for key in (
+        "scoring_override_enabled",
+        "scoring_system",
+        "scoring_weight_percent",
+        "scoring_table",
+    ))
     if "modality" in data:
         data["modality"] = _normalize_modality(data["modality"])
     if "block_name" in data:
@@ -839,6 +868,14 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["tie_break_method"] = _normalize_measurement_method(data["tie_break_method"], "tiempo")
     if "time_cap_seconds" in data:
         data["time_cap_seconds"] = _normalize_time_cap_seconds(data["time_cap_seconds"])
+    if "scoring_override_enabled" in data:
+        data["scoring_override_enabled"] = _normalize_scoring_override_enabled(data["scoring_override_enabled"])
+    if "scoring_system" in data:
+        data["scoring_system"] = normalize_scoring_system(data["scoring_system"], fallback="dynamic_points") if data["scoring_system"] else None
+    if "scoring_weight_percent" in data:
+        data["scoring_weight_percent"] = normalize_weight_percent(data["scoring_weight_percent"])
+    if "scoring_table" in data:
+        data["scoring_table"] = serialize_scoring_table(data["scoring_table"])
     if "heat_transition_seconds" in data:
         data["heat_transition_seconds"] = _normalize_transition_seconds(data["heat_transition_seconds"])
     if "category_transition_seconds" in data:
@@ -888,6 +925,11 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
     for field, value in data.items():
         setattr(phase, field, value)
     session.add(phase)
+    session.flush()
+    if scoring_changed:
+        from routers.results import _recompute_phase_positions_and_points
+
+        _recompute_phase_positions_and_points(session, competition_id, int(phase.id))
     session.commit()
     session.refresh(phase)
     invalidate_leaderboard_results_snapshot(competition_id)

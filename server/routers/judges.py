@@ -17,6 +17,7 @@ from auth import invalidate_user, require_auth, require_staff
 from services.emailer import send_email
 from services.email_templates import render_judge_invitation
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import phase_scoring_config
 from competition_rules import normalize_phase_measurement_method
 from database import get_session
 from models import (
@@ -323,6 +324,13 @@ def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
         "heat_transition_seconds": int(getattr(phase, "heat_transition_seconds", 0) or 0),
         "category_transition_seconds": int(getattr(phase, "category_transition_seconds", 0) or 0),
     }
+
+
+def _phase_scoring_meta(session: Session, competition_id: int, phase: CompetitionPhase | None) -> dict:
+    competition = session.get(Competition, competition_id)
+    if not competition:
+        return {}
+    return {"scoring": phase_scoring_config(competition, phase)}
 
 
 DNF_MARK_HIGH = 2_147_483_647
@@ -988,6 +996,7 @@ def list_judge_score_phases(
                 "team_result_mode": _phase_score_mode(phase),
                 "allow_multiple_results": int(getattr(phase, "allow_multiple_results", 0) or 0),
                 **_phase_score_meta(phase),
+                **_phase_scoring_meta(session, competition_id, phase),
             }
         )
     return payload
@@ -1107,6 +1116,7 @@ def list_judge_score_manual_options(
                 "measurement_method": _phase_measurement_method(phase),
                 "team_result_mode": phase_mode,
                 **_phase_score_meta(phase),
+                **_phase_scoring_meta(session, competition_id, phase),
             },
             "heats": [
                 {
@@ -1181,6 +1191,7 @@ def list_judge_score_manual_options(
             "measurement_method": _phase_measurement_method(phase),
             "team_result_mode": phase_mode,
             **_phase_score_meta(phase),
+            **_phase_scoring_meta(session, competition_id, phase),
         },
         "heats": [
             {
