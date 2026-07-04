@@ -14,7 +14,8 @@ class AdminDashboardEnrollmentLabelsContractTest(unittest.TestCase):
         self.assertIn("Inscripcion:", source)
         self.assertIn("<th>Inscripcion</th>", source)
         self.assertIn("selectedParticipants.filter(item => item.check_in_done).length", source)
-        self.assertIn("const labelPrefix = labeled ? 'Check-in: ' : ''", source)
+        self.assertIn("realizados", source)
+        self.assertIn("pendientes", source)
 
     def test_admin_sees_delete_competition_action(self):
         source = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")

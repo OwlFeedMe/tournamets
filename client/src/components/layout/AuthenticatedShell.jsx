@@ -5,6 +5,14 @@ import { BottomDock } from './BottomDock'
 import { DesktopHeader } from './DesktopHeader'
 import { useAuth } from '../../context/AuthContext'
 import api from '../../api/axios'
+import {
+  buildAthleteLeaderboardSnapshot,
+  describeSnapshotChanges,
+  readSpectatorFollows,
+  readSpectatorSnapshots,
+  subscribeSpectatorFollows,
+  writeSpectatorSnapshot,
+} from '../../utils/spectatorFollow'
 
 const profileFieldLabels = {
   email: 'email',
@@ -21,6 +29,21 @@ function formatProfileMissingFields(fields = []) {
     .map((field) => profileFieldLabels[field] || String(field || '').replaceAll('_', ' '))
     .filter(Boolean)
     .join(', ')
+}
+
+function appealStatusLabel(status) {
+  const labels = {
+    submitted: 'Nueva',
+    under_review: 'En revision',
+    needs_evidence: 'Evidencia solicitada',
+    escalated: 'Escalada',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    score_adjusted: 'Resultado ajustado',
+    closed: 'Cerrada',
+    cancelled: 'Cancelada',
+  }
+  return labels[status] || status || 'Sin estado'
 }
 
 const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
@@ -422,11 +445,37 @@ export function AuthenticatedShell() {
         .catch(() => ({ kind: 'judge', data: [] }))
     )
     requests.push(
+      api.get('/me/announcer-assignments')
+        .then(({ data }) => ({ kind: 'announcer', data }))
+        .catch(() => ({ kind: 'announcer', data: [] }))
+    )
+    requests.push(
       api.get('/me/competitor-invitations')
         .then(({ data }) => ({ kind: 'competitor', data }))
         .catch(() => ({ kind: 'competitor', data: [] }))
     )
     if (session) {
+      const spectatorFollows = readSpectatorFollows()
+      if (spectatorFollows.length) {
+        const byCompetition = new Map()
+        spectatorFollows.forEach((follow) => {
+          const list = byCompetition.get(follow.competitionId) || []
+          list.push(follow)
+          byCompetition.set(follow.competitionId, list)
+        })
+        requests.push(
+          Promise.all(Array.from(byCompetition.entries()).map(async ([competitionId, follows]) => {
+            try {
+              const { data } = await api.get(`/leaderboard/${competitionId}`)
+              return follows.map((follow) => ({ follow, leaderboard: data }))
+            } catch {
+              return []
+            }
+          }))
+            .then((groups) => ({ kind: 'spectatorFollows', data: groups.flat(), follows: spectatorFollows }))
+            .catch(() => ({ kind: 'spectatorFollows', data: [], follows: spectatorFollows }))
+        )
+      }
       requests.push(
         api.get('/users/me/profile-completeness')
           .then(({ data }) => ({ kind: 'profile', data }))
@@ -436,6 +485,11 @@ export function AuthenticatedShell() {
         api.get('/me/enrollment-question-tasks')
           .then(({ data }) => ({ kind: 'enrollmentQuestions', data }))
           .catch(() => ({ kind: 'enrollmentQuestions', data: [] }))
+      )
+      requests.push(
+        api.get('/appeals/me')
+          .then(({ data }) => ({ kind: 'appeals', data }))
+          .catch(() => ({ kind: 'appeals', data: [] }))
       )
     }
 
@@ -500,6 +554,23 @@ export function AuthenticatedShell() {
         unread += pendingInvites.length
       }
 
+      const announcerResult = results.find((item) => item.kind === 'announcer')
+      if (announcerResult) {
+        const pendingInvites = (Array.isArray(announcerResult.data) ? announcerResult.data : []).filter((item) => item.status === 'pending')
+        for (const invite of pendingInvites) {
+          dynamicItems.unshift({
+            title: `Invitacion de locutor: ${invite.competition_name}`,
+            text: 'Te invitaron a seguir esta competencia desde la cabina en vivo. Puedes aceptar o rechazar ahora.',
+            tone: 'neutral',
+            actions: [
+              { id: `announcer-accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'announcer-accept' },
+              { id: `announcer-reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'announcer-reject' },
+            ],
+          })
+        }
+        unread += pendingInvites.length
+      }
+
       const competitorResult = results.find((item) => item.kind === 'competitor')
       if (competitorResult) {
         const pendingCompetitorInvites = (Array.isArray(competitorResult.data) ? competitorResult.data : []).filter((item) => item.status === 'pending')
@@ -515,6 +586,42 @@ export function AuthenticatedShell() {
           })
         }
         unread += pendingCompetitorInvites.length
+      }
+
+      const spectatorResult = results.find((item) => item.kind === 'spectatorFollows')
+      if (spectatorResult) {
+        const snapshots = readSpectatorSnapshots()
+        const followRows = Array.isArray(spectatorResult.data) ? spectatorResult.data : []
+        const follows = Array.isArray(spectatorResult.follows) ? spectatorResult.follows : []
+        followRows.forEach(({ follow, leaderboard }) => {
+          const snapshot = buildAthleteLeaderboardSnapshot(leaderboard, follow.athleteId)
+          if (!snapshot) return
+          const key = `${follow.competitionId}:${follow.athleteId}`
+          const changes = describeSnapshotChanges(snapshots[key], snapshot)
+          writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
+          changes.forEach((change) => {
+            dynamicItems.unshift({
+              title: change.title,
+              text: `${follow.competitionName}: ${change.body}`,
+              tone: change.type === 'rank_down' ? 'neutral' : 'success',
+              actions: [
+                { id: `spectator-board-${key}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: follow.competitionId },
+                ...(snapshot.username || follow.username ? [{ id: `spectator-profile-${key}`, label: 'Perfil', tone: 'secondary', actionType: 'go-to-athlete-profile', username: snapshot.username || follow.username }] : []),
+              ],
+            })
+            unread += 1
+          })
+        })
+        if (follows.length) {
+          dynamicItems.push({
+            title: `${follows.length} atleta${follows.length === 1 ? '' : 's'} en seguimiento`,
+            text: 'Revisa posiciones, resultados y proximos heats de amigos o competidores que sigues.',
+            tone: 'neutral',
+            actions: [
+              { id: 'spectator-follow-center', label: 'Ver seguimiento', tone: 'primary', actionType: 'go-to-notifications' },
+            ],
+          })
+        }
       }
 
       const profileResult = results.find((item) => item.kind === 'profile')
@@ -560,6 +667,46 @@ export function AuthenticatedShell() {
         })
       }
 
+      const appealsResult = results.find((item) => item.kind === 'appeals')
+      if (appealsResult) {
+        const appeals = Array.isArray(appealsResult.data) ? appealsResult.data : []
+        const seenKey = `finalrep:appeals-seen:${userId}`
+        let seenMap = {}
+        try {
+          seenMap = JSON.parse(window.localStorage.getItem(seenKey) || '{}')
+        } catch {
+          seenMap = {}
+        }
+        appeals.forEach((appeal) => {
+          const messages = Array.isArray(appeal.messages) ? appeal.messages : []
+          const lastMessage = messages[messages.length - 1] || null
+          const signatureParts = [
+            appeal.status || '',
+            appeal.resolved_at || '',
+            appeal.resolution_note || '',
+            lastMessage?.id || '',
+            lastMessage?.created_at || '',
+          ]
+          const signature = signatureParts.join('|')
+          const isClosed = ['accepted', 'rejected', 'score_adjusted', 'closed', 'cancelled'].includes(appeal.status)
+          const hasStaffMessage = lastMessage && lastMessage.author_role !== 'athlete'
+          if (!isClosed && !hasStaffMessage) return
+          const title = isClosed ? 'Decision de reclamacion' : 'Mensaje en reclamacion'
+          const text = isClosed
+            ? `${appeal.phase_name || 'Workout'}: ${appealStatusLabel(appeal.status)}${appeal.resolution_note ? ` - ${appeal.resolution_note}` : ''}`
+            : `${appeal.phase_name || 'Workout'} tiene actividad nueva. Revisa el chat de la reclamacion.`
+          dynamicItems.unshift({
+            title,
+            text,
+            tone: isClosed && appeal.status === 'rejected' ? 'danger' : isClosed ? 'success' : 'neutral',
+            actions: [
+              { id: `appeal-${appeal.id}`, label: 'Ver reclamacion', tone: 'primary', actionType: 'go-to-appeal', appealId: appeal.id, appealSeenKey: seenKey, appealSignatureKey: String(appeal.id), appealSignature: signature },
+            ],
+          })
+          if (signature && seenMap[String(appeal.id)] !== signature) unread += 1
+        })
+      }
+
       setNotificationItems(dynamicItems)
       setUnreadCount(unread)
     })
@@ -568,6 +715,10 @@ export function AuthenticatedShell() {
       active = false
     }
   }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick])
+
+  useEffect(() => subscribeSpectatorFollows(() => {
+    setNotificationsRefreshTick((current) => current + 1)
+  }), [])
 
   const openNotifications = () => {
     setNotificationsRefreshTick((current) => current + 1)
@@ -596,6 +747,25 @@ export function AuthenticatedShell() {
       window.localStorage.setItem(questionSeenKey, JSON.stringify(questionSeenMap))
     }
 
+    const appealSeenWrites = {}
+    notificationItems.forEach((item) => {
+      ;(item.actions || []).forEach((action) => {
+        if (action.actionType === 'go-to-appeal' && action.appealSeenKey && action.appealSignatureKey && action.appealSignature) {
+          if (!appealSeenWrites[action.appealSeenKey]) {
+            try {
+              appealSeenWrites[action.appealSeenKey] = JSON.parse(window.localStorage.getItem(action.appealSeenKey) || '{}')
+            } catch {
+              appealSeenWrites[action.appealSeenKey] = {}
+            }
+          }
+          appealSeenWrites[action.appealSeenKey][action.appealSignatureKey] = action.appealSignature
+        }
+      })
+    })
+    Object.entries(appealSeenWrites).forEach(([key, value]) => {
+      window.localStorage.setItem(key, JSON.stringify(value))
+    })
+
     if (!isAthlete) return
     api.get(`/users/${userId}/competitions`)
       .then(({ data }) => {
@@ -618,11 +788,21 @@ export function AuthenticatedShell() {
         await api.post(`/judge-assignments/${action.assignmentId}/accept`)
         const me = await api.get('/auth/me')
         persistAuthSession({ ...me.data, access_token: session?.token })
-        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => ['accept', 'reject'].includes(row.actionType) && row.assignmentId === action.assignmentId)))
         setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'reject') {
         await api.post(`/judge-assignments/${action.assignmentId}/reject`)
-        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.assignmentId === action.assignmentId)))
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => ['accept', 'reject'].includes(row.actionType) && row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'announcer-accept') {
+        await api.post(`/announcer-assignments/${action.assignmentId}/accept`)
+        const me = await api.get('/auth/me')
+        persistAuthSession({ ...me.data, access_token: session?.token })
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.actionType?.startsWith('announcer-') && row.assignmentId === action.assignmentId)))
+        setUnreadCount((current) => Math.max(0, current - 1))
+      } else if (action.actionType === 'announcer-reject') {
+        await api.post(`/announcer-assignments/${action.assignmentId}/reject`)
+        setNotificationItems((current) => current.filter((item) => !Array.isArray(item.actions) || !item.actions.some((row) => row.actionType?.startsWith('announcer-') && row.assignmentId === action.assignmentId)))
         setUnreadCount((current) => Math.max(0, current - 1))
       } else if (action.actionType === 'competitor-enroll') {
         setNotificationsOpen(false)
@@ -648,6 +828,28 @@ export function AuthenticatedShell() {
         setPendingQuestionDraft({})
         setPendingQuestionError('')
         setNotificationsOpen(false)
+      } else if (action.actionType === 'go-to-appeal') {
+        if (action.appealSeenKey && action.appealSignatureKey && action.appealSignature) {
+          let seenMap = {}
+          try {
+            seenMap = JSON.parse(window.localStorage.getItem(action.appealSeenKey) || '{}')
+          } catch {
+            seenMap = {}
+          }
+          seenMap[action.appealSignatureKey] = action.appealSignature
+          window.localStorage.setItem(action.appealSeenKey, JSON.stringify(seenMap))
+        }
+        setNotificationsOpen(false)
+        navigate('/profile', { state: { openAppealId: action.appealId, openAppeals: true, notificationNonce: Date.now() } })
+      } else if (action.actionType === 'go-to-leaderboard') {
+        setNotificationsOpen(false)
+        navigate(`/leaderboard/${action.competitionId}`)
+      } else if (action.actionType === 'go-to-athlete-profile') {
+        setNotificationsOpen(false)
+        navigate(`/a/${action.username}`)
+      } else if (action.actionType === 'go-to-notifications') {
+        setNotificationsOpen(false)
+        navigate('/notifications')
       }
     } catch {
     } finally {

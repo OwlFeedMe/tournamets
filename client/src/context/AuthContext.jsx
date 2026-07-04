@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   userId: 'user_id',
   organizerEnabled: 'organizer_enabled',
   judgeEnabled: 'judge_enabled',
+  announcerEnabled: 'announcer_enabled',
   adminEnabled: 'admin_enabled',
 }
 
@@ -19,6 +20,7 @@ const ROLE_ORDER = {
   user: 1,
   organizer: 2,
   judge: 2,
+  announcer: 2,
   admin: 3,
 }
 
@@ -29,6 +31,7 @@ export function normalizeRole(role) {
   if (raw === 'participant' || raw === 'user') return 'user'
   if (raw === 'organiser' || raw === 'organizer') return 'organizer'
   if (raw === 'judge' || raw === 'juez') return 'judge'
+  if (raw === 'announcer' || raw === 'locutor') return 'announcer'
   if (raw === 'admin') return 'admin'
   return null
 }
@@ -59,6 +62,7 @@ function getEffectiveRole(baseRole, extraRoles = []) {
   if (extraRoles.includes('admin')) return 'admin'
   if (extraRoles.includes('organizer')) return 'organizer'
   if (extraRoles.includes('judge')) return 'judge'
+  if (extraRoles.includes('announcer')) return 'announcer'
   return normalizeRole(baseRole) || 'user'
 }
 
@@ -87,8 +91,9 @@ function toNumber(value) {
 export function getHomePath(role) {
   const normalized = normalizeRole(role)
   if (normalized === 'admin') return '/admin'
-  if (normalized === 'organizer') return '/organizer'
+  if (normalized === 'organizer') return '/admin'
   if (normalized === 'judge') return '/judge'
+  if (normalized === 'announcer') return '/announcer'
   return '/'
 }
 
@@ -97,11 +102,13 @@ function storeSessionPayload(payload, token) {
   const baseRole = normalizeRole(payload?.base_role || payload?.role) || 'user'
   const organizerEnabled = normalizeFlag(payload?.organizer_enabled)
   const judgeEnabled = normalizeFlag(payload?.judge_enabled)
+  const announcerEnabled = normalizeFlag(payload?.announcer_enabled)
   const adminEnabled = normalizeFlag(payload?.admin_enabled)
   const extraRoles = Array.from(new Set([
     ...normalizeExtraRoles(payload?.extra_roles),
     ...(organizerEnabled ? ['organizer'] : []),
     ...(judgeEnabled ? ['judge'] : []),
+    ...(announcerEnabled ? ['announcer'] : []),
     ...(adminEnabled ? ['admin'] : []),
   ]))
   const role = getEffectiveRole(baseRole, extraRoles)
@@ -117,6 +124,7 @@ function storeSessionPayload(payload, token) {
   window.localStorage.setItem(STORAGE_KEYS.nombre, displayName)
   window.localStorage.setItem(STORAGE_KEYS.organizerEnabled, organizerEnabled ? '1' : '0')
   window.localStorage.setItem(STORAGE_KEYS.judgeEnabled, judgeEnabled ? '1' : '0')
+  window.localStorage.setItem(STORAGE_KEYS.announcerEnabled, announcerEnabled ? '1' : '0')
   window.localStorage.setItem(STORAGE_KEYS.adminEnabled, adminEnabled ? '1' : '0')
   if (userId != null) {
     window.localStorage.setItem(STORAGE_KEYS.userId, String(userId))
@@ -138,11 +146,13 @@ export function readStoredSession() {
   const baseRole = normalizeRole(window.localStorage.getItem(STORAGE_KEYS.baseRole) || payload?.base_role || payload?.role) || 'user'
   const organizerEnabled = normalizeFlag(window.localStorage.getItem(STORAGE_KEYS.organizerEnabled) ?? payload?.organizer_enabled)
   const judgeEnabled = normalizeFlag(window.localStorage.getItem(STORAGE_KEYS.judgeEnabled) ?? payload?.judge_enabled)
+  const announcerEnabled = normalizeFlag(window.localStorage.getItem(STORAGE_KEYS.announcerEnabled) ?? payload?.announcer_enabled)
   const adminEnabled = normalizeFlag(window.localStorage.getItem(STORAGE_KEYS.adminEnabled) ?? payload?.admin_enabled)
   const extraRoles = Array.from(new Set([
     ...normalizeExtraRoles(window.localStorage.getItem(STORAGE_KEYS.extraRoles) ?? payload?.extra_roles),
     ...(organizerEnabled ? ['organizer'] : []),
     ...(judgeEnabled ? ['judge'] : []),
+    ...(announcerEnabled ? ['announcer'] : []),
     ...(adminEnabled ? ['admin'] : []),
   ]))
 
@@ -160,7 +170,7 @@ export function readStoredSession() {
     window.localStorage.getItem(STORAGE_KEYS.nombre) ||
     payload?.display_name ||
     payload?.nombre ||
-    (role === 'admin' ? 'Administrador' : role === 'organizer' ? 'Organizador' : role === 'judge' ? 'Juez' : 'Usuario')
+    (role === 'admin' ? 'Administrador' : role === 'organizer' ? 'Organizador' : role === 'judge' ? 'Juez' : role === 'announcer' ? 'Locutor' : 'Usuario')
 
   return {
     token,
@@ -171,6 +181,7 @@ export function readStoredSession() {
     userId,
     organizerEnabled,
     judgeEnabled,
+    announcerEnabled,
     adminEnabled,
     claims: payload,
   }
@@ -259,6 +270,7 @@ export function AuthProvider({ children }) {
     window.localStorage.removeItem(STORAGE_KEYS.userId)
     window.localStorage.removeItem(STORAGE_KEYS.organizerEnabled)
     window.localStorage.removeItem(STORAGE_KEYS.judgeEnabled)
+    window.localStorage.removeItem(STORAGE_KEYS.announcerEnabled)
     window.localStorage.removeItem(STORAGE_KEYS.adminEnabled)
     setSession(null)
     window.dispatchEvent(new Event(SESSION_EVENT))
@@ -279,6 +291,7 @@ export function AuthProvider({ children }) {
       userId: session?.userId || null,
       organizerEnabled: !!session?.organizerEnabled,
       judgeEnabled: !!session?.judgeEnabled,
+      announcerEnabled: !!session?.announcerEnabled,
       adminEnabled: !!session?.adminEnabled,
       isAthlete: !!session?.userId && (session?.role === 'user' || session?.baseRole === 'user'),
       refreshSession,
@@ -290,6 +303,7 @@ export function AuthProvider({ children }) {
         if (allowedRoles.includes(session.role)) return true
         if (allowedRoles.includes('organizer') && session.organizerEnabled) return true
         if (allowedRoles.includes('judge') && session.judgeEnabled) return true
+        if (allowedRoles.includes('announcer') && session.announcerEnabled) return true
         if (allowedRoles.includes('admin') && session.adminEnabled) return true
         if (allowedRoles.includes('user') && session.userId) return true
         return false

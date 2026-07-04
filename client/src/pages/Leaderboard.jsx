@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CheckCircle2, Clock3, Circle } from 'lucide-react'
+import { Bell, Check, CheckCircle2, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
 import { loadCountries, parseCityCountry } from '../utils/locations'
+import { followAthlete, isFollowingAthlete, readSpectatorFollows, subscribeSpectatorFollows, unfollowAthlete } from '../utils/spectatorFollow'
 
 const DEFAULT_POLL_INTERVAL_MS = 5000
 const DEFAULT_TV_ROTATION_INTERVAL_MS = 24000
@@ -22,6 +23,8 @@ const THEME = {
   muted: '#AAB2C0',
   soft: '#6B7280',
 }
+const DNF_MARK_HIGH = 2147483647
+const DNF_MARK_LOW = -2147483648
 
 const mobileRankCardStyle = {
   background: 'linear-gradient(135deg, rgba(23,26,32,0.98), rgba(13,15,18,0.96))',
@@ -90,6 +93,7 @@ function formatSecondsToHMS(totalSeconds) {
 
 function metricValue(v, phaseInfo) {
   if (v == null) return '-'
+  if (Number(v) === DNF_MARK_HIGH || Number(v) === DNF_MARK_LOW) return 'DNF'
   const method = (phaseInfo?.measurement_method || '').toString().toLowerCase()
   if (method === 'for_time' || method === 'tiempo_hms') return formatSecondsToHMS(v)
   if (method === 'metros') return `${v} m`
@@ -97,6 +101,68 @@ function metricValue(v, phaseInfo) {
   if (method === 'rm' || method === 'kilogramos' || method === 'gramos' || method === 'libras') return `${v}`
   if (method === 'posicion') return `#${v}`
   return v
+}
+
+function shouldMergeExtraWithMetric(mark, extra, phaseInfo) {
+  if (mark == null || extra == null) return false
+  if (Number(mark) === DNF_MARK_HIGH || Number(mark) === DNF_MARK_LOW) return false
+  const method = (phaseInfo?.measurement_method || '').toString().toLowerCase()
+  const type = (phaseInfo?.tipo || '').toString().toLowerCase()
+  const cap = Number(phaseInfo?.time_cap_seconds)
+  const isTime = method === 'for_time' || method === 'tiempo_hms' || method === 'tiempo' || type === 'tiempo'
+  return isTime && Number.isFinite(cap) && cap > 0 && Number(mark) === cap
+}
+
+function metricValueWithExtra(mark, extra, phaseInfo) {
+  const value = metricValue(mark, phaseInfo)
+  return shouldMergeExtraWithMetric(mark, extra, phaseInfo) ? `${value} + ${extra}` : value
+}
+
+function tieBreakValue(value, phaseInfo) {
+  if (value == null) return ''
+  const method = (phaseInfo?.tie_break_method || 'for_time').toString().toLowerCase()
+  const tiePhase = { measurement_method: method, tipo: method === 'for_time' || method === 'tiempo_hms' ? 'tiempo' : 'cantidad' }
+  return metricValue(value, tiePhase)
+}
+
+function TieBreakLine({ value, phaseInfo, compact = false }) {
+  if (value == null) return null
+  return (
+    <span
+      title="Desempate usado para ordenar atletas con la misma marca"
+      style={{
+        display: compact ? 'inline' : 'block',
+        marginTop: compact ? 0 : 3,
+        marginLeft: compact ? 6 : 0,
+        color: THEME.accent,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      TB {tieBreakValue(value, phaseInfo)}
+    </span>
+  )
+}
+
+function ExtraLine({ value, compact = false }) {
+  if (value == null) return null
+  return (
+    <span
+      title="Repeticiones extra al time cap"
+      style={{
+        display: compact ? 'inline' : 'block',
+        marginTop: compact ? 0 : 3,
+        marginLeft: compact ? 6 : 0,
+        color: THEME.primary,
+        fontSize: compact ? 11 : 12,
+        fontWeight: 800,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      Extra {value}
+    </span>
+  )
 }
 
 function phaseStatusIcon(estado, size = 14) {
@@ -149,6 +215,14 @@ function RankCell({ rank, tvMode = false }) {
 }
 
 // â”€â”€ Movement indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function ReviewBadge() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 20, padding: '3px 7px', borderRadius: 999, border: '1px solid rgba(0,194,168,0.34)', background: 'rgba(0,194,168,0.12)', color: '#00C2A8', fontSize: 10, fontWeight: 850, whiteSpace: 'nowrap' }}>
+      En revision
+    </span>
+  )
+}
+
 function MoveBadge({ delta, tvMode = false }) {
   if (delta === 0 || delta === null) return null
   const size = tvMode ? 14 : 11
@@ -295,25 +369,6 @@ function AthleteAvatar({ athlete, size = 36 }) {
   )
 }
 
-function AthleteProfileLink({ athlete, children, style }) {
-  if (!athlete?.username) {
-    return <span style={style}>{children}</span>
-  }
-  return (
-    <Link
-      to={`/a/${athlete.username}`}
-      style={{
-        color: 'inherit',
-        textDecoration: 'none',
-        ...style,
-      }}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {children}
-    </Link>
-  )
-}
-
 function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCodeByName = {} }) {
   const countryCode = countryCodeFromLocation(athlete?.ciudad_pais, countryCodeByName)
   const flagUrl = flagUrlFromCountryCode(countryCode)
@@ -323,8 +378,7 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
     <div style={{ display: 'flex', alignItems: 'center', gap: compact ? 8 : 10, minWidth: 0 }}>
       <AthleteAvatar athlete={athlete} size={tvMode ? 48 : compact ? 34 : 38} />
       <div style={{ minWidth: 0, display: 'grid', gap: 2 }}>
-        <AthleteProfileLink
-          athlete={athlete}
+        <span
           style={{
             color: THEME.ink,
             fontWeight: 800,
@@ -336,7 +390,22 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
           }}
         >
           {athleteDisplayName(athlete)}
-        </AthleteProfileLink>
+        </span>
+        {athlete?.box ? (
+          <span
+            style={{
+              color: THEME.soft,
+              fontSize: tvMode ? 14 : compact ? 11 : 12,
+              fontWeight: 700,
+              lineHeight: 1.15,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {athlete.box}
+          </span>
+        ) : null}
         {countryLabel || flagUrl ? (
           <div style={{ color: THEME.muted, fontSize: tvMode ? 13 : 11, display: 'flex', gap: 6, alignItems: 'center', minWidth: 0 }}>
             {flagUrl ? (
@@ -356,7 +425,237 @@ function AthleteIdentity({ athlete, compact = false, tvMode = false, countryCode
 }
 
 // â”€â”€ Individual leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
+function allIndividualRows(individualData) {
+  return Object.values(individualData || {}).flat()
+}
+
+function findTotalRowForAthlete(data, athleteId) {
+  return allIndividualRows(data?.individual).find((row) => String(row.id) === String(athleteId)) || null
+}
+
+function rowsForAthleteCategory(data, athlete) {
+  const totalRow = findTotalRowForAthlete(data, athlete?.id) || athlete
+  const category = totalRow?.categoria || athlete?.categoria || 'Sin categoria'
+  return data?.individual?.[category] || []
+}
+
+function athletePhaseResults(data, athleteId) {
+  return (data?.phases || [])
+    .map((phase) => {
+      const row = allIndividualRows(phase.individual).find((item) => String(item.id) === String(athleteId))
+      if (!row) return null
+      return {
+        phase,
+        rank: row.rank,
+        points: Number(row.total_puntos || 0),
+        mark: row.mejor_marca,
+        extra: row.extra,
+        tiebreak: row.tiebreak,
+        attempts: Number(row.total_eventos || 0),
+      }
+    })
+    .filter(Boolean)
+}
+
+function competitionStatusForSummary(summary) {
+  if (!summary.completedCount) return 'Debe completar workouts'
+  if (summary.rank && summary.rank <= 3) return 'En zona de podio'
+  if (summary.prevGap != null && summary.prevGap <= 10) return 'A pocos puntos'
+  if (summary.bestWorkout?.rank && summary.bestWorkout.rank <= 3) return 'Presionando arriba'
+  return 'En competencia'
+}
+
+function buildAthleteSummary(athlete, data) {
+  if (!athlete || !data) return null
+  const totalRow = findTotalRowForAthlete(data, athlete.id) || athlete
+  const categoryRows = rowsForAthleteCategory(data, totalRow)
+  const rowIndex = categoryRows.findIndex((row) => String(row.id) === String(totalRow.id))
+  const prevRow = rowIndex > 0 ? categoryRows[rowIndex - 1] : null
+  const nextRow = rowIndex >= 0 && rowIndex < categoryRows.length - 1 ? categoryRows[rowIndex + 1] : null
+  const totalPoints = Number(totalRow.total_puntos || 0)
+  const prevPoints = prevRow ? Number(prevRow.total_puntos || 0) : null
+  const nextPoints = nextRow ? Number(nextRow.total_puntos || 0) : null
+  const phaseResults = athletePhaseResults(data, totalRow.id)
+  const completed = phaseResults.filter((item) => item.attempts > 0 || item.mark != null || item.points > 0)
+  const rankedCompleted = completed.filter((item) => Number.isFinite(Number(item.rank)))
+  const sortedByRank = [...rankedCompleted].sort((a, b) => Number(a.rank) - Number(b.rank))
+  const summary = {
+    athlete: totalRow,
+    rank: totalRow.rank,
+    category: totalRow.categoria || 'Sin categoria',
+    totalPoints,
+    totalWorkouts: (data.phases || []).filter((phase) => (phase.modality || 'individual') === 'individual').length,
+    completedCount: completed.length,
+    prevGap: prevPoints == null ? null : Math.abs(totalPoints - prevPoints),
+    nextGap: nextPoints == null ? null : Math.abs(totalPoints - nextPoints),
+    prevRow,
+    nextRow,
+    bestWorkout: sortedByRank[0] || null,
+    worstWorkout: sortedByRank[sortedByRank.length - 1] || null,
+    phaseResults,
+  }
+  summary.status = competitionStatusForSummary(summary)
+  return summary
+}
+
+function summaryMetric(label, value, accent = THEME.ink) {
+  return (
+    <div className="lb-athlete-summary-metric" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, minWidth: 0 }}>
+      <div className="lb-athlete-summary-metric-label" style={{ color: THEME.soft, fontWeight: 800, textTransform: 'uppercase' }}>{label}</div>
+      <div className="lb-athlete-summary-metric-value" style={{ color: accent, fontWeight: 900, lineHeight: 1.05 }}>{value}</div>
+    </div>
+  )
+}
+
+function AthleteSummaryModal({ summary, onClose, isMobile, following = false, onToggleFollow }) {
+  useEffect(() => {
+    if (!summary) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.body.classList.add('fr-modal-open')
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.body.classList.remove('fr-modal-open')
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose, summary])
+
+  if (!summary) return null
+
+  const athlete = summary.athlete
+  const profilePath = athlete?.username ? `/a/${athlete.username}` : ''
+  const topBorder = summary.rank && summary.rank <= 3
+    ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)'
+    : `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.accent} 100%)`
+
+  return (
+    <div
+      className="lb-athlete-summary-backdrop"
+      role="presentation"
+      onMouseDown={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        background: 'rgba(0,0,0,0.68)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <div
+        className="lb-athlete-summary-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Resumen competitivo de ${athleteDisplayName(athlete)}`}
+        onMouseDown={(event) => event.stopPropagation()}
+        style={{
+          overflowY: 'auto',
+          background: THEME.surface,
+          border: `1px solid ${THEME.border}`,
+          boxShadow: '0 24px 70px rgba(0,0,0,0.48)',
+          color: THEME.ink,
+        }}
+      >
+        <div style={{ height: 5, background: topBorder }} />
+        <div className="lb-athlete-summary-header" style={{ position: 'sticky', top: 0, zIndex: 2, background: 'rgba(23,27,33,0.98)', borderBottom: `1px solid ${THEME.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ fontWeight: 900, fontSize: 15 }}>Resumen competitivo</div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar resumen"
+            className="lb-athlete-summary-close"
+            style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, padding: 0, lineHeight: 1 }}
+          >
+            <X size={18} strokeWidth={2.4} style={{ display: 'block' }} />
+          </button>
+        </div>
+
+        <div className="lb-athlete-summary-content">
+          <div className="lb-athlete-summary-hero" style={{ display: 'flex', alignItems: 'center' }}>
+            <AthleteAvatar athlete={athlete} size={58} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div className="lb-athlete-summary-name" style={{ lineHeight: 1.1, fontWeight: 900, color: THEME.ink }}>{athleteDisplayName(athlete)}</div>
+              <div className="lb-athlete-summary-meta" style={{ color: THEME.muted, display: 'flex', flexWrap: 'wrap' }}>
+                <span>{summary.category}</span>
+                {athlete?.box ? <span>{athlete.box}</span> : null}
+                {countryLabelFromLocation(athlete?.ciudad_pais) ? <span>{countryLabelFromLocation(athlete.ciudad_pais)}</span> : null}
+              </div>
+            </div>
+            <div className="lb-athlete-summary-rank" style={{ textAlign: 'right' }}>
+              <div className="lb-athlete-summary-rank-number" style={{ fontFamily: '"Bebas Neue", monospace', color: summary.rank <= 3 ? '#FF9A3D' : THEME.primary, lineHeight: 0.9 }}>#{summary.rank ?? '-'}</div>
+              <div style={{ color: THEME.soft, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>Puesto</div>
+            </div>
+          </div>
+
+          <div className="lb-athlete-summary-metrics" style={{ display: 'grid' }}>
+            {summaryMetric('Puntos', summary.totalPoints, THEME.primary)}
+            {summaryMetric('Workouts', `${summary.completedCount}/${summary.totalWorkouts || '-'}`, THEME.accent)}
+            {summaryMetric('Arriba', summary.prevGap == null ? 'Liderando' : `${summary.prevGap} pts`, THEME.ink)}
+            {summaryMetric('Abajo', summary.nextGap == null ? 'Sin perseguidor' : `${summary.nextGap} pts`, THEME.muted)}
+          </div>
+
+          <div className="lb-athlete-summary-status" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8 }}>
+            <div style={{ color: THEME.accent, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>{summary.status}</div>
+            <div style={{ marginTop: 6, color: THEME.muted, fontSize: 13, lineHeight: 1.5 }}>
+              {summary.bestWorkout
+                ? `Mejor workout: ${summary.bestWorkout.phase.nombre}, puesto #${summary.bestWorkout.rank}.`
+                : 'Aun no tiene resultados cargados en workouts individuales.'}
+              {summary.worstWorkout && summary.worstWorkout !== summary.bestWorkout
+                ? ` Ultimo margen a mejorar: ${summary.worstWorkout.phase.nombre}, puesto #${summary.worstWorkout.rank}.`
+                : ''}
+            </div>
+          </div>
+
+          <div className="lb-athlete-summary-workouts">
+            <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 900 }}>Workouts</div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {summary.phaseResults.length ? summary.phaseResults.map((item) => (
+                <div key={item.phase.id} className="lb-athlete-summary-workout-row" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, display: 'grid', alignItems: 'center' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="lb-athlete-summary-workout-name" style={{ fontWeight: 800 }}>{item.phase.nombre}</div>
+                    <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{item.phase.estado || 'pendiente'}</div>
+                  </div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
+                </div>
+              )) : (
+                <div style={{ color: THEME.muted, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 14 }}>Sin workouts individuales registrados.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="lb-athlete-summary-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => onToggleFollow?.(athlete)} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: following ? '1px solid rgba(0,194,168,0.34)' : '1px solid rgba(255,107,0,0.34)', background: following ? 'rgba(0,194,168,0.14)' : 'rgba(255,107,0,0.14)', color: following ? '#B9FFF4' : '#FF9A3D', fontWeight: 900, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              {following ? <Check size={15} /> : <Bell size={15} />}
+              {following ? 'Siguiendo' : 'Seguir'}
+            </button>
+            <button type="button" onClick={onClose} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#090B0E', color: THEME.ink, fontWeight: 800, cursor: 'pointer' }}>
+              Cerrar
+            </button>
+            {profilePath ? (
+              <Link to={profilePath} className="lb-athlete-summary-action" style={{ borderRadius: 8, border: '1px solid transparent', background: THEME.primary, color: '#fff', fontWeight: 900, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                Ir al perfil
+                <ExternalLink size={15} />
+              </Link>
+            ) : (
+              <button type="button" disabled className="lb-athlete-summary-action" style={{ borderRadius: 8, border: `1px solid ${THEME.border}`, background: '#11151a', color: THEME.soft, fontWeight: 900 }}>
+                Perfil no disponible
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {}, onAthleteSelect }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -371,6 +670,23 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
     <>
       {CATEGORY_ORDER.filter(c => data[c]).concat(Object.keys(data).filter(c => !CATEGORY_ORDER.includes(c))).map(cat => {
         if (!data[cat]) return null
+        const markCounts = data[cat].reduce((acc, item) => {
+          if (item.mejor_marca == null) return acc
+          const key = String(item.mejor_marca)
+          acc[key] = (acc[key] || 0) + 1
+          return acc
+        }, {})
+        const shouldShowTiebreak = (item) => (
+          !!phaseInfo?.tie_break_enabled
+          && item?.tiebreak != null
+          && item?.mejor_marca != null
+          && markCounts[String(item.mejor_marca)] > 1
+        )
+        const shouldShowExtra = (item) => (
+          item?.extra != null
+          && item?.mejor_marca != null
+          && markCounts[String(item.mejor_marca)] > 1
+        )
         return (
           <div key={cat} style={{ marginBottom: isMobile ? 20 : 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
@@ -389,7 +705,17 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     <div
                       key={p.id}
                       className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : isNew ? 'row-new' : ''}
-                      style={mobileRankCardStyle}
+                      role="button"
+                      tabIndex={onAthleteSelect ? 0 : undefined}
+                      onClick={() => onAthleteSelect?.(p)}
+                      onKeyDown={(event) => {
+                        if (!onAthleteSelect) return
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onAthleteSelect(p)
+                        }
+                      }}
+                      style={{ ...mobileRankCardStyle, cursor: onAthleteSelect ? 'pointer' : 'default' }}
                     >
                       {/* Header: rank + name + movement */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -397,6 +723,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <AthleteIdentity athlete={p} compact countryCodeByName={countryCodeByName} />
                         </div>
+                        {p.has_active_appeal ? <ReviewBadge /> : null}
                         <MoveBadge delta={delta} />
                       </div>
 
@@ -417,10 +744,12 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       {/* Meta row */}
                       <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap' }}>
                         {phaseInfo && p.mejor_marca != null && (
-                          <span style={{ color: THEME.ink, fontWeight: 500 }}>{phaseMetricLabel(phaseInfo)}: <b>{metricValue(p.mejor_marca, phaseInfo)}</b></span>
+                          <span style={{ color: THEME.ink, fontWeight: 500 }}>
+                            {phaseMetricLabel(phaseInfo)}: <b>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</b>
+                            {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} compact /> : null}
+                            {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} compact /> : null}
+                          </span>
                         )}
-                        <span>Sexo: {p.sexo || '-'}</span>
-                        {showEventCount && <span>Registros: {p.total_eventos}</span>}
                       </div>
                     </div>
                   )
@@ -432,8 +761,6 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                   <tr>
                     <th style={{ width: 50 }}>Pos Evento</th>
                     <th>Nombre</th>
-                    <th>Sexo</th>
-                    {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
                     {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
                     {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
@@ -450,18 +777,33 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <tr
                         key={p.id}
                         className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : isNew ? 'row-new' : ''}
-                        style={{ transition: 'background 0.6s' }}
+                        role="button"
+                        tabIndex={onAthleteSelect ? 0 : undefined}
+                        onClick={() => onAthleteSelect?.(p)}
+                        onKeyDown={(event) => {
+                          if (!onAthleteSelect) return
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            onAthleteSelect(p)
+                          }
+                        }}
+                        style={{ transition: 'background 0.6s', cursor: onAthleteSelect ? 'pointer' : 'default' }}
                       >
                         <td style={{ textAlign: 'center' }}><RankCell rank={p.rank} tvMode={tvMode} /></td>
                         <td style={{ fontWeight: p.rank <= 3 ? 700 : 400 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                             <AthleteIdentity athlete={p} tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                            {p.has_active_appeal ? <ReviewBadge /> : null}
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
-                        <td style={{ color: THEME.muted }}>{p.sexo || '-'}</td>
-                        {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{p.total_eventos}</td>}
-                        {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(p.mejor_marca, phaseInfo)}</td>}
+                        {phaseInfo && (
+                          <td style={{ textAlign: 'center', color: THEME.muted }}>
+                            <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</div>
+                            {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} /> : null}
+                            {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} /> : null}
+                          </td>
+                        )}
                         <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                           {p.total_puntos}
                         </td>
@@ -491,7 +833,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
 }
 
 // â”€â”€ Team leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
+function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
   const prevMap = useRef({})
 
   useEffect(() => {
@@ -521,6 +863,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? '#FF9A3D' : THEME.muted }}>#{visibleRank}</span>
                 <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14, color: THEME.ink }}>{teamName}</span>
+                {t.has_active_appeal ? <ReviewBadge /> : null}
                 <MoveBadge delta={delta} />
               </div>
 
@@ -530,7 +873,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
                   <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{t.total_puntos}</div>
                   {phaseInfo && t.mejor_marca != null && (
-                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValue(t.mejor_marca, phaseInfo)}</div>
+                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
                   )}
                 </div>
                 {isPhaseView && (
@@ -550,14 +893,14 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   return (
                     <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
+                      {m.has_active_appeal ? <ReviewBadge /> : null}
                       {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
-                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValue(m.mejor_marca, phaseInfo)}</span>
+                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)}</span>
                       )}
                     </div>
                   )
                 })}
               </div>
-              {showEventCount && <div style={{ marginTop: 4, color: THEME.muted, fontSize: 12 }}>Registros: {t.total_eventos}</div>}
             </div>
           )
         })}
@@ -572,7 +915,6 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
           <th style={{ width: 50 }}>Pos Evento</th>
           <th>Equipo</th>
           <th>Integrantes</th>
-          {showEventCount && <th style={{ textAlign: 'right' }}>Registros</th>}
           {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
           <th style={{ textAlign: 'center' }}>Puntos</th>
           {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
@@ -593,6 +935,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
               <td>
                 <div style={{ fontWeight: visibleRank <= 3 ? 700 : 400 }}>
                   {teamName}
+                  {t.has_active_appeal ? <span style={{ marginLeft: 8 }}><ReviewBadge /></span> : null}
                   <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
                 </div>
               </td>
@@ -605,10 +948,11 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                     return (
                       <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <AthleteIdentity athlete={m} compact tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                        {m.has_active_appeal ? <ReviewBadge /> : null}
                         {phaseMode !== 'total' && (
                           <span style={{ marginLeft: 6, color: THEME.muted }}>
                             {phaseInfo
-                              ? `(${phaseMetricLabel(phaseInfo)}: ${metricValue(m.mejor_marca, phaseInfo)})`
+                              ? `(${phaseMetricLabel(phaseInfo)}: ${metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)})`
                               : ''}
                           </span>
                         )}
@@ -617,8 +961,7 @@ function TeamsTable({ data, prevData, showEventCount, phaseMode, isMobile, total
                   })}
                 </div>
               </td>
-              {showEventCount && <td style={{ textAlign: 'right', color: THEME.muted }}>{t.total_eventos}</td>}
-              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValue(t.mejor_marca, phaseInfo)}</td>}
+              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
               <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
                 {t.total_puntos}
               </td>
@@ -758,6 +1101,8 @@ export default function Leaderboard() {
   const [timerData, setTimerData] = useState(null)
   const [timerClockOffsetMs, setTimerClockOffsetMs] = useState(null)
   const [qrModalOpen, setQrModalOpen] = useState(false)
+  const [selectedAthleteSummary, setSelectedAthleteSummary] = useState(null)
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [tvScrollableHeight, setTvScrollableHeight] = useState(null)
   const [countryCodeByName, setCountryCodeByName] = useState({})
   const intervalRef = useRef(null)
@@ -784,6 +1129,8 @@ export default function Leaderboard() {
       .catch(() => {})
     return () => { mounted = false }
   }, [])
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
 
   useEffect(() => {
     api.get('/competitions?scope=public').then(r => {
@@ -944,10 +1291,41 @@ export default function Leaderboard() {
   const tvStaticTeamCategoryMode = data?.tv_static_team_category_mode || '__by_category__'
   const tvRotationIntervalMs = Math.min(120000, Math.max(5000, Number(data?.tv_rotation_interval_seconds || 24) * 1000))
   const pollIntervalMs = Math.min(60000, Math.max(2000, Number(data?.tv_data_refresh_interval_seconds || 5) * 1000))
-  const showEventCount = !!data?.show_event_count
+  const showEventCount = false
   const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''
+
+  const toggleFollowAthlete = useCallback((athlete) => {
+    if (!selectedComp || !athlete?.id) return
+    if (isFollowingAthlete(selectedComp, athlete.id, spectatorFollows)) {
+      setSpectatorFollows(unfollowAthlete(selectedComp, athlete.id))
+      return
+    }
+    setSpectatorFollows(followAthlete({
+      competitionId: selectedComp,
+      competitionName: compName,
+      athleteId: athlete.id,
+      athleteName: athleteDisplayName(athlete),
+      username: athlete.username,
+      category: athlete.categoria,
+      avatarUrl: athlete.profile_photo_url,
+    }))
+  }, [compName, selectedComp, spectatorFollows])
+
+  const openAthleteSummary = useCallback((athlete) => {
+    if (tvMode) return
+    const summary = buildAthleteSummary(athlete, data)
+    if (summary) setSelectedAthleteSummary(summary)
+  }, [data, tvMode])
+
+  const closeAthleteSummary = useCallback(() => {
+    setSelectedAthleteSummary(null)
+  }, [])
+
+  useEffect(() => {
+    setSelectedAthleteSummary(null)
+  }, [selectedComp, tvMode])
 
   // Only poll timer when TV mode actually needs it.
   useEffect(() => {
@@ -1212,6 +1590,86 @@ export default function Leaderboard() {
         .lb-root .tab:hover:not(.active) { color: ${THEME.ink}; background: rgba(255,255,255,0.04); }
         .lb-root h1 { color: ${THEME.ink} !important; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.5px; font-size: 38px !important; }
         .lb-root select, .lb-root input { background: ${THEME.surface}; color: ${THEME.ink}; border: 1px solid ${THEME.border}; }
+        .lb-athlete-summary-backdrop {
+          padding: 18px;
+        }
+        .lb-athlete-summary-panel {
+          width: min(720px, 94vw);
+          max-height: 86vh;
+          border-radius: 12px;
+          overscroll-behavior: contain;
+          scrollbar-gutter: stable;
+        }
+        .lb-athlete-summary-header {
+          padding: 14px 16px;
+        }
+        .lb-athlete-summary-close {
+          width: 34px;
+          height: 34px;
+          box-sizing: border-box;
+        }
+        .lb-athlete-summary-content {
+          padding: 20px;
+        }
+        .lb-athlete-summary-hero {
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+        .lb-athlete-summary-name {
+          font-size: 24px;
+          overflow-wrap: anywhere;
+        }
+        .lb-athlete-summary-meta {
+          margin-top: 5px;
+          gap: 8px;
+          font-size: 13px;
+        }
+        .lb-athlete-summary-rank-number {
+          font-size: 44px;
+        }
+        .lb-athlete-summary-metrics {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .lb-athlete-summary-metric {
+          padding: 10px 12px;
+        }
+        .lb-athlete-summary-metric-label {
+          font-size: 10px;
+          letter-spacing: 0.7px;
+        }
+        .lb-athlete-summary-metric-value {
+          margin-top: 5px;
+          font-size: 20px;
+          overflow-wrap: anywhere;
+        }
+        .lb-athlete-summary-status {
+          margin-top: 14px;
+          padding: 12px;
+        }
+        .lb-athlete-summary-workouts {
+          margin-top: 18px;
+        }
+        .lb-athlete-summary-workout-row {
+          grid-template-columns: minmax(0, 1fr) 90px 110px 90px;
+          gap: 12px;
+          padding: 10px 12px;
+        }
+        .lb-athlete-summary-workout-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .lb-athlete-summary-workout-stat {
+          min-width: 0;
+        }
+        .lb-athlete-summary-actions {
+          margin-top: 18px;
+        }
+        .lb-athlete-summary-action {
+          min-height: 42px;
+          padding: 10px 14px;
+        }
         .lb-root .badge-rx { background: rgba(214,217,224,0.12); color: #ff9a3d; border-color: rgba(214,217,224,0.35); }
         .lb-root .badge-scaled { background: rgba(94,234,212,0.12); color: #6ff3e1; border-color: rgba(94,234,212,0.35); }
         .lb-root .badge-masters { background: rgba(212,165,55,0.12); color: #f1ce75; border-color: rgba(212,165,55,0.35); }
@@ -1261,6 +1719,152 @@ export default function Leaderboard() {
           .lb-root .tabs::-webkit-scrollbar { display: none; }
           .lb-root .tab { font-size: 13px; padding: 6px 12px !important; flex-shrink: 0; }
           .lb-root select { font-size: 14px; }
+        }
+        @media (max-width: 640px) {
+          .lb-athlete-summary-backdrop {
+            padding:
+              max(8px, env(safe-area-inset-top, 0px))
+              10px
+              max(12px, calc(env(safe-area-inset-bottom, 0px) + 10px));
+          }
+          .lb-athlete-summary-panel {
+            width: min(100%, 520px);
+            max-height: calc(
+              100dvh
+              - max(8px, env(safe-area-inset-top, 0px))
+              - max(12px, calc(env(safe-area-inset-bottom, 0px) + 10px))
+            );
+            border-radius: 14px;
+          }
+          .lb-athlete-summary-header {
+            padding: 12px 14px;
+          }
+          .lb-athlete-summary-close {
+            width: 38px;
+            height: 38px;
+          }
+          .lb-athlete-summary-content {
+            padding: 14px;
+          }
+          .lb-athlete-summary-hero {
+            gap: 10px;
+            margin-bottom: 14px;
+            align-items: flex-start !important;
+          }
+          .lb-athlete-summary-name {
+            font-size: 21px;
+          }
+          .lb-athlete-summary-meta {
+            gap: 6px 8px;
+            font-size: 12px;
+          }
+          .lb-athlete-summary-rank {
+            min-width: 58px;
+          }
+          .lb-athlete-summary-rank-number {
+            font-size: 38px;
+          }
+          .lb-athlete-summary-metrics {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .lb-athlete-summary-metric {
+            padding: 9px 10px;
+          }
+          .lb-athlete-summary-metric-label {
+            font-size: 9px;
+            letter-spacing: 0.45px;
+          }
+          .lb-athlete-summary-metric-value {
+            font-size: 18px;
+          }
+          .lb-athlete-summary-status {
+            margin-top: 10px;
+            padding: 10px;
+          }
+          .lb-athlete-summary-workouts {
+            margin-top: 14px;
+          }
+          .lb-athlete-summary-workout-row {
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 6px 10px;
+            padding: 10px;
+          }
+          .lb-athlete-summary-workout-rank {
+            grid-column: 2;
+            grid-row: 1;
+            align-self: start;
+          }
+          .lb-athlete-summary-workout-mark {
+            grid-column: 1 / span 2;
+            grid-row: 2;
+          }
+          .lb-athlete-summary-workout-points {
+            grid-column: 3;
+            grid-row: 1 / span 2;
+            align-self: center;
+            text-align: right;
+            white-space: nowrap;
+          }
+          .lb-athlete-summary-workout-name {
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+          .lb-athlete-summary-actions {
+            margin-top: 14px;
+            display: grid !important;
+            grid-template-columns: 1fr 1fr;
+          }
+          .lb-athlete-summary-action {
+            width: 100%;
+            padding: 11px 12px;
+          }
+        }
+        @media (max-width: 380px) {
+          .lb-athlete-summary-content {
+            padding-left: 10px;
+            padding-right: 10px;
+          }
+          .lb-athlete-summary-hero {
+            display: grid !important;
+            grid-template-columns: 48px minmax(0, 1fr) auto;
+          }
+          .lb-athlete-summary-hero > span {
+            width: 48px !important;
+            height: 48px !important;
+          }
+          .lb-athlete-summary-name {
+            font-size: 19px;
+          }
+          .lb-athlete-summary-rank {
+            min-width: 48px;
+          }
+          .lb-athlete-summary-rank-number {
+            font-size: 34px;
+          }
+          .lb-athlete-summary-metric {
+            padding: 8px;
+          }
+          .lb-athlete-summary-metric-value {
+            font-size: 16px;
+          }
+          .lb-athlete-summary-workout-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
+          .lb-athlete-summary-workout-rank {
+            grid-column: 2;
+          }
+          .lb-athlete-summary-workout-mark {
+            grid-column: 1 / -1;
+          }
+          .lb-athlete-summary-workout-points {
+            grid-column: 1 / -1;
+            grid-row: 3;
+            text-align: left;
+          }
+          .lb-athlete-summary-actions {
+            grid-template-columns: 1fr;
+          }
         }
         @keyframes tvProgress {
           from { width: 0%; }
@@ -1634,7 +2238,7 @@ export default function Leaderboard() {
                 : null
               return Object.keys(indData).length === 0
                 ? <div style={{ color: '#555', textAlign: 'center', padding: 60 }}>No hay participantes activos con resultados</div>
-                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                : <IndividualTable data={filteredIndData} prevData={indPrev} showEventCount={showEventCount} isMobile={isMobile && !tvMode} totalScoreMap={indTotalScoreMap} phaseInfo={currentIndividualPhase} tvMode={tvMode} countryCodeByName={countryCodeByName} onAthleteSelect={tvMode ? null : openAthleteSummary} />
             })()}
 
             {view === 'teams' && (() => {
@@ -1686,6 +2290,13 @@ export default function Leaderboard() {
           )}
         </div>
       </div>
+      <AthleteSummaryModal
+        summary={selectedAthleteSummary}
+        onClose={closeAthleteSummary}
+        isMobile={isMobile}
+        following={isFollowingAthlete(selectedComp, selectedAthleteSummary?.athlete?.id, spectatorFollows)}
+        onToggleFollow={toggleFollowAthlete}
+      />
       {qrModalOpen && !tvMode && selectedComp && (
         <div
           onClick={() => setQrModalOpen(false)}

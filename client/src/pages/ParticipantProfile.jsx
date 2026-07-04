@@ -9,7 +9,7 @@ import GymSelector from '../components/gyms/GymSelector'
 import { SkeletonBlock, SkeletonList } from '../components/layout/Skeleton'
 import {
   Trophy, PlusCircle, Medal, Dumbbell,
-  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck,
+  X, Users, Crown, UserPlus, Pencil, Check, ChevronRight, Bell, UserCog, Clock3, KeyRound, Eye, EyeOff, ShieldCheck, MessageSquare, Paperclip, Send,
 } from 'lucide-react'
 
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -125,8 +125,22 @@ function organizerApplicationBadge(status) {
 
 // â”€â”€ Competition Detail Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+function appealStatusLabel(status) {
+  const labels = {
+    submitted: 'Nueva',
+    under_review: 'En revision',
+    needs_evidence: 'Evidencia solicitada',
+    escalated: 'Escalada',
+    accepted: 'Aceptada',
+    rejected: 'Rechazada',
+    score_adjusted: 'Resultado ajustado',
+    closed: 'Cerrada',
+    cancelled: 'Cancelada',
+  }
+  return labels[status] || status || 'Sin estado'
+}
+
 const PUBLIC_PROFILE_TOGGLES = [
-  ['public_profile_enabled', 'Perfil publico', 'Activa tu ficha para compartir tu presencia competitiva.'],
   ['public_profile_indexable', 'Indexacion', 'Permite que tu URL aparezca en busquedas externas.'],
   ['public_show_city', 'Ciudad', 'Muestra tu ciudad y pais en la ficha publica.'],
   ['public_show_gym', 'Gym', 'Muestra el gym que representas actualmente.'],
@@ -327,7 +341,7 @@ function ConfirmLeaveGymModal({ membership, busy, onClose, onConfirm }) {
   )
 }
 
-function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMobile }) {
+function CompetitionDetailModal({ comp, participantId, allResults, appealsByResultId, onClose, isMobile, appealDeadline, canAppealResult, onAppealResult, onOpenAppealThread }) {
   const [team, setTeam] = useState(null)
   const [teamLoading, setTeamLoading] = useState(true)
   const [pendingInvites, setPendingInvites] = useState([])
@@ -443,61 +457,74 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
   }
 
   const badge = statusBadge(comp.enrollment_estado)
+  const modalColors = {
+    bg: '#0D0F12',
+    top: '#090B0E',
+    surface: '#171B21',
+    border: '#252A33',
+    text: '#F5F7FA',
+    secondary: '#AAB2C0',
+    muted: '#6B7280',
+    primary: '#FF6B00',
+    accent: '#00C2A8',
+    warning: '#F59E0B',
+  }
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
       display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: 1000,
       padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))',
     }}>
       <div style={{
-        background: '#fff', borderRadius: 16,
+        background: modalColors.surface, borderRadius: 8,
         width: '100%', maxWidth: 600,
         maxHeight: '100%',
         display: 'flex', flexDirection: 'column',
         overflow: 'hidden',
-        boxShadow: '0 8px 40px rgba(0,0,0,0.18)',
+        border: `1px solid ${modalColors.border}`,
+        boxShadow: '0 24px 80px rgba(0,0,0,0.42)',
+        color: modalColors.text,
       }}>
         {/* Header */}
         <div style={{
           padding: isMobile ? '16px 16px 12px' : '20px 24px 14px',
-          borderBottom: '1px solid var(--oa-border)',
-          background: '#171B21',
-          borderRadius: '16px 16px 0 0',
+          borderBottom: `1px solid ${modalColors.border}`,
+          background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-              <div style={{ fontWeight: 800, fontSize: isMobile ? 17 : 20, color: '#fff', lineHeight: 1.2 }}>{comp.nombre}</div>
-              {comp.descripcion && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 4 }}>{comp.descripcion}</div>}
+              <div style={{ fontWeight: 900, fontSize: isMobile ? 17 : 20, color: '#090B0E', lineHeight: 1.2 }}>{comp.nombre}</div>
+              {comp.descripcion && <div style={{ fontSize: 12, color: 'rgba(9,11,14,0.76)', marginTop: 4, fontWeight: 700 }}>{comp.descripcion}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <span className={`badge ${badge.cls}`} style={{ fontSize: 11 }}>{badge.label}</span>
-                {comp.activa === 1 && <span style={{ fontSize: 10, background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 4, padding: '2px 7px', fontWeight: 700 }}>ACTIVA</span>}
+                {comp.activa === 1 && <span style={{ fontSize: 10, background: 'rgba(9,11,14,0.72)', color: '#F5F7FA', borderRadius: 4, padding: '2px 7px', fontWeight: 800 }}>ACTIVA</span>}
                 {comp.enrollment_categoria && (
-                  <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Cat: <b style={{ color: '#fff' }}>{comp.enrollment_categoria}</b></span>
+                  <span style={{ fontSize: 11, color: 'rgba(9,11,14,0.78)', fontWeight: 800 }}>Cat: <b style={{ color: '#090B0E' }}>{comp.enrollment_categoria}</b></span>
                 )}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <button onClick={onClose} style={{ background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(9,11,14,0.24)', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#F5F7FA', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               <X size={18} />
             </button>
           </div>
         </div>
 
         {/* Scrollable body */}
-        <div style={{ overflowY: 'auto', flex: 1, padding: isMobile ? '14px 16px' : '18px 24px' }}>
+        <div style={{ overflowY: 'auto', flex: 1, padding: isMobile ? '14px 16px' : '18px 24px', background: modalColors.bg }}>
 
           {/* Team section */}
           {teamLoading ? (
-            <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
+            <div style={{ color: modalColors.secondary, fontSize: 13, textAlign: 'center', padding: '14px 0' }}>Cargando equipo...</div>
           ) : team ? (
             <div style={{ marginBottom: 18 }}>
               {/* Team header */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Users size={15} color="#D6D9E0" />
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0' }}>Tu equipo</span>
+                <Users size={15} color={modalColors.secondary} />
+                <span style={{ fontWeight: 800, fontSize: 14, color: modalColors.text }}>Tu equipo</span>
                 {isCaptain && (
-                  <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 7px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                  <span style={{ fontSize: 10, background: 'rgba(245,158,11,0.14)', color: '#F8C56E', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 4, padding: '2px 7px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <Crown size={10} /> CAPITAN
                   </span>
                 )}
@@ -523,7 +550,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   </form>
                 ) : (
                   <>
-                    <span style={{ fontWeight: 700, fontSize: 16, color: 'var(--oa-text)' }}>{team.nombre}</span>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: modalColors.text }}>{team.nombre}</span>
                     {isCaptain && (
                       <button className="btn-secondary btn-sm" onClick={() => setShowRename(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <Pencil size={12} /> Renombrar
@@ -540,23 +567,23 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                 {(team.members || []).map(m => (
                   <div key={m.id} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
-                    borderRadius: 8, border: `1px solid ${m.is_captain ? 'rgba(245, 158, 11, 0.32)' : 'var(--oa-border)'}`,
-                    background: m.is_captain ? 'rgba(245, 158, 11, 0.12)' : m.id === participantId ? 'rgba(0, 194, 168, 0.12)' : 'rgba(255,255,255,0.03)',
+                    borderRadius: 8, border: `1px solid ${m.is_captain ? 'rgba(245, 158, 11, 0.32)' : m.id === participantId ? 'rgba(0,194,168,0.30)' : modalColors.border}`,
+                    background: m.is_captain ? 'rgba(245, 158, 11, 0.10)' : m.id === participantId ? 'rgba(0, 194, 168, 0.10)' : modalColors.surface,
                   }}>
                     <div style={{
                       width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                      background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : 'rgba(255,255,255,0.06)',
+                      background: m.is_captain ? 'rgba(245, 158, 11, 0.18)' : modalColors.top,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: m.is_captain ? '#fbbf24' : '#D6D9E0',
+                      fontSize: 12, fontWeight: 800, color: m.is_captain ? '#F8C56E' : modalColors.secondary,
                     }}>
                       {m.is_captain ? <Crown size={14} /> : (m.nombre?.charAt(0) || '?')}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13 }}>{m.nombre} {m.apellido}</span>
-                      {m.id === participantId && <span style={{ fontSize: 11, color: '#D6D9E0', marginLeft: 6 }}>(tú)</span>}
+                      <span style={{ fontWeight: 700, fontSize: 13, color: modalColors.text }}>{m.nombre} {m.apellido}</span>
+                      {m.id === participantId && <span style={{ fontSize: 11, color: modalColors.secondary, marginLeft: 6 }}>(tú)</span>}
                     </div>
                     {m.is_captain ? (
-                      <span style={{ fontSize: 10, background: '#fff3cd', color: '#664d03', borderRadius: 4, padding: '2px 6px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, background: 'rgba(245,158,11,0.14)', color: '#F8C56E', border: '1px solid rgba(245,158,11,0.28)', borderRadius: 4, padding: '2px 6px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
                         <Crown size={9} /> Capitán
                       </span>
                     ) : isCaptain && (
@@ -576,8 +603,8 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
 
               {/* Captain: invite section */}
               {isCaptain && (
-                <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '12px 14px', border: '1px solid var(--oa-border)' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ background: modalColors.surface, borderRadius: 8, padding: '12px 14px', border: `1px solid ${modalColors.border}` }}>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                     <UserPlus size={14} /> Invitar participante
                   </div>
                   <form onSubmit={handleInvite} style={{ display: 'flex', gap: 8 }}>
@@ -596,11 +623,11 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
                   {/* Pending invites sent */}
                   {pendingInvites.length > 0 && (
                     <div style={{ marginTop: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--oa-text-secondary)', marginBottom: 6 }}>Invitaciones pendientes:</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: modalColors.secondary, marginBottom: 6 }}>Invitaciones pendientes:</div>
                       <div style={{ display: 'grid', gap: 4 }}>
                         {pendingInvites.map(inv => (
-                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid var(--oa-border)' }}>
-                            <span>{inv.invitee_nombre || inv.invitee_cedula}</span>
+                          <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, padding: '5px 8px', background: modalColors.top, borderRadius: 6, border: `1px solid ${modalColors.border}` }}>
+                            <span style={{ color: modalColors.text }}>{inv.invitee_nombre || inv.invitee_cedula}</span>
                             <button className="btn-secondary btn-sm" onClick={() => handleCancelInvite(inv.id)} disabled={cancelBusy === inv.id} style={{ fontSize: 11, padding: '2px 8px' }}>
                               {cancelBusy === inv.id ? '...' : 'Cancelar'}
                             </button>
@@ -617,37 +644,60 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
           {/* Results section */}
           {compResults.length > 0 && (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: '#D6D9E0', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: modalColors.text, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Trophy size={14} /> Tus resultados
               </div>
               <div style={{ display: 'grid', gap: 6 }}>
-                {compResults.map(r => (
-                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>{r.fase || 'Sin fase'}</div>
-                      {r.equipo && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                {compResults.map(r => {
+                  const resultAppeal = appealsByResultId?.[Number(r.id)] || null
+                  const deadline = appealDeadline?.(r)
+                  const appealExpired = !!deadline && Date.now() > deadline.getTime() && !r.active_appeal_id
+                  const deadlineLabel = deadline ? deadline.toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
+                  return (
+                  <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text }}>{r.fase || 'Sin fase'}</div>
+                      {r.equipo && <div style={{ fontSize: 11, color: modalColors.secondary, marginTop: 2 }}>Equipo: {r.equipo}</div>}
+                      {resultAppeal ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenAppealThread?.(r, resultAppeal)}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: `1px solid ${['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.28)' : 'rgba(0,194,168,0.28)'}`, background: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.10)' : 'rgba(0,194,168,0.12)', color: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? modalColors.secondary : modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                        >
+                          <MessageSquare size={12} /> Ver reclamacion · {appealStatusLabel(resultAppeal.status)}
+                        </button>
+                      ) : canAppealResult?.(r) ? (
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
+                          Apelar resultado
+                        </button>
+                      ) : appealExpired ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', color: '#F59E0B', fontSize: 11, fontWeight: 800 }}>
+                          <Clock3 size={12} /> Plazo vencido desde {deadlineLabel}
+                        </div>
+                      ) : null}
                     </div>
                     <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
                       {r.posicion ? (
                         <>
-                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 20 }}>#{r.posicion}</div>
-                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
+                          <div style={{ fontWeight: 850, color: modalColors.accent, fontSize: 20 }}>#{r.posicion}</div>
+                          <div style={{ fontSize: 10, color: modalColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 800, color: '#D6D9E0', fontSize: 22 }}>{r.puntos}</div>
-                          <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
+                          <div style={{ fontWeight: 850, color: modalColors.accent, fontSize: 22 }}>{r.puntos}</div>
+                          <div style={{ fontSize: 10, color: modalColors.muted, textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
                         </>
                       )}
                     </div>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}
 
           {!teamLoading && !team && compResults.length === 0 && (
-            <div style={{ color: 'var(--oa-text-muted)', textAlign: 'center', padding: '20px 0', fontSize: 13 }}>
+            <div style={{ color: modalColors.secondary, textAlign: 'center', padding: '20px 0', fontSize: 13, border: `1px solid ${modalColors.border}`, borderRadius: 8, background: modalColors.surface }}>
               Aun no hay resultados registrados para esta competencia
             </div>
           )}
@@ -656,7 +706,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             {canSeeMySchedule ? (
               <Link
                 to={getCompetitionScheduleHref(comp.id, true)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid rgba(94,234,212,0.24)', background: 'linear-gradient(135deg, rgba(94,234,212,0.12), rgba(13,15,18,0.92))', color: '#DFFFF9', fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: '1px solid rgba(0,194,168,0.28)', background: 'linear-gradient(135deg, rgba(0,194,168,0.16), rgba(9,11,14,0.88))', color: modalColors.text, fontWeight: 800, fontSize: 14, textDecoration: 'none' }}
               >
                 <Clock3 size={16} /> Mi cronograma <ChevronRight size={14} />
               </Link>
@@ -664,13 +714,13 @@ function CompetitionDetailModal({ comp, participantId, allResults, onClose, isMo
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <Link
                 to={getCompetitionScheduleHref(comp.id)}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#F5F7FA', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface, color: modalColors.text, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 <Users size={16} /> Cronograma
               </Link>
               <a
                 href={`/leaderboard/${comp.id}`}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 10, border: '1px solid #252A33', background: '#171B21', color: '#D6D9E0', fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface, color: modalColors.text, fontWeight: 700, fontSize: 14, textDecoration: 'none' }}
               >
                 <Medal size={16} /> Leaderboard
               </a>
@@ -692,6 +742,7 @@ export default function ParticipantProfile() {
 
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [results, setResults] = useState([])
+  const [myAppeals, setMyAppeals] = useState([])
   const [myComps, setMyComps] = useState([])
   const [phasesByComp, setPhasesByComp] = useState({})
   const [myTeamByComp, setMyTeamByComp] = useState({})
@@ -700,6 +751,13 @@ export default function ParticipantProfile() {
   const [showForm, setShowForm] = useState(false)
   const [cancelEnrollmentBusy, setCancelEnrollmentBusy] = useState(null)
   const [cancelEnrollmentTarget, setCancelEnrollmentTarget] = useState(null)
+  const [appealTarget, setAppealTarget] = useState(null)
+  const [appealBusy, setAppealBusy] = useState(false)
+  const [appealForm, setAppealForm] = useState({ user_requested_score: '', description: '', evidence_url: '' })
+  const [appealThread, setAppealThread] = useState(null)
+  const [appealThreadBusy, setAppealThreadBusy] = useState(false)
+  const [appealReply, setAppealReply] = useState({ message: '', evidence_url: '' })
+  const [appealLinkOpen, setAppealLinkOpen] = useState(false)
 
   // Modal state
   const [selectedComp, setSelectedComp] = useState(null)
@@ -788,7 +846,7 @@ export default function ParticipantProfile() {
   }, [photoDraftUrl])
 
   useEffect(() => {
-  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget)
+  const hasOverlay = Boolean(selectedComp || photoEditorOpen || showEditProfile || cancelEnrollmentTarget || organizerRequestOpen || gymLeaveTarget || appealTarget || appealThread)
     window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: hasOverlay } }))
     if (!hasOverlay || typeof document === 'undefined') {
       return () => {
@@ -814,7 +872,7 @@ export default function ParticipantProfile() {
       documentElement.style.overscrollBehavior = previousHtmlOverscroll
       window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
     }
-  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget])
+  }, [selectedComp, photoEditorOpen, showEditProfile, cancelEnrollmentTarget, organizerRequestOpen, gymLeaveTarget, appealTarget, appealThread])
 
   useEffect(() => {
     loadCountries().then(setCountries).catch(() => setCountries([]))
@@ -835,7 +893,20 @@ export default function ParticipantProfile() {
     }
   }, [showEditProfile])
 
-  const loadResults = () => api.get('/results').then(r => setResults(r.data))
+  const loadResults = () => {
+    if (!userId) {
+      setResults([])
+      return Promise.resolve()
+    }
+    return api.get('/results', { params: { user_id: userId } }).then(r => setResults(r.data))
+  }
+  const loadMyAppeals = () => {
+    if (!userId) {
+      setMyAppeals([])
+      return Promise.resolve()
+    }
+    return api.get('/appeals/me').then(r => setMyAppeals(Array.isArray(r.data) ? r.data : [])).catch(() => setMyAppeals([]))
+  }
   const loadMyCompetitions = async () => { const res = await api.get(`/users/${userId}/competitions`); setMyComps(res.data) }
   const loadMyInvitations = async () => {
     try {
@@ -859,9 +930,9 @@ export default function ParticipantProfile() {
         ciudad_pais: res.data.ciudad_pais || '',
         username: res.data.username || '',
         display_name: res.data.display_name || '',
-        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_enabled: true,
         public_profile_indexable: !!res.data.public_profile_indexable,
-        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_profile_visibility: 'public',
         public_bio: res.data.public_bio || '',
         public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
         public_show_city: !!res.data.public_show_city,
@@ -914,11 +985,12 @@ export default function ParticipantProfile() {
       setMyComps([])
       setPendingInvitations([])
       setResults([])
+      setMyAppeals([])
       setDashboardLoading(false)
       return
     }
     setDashboardLoading(true)
-    Promise.allSettled([loadResults(), loadMyCompetitions(), loadMyInvitations()])
+    Promise.allSettled([loadResults(), loadMyAppeals(), loadMyCompetitions(), loadMyInvitations()])
       .finally(() => setDashboardLoading(false))
   }, [userId])
 
@@ -937,6 +1009,44 @@ export default function ParticipantProfile() {
     () => confirmedComps.filter(c => c.activa && c.allow_user_results),
     [confirmedComps]
   )
+
+  const resultsByCompetition = useMemo(() => {
+    const map = {}
+    for (const result of results) {
+      const key = Number(result.competition_id)
+      if (!map[key]) map[key] = []
+      map[key].push(result)
+    }
+    return map
+  }, [results])
+
+  const appealsByResultId = useMemo(() => {
+    const map = {}
+    for (const appeal of myAppeals) {
+      const key = Number(appeal.result_id)
+      if (!key) continue
+      if (!map[key] || new Date(appeal.submitted_at || 0).getTime() > new Date(map[key].submitted_at || 0).getTime()) {
+        map[key] = appeal
+      }
+    }
+    return map
+  }, [myAppeals])
+
+  const myEventCards = useMemo(() => (
+    myComps.map((competition) => {
+      const eventResults = resultsByCompetition[Number(competition.id)] || []
+      const activeAppeals = eventResults.filter((result) => result.active_appeal_id).length
+      const latestResult = eventResults[0] || null
+      const totalPoints = eventResults.reduce((sum, result) => sum + Number(result.puntos || 0), 0)
+      return {
+        competition,
+        results: eventResults,
+        activeAppeals,
+        latestResult,
+        totalPoints,
+      }
+    })
+  ), [myComps, resultsByCompetition])
 
   useEffect(() => {
     if (!resultEnabledComps.length) { setForm(f => ({ ...f, competition_id: '', phase_id: '' })); return }
@@ -975,11 +1085,17 @@ export default function ParticipantProfile() {
       const trimmed = typeof v === 'string' ? v.trim() : v
       if (trimmed) payload[k] = trimmed
     }
+    payload.celular = (editForm.celular || '').trim()
+    if (!payload.celular) {
+      setEditBusy(false)
+      setEditMsg({ type: 'error', text: 'Ingresa tu celular para guardar el perfil' })
+      return
+    }
     publicPayload.username = (editForm.username || '').trim()
     publicPayload.display_name = (editForm.display_name || '').trim()
-    publicPayload.public_profile_enabled = editForm.public_profile_enabled ? 1 : 0
+    publicPayload.public_profile_enabled = 1
     publicPayload.public_profile_indexable = editForm.public_profile_indexable ? 1 : 0
-    publicPayload.public_profile_visibility = editForm.public_profile_visibility || 'private'
+    publicPayload.public_profile_visibility = 'public'
     publicPayload.public_bio = (editForm.public_bio || '').trim() || null
     publicPayload.public_cover_url = normalizePublicCoverPreset(editForm.public_cover_url)
     publicPayload.public_show_city = editForm.public_show_city ? 1 : 0
@@ -1018,9 +1134,9 @@ export default function ParticipantProfile() {
         ciudad_pais: res.data.ciudad_pais || '',
         username: res.data.username || '',
         display_name: res.data.display_name || '',
-        public_profile_enabled: !!res.data.public_profile_enabled,
+        public_profile_enabled: true,
         public_profile_indexable: !!res.data.public_profile_indexable,
-        public_profile_visibility: res.data.public_profile_visibility || 'private',
+        public_profile_visibility: 'public',
         public_bio: res.data.public_bio || '',
         public_cover_url: normalizePublicCoverPreset(res.data.public_cover_url),
         public_show_city: !!res.data.public_show_city,
@@ -1191,6 +1307,89 @@ export default function ParticipantProfile() {
     }
   }
 
+  const appealDeadline = (result) => {
+    const value = result?.appeal_deadline_at || (result?.created_at ? new Date(new Date(result.created_at).getTime() + 90 * 60 * 1000).toISOString() : null)
+    if (!value) return null
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  const canAppealResult = (result) => {
+    const deadline = appealDeadline(result)
+    return !!deadline && Date.now() <= deadline.getTime() && !result?.active_appeal_id
+  }
+
+  const openAppeal = (result) => {
+    setAppealTarget(result)
+    setAppealForm({ user_requested_score: '', description: '', evidence_url: '' })
+    setMsg(null)
+  }
+
+  const submitAppeal = async (e) => {
+    e.preventDefault()
+    if (!appealTarget) return
+    setAppealBusy(true)
+    setMsg(null)
+    try {
+      await api.post('/appeals', {
+        result_id: appealTarget.id,
+        reason_type: 'score_review',
+        user_requested_score: appealForm.user_requested_score.trim() || null,
+        description: appealForm.description.trim(),
+        evidence_url: appealForm.evidence_url.trim(),
+      })
+      setAppealTarget(null)
+      setMsg({ type: 'success', text: 'Reclamacion enviada' })
+      await loadResults()
+      await loadMyAppeals()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar la reclamacion' })
+    } finally {
+      setAppealBusy(false)
+    }
+  }
+
+  const openAppealThread = async (result, appeal = null) => {
+    const appealId = appeal?.id || result?.active_appeal_id
+    if (!appealId) return
+    setSelectedComp(null)
+    setAppealThreadBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.get(`/appeals/${appealId}`)
+      setAppealThread(data)
+      setAppealReply({ message: '', evidence_url: '' })
+      setAppealLinkOpen(false)
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion' })
+    } finally {
+      setAppealThreadBusy(false)
+    }
+  }
+
+  const sendAppealReply = async (e) => {
+    e.preventDefault()
+    if (!appealThread || (!appealReply.message.trim() && !appealReply.evidence_url.trim())) return
+    setAppealThreadBusy(true)
+    setMsg(null)
+    try {
+      const { data } = await api.post(`/appeals/${appealThread.id}/messages`, {
+        message: appealReply.message.trim(),
+        evidence_url: appealReply.evidence_url.trim() || null,
+      })
+      setAppealThread(data)
+      setAppealReply({ message: '', evidence_url: '' })
+      setAppealLinkOpen(false)
+      setMsg({ type: 'success', text: 'Mensaje enviado' })
+      await loadResults()
+      await loadMyAppeals()
+    } catch (err) {
+      setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo enviar el mensaje' })
+    } finally {
+      setAppealThreadBusy(false)
+    }
+  }
+
   const acceptInvitation = async (invId) => {
     setInvBusy(invId)
     setInvMsg(null)
@@ -1255,7 +1454,7 @@ export default function ParticipantProfile() {
   const gymHistory = gymMemberships.filter(m => m.id !== primaryGymMembership?.id)
   const canOpenOrganizerRequest = !organizerApplication || organizerApplication.status === 'rejected'
   const publicProfilePath = myProfile?.username ? `/a/${myProfile.username}` : ''
-  const isPublicProfileLive = Boolean(myProfile?.public_profile_enabled) && (myProfile?.public_profile_visibility || 'private') === 'public'
+  const isPublicProfileLive = Boolean(myProfile?.username)
   const canPreviewPublicProfile = Boolean(myProfile?.username)
   const profileRequirementNotice = location.state?.profileRequiredForEnrollment
     ? `Completa tu perfil antes de participar${location.state?.competitionName ? ` en ${location.state.competitionName}` : ''}. Faltan: ${formatMissingParticipantProfileFields(location.state?.missingFields || [])}.`
@@ -1271,6 +1470,29 @@ export default function ParticipantProfile() {
       setGymSelectorOpen(true)
     }
   }, [highlightedMissingFields, highlightedMissingFieldSet, location.state, primaryGymMembership])
+
+  useEffect(() => {
+    const appealId = Number(location.state?.openAppealId || 0)
+    if (!appealId) return
+    let cancelled = false
+    setSelectedComp(null)
+    setAppealTarget(null)
+    setAppealThreadBusy(true)
+    api.get(`/appeals/${appealId}`)
+      .then(({ data }) => {
+        if (cancelled) return
+        setAppealThread(data)
+        setAppealReply({ message: '', evidence_url: '' })
+        setAppealLinkOpen(false)
+      })
+      .catch((err) => {
+        if (!cancelled) setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo abrir la reclamacion' })
+      })
+      .finally(() => {
+        if (!cancelled) setAppealThreadBusy(false)
+      })
+    return () => { cancelled = true }
+  }, [location.state?.openAppealId, location.state?.notificationNonce])
 
   const compId = Number(form.competition_id)
   const phasesRaw = phasesByComp[compId]
@@ -1330,13 +1552,119 @@ export default function ParticipantProfile() {
         />
       )}
 
+      {appealTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 560, maxHeight: '88dvh', borderRadius: 8, background: '#171B21', border: '1px solid #252A33', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#171B21', borderBottom: '1px solid #252A33', padding: '16px 18px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 850 }}>Apelar resultado</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{appealTarget.fase || 'Workout'} - {appealDeadline(appealTarget)?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => !appealBusy && setAppealTarget(null)}>
+                Cerrar
+              </button>
+            </div>
+            <form onSubmit={submitAppeal} style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
+              <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13 }}>
+                Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealTarget.posicion ? `#${appealTarget.posicion}` : appealTarget.puntos}</b>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Resultado solicitado</label>
+                <input value={appealForm.user_requested_score} onChange={e => setAppealForm(f => ({ ...f, user_requested_score: e.target.value }))} placeholder="Ej: 124 reps, 05:32 o posicion 2" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Explica el ajuste</label>
+                <textarea rows={5} value={appealForm.description} onChange={e => setAppealForm(f => ({ ...f, description: e.target.value }))} placeholder="Describe el error y el cambio que debe revisar el juez" required />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Link de evidencia</label>
+                <input type="url" value={appealForm.evidence_url} onChange={e => setAppealForm(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Drive o YouTube" required />
+                <small style={{ color: '#AAB2C0', display: 'block', marginTop: 5 }}>Usa un link visible para el organizador.</small>
+              </div>
+              <button type="submit" className="btn-primary" disabled={appealBusy} style={{ minHeight: 44 }}>
+                {appealBusy ? 'Enviando...' : 'Enviar apelacion'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {appealThread && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top, 0px)) 12px calc(20px + env(safe-area-inset-bottom, 0px))' }}>
+          <div style={{ width: '100%', maxWidth: 620, maxHeight: '88dvh', borderRadius: 8, background: '#171B21', border: '1px solid #252A33', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.42)' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, background: '#171B21', borderBottom: '1px solid #252A33', padding: '16px 18px', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 850 }}>Reclamacion</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>{appealThread.phase_name || 'Workout'} - {appealStatusLabel(appealThread.status)}</div>
+              </div>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => !appealThreadBusy && setAppealThread(null)}>
+                Cerrar
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0D0F12' }}>
+              <div style={{ margin: '14px 14px 0', border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13, display: 'grid', gap: 6 }}>
+                <div>Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealThread.current_posicion ? `#${appealThread.current_posicion}` : (appealThread.current_marca ?? appealThread.current_puntos ?? '-')}</b></div>
+                {appealThread.user_requested_score ? <div>Solicitado: <b style={{ color: '#F5F7FA' }}>{appealThread.user_requested_score}</b></div> : null}
+                {appealThread.evidence_url ? <a href={appealThread.evidence_url} target="_blank" rel="noreferrer" style={{ color: '#00C2A8', fontWeight: 800 }}>Abrir evidencia enviada</a> : null}
+                {appealThread.resolution_note ? <div>Decision: <b style={{ color: '#F5F7FA' }}>{appealThread.resolution_note}</b></div> : null}
+              </div>
+
+              <div style={{ flex: 1, minHeight: 220, overflowY: 'auto', padding: 14, display: 'grid', alignContent: 'end', gap: 8 }}>
+                {(appealThread.messages || []).length ? appealThread.messages.map((message) => {
+                  const isMine = message.author_role === 'athlete'
+                  return (
+                    <div key={message.id} style={{ justifySelf: isMine ? 'end' : 'start', width: 'fit-content', maxWidth: 'min(82%, 440px)', border: `1px solid ${isMine ? 'rgba(0,194,168,0.24)' : '#252A33'}`, borderRadius: isMine ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isMine ? '#005A4F' : '#171B21', padding: '9px 11px', display: 'grid', gap: 5, boxShadow: '0 8px 22px rgba(0,0,0,0.18)' }}>
+                      <div style={{ color: isMine ? '#BFFAF1' : '#AAB2C0', fontSize: 10, fontWeight: 850 }}>{isMine ? 'Tu' : (message.author_name || 'Organizacion')}</div>
+                      <div style={{ color: '#F5F7FA', fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{message.message}</div>
+                      {message.evidence_url ? <a href={message.evidence_url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: isMine ? '#DFFFF9' : '#00C2A8', fontSize: 12, fontWeight: 850, textDecoration: 'none' }}><Paperclip size={12} /> Abrir link</a> : null}
+                    </div>
+                  )
+                }) : <div style={{ color: '#AAB2C0', fontSize: 13 }}>No hay mensajes todavia.</div>}
+              </div>
+
+              {['submitted', 'under_review', 'needs_evidence', 'escalated'].includes(appealThread.status) ? (
+                <form onSubmit={sendAppealReply} style={{ borderTop: '1px solid #252A33', background: '#171B21', padding: '10px 12px calc(10px + env(safe-area-inset-bottom, 0px))', display: 'grid', gap: 8 }}>
+                  {appealLinkOpen ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center' }}>
+                      <input type="url" value={appealReply.evidence_url} onChange={e => setAppealReply(f => ({ ...f, evidence_url: e.target.value }))} placeholder="Pega link de Drive o YouTube" style={{ minHeight: 38, borderRadius: 999, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '8px 12px', outline: 'none' }} />
+                      <button type="button" onClick={() => { setAppealLinkOpen(false); setAppealReply(f => ({ ...f, evidence_url: '' })) }} style={{ width: 38, height: 38, minWidth: 38, minHeight: 38, padding: 0, lineHeight: 0, borderRadius: '50%', border: '1px solid #252A33', background: '#090B0E', color: '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <X size={16} style={{ display: 'block' }} />
+                      </button>
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'grid', gridTemplateColumns: '40px minmax(0, 1fr) 42px', gap: 8, alignItems: 'end' }}>
+                    <button type="button" aria-label="Adjuntar link" onClick={() => setAppealLinkOpen(open => !open)} style={{ width: 40, height: 40, minWidth: 40, minHeight: 40, padding: 0, lineHeight: 0, borderRadius: '50%', border: `1px solid ${appealReply.evidence_url ? 'rgba(0,194,168,0.36)' : '#252A33'}`, background: appealReply.evidence_url ? 'rgba(0,194,168,0.12)' : '#090B0E', color: appealReply.evidence_url ? '#00C2A8' : '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Paperclip size={18} style={{ display: 'block' }} />
+                    </button>
+                    <textarea rows={1} value={appealReply.message} onChange={e => setAppealReply(f => ({ ...f, message: e.target.value }))} placeholder="Mensaje" style={{ width: '100%', minHeight: 40, maxHeight: 104, resize: 'none', borderRadius: 20, border: '1px solid #252A33', background: '#090B0E', color: '#F5F7FA', padding: '10px 13px', outline: 'none', lineHeight: 1.35 }} />
+                    <button type="submit" aria-label="Enviar mensaje" disabled={appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim())} style={{ width: 42, height: 42, minWidth: 42, minHeight: 42, padding: 0, lineHeight: 0, borderRadius: '50%', border: 'none', background: '#FF6B00', color: '#090B0E', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 'not-allowed' : 'pointer', opacity: appealThreadBusy || (!appealReply.message.trim() && !appealReply.evidence_url.trim()) ? 0.55 : 1 }}>
+                      <Send size={18} style={{ display: 'block' }} />
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div style={{ color: '#AAB2C0', fontSize: 13, borderTop: '1px solid #252A33', padding: 12, background: '#171B21' }}>Esta reclamacion ya esta cerrada.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedComp && (
         <CompetitionDetailModal
           comp={selectedComp}
         participantId={userId}
           allResults={results}
+          appealsByResultId={appealsByResultId}
           onClose={() => setSelectedComp(null)}
           isMobile={isMobile}
+          appealDeadline={appealDeadline}
+          canAppealResult={canAppealResult}
+          onOpenAppealThread={openAppealThread}
+          onAppealResult={(result) => {
+            setSelectedComp(null)
+            openAppeal(result)
+          }}
         />
       )}
 
@@ -1673,7 +2001,7 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Celular</label>
-                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" style={inputHighlightStyle(shouldHighlightField('celular'))} />
+                  <input value={editForm.celular || ''} onChange={e => setEditForm(f => ({ ...f, celular: e.target.value.replace(/\D/g, '') }))} placeholder="Celular" inputMode="tel" required style={inputHighlightStyle(shouldHighlightField('celular'))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Email</label>
@@ -1768,14 +2096,10 @@ export default function ParticipantProfile() {
                         Define tu identidad visible y la URL de tu ficha competitiva.
                       </div>
                     </div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 999, border: `1px solid ${editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.34)' : editForm.username ? 'rgba(0,194,168,0.28)' : 'rgba(37,42,51,1)'}`, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? 'rgba(255,107,0,0.12)' : editForm.username ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.72)' }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 999, background: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#FF6B00' : editForm.username ? '#00C2A8' : '#6B7280', boxShadow: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '0 0 14px rgba(255,107,0,0.45)' : editForm.username ? '0 0 12px rgba(0,194,168,0.34)' : 'none' }} />
-                      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public' ? '#F5F7FA' : editForm.username ? '#D7DEE8' : '#8B94A3' }}>
-                        {editForm.public_profile_enabled && (editForm.public_profile_visibility || 'private') === 'public'
-                          ? 'Visible'
-                          : editForm.username
-                            ? 'Vista previa'
-                            : 'Sin publicar'}
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 999, border: `1px solid ${editForm.username ? 'rgba(255,107,0,0.34)' : 'rgba(37,42,51,1)'}`, background: editForm.username ? 'rgba(255,107,0,0.12)' : 'rgba(9,11,14,0.72)' }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 999, background: editForm.username ? '#FF6B00' : '#6B7280', boxShadow: editForm.username ? '0 0 14px rgba(255,107,0,0.45)' : 'none' }} />
+                      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: editForm.username ? '#F5F7FA' : '#8B94A3' }}>
+                        {editForm.username ? 'Visible' : 'Sin username'}
                       </span>
                     </div>
                   </div>
@@ -1820,13 +2144,6 @@ export default function ParticipantProfile() {
                           )
                         })}
                       </div>
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Visibilidad</label>
-                      <select value={editForm.public_profile_visibility || 'private'} onChange={e => setEditForm(f => ({ ...f, public_profile_visibility: e.target.value }))}>
-                        <option value="private">Privado</option>
-                        <option value="public">Publico</option>
-                      </select>
                     </div>
                     <div style={{ display: 'grid', gap: 8, alignContent: 'start' }}>
                       {PUBLIC_PROFILE_TOGGLES.map(([field, label, description]) => (
@@ -1949,17 +2266,6 @@ export default function ParticipantProfile() {
           </div>
         )}
 
-        {/* Load result CTA */}
-        {resultEnabledComps.length > 0 && !showForm && (
-          <button
-            className="btn-primary"
-            onClick={() => setShowForm(true)}
-            style={{ width: '100%', padding: '14px', fontSize: 15, borderRadius: 10, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-          >
-            <PlusCircle size={18} /> Cargar resultado
-          </button>
-        )}
-
         {/* Result form */}
         {showForm && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
@@ -2035,39 +2341,100 @@ export default function ParticipantProfile() {
           </div>
         )}
 
-        {/* My enrollments */}
+        {/* My events */}
         {dashboardLoading ? (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
+            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis eventos</h3>
             <SkeletonList count={3} />
           </div>
-        ) : myComps.length > 0 && (
+        ) : myEventCards.length > 0 && (
           <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 20 }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15, fontWeight: 700 }}>Mis inscripciones</h3>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {myComps.map(c => {
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Mis eventos</h3>
+                <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, marginTop: 3 }}>Inscripciones, resultados y acciones por competencia.</div>
+              </div>
+              {resultEnabledComps.length > 0 && !showForm ? (
+                <button type="button" className="btn-primary btn-sm" onClick={() => setShowForm(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <PlusCircle size={14} /> Cargar resultado
+                </button>
+              ) : null}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              {myEventCards.map(({ competition: c, results: eventResults, activeAppeals, latestResult, totalPoints }) => {
                 const badge = statusBadge(c.enrollment_estado)
                 const statusCopy = enrollmentStatusCopy(c)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
                 const isBusy = cancelEnrollmentBusy === c.id
                 const paymentStatus = String(c.payment_status || '').trim().toLowerCase()
                 const canCancel = !c.payment_reference || ['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
+                const canOpen = isConfirmed || eventResults.length > 0
                 return (
                   <div
                     key={c.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--oa-border)', background: 'rgba(255,255,255,0.03)', justifyContent: 'space-between', minHeight: isMobile ? 56 : undefined }}
+                    role={canOpen ? 'button' : undefined}
+                    tabIndex={canOpen ? 0 : undefined}
+                    onClick={() => canOpen && openModal(c)}
+                    onKeyDown={(event) => {
+                      if (!canOpen) return
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openModal(c)
+                      }
+                    }}
+                    style={{
+                      border: '1px solid var(--oa-border)',
+                      borderRadius: 8,
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: 12,
+                      display: 'grid',
+                      gap: 10,
+                      cursor: canOpen ? 'pointer' : 'default',
+                      minHeight: 154,
+                    }}
                   >
-                    <div style={{ minWidth: 0, flex: 1, cursor: isConfirmed ? 'pointer' : 'default' }} onClick={() => isConfirmed && openModal(c)}>
-                      <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
-                      {c.enrollment_categoria && <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 1 }}>Cat: {c.enrollment_categoria}</div>}
-                      {statusCopy ? <div style={{ fontSize: 11, color: 'var(--oa-text-secondary)', marginTop: 3, whiteSpace: 'normal' }}>{statusCopy}</div> : null}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14, color: '#F5F7FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
+                        {c.enrollment_categoria ? <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 3 }}>{c.enrollment_categoria}</div> : null}
+                      </div>
+                      <span className={`badge ${badge.cls}`} style={{ flexShrink: 0 }}>{badge.label}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                      <span className={`badge ${badge.cls}`}>{badge.label}</span>
-                      <button type="button" className="btn-secondary btn-sm" onClick={() => setCancelEnrollmentTarget(c)} disabled={isBusy || !canCancel} title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Resultados</div>
+                        <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{eventResults.length}</div>
+                      </div>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Puntos</div>
+                        <div style={{ color: '#00C2A8', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{totalPoints}</div>
+                      </div>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                        <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Revision</div>
+                        <div style={{ color: activeAppeals ? '#00C2A8' : '#AAB2C0', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{activeAppeals}</div>
+                      </div>
+                    </div>
+                    <div style={{ minHeight: 34, color: '#AAB2C0', fontSize: 12, lineHeight: 1.4 }}>
+                      {latestResult ? (
+                        <>
+                          Ultimo: <span style={{ color: '#F5F7FA', fontWeight: 700 }}>{latestResult.fase || 'Workout'}</span>
+                          {latestResult.posicion ? ` · #${latestResult.posicion}` : ` · ${latestResult.puntos || 0} pts`}
+                        </>
+                      ) : statusCopy ? statusCopy : 'Abre el evento para ver cronograma y detalles.'}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button type="button" className="btn-secondary btn-sm" onClick={(event) => { event.stopPropagation(); openModal(c) }} disabled={!canOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Ver evento <ChevronRight size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={(event) => { event.stopPropagation(); setCancelEnrollmentTarget(c) }}
+                        disabled={isBusy || !canCancel}
+                        title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}
+                      >
                         {isBusy ? 'Cancelando...' : 'Cancelar'}
                       </button>
-                      {isConfirmed && <ChevronRight size={14} color="var(--oa-text-secondary)" />}
                     </div>
                   </div>
                 )
@@ -2168,56 +2535,6 @@ export default function ParticipantProfile() {
                 </button>
               </div>
             </form>
-          )}
-        </div>
-
-        {/* My results */}
-        <div className="card" style={{ padding: isMobile ? 14 : 20 }}>
-          <h3 style={{ marginBottom: 14, fontSize: 15, fontWeight: 700 }}>Mis resultados</h3>
-          {dashboardLoading ? (
-            <SkeletonList count={4} />
-          ) : results.length === 0 ? (
-            <p style={{ color: 'var(--oa-text-secondary)', textAlign: 'center', padding: 24, fontSize: 14 }}>Aun no tienes resultados cargados</p>
-          ) : isMobile ? (
-            <div style={{ display: 'grid', gap: 8 }}>
-              {results.map(r => (
-                <div key={r.id} style={{ border: '1px solid var(--oa-border)', borderRadius: 8, padding: '12px 14px', background: 'rgba(255,255,255,0.03)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.competencia}</div>
-                    <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 2 }}>{r.fase || 'Sin fase'}</div>
-                  </div>
-                  <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                    {r.posicion ? (
-                      <>
-                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 18 }}>#{r.posicion}</div>
-                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>posicion</div>
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ fontWeight: 700, color: 'var(--oa-accent)', fontSize: 22 }}>{r.puntos}</div>
-                        <div style={{ fontSize: 10, color: 'var(--oa-text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>puntos</div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <table>
-              <thead>
-                <tr><th>Competencia</th><th>Evento</th><th style={{ textAlign: 'right' }}>Puntos</th><th style={{ textAlign: 'right' }}>Posicion</th></tr>
-              </thead>
-              <tbody>
-                {results.map(r => (
-                  <tr key={r.id}>
-                    <td>{r.competencia}</td>
-                    <td style={{ color: 'var(--oa-text-secondary)', fontSize: 13 }}>{r.fase || '-'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--oa-accent)' }}>{r.posicion ? '-' : r.puntos}</td>
-                    <td style={{ textAlign: 'right' }}>{r.posicion || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           )}
         </div>
 

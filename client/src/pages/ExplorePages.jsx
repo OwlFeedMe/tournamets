@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, CalendarDays, ChevronRight, Flame, Lock, MapPin, QrCode, X } from 'lucide-react'
+import { Bell, CalendarDays, CheckCircle2, ChevronRight, Clock3, Flame, Lock, MapPin, Medal, QrCode, Trash2, TrendingDown, TrendingUp, Trophy, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonCardGrid, SkeletonList } from '../components/layout/Skeleton'
@@ -12,6 +12,12 @@ import {
 } from '../components/home/homeModel'
 import { useAuth } from '../context/AuthContext'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import {
+  readSpectatorFollows,
+  subscribeSpectatorFollows,
+  unfollowAthlete,
+} from '../utils/spectatorFollow'
+import { fetchFollowSummary } from '../utils/followSummary'
 
 const pageStyle = {
   minHeight: '100vh',
@@ -534,19 +540,247 @@ export function MyEventsPage() {
   )
 }
 
+function formatNotificationTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function findNextScheduledHeat(schedule, athleteId) {
+  const now = Date.now()
+  return (schedule?.items || [])
+    .map((item) => {
+      const participant = (item.participants || []).find((entry) => String(entry.user_id ?? entry.id) === String(athleteId))
+      if (!participant) return null
+      const startMs = Date.parse(item.start_at || '')
+      return {
+        heatLabel: item.heat_label || `Heat ${item.heat_number || ''}`.trim(),
+        phaseName: item.phase_name || 'Workout',
+        startAt: item.start_at || '',
+        lane: participant.lane_number || participant.lane || '',
+        location: [item.location_name, item.location_detail].filter(Boolean).join(' · '),
+        sortTime: Number.isFinite(startMs) ? startMs : Number.MAX_SAFE_INTEGER,
+      }
+    })
+    .filter(Boolean)
+    .filter((item) => item.sortTime >= now || !item.startAt)
+    .sort((a, b) => a.sortTime - b.sortTime)[0] || null
+}
+
+function formatHeatTime(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+function followStatus(snapshot) {
+  if (!snapshot) return { label: 'Pendiente', tone: '#6B7280', icon: Clock3 }
+  if (snapshot.rank && snapshot.rank <= 3) return { label: 'Zona podio', tone: '#D4A537', icon: Medal }
+  if (snapshot.resultsCount > 0) return { label: 'En competencia', tone: '#00C2A8', icon: CheckCircle2 }
+  return { label: 'Sin resultados', tone: '#6B7280', icon: Clock3 }
+}
+
+function bestFollowWorkout(snapshot) {
+  const rows = (snapshot?.phaseResults || []).filter((item) => item.rank != null)
+  if (!rows.length) return null
+  return [...rows].sort((a, b) => Number(a.rank) - Number(b.rank))[0]
+}
+
+function changeTone(change) {
+  if (change?.type === 'rank_up') return { color: '#00C2A8', icon: TrendingUp }
+  if (change?.type === 'rank_down') return { color: '#F59E0B', icon: TrendingDown }
+  if (change?.type === 'new_result') return { color: '#FF6B00', icon: Flame }
+  return { color: '#6B7280', icon: Bell }
+}
+
+function FollowDetailCard({ follow, detail, onUnfollow }) {
+  const snapshot = detail?.snapshot || null
+  const nextHeat = detail?.nextHeat || null
+  const bestWorkout = bestFollowWorkout(snapshot)
+  const completed = Number(snapshot?.resultsCount || 0)
+  const total = Math.max(completed, Number(snapshot?.phaseResults?.length || 0))
+  const progressPct = total ? Math.min(100, Math.round((completed / total) * 100)) : 0
+  const status = followStatus(snapshot)
+  const StatusIcon = status.icon
+  const latestChange = detail?.latestChange || null
+  const latestTone = changeTone(latestChange)
+  const ChangeIcon = latestTone.icon
+  const username = detail?.username || follow.username
+
+  return (
+    <article style={{ border: '1px solid #252A33', background: '#0D0F12', borderRadius: 16, padding: 14, display: 'grid', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ color: '#F5F7FA', fontWeight: 900, overflowWrap: 'anywhere' }}>{detail?.athleteName || follow.athleteName}</div>
+          <div style={{ marginTop: 3, color: '#AAB2C0', fontSize: 12, overflowWrap: 'anywhere' }}>
+            {detail?.competitionName || follow.competitionName}{(detail?.category || follow.category) ? ` · ${detail?.category || follow.category}` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: status.tone, border: `1px solid ${status.tone}42`, background: `${status.tone}18`, borderRadius: 999, padding: '6px 9px', fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap' }}>
+          <StatusIcon size={12} />
+          {status.label}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puesto</div>
+          <div style={{ color: snapshot?.rank ? '#FF9A3D' : '#6B7280', fontSize: 20, fontWeight: 900 }}>#{snapshot?.rank ?? '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Puntos</div>
+          <div style={{ color: '#00C2A8', fontSize: 20, fontWeight: 900 }}>{snapshot?.totalPoints ?? '-'}</div>
+        </div>
+        <div style={{ border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#171B21' }}>
+          <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>WODs</div>
+          <div style={{ color: '#F5F7FA', fontSize: 20, fontWeight: 900 }}>{total ? `${completed}/${total}` : '-'}</div>
+        </div>
+      </div>
+
+      {total ? (
+        <div style={{ height: 7, borderRadius: 999, background: 'rgba(245,247,250,0.10)', overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)' }} />
+        </div>
+      ) : null}
+
+      <div style={{ display: 'grid', gap: 8 }}>
+        <div style={{ border: `1px solid ${latestTone.color}33`, background: `${latestTone.color}12`, borderRadius: 10, padding: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: latestTone.color, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+            <ChangeIcon size={13} />
+            Ultimo cambio
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+            {latestChange ? `${latestChange.title}. ${latestChange.body}` : 'Sin cambios nuevos desde la ultima revision.'}
+          </div>
+        </div>
+        <div style={{ border: '1px solid #252A33', background: '#171B21', borderRadius: 10, padding: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#00C2A8', fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+            <Clock3 size={13} />
+            Proximo heat
+          </div>
+          <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>
+            {nextHeat
+              ? `${nextHeat.phaseName} · ${nextHeat.heatLabel}${nextHeat.lane ? ` · Lane ${nextHeat.lane}` : ''}${nextHeat.startAt ? ` · ${formatHeatTime(nextHeat.startAt)}` : ''}`
+              : 'Sin heat publicado por ahora.'}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: '#6B7280', fontSize: 12 }}>
+        {bestWorkout ? <span>Mejor WOD: {bestWorkout.phaseName} #{bestWorkout.rank}</span> : null}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <Link to={`/leaderboard/${follow.competitionId}`} style={{ color: '#FF9A3D', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Leaderboard</Link>
+        {username ? <Link to={`/a/${username}`} style={{ color: '#00C2A8', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>Perfil</Link> : null}
+        <button type="button" aria-label="Dejar de seguir" onClick={() => onUnfollow(follow)} style={{ marginLeft: 'auto', width: 34, height: 34, borderRadius: 9, border: '1px solid #252A33', background: '#171B21', color: '#AAB2C0', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 0, cursor: 'pointer' }}>
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </article>
+  )
+}
+
 export function NotificationsPage() {
   const { session, displayName } = useAuth()
+  const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
+  const [spectatorFeed, setSpectatorFeed] = useState([])
+  const [detailsByKey, setDetailsByKey] = useState({})
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
+
+  useEffect(() => {
+    if (!spectatorFollows.length) {
+      setSpectatorFeed([])
+      setDetailsByKey({})
+      setChecking(false)
+      return undefined
+    }
+    let active = true
+    const refresh = async () => {
+      setChecking(true)
+      try {
+        const { detailsByKey: nextDetails, activity } = await fetchFollowSummary(spectatorFollows)
+        if (!active) return
+        setDetailsByKey(nextDetails)
+        setSpectatorFeed(activity)
+      } catch {
+        if (!active) return
+        setDetailsByKey({})
+        setSpectatorFeed([])
+      } finally {
+        if (active) setChecking(false)
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 30000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [spectatorFollows])
 
   return (
     <div style={pageStyle}>
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 140px' }}>
         <TopBlock
           kicker="Notificaciones"
-          title="Avisos clave de competencias y actividad reciente."
-          text="Encuentra novedades importantes, aperturas, cambios de evento y actualizaciones relacionadas con tu cuenta o con los eventos visibles."
+          title="Seguimiento de atletas y actividad reciente."
+          text="Mira cambios de puesto, puntos y resultados de los atletas que sigues en este navegador."
         />
 
         <section style={{ display: 'grid', gap: 14 }}>
+          <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Trophy size={18} color="#FF6B00" />
+                <div style={{ fontWeight: 900 }}>Atletas seguidos</div>
+              </div>
+              <div style={{ color: checking ? '#00C2A8' : '#6B7280', fontSize: 12, fontWeight: 800 }}>
+                {checking ? 'Actualizando' : `${spectatorFollows.length} activos`}
+              </div>
+            </div>
+            {!spectatorFollows.length ? (
+              <div style={{ marginTop: 12, color: '#AAB2C0', lineHeight: 1.6 }}>
+                Entra a una competencia, abre inscritos o leaderboard y toca Seguir en el atleta.
+              </div>
+            ) : (
+              <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 12 }}>
+                {spectatorFollows.map((follow) => (
+                  <FollowDetailCard
+                    key={`${follow.competitionId}:${follow.athleteId}`}
+                    follow={follow}
+                    detail={detailsByKey[`${follow.competitionId}:${follow.athleteId}`]}
+                    onUnfollow={(item) => setSpectatorFollows(unfollowAthlete(item.competitionId, item.athleteId))}
+                  />
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Bell size={18} color="#00C2A8" />
+              <div style={{ fontWeight: 900 }}>Actividad detectada</div>
+            </div>
+            <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+              {spectatorFeed.length ? spectatorFeed.map((item) => (
+                <div key={item.id} style={{ border: '1px solid rgba(0,194,168,0.22)', background: 'rgba(0,194,168,0.08)', borderRadius: 12, padding: 12 }}>
+                  <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.title}</div>
+                  <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.45 }}>{item.body}</div>
+                  <div style={{ marginTop: 8, color: '#6B7280', fontSize: 12 }}>{item.competitionName} · {formatNotificationTime(item.createdAt)}</div>
+                </div>
+              )) : (
+                <div style={{ color: '#AAB2C0', lineHeight: 1.6 }}>
+                  {spectatorFollows.length ? 'Sin cambios nuevos desde la ultima revision.' : 'Sigue atletas para ver actividad aqui.'}
+                </div>
+              )}
+            </div>
+          </article>
+
           <article style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Bell size={18} color="#D6D9E0" />
@@ -555,7 +789,7 @@ export function NotificationsPage() {
             <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
               {session
                 ? 'Revisa aperturas de eventos, recordatorios de evento, movimientos del leaderboard y mensajes relacionados con tu participacion.'
-                : 'Consulta novedades generales e ingresa para ver alertas personalizadas de tus competencias.'}
+                : 'Este seguimiento se guarda solo en este navegador. Para avisos push reales se necesitara activar notificaciones del dispositivo.'}
             </div>
           </article>
 

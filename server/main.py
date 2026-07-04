@@ -23,11 +23,14 @@ from routers import (
     interest_notifications,
     checkin_qr,
     judges,
+    announcers,
     judge_cards,
     ticketing,
     discounts,
     competitor_invitations,
     gyms,
+    appeals,
+    follows,
 )
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
@@ -64,11 +67,14 @@ app.include_router(system_status.router)
 app.include_router(interest_notifications.router)
 app.include_router(checkin_qr.router)
 app.include_router(judges.router)
+app.include_router(announcers.router)
 app.include_router(judge_cards.router)
 app.include_router(ticketing.router)
 app.include_router(discounts.router)
 app.include_router(competitor_invitations.router)
 app.include_router(gyms.router)
+app.include_router(appeals.router)
+app.include_router(follows.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 

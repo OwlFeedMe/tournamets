@@ -1,6 +1,7 @@
 ﻿from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -18,8 +19,13 @@ from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import (
+    compute_result_points,
+    normalize_scoring_scope,
+)
 
 router = APIRouter(prefix="/api/results", tags=["results"])
+APPEAL_WINDOW_MINUTES = 90
 PHASE_TIPOS_VALIDOS = {"posicion", "cantidad", "tiempo"}
 PHASE_TIPO_ALIAS = {
     "puntos": "cantidad",
@@ -28,6 +34,10 @@ PHASE_TIPO_ALIAS = {
 }
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
+
+
+def appeal_deadline_from_now() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=APPEAL_WINDOW_MINUTES)
 
 
 def _should_scope_to_authenticated_participant(user: dict | None) -> bool:
@@ -71,6 +81,101 @@ def _phase_lower_is_better(phase: CompetitionPhase | None, comp: Competition | N
             winner_rule = _default_winner_rule_for_type(phase_type)
         return winner_rule == "lower_wins"
     return bool(comp and getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
+
+
+def _phase_tiebreak_lower_is_better(phase: CompetitionPhase | None) -> bool:
+    method = (getattr(phase, "tie_break_method", None) or "for_time").strip().lower() if phase else "for_time"
+    return method in {"for_time", "tiempo_hms", "tiempo", "posicion"}
+
+
+def _phase_is_time(phase: CompetitionPhase | None) -> bool:
+    if phase is None:
+        return False
+    method = str(getattr(phase, "measurement_method", None) or getattr(phase, "workout_format", None) or "").strip().lower()
+    phase_type = _normalize_phase_type(getattr(phase, "tipo", None))
+    return phase_type == "tiempo" or method in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _validate_time_cap_result(phase: CompetitionPhase | None, mark: int | None, extra: int | None) -> int | None:
+    cap = getattr(phase, "time_cap_seconds", None)
+    if not _phase_is_time(phase) or cap is None or mark is None:
+        return extra
+    cap_seconds = int(cap)
+    if int(mark) > cap_seconds:
+        minutes, seconds = divmod(cap_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        label = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+        raise HTTPException(400, f"El tiempo no puede superar el cap de {label}")
+    if int(mark) != cap_seconds:
+        return None
+    return extra
+
+
+def _ranking_value(value: int | None, *, lower_is_better: bool) -> tuple[int, int]:
+    if value is None:
+        return (1, 0)
+    return (0, int(value) if lower_is_better else -int(value))
+
+
+def _result_rank_key(result: Result, *, lower_is_better: bool, tiebreak_lower_is_better: bool) -> tuple[int, int, int, int, int, int, int]:
+    return (
+        *_ranking_value(result.marca, lower_is_better=lower_is_better),
+        *_ranking_value(getattr(result, "extra", None), lower_is_better=True),
+        *_ranking_value(result.tiebreak, lower_is_better=tiebreak_lower_is_better),
+        int(result.id or 0),
+    )
+
+
+def _ranked_position_groups(
+    rows: list,
+    *,
+    mark_getter,
+    extra_getter=None,
+    tiebreak_getter,
+    lower_is_better: bool,
+    tiebreak_lower_is_better: bool,
+) -> list[tuple[int, list]]:
+    def split_by_optional_metric(items: list, getter, *, metric_lower_is_better: bool) -> list[list]:
+        if len(items) <= 1 or getter is None or not all(getter(item) is not None for item in items):
+            return [items]
+        ordered_items = sorted(items, key=lambda item: (
+            _ranking_value(getter(item), lower_is_better=metric_lower_is_better),
+            int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
+        ))
+        groups: list[list] = []
+        idx = 0
+        while idx < len(ordered_items):
+            value = getter(ordered_items[idx])
+            value_group = [ordered_items[idx]]
+            idx += 1
+            while idx < len(ordered_items) and getter(ordered_items[idx]) == value:
+                value_group.append(ordered_items[idx])
+                idx += 1
+            groups.append(value_group)
+        return groups
+
+    ordered = sorted(rows, key=lambda item: (
+        _ranking_value(mark_getter(item), lower_is_better=lower_is_better),
+        int(getattr(item, "id", 0) or 0) if hasattr(item, "id") else 0,
+    ))
+    positioned: list[tuple[int, list]] = []
+    position = 1
+    index = 0
+    while index < len(ordered):
+        mark = mark_getter(ordered[index])
+        mark_group = [ordered[index]]
+        index += 1
+        while index < len(ordered) and mark_getter(ordered[index]) == mark:
+            mark_group.append(ordered[index])
+            index += 1
+
+        extra_groups = split_by_optional_metric(mark_group, extra_getter, metric_lower_is_better=True)
+        for extra_group in extra_groups:
+            tiebreak_groups = split_by_optional_metric(extra_group, tiebreak_getter, metric_lower_is_better=tiebreak_lower_is_better)
+            for tie_items in tiebreak_groups:
+                positioned.append((position, tie_items))
+                position += len(tie_items)
+    return positioned
 
 
 def _normalize_team_result_mode(raw: str | None) -> str:
@@ -141,7 +246,8 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
         return
     phase = session.get(CompetitionPhase, phase_id)
     lower_is_better = _phase_lower_is_better(phase, comp)
-    score_lower_is_better = (getattr(comp, "scoring_mode", "highest_wins") == "lowest_wins")
+    tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
+    tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
 
     rows = session.exec(
         select(Result)
@@ -151,9 +257,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     if not rows:
         return
 
-    rank_by_category = _competition_has_categories(session, competition_id)
+    rank_by_category = (
+        _competition_has_categories(session, competition_id)
+        and normalize_scoring_scope(getattr(comp, "scoring_scope", None)) == "category"
+    )
     phase_mode = ((getattr(phase, "team_result_mode", None) or "").strip().lower()) if phase else ""
-    is_team_entity_phase = phase_mode in {"sum_two", "single_member"}
+    phase_modality = ((getattr(phase, "modality", None) or "individual").strip().lower()) if phase else "individual"
+    is_team_entity_phase = phase_modality == "teams" and phase_mode in {"sum_two", "single_member"}
 
     # Team-based phases: rank by team, then propagate same position/points to member rows.
     if is_team_entity_phase:
@@ -165,7 +275,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped.setdefault(int(r.team_id), []).append(r)
 
         team_category = _team_categories_map(session, competition_id, set(grouped.keys())) if rank_by_category else {}
-        entities_by_category: dict[str, list[tuple[int, int, list[Result]]]] = {}
+        entities_by_category: dict[str, list[tuple[int, int, int | None, int | None, list[Result]]]] = {}
         for team_id, items in grouped.items():
             marks = [int(x.marca) for x in items if x.marca is not None]
             if not marks:
@@ -174,31 +284,50 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 team_mark = min(marks) if lower_is_better else max(marks)
             else:
                 team_mark = sum(marks)
+            extra_values = [int(getattr(x, "extra", 0)) for x in items if getattr(x, "extra", None) is not None]
+            team_extra = min(extra_values) if extra_values else None
+            tie_values = [int(x.tiebreak) for x in items if x.tiebreak is not None]
+            team_tiebreak = (min(tie_values) if tiebreak_lower_is_better else max(tie_values)) if tie_values else None
             category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
-            entities_by_category.setdefault(category, []).append((team_id, team_mark, items))
+            entities_by_category.setdefault(category, []).append((team_id, team_mark, team_extra, team_tiebreak, items))
 
         ranked_team_ids = set()
         for category_entities in entities_by_category.values():
-            category_entities.sort(key=lambda x: x[1], reverse=not lower_is_better)
             total = len(category_entities)
-            for idx, (team_id, _team_mark, items) in enumerate(category_entities, 1):
-                ranked_team_ids.add(team_id)
-                pts = idx if score_lower_is_better else (total - idx + 1)
-                for r in items:
-                    r.posicion = idx
-                    r.puntos = int(pts)
-                    session.add(r)
+            for position, positioned_items in _ranked_position_groups(
+                category_entities,
+                mark_getter=lambda item: item[1],
+                extra_getter=lambda item: item[2],
+                tiebreak_getter=(lambda item: item[3]) if tiebreak_enabled else None,
+                lower_is_better=lower_is_better,
+                tiebreak_lower_is_better=tiebreak_lower_is_better,
+            ):
+                pts = compute_result_points(
+                    position=position,
+                    total_ranked=total,
+                    mark=positioned_items[0][1] if positioned_items else None,
+                    competition=comp,
+                    phase=phase,
+                )
+                for team_id, _team_mark, _team_extra, _team_tiebreak, items in positioned_items:
+                    ranked_team_ids.add(team_id)
+                    for r in items:
+                        r.posicion = position
+                        r.puntos = int(pts)
+                        session.add(r)
 
         for team_id, items in grouped.items():
             if team_id in ranked_team_ids:
                 continue
             for r in items:
                 r.posicion = None
+                r.puntos = 0
                 session.add(r)
 
         # Keep legacy non-team rows harmless in this mode.
         for r in non_team_rows:
             r.posicion = None
+            r.puntos = 0
             session.add(r)
         return
 
@@ -222,27 +351,59 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             grouped_rows.setdefault(category, []).append(r)
 
         for category_rows in grouped_rows.values():
-            category_rows.sort(key=lambda rr: int(rr.marca), reverse=not lower_is_better)
             total = len(category_rows)
-            for idx, r in enumerate(category_rows, 1):
-                r.posicion = idx
-                r.puntos = idx if score_lower_is_better else (total - idx + 1)
-                session.add(r)
+            for position, positioned_items in _ranked_position_groups(
+                category_rows,
+                mark_getter=lambda item: item.marca,
+                extra_getter=lambda item: getattr(item, "extra", None),
+                tiebreak_getter=(lambda item: item.tiebreak) if tiebreak_enabled else None,
+                lower_is_better=lower_is_better,
+                tiebreak_lower_is_better=tiebreak_lower_is_better,
+            ):
+                pts = compute_result_points(
+                    position=position,
+                    total_ranked=total,
+                    mark=positioned_items[0].marca if positioned_items else None,
+                    competition=comp,
+                    phase=phase,
+                )
+                for r in positioned_items:
+                    r.posicion = position
+                    r.puntos = int(pts)
+                    session.add(r)
     else:
-        with_metric.sort(key=lambda r: int(r.marca), reverse=not lower_is_better)
         total = len(with_metric)
-        for idx, r in enumerate(with_metric, 1):
-            r.posicion = idx
-            r.puntos = idx if score_lower_is_better else (total - idx + 1)
-            session.add(r)
+        for position, positioned_items in _ranked_position_groups(
+            with_metric,
+            mark_getter=lambda item: item.marca,
+            extra_getter=lambda item: getattr(item, "extra", None),
+            tiebreak_getter=(lambda item: item.tiebreak) if tiebreak_enabled else None,
+            lower_is_better=lower_is_better,
+            tiebreak_lower_is_better=tiebreak_lower_is_better,
+        ):
+            pts = compute_result_points(
+                position=position,
+                total_ranked=total,
+                mark=positioned_items[0].marca if positioned_items else None,
+                competition=comp,
+                phase=phase,
+            )
+            for r in positioned_items:
+                r.posicion = position
+                r.puntos = int(pts)
+                session.add(r)
     for r in without_metric:
         r.posicion = None
+        r.puntos = 0
         session.add(r)
 
 
 def _enrich(session: Session, result_id: int) -> dict:
     row = session.execute(text("""
-        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.puntos, r.posicion, r.created_at,
+        SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id, r.marca, r.extra, r.tiebreak, r.puntos, r.posicion,
+               r.result_status, r.appeal_deadline_at, r.created_at,
+               ra.id AS active_appeal_id,
+               ra.status AS active_appeal_status,
                p.nombre        AS nombre,
                p.apellido      AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
@@ -255,6 +416,14 @@ def _enrich(session: Session, result_id: int) -> dict:
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN  competitions           c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
+        LEFT JOIN LATERAL (
+            SELECT id, status
+            FROM result_appeals
+            WHERE result_id = r.id
+              AND status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        ) ra ON true
         WHERE r.id = :rid
     """), {"rid": result_id}).mappings().one()
     return dict(row)
@@ -343,7 +512,9 @@ def list_results(
 
     rows = session.execute(text(f"""
         SELECT r.id, r.user_id, r.user_id AS user_id, r.team_id, r.competition_id, r.phase_id,
-               r.marca, r.puntos, r.posicion, r.created_at,
+               r.marca, r.extra, r.tiebreak, r.puntos, r.posicion, r.result_status, r.appeal_deadline_at, r.created_at,
+               ra.id AS active_appeal_id,
+               ra.status AS active_appeal_status,
                p.nombre   AS nombre,
                p.apellido AS apellido,
                TRIM(CONCAT(COALESCE(p.nombre, ''), ' ', COALESCE(p.apellido, ''))) AS user_name,
@@ -356,6 +527,14 @@ def list_results(
         LEFT JOIN teams              t  ON t.id  = r.team_id
         JOIN      competitions       c  ON c.id  = r.competition_id
         LEFT JOIN competition_phases ph ON ph.id = r.phase_id
+        LEFT JOIN LATERAL (
+            SELECT id, status
+            FROM result_appeals
+            WHERE result_id = r.id
+              AND status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
+            ORDER BY created_at DESC, id DESC
+            LIMIT 1
+        ) ra ON true
         {where_clause}
         ORDER BY r.created_at DESC
     """), params).mappings().all()
@@ -421,6 +600,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         # simplified global flow: position + points are auto from mark
         if computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
+        body.extra = _validate_time_cap_result(phase, computed_mark, body.extra)
 
         if phase_mode == "total" and resolved_team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -430,7 +610,7 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         if phase_mode == "total" and resolved_team_id is not None:
             duplicate_participant_id = None
 
-        if not phase.allow_multiple_results and _has_phase_duplicate(
+        if _has_phase_duplicate(
             session,
             competition_id=body.competition_id,
             phase_id=body.phase_id,
@@ -449,6 +629,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         payload["puntos"] = int(computed_points)
     if computed_position is not None:
         payload["posicion"] = int(computed_position)
+    payload["result_status"] = "valid"
+    payload["appeal_deadline_at"] = appeal_deadline_from_now()
     result = Result.model_validate(payload)
     session.add(result)
     session.flush()
@@ -473,6 +655,7 @@ def update_result(result_id: int, body: ResultUpdate,
     computed_points: int | None = None
     computed_position: int | None = body.posicion if body.posicion is not None else r.posicion
     computed_mark: int | None = body.marca if body.marca is not None else (body.puntos if body.puntos is not None else r.marca)
+    computed_extra: int | None = body.extra if body.extra is not None else r.extra
     phase_id = body.phase_id if body.phase_id is not None else r.phase_id
     phase_mode = ""
     if phase_id:
@@ -489,6 +672,7 @@ def update_result(result_id: int, body: ResultUpdate,
         # simplified global flow: position + points are auto from mark
         if computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
+        computed_extra = _validate_time_cap_result(phase, computed_mark, computed_extra)
 
         if phase_mode == "total" and r.team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -498,7 +682,7 @@ def update_result(result_id: int, body: ResultUpdate,
         if phase_mode == "total" and r.team_id is not None:
             duplicate_participant_id = None
 
-        if body.phase_id is not None and not phase.allow_multiple_results and _has_phase_duplicate(
+        if body.phase_id is not None and _has_phase_duplicate(
             session,
             competition_id=r.competition_id,
             phase_id=phase_id,
@@ -513,6 +697,7 @@ def update_result(result_id: int, body: ResultUpdate,
     if phase_mode == "total" and r.team_id is not None:
         r.user_id = None
     r.marca = computed_mark
+    r.extra = computed_extra
     if computed_points is not None:
         r.puntos = int(computed_points)
     if computed_position is not None:

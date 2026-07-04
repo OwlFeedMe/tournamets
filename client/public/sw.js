@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finalrep-pwa-v2'
+const CACHE_NAME = 'finalrep-pwa-v3'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -18,6 +18,13 @@ function isApiRequest(url) {
 
 function isStaticAsset(url) {
   return ['/assets/', '/icons/'].some((path) => url.pathname.startsWith(path)) || url.pathname === '/favicon.svg'
+}
+
+function mustRevalidate(url) {
+  return url.pathname === '/'
+    || url.pathname === '/index.html'
+    || url.pathname === '/sw.js'
+    || url.pathname.endsWith('.webmanifest')
 }
 
 async function cacheFirst(request) {
@@ -90,8 +97,13 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  if (mustRevalidate(url)) {
+    event.respondWith(networkFirst(request))
+    return
+  }
+
   if (isStaticAsset(url)) {
-    event.respondWith(staleWhileRevalidate(request))
+    event.respondWith(url.pathname.startsWith('/assets/') ? cacheFirst(request) : staleWhileRevalidate(request))
     return
   }
 

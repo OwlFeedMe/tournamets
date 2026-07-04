@@ -13,7 +13,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from PIL import Image, UnidentifiedImageError
 import qrcode
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
@@ -23,17 +23,30 @@ from database import MAX_TEAM_SIZE, get_session
 from models import (
     Competition,
     CompetitionCategory,
+    CompetitionPhase,
     CompetitionCreate,
     CompetitionParticipant,
     CompetitionUpdate,
     Participant,
+    Result,
     Team,
     TeamMember,
 )
 from phase_status import compute_phase_status_map
 from routers.config import get_pricing_config
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.scoring import (
+    normalize_scoring_direction,
+    normalize_scoring_scope,
+    normalize_scoring_system,
+    normalize_scoring_table,
+    normalize_scoring_tiebreak,
+    scoring_mode_for_system,
+    scoring_summary_payload,
+    serialize_scoring_table,
+)
 from services.category_registration import get_category_usage, serialize_category_with_registration
+from timezones import DEFAULT_COMPETITION_TIMEZONE, competition_timezone, normalize_timezone, to_utc_from_competition_time
 
 router = APIRouter(prefix="/api/competitions", tags=["competitions"])
 COMP_SCORING_VALIDOS = {"highest_wins", "lowest_wins"}
@@ -55,6 +68,7 @@ MODALITY_ALIAS = {
     "equipos": "teams",
     "por_equipo": "teams",
 }
+SCORING_SYSTEM_VALIDOS = {"dynamic_points", "placement", "fixed_table", "cumulative"}
 COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "competition_assets"
 COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 COMPETITION_ASSET_SPECS = {
@@ -130,7 +144,7 @@ def _serialize_enrollment_questions(payload: dict):
     payload["enrollment_questions"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
-def _serialize_schedule_items(payload: dict):
+def _serialize_schedule_items(payload: dict, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE):
     if "schedule_items" not in payload:
         return
     items = payload.get("schedule_items")
@@ -148,6 +162,10 @@ def _serialize_schedule_items(payload: dict):
         note = str((raw or {}).get("note") or "").strip() or None
         if not label and not start_at and not end_at and not note and phase_id in (None, "", False):
             continue
+        if isinstance(start_at, datetime):
+            start_at = to_utc_from_competition_time(start_at, timezone_name)
+        if isinstance(end_at, datetime):
+            end_at = to_utc_from_competition_time(end_at, timezone_name)
         normalized.append({
             "id": str((raw or {}).get("id") or f"date_{idx + 1}").strip() or f"date_{idx + 1}",
             "label": label or f"Fecha {idx + 1}",
@@ -238,13 +256,23 @@ def _serialize_social_links(payload: dict):
     payload["social_links"] = json.dumps(normalized, ensure_ascii=False) if normalized else None
 
 
-def _normalize_date_boundary(value, *, end_of_day: bool = False):
+def _normalize_date_boundary(value, *, end_of_day: bool = False, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE):
     if not value or not isinstance(value, datetime):
         return value
-    if value.tzinfo is not None:
-        value = value.replace(tzinfo=None)
     boundary = time(23, 59, 59, 999999) if end_of_day else time(0, 0, 0)
-    return datetime.combine(value.date(), boundary)
+    local_value = value
+    if value.tzinfo is not None:
+        local_value = value.astimezone(competition_timezone(timezone_name)).replace(tzinfo=None)
+    return to_utc_from_competition_time(datetime.combine(local_value.date(), boundary), timezone_name)
+
+
+def _normalize_competition_timezone(payload: dict, current_timezone: str | None = None) -> str:
+    if "timezone" in payload:
+        try:
+            payload["timezone"] = normalize_timezone(payload.get("timezone"))
+        except ValueError:
+            raise HTTPException(400, "Selecciona una zona horaria valida para la competencia")
+    return normalize_timezone(payload.get("timezone") or current_timezone or DEFAULT_COMPETITION_TIMEZONE)
 
 
 def _normalize_theme_color(value: object) -> str | None:
@@ -283,15 +311,15 @@ def _current_global_platform_fee_rate(session: Session) -> float:
     return _normalize_platform_fee_rate(pricing_cfg.get("default_platform_fee_rate"))
 
 
-def _normalize_competition_dates(payload: dict):
+def _normalize_competition_dates(payload: dict, timezone_name: str):
     if "enrollment_start" in payload:
-        payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False)
+        payload["enrollment_start"] = _normalize_date_boundary(payload.get("enrollment_start"), end_of_day=False, timezone_name=timezone_name)
     if "enrollment_end" in payload:
-        payload["enrollment_end"] = _normalize_date_boundary(payload.get("enrollment_end"), end_of_day=True)
+        payload["enrollment_end"] = _normalize_date_boundary(payload.get("enrollment_end"), end_of_day=True, timezone_name=timezone_name)
     if "competition_start" in payload:
-        payload["competition_start"] = _normalize_date_boundary(payload.get("competition_start"), end_of_day=False)
+        payload["competition_start"] = _normalize_date_boundary(payload.get("competition_start"), end_of_day=False, timezone_name=timezone_name)
     if "competition_end" in payload:
-        payload["competition_end"] = _normalize_date_boundary(payload.get("competition_end"), end_of_day=True)
+        payload["competition_end"] = _normalize_date_boundary(payload.get("competition_end"), end_of_day=True, timezone_name=timezone_name)
 
 
 def _validate_competition_dates(payload: dict):
@@ -315,6 +343,34 @@ def _normalize_competition_visibility(payload: dict):
 def _normalize_rm_unit_field(payload: dict):
     if "rm_unit" in payload:
         payload["rm_unit"] = normalize_rm_unit(payload.get("rm_unit"))
+
+
+def _normalize_competition_scoring(payload: dict) -> None:
+    touched = any(key in payload for key in (
+        "scoring_system",
+        "scoring_scope",
+        "scoring_table",
+        "scoring_tiebreak",
+        "cumulative_direction",
+    ))
+    if "scoring_system" in payload:
+        payload["scoring_system"] = normalize_scoring_system(payload.get("scoring_system"))
+    if "scoring_scope" in payload:
+        payload["scoring_scope"] = normalize_scoring_scope(payload.get("scoring_scope"))
+    if "scoring_tiebreak" in payload:
+        payload["scoring_tiebreak"] = normalize_scoring_tiebreak(payload.get("scoring_tiebreak"))
+    if "cumulative_direction" in payload:
+        payload["cumulative_direction"] = normalize_scoring_direction(payload.get("cumulative_direction"))
+    if "scoring_table" in payload:
+        payload["scoring_table"] = serialize_scoring_table(payload.get("scoring_table"))
+    if touched:
+        system = payload.get("scoring_system", "dynamic_points")
+        direction = payload.get("cumulative_direction", "higher_wins")
+        payload["scoring_mode"] = scoring_mode_for_system(system, direction)
+    elif payload.get("scoring_mode") == "higher_wins":
+        payload["scoring_mode"] = "highest_wins"
+    elif payload.get("scoring_mode") == "lower_wins":
+        payload["scoring_mode"] = "lowest_wins"
 
 
 def _delete_local_competition_asset(asset_url: Optional[str]) -> None:
@@ -667,7 +723,7 @@ def get_public_competition_detail(
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, estado, is_visible, start_at, end_at, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, time_cap_seconds, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
@@ -686,6 +742,12 @@ def get_public_competition_detail(
         item["block_order"] = int(item.get("block_order") or 0)
         item["measurement_method"] = normalize_phase_measurement_method(item.get("measurement_method"), item.get("tipo"))
         item["tipo"] = type_from_measurement_method(item["measurement_method"])
+        item["workout_format"] = str(item.get("workout_format") or item["measurement_method"] or "for_time").strip().lower()
+        item["tie_break_enabled"] = 1 if int(item.get("tie_break_enabled") or 0) else 0
+        item["tie_break_method"] = normalize_phase_measurement_method(item.get("tie_break_method"), "tiempo")
+        item["time_cap_seconds"] = int(item.get("time_cap_seconds")) if item.get("time_cap_seconds") is not None else None
+        item["heat_transition_seconds"] = int(item.get("heat_transition_seconds") or 0)
+        item["category_transition_seconds"] = int(item.get("category_transition_seconds") or 0)
         phase_format = str(item.get("phase_format") or "activity").strip().lower()
         if phase_format in {"actividad", "activity"}:
             phase_format = "activity"
@@ -722,6 +784,12 @@ def get_public_competition_detail(
                 "points_mode": item.get("points_mode"),
                 "team_result_mode": item.get("team_result_mode"),
                 "allow_multiple_results": item.get("allow_multiple_results"),
+                "workout_format": item.get("workout_format"),
+                "tie_break_enabled": item.get("tie_break_enabled"),
+                "tie_break_method": item.get("tie_break_method"),
+                "time_cap_seconds": item.get("time_cap_seconds"),
+                "heat_transition_seconds": item.get("heat_transition_seconds"),
+                "category_transition_seconds": item.get("category_transition_seconds"),
                 "orden": 0,
             }]
         normalized_phases.append(item)
@@ -918,6 +986,7 @@ def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_sessi
 @router.post("", response_model=Competition, status_code=201)
 def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
     payload = body.model_dump()
+    _normalize_competition_scoring(payload)
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     _normalize_competition_team_settings(payload)
@@ -925,6 +994,7 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _validate_tv_settings(payload)
     if "lugar" in payload:
         payload["lugar"] = str(payload.get("lugar") or "").strip() or None
+    timezone_name = _normalize_competition_timezone(payload)
     if "contact_phone" in payload:
         payload["contact_phone"] = str(payload.get("contact_phone") or "").strip() or None
     if "website_url" in payload:
@@ -944,9 +1014,9 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     if "show_public_category_roster" in payload:
         payload["show_public_category_roster"] = _normalize_toggle(payload.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(payload)
-    _normalize_competition_dates(payload)
+    _normalize_competition_dates(payload, timezone_name)
     _validate_competition_dates(payload)
-    _serialize_schedule_items(payload)
+    _serialize_schedule_items(payload, timezone_name)
     _serialize_landing_sections(payload)
     _serialize_social_links(payload)
     _serialize_enrollment_questions(payload)
@@ -966,6 +1036,10 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     c = require_competition_access(session, competition_id, user)
 
     data = body.model_dump(exclude_unset=True)
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+        data.setdefault("scoring_system", getattr(c, "scoring_system", None))
+        data.setdefault("cumulative_direction", getattr(c, "cumulative_direction", None))
+    _normalize_competition_scoring(data)
     if "scoring_mode" in data and data["scoring_mode"] not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
     if user.get("role") != "admin":
@@ -981,6 +1055,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _validate_tv_settings(data)
     if "lugar" in data:
         data["lugar"] = str(data.get("lugar") or "").strip() or None
+    timezone_name = _normalize_competition_timezone(data, c.timezone)
     if "contact_phone" in data:
         data["contact_phone"] = str(data.get("contact_phone") or "").strip() or None
     if "website_url" in data:
@@ -1000,9 +1075,9 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     if "show_public_category_roster" in data:
         data["show_public_category_roster"] = _normalize_toggle(data.get("show_public_category_roster"), fallback=0)
     _normalize_rm_unit_field(data)
-    _normalize_competition_dates(data)
+    _normalize_competition_dates(data, timezone_name)
     _validate_competition_dates(data)
-    _serialize_schedule_items(data)
+    _serialize_schedule_items(data, timezone_name)
     _serialize_landing_sections(data)
     _serialize_social_links(data)
     _serialize_enrollment_questions(data)
@@ -1016,6 +1091,75 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     session.refresh(c)
     invalidate_leaderboard_results_snapshot(competition_id)
     return c
+
+
+class CompetitionScoringUpdate(BaseModel):
+    scoring_system: Optional[str] = None
+    scoring_scope: Optional[str] = None
+    scoring_table: Optional[list[dict]] = None
+    scoring_tiebreak: Optional[str] = None
+    cumulative_direction: Optional[str] = None
+    recalculate: int = 0
+
+
+@router.get("/{competition_id}/scoring")
+def get_competition_scoring(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    phases = session.exec(
+        select(CompetitionPhase)
+        .where(CompetitionPhase.competition_id == competition_id)
+        .order_by(CompetitionPhase.orden, CompetitionPhase.id)
+    ).all()
+    results_count = session.exec(
+        select(func.count())
+        .select_from(Result)
+        .where(Result.competition_id == competition_id)
+    ).one()
+    return scoring_summary_payload(competition, phases, int(results_count or 0))
+
+
+@router.put("/{competition_id}/scoring")
+def update_competition_scoring(
+    competition_id: int,
+    body: CompetitionScoringUpdate,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    data = body.model_dump(exclude_unset=True)
+    recalculate = bool(int(data.pop("recalculate", 0) or 0))
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+        data.setdefault("scoring_system", getattr(competition, "scoring_system", None))
+        data.setdefault("cumulative_direction", getattr(competition, "cumulative_direction", None))
+    _normalize_competition_scoring(data)
+    for field, value in data.items():
+        setattr(competition, field, value)
+    session.add(competition)
+    session.flush()
+
+    phases = session.exec(
+        select(CompetitionPhase)
+        .where(CompetitionPhase.competition_id == competition_id)
+        .order_by(CompetitionPhase.orden, CompetitionPhase.id)
+    ).all()
+    if recalculate:
+        from routers.results import _recompute_phase_positions_and_points
+
+        for phase in phases:
+            _recompute_phase_positions_and_points(session, competition_id, int(phase.id))
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    session.refresh(competition)
+    results_count = session.exec(
+        select(func.count())
+        .select_from(Result)
+        .where(Result.competition_id == competition_id)
+    ).one()
+    return scoring_summary_payload(competition, phases, int(results_count or 0))
 
 
 @router.delete("/{competition_id}", status_code=204)

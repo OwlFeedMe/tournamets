@@ -41,9 +41,9 @@ class User(SQLModel, table=True):
     estado: str = Field(default=EstadoParticipante.ACTIVO)
     username: Optional[str] = Field(default=None, index=True)
     display_name: Optional[str] = None
-    public_profile_enabled: int = Field(default=0)
+    public_profile_enabled: int = Field(default=1)
     public_profile_indexable: int = Field(default=1)
-    public_profile_visibility: str = Field(default=AthleteProfileVisibility.PRIVATE)
+    public_profile_visibility: str = Field(default=AthleteProfileVisibility.PUBLIC)
     public_bio: Optional[str] = None
     public_cover_url: Optional[str] = None
     public_show_city: int = Field(default=1)
@@ -55,6 +55,7 @@ class User(SQLModel, table=True):
     password_hash: Optional[str] = None
     organizer_enabled: int = Field(default=0)
     judge_enabled: int = Field(default=0)
+    announcer_enabled: int = Field(default=0)
     admin_enabled: int = Field(default=0)
     is_active: int = Field(default=1)
     created_at: Optional[datetime] = Field(
@@ -134,6 +135,7 @@ class Competition(SQLModel, table=True):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: str = Field(default="America/Bogota")
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[str] = None
@@ -198,6 +200,11 @@ class Competition(SQLModel, table=True):
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
     scoring_mode: str = Field(default=ReglaGanador.HIGHER_WINS)  # highest_wins | lowest_wins
+    scoring_system: str = Field(default="dynamic_points")  # dynamic_points | placement | fixed_table | cumulative
+    scoring_scope: str = Field(default="category")  # category | global
+    scoring_table: Optional[str] = None  # JSON rank -> points table
+    scoring_tiebreak: str = Field(default="best_positions")  # best_positions | first_places | final_workout
+    cumulative_direction: str = Field(default="higher_wins")  # higher_wins | lower_wins
     rm_unit: str = Field(default=UnidadRM.KG)
     organizer_user_id: Optional[int] = Field(
         default=None,
@@ -494,12 +501,22 @@ class CompetitionPhase(SQLModel, table=True):
     phase_format: str = Field(default=FormatoFase.ACTIVITY)  # activity / wod
     tipo: str = Field(default="cantidad")  # posicion / cantidad / tiempo
     measurement_method: str = Field(default="unidades")  # unidades / metros / tiempo_hms / repeticiones / kilogramos / gramos / libras / posicion
+    workout_format: Optional[str] = None  # for_time / amrap / emom / max_weight / other
     winner_rule: str = Field(default=ReglaGanador.HIGHER_WINS)  # higher_wins / lower_wins
     scoring_rules: Optional[str] = None  # JSON string for position scoring rules
     activities: Optional[str] = None  # JSON string for WOD child activities
     points_mode: str = Field(default=ModoPoints.MANUAL)  # manual | position_direct | position_rules
     allow_multiple_results: int = Field(default=0)  # 0 = unico por participante/fase, 1 = multiple
     team_result_mode: str = Field(default="sum_two")  # sum_two / total / single_member
+    tie_break_enabled: int = Field(default=0)
+    tie_break_method: str = Field(default="for_time")
+    time_cap_seconds: Optional[int] = None
+    scoring_override_enabled: int = Field(default=0)
+    scoring_system: Optional[str] = None
+    scoring_weight_percent: int = Field(default=100)
+    scoring_table: Optional[str] = None
+    heat_transition_seconds: int = Field(default=0)
+    category_transition_seconds: int = Field(default=0)
     estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
     is_visible: int = Field(default=1)
     start_at: Optional[datetime] = None
@@ -521,6 +538,8 @@ class CompetitionHeat(SQLModel, table=True):
     nombre: str
     heat_number: int = Field(default=1)
     lane_count: int = Field(default=0)
+    heat_transition_seconds: int = Field(default=0)
+    category_transition_seconds: int = Field(default=0)
     start_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -625,6 +644,50 @@ class CompetitionJudgeAssignment(SQLModel, table=True):
         UniqueConstraint("competition_id", "invited_email", name="uq_comp_judge_assignment_email"),
         Index("ix_comp_judge_assignment_competition", "competition_id"),
         Index("ix_comp_judge_assignment_status", "status"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False)
+    )
+    user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    invited_email: str = Field(index=True)
+    status: str = Field(default="pending", index=True)  # pending | active | rejected | revoked
+    invited_by_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="RESTRICT"), nullable=False)
+    )
+    accepted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    rejected_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    revoked_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class CompetitionAnnouncerAssignment(SQLModel, table=True):
+    __tablename__ = "competition_announcer_assignments"
+    __table_args__ = (
+        UniqueConstraint("competition_id", "user_id", name="uq_comp_announcer_assignment_user"),
+        UniqueConstraint("competition_id", "invited_email", name="uq_comp_announcer_assignment_email"),
+        Index("ix_comp_announcer_assignment_competition", "competition_id"),
+        Index("ix_comp_announcer_assignment_status", "status"),
     )
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -1074,8 +1137,15 @@ class Result(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="SET NULL"), nullable=True),
     )
     marca: Optional[int] = None  # valor bruto de la prueba (metros, reps, peso, segundos, etc.)
+    extra: Optional[int] = None
+    tiebreak: Optional[int] = None
     puntos: int = Field(default=0)
     posicion: Optional[int] = None
+    result_status: str = Field(default="valid", index=True)
+    appeal_deadline_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
@@ -1083,6 +1153,130 @@ class Result(SQLModel, table=True):
 
 
 # ── Gym domain models ─────────────────────────────────────────────────────────
+
+class ResultAppeal(SQLModel, table=True):
+    __tablename__ = "result_appeals"
+    __table_args__ = (
+        Index("ix_result_appeals_result", "result_id"),
+        Index("ix_result_appeals_competition", "competition_id"),
+        Index("ix_result_appeals_status", "status"),
+        Index("ix_result_appeals_user", "user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    result_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("results.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    phase_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="SET NULL"), nullable=True),
+    )
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    status: str = Field(default="submitted", index=True)
+    reason_type: str = Field(default="score_review")
+    description: str
+    evidence_url: Optional[str] = None
+    user_requested_score: Optional[str] = None
+    assigned_judge_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    original_marca: Optional[int] = None
+    original_tiebreak: Optional[int] = None
+    original_puntos: Optional[int] = None
+    original_posicion: Optional[int] = None
+    final_marca: Optional[int] = None
+    final_tiebreak: Optional[int] = None
+    final_puntos: Optional[int] = None
+    final_posicion: Optional[int] = None
+    resolution_type: Optional[str] = None
+    resolution_note: Optional[str] = None
+    submitted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    resolved_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    resolved_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class ResultAppealMessage(SQLModel, table=True):
+    __tablename__ = "result_appeal_messages"
+    __table_args__ = (
+        Index("ix_result_appeal_messages_appeal", "appeal_id"),
+        Index("ix_result_appeal_messages_author", "author_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    appeal_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("result_appeals.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    author_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    author_role: str = Field(default="athlete")
+    message: str
+    evidence_url: Optional[str] = None
+    is_internal_note: int = Field(default=0)
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class ResultScoreAuditLog(SQLModel, table=True):
+    __tablename__ = "result_score_audit_logs"
+    __table_args__ = (
+        Index("ix_result_score_audit_result", "result_id"),
+        Index("ix_result_score_audit_appeal", "appeal_id"),
+        Index("ix_result_score_audit_actor", "changed_by_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    result_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("results.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    appeal_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("result_appeals.id", ondelete="SET NULL"), nullable=True),
+    )
+    previous_marca: Optional[int] = None
+    previous_tiebreak: Optional[int] = None
+    previous_puntos: Optional[int] = None
+    previous_posicion: Optional[int] = None
+    new_marca: Optional[int] = None
+    new_tiebreak: Optional[int] = None
+    new_puntos: Optional[int] = None
+    new_posicion: Optional[int] = None
+    changed_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    reason: str
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
 
 class Gym(SQLModel, table=True):
     __tablename__ = "gyms"
@@ -1397,6 +1591,7 @@ class TokenResponse(SQLModel):
     username: Optional[str] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
+    announcer_enabled: bool = False
     admin_enabled: bool = False
 
 
@@ -1410,6 +1605,7 @@ class MeResponse(SQLModel):
     username: Optional[str] = None
     organizer_enabled: bool = False
     judge_enabled: bool = False
+    announcer_enabled: bool = False
     admin_enabled: bool = False
 
 
@@ -1466,9 +1662,9 @@ class ParticipantProfile(SQLModel):
     estado: str = EstadoParticipante.ACTIVO
     username: Optional[str] = None
     display_name: Optional[str] = None
-    public_profile_enabled: int = 0
+    public_profile_enabled: int = 1
     public_profile_indexable: int = 1
-    public_profile_visibility: str = AthleteProfileVisibility.PRIVATE
+    public_profile_visibility: str = AthleteProfileVisibility.PUBLIC
     public_bio: Optional[str] = None
     public_cover_url: Optional[str] = None
     public_show_city: int = 1
@@ -1530,6 +1726,7 @@ class CompetitionCreate(SQLModel):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: str = "America/Bogota"
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[List["CompetitionSocialLinkItem"]] = None
@@ -1578,6 +1775,11 @@ class CompetitionCreate(SQLModel):
     require_payment_receipt: int = 0
     platform_fee_rate: float = 0.05
     scoring_mode: str = ReglaGanador.HIGHER_WINS
+    scoring_system: str = "dynamic_points"
+    scoring_scope: str = "category"
+    scoring_table: Optional[str] = None
+    scoring_tiebreak: str = "best_positions"
+    cumulative_direction: str = "higher_wins"
     rm_unit: str = UnidadRM.KG
 
 
@@ -1586,6 +1788,7 @@ class CompetitionUpdate(SQLModel):
     descripcion: Optional[str] = None
     general_info_text: Optional[str] = None
     lugar: Optional[str] = None
+    timezone: Optional[str] = None
     contact_phone: Optional[str] = None
     website_url: Optional[str] = None
     social_links: Optional[List["CompetitionSocialLinkItem"]] = None
@@ -1634,6 +1837,11 @@ class CompetitionUpdate(SQLModel):
     require_payment_receipt: Optional[int] = None
     platform_fee_rate: Optional[float] = None
     scoring_mode: Optional[str] = None
+    scoring_system: Optional[str] = None
+    scoring_scope: Optional[str] = None
+    scoring_table: Optional[List[dict]] = None
+    scoring_tiebreak: Optional[str] = None
+    cumulative_direction: Optional[str] = None
     rm_unit: Optional[str] = None
     allow_free_categories: Optional[int] = None
 
@@ -1676,6 +1884,8 @@ class ResultCreate(SQLModel):
     team_id: Optional[int] = None
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    extra: Optional[int] = None
+    tiebreak: Optional[int] = None
     puntos: int = 0
     posicion: Optional[int] = None
 
@@ -1683,6 +1893,8 @@ class ResultCreate(SQLModel):
 class ResultUpdate(SQLModel):
     phase_id: Optional[int] = None
     marca: Optional[int] = None
+    extra: Optional[int] = None
+    tiebreak: Optional[int] = None
     puntos: Optional[int] = None
     posicion: Optional[int] = None
 
@@ -1741,12 +1953,22 @@ class PhaseCreate(SQLModel):
     phase_format: str = FormatoFase.ACTIVITY
     tipo: str = "cantidad"
     measurement_method: Optional[str] = None
+    workout_format: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
     activities: Optional[List[dict]] = None
     points_mode: str = ModoPoints.MANUAL
     allow_multiple_results: int = 0
     team_result_mode: str = "sum_two"
+    tie_break_enabled: int = 0
+    tie_break_method: str = "for_time"
+    time_cap_seconds: Optional[int] = None
+    scoring_override_enabled: int = 0
+    scoring_system: Optional[str] = None
+    scoring_weight_percent: int = 100
+    scoring_table: Optional[List[dict]] = None
+    heat_transition_seconds: int = 0
+    category_transition_seconds: int = 0
     estado: str = EstadoFase.PENDIENTE
     is_visible: int = 1
     start_at: Optional[datetime] = None
@@ -1763,12 +1985,22 @@ class PhaseUpdate(SQLModel):
     phase_format: Optional[str] = None
     tipo: Optional[str] = None
     measurement_method: Optional[str] = None
+    workout_format: Optional[str] = None
     winner_rule: Optional[str] = None
     scoring_rules: Optional[str] = None
     activities: Optional[List[dict]] = None
     points_mode: Optional[str] = None
     allow_multiple_results: Optional[int] = None
     team_result_mode: Optional[str] = None
+    tie_break_enabled: Optional[int] = None
+    tie_break_method: Optional[str] = None
+    time_cap_seconds: Optional[int] = None
+    scoring_override_enabled: Optional[int] = None
+    scoring_system: Optional[str] = None
+    scoring_weight_percent: Optional[int] = None
+    scoring_table: Optional[List[dict]] = None
+    heat_transition_seconds: Optional[int] = None
+    category_transition_seconds: Optional[int] = None
     estado: Optional[str] = None
     is_visible: Optional[int] = None
     start_at: Optional[datetime] = None

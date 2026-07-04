@@ -10,7 +10,7 @@ class HomeModelEnrollmentRangeTest(unittest.TestCase):
         source = HOME_MODEL_PATH.read_text(encoding="utf-8")
 
         self.assertIn("export function formatEnrollmentDateRange(competition, options = {})", source)
-        self.assertIn("return formatCompetitionDateRange(competition?.enrollment_start, competition?.enrollment_end, options)", source)
+        self.assertIn("return formatCompetitionDateRange(competition?.enrollment_start, competition?.enrollment_end, { ...options, timeZone: competition?.timezone })", source)
         self.assertIn("const enrollmentStartLabel = formatEnrollmentDateRange(competition, { fallback: 'Por confirmar' })", source)
         self.assertNotIn("const enrollmentStartLabel = formatDate(competition.enrollment_start) || 'Por confirmar'", source)
 

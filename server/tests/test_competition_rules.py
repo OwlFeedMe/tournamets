@@ -1,4 +1,11 @@
+import sys
 import unittest
+from pathlib import Path
+
+
+SERVER_PATH = Path(__file__).resolve().parents[1]
+if str(SERVER_PATH) not in sys.path:
+    sys.path.insert(0, str(SERVER_PATH))
 
 from competition_rules import (
     PHASE_MEASUREMENT_METHODS_ALLOWED,

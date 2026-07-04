@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ExternalLink, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -14,8 +14,8 @@ import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/l
 const pageBg =
   'radial-gradient(circle at top, rgba(214,217,224,0.10), transparent 28%), radial-gradient(circle at 85% 20%, rgba(94,234,212,0.10), transparent 24%), #0D0F12'
 
-function formatDateRange(start, end) {
-  return formatCalendarDateRange(start, end)
+function formatDateRange(start, end, timeZone) {
+  return formatCalendarDateRange(start, end, { timeZone })
 }
 
 function parseEnrollmentQuestions(raw) {
@@ -77,15 +77,28 @@ function categoryIsOpen(category) {
 function categoryCapacityLabel(category) {
   const status = categoryRegistrationStatus(category)
   if (status === 'closed_by_organizer') return 'Inscripciones cerradas'
-  if (status === 'full') return 'Cupo lleno'
+  if (status === 'full') return 'Categoria agotada'
   const maxCapacity = category?.max_capacity == null ? null : Number(category.max_capacity)
   const registeredCount = Number(category?.registered_count || 0)
   const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
   if (Number.isFinite(maxCapacity) && maxCapacity > 0) {
-    if (Number.isFinite(availableSpots)) return availableSpots === 1 ? 'Queda 1 cupo' : `Quedan ${availableSpots} cupos`
+    if (Number.isFinite(availableSpots)) {
+      if (availableSpots <= 0) return 'Categoria agotada'
+      if (availableSpots === 1) return 'Ultimo cupo'
+      if (availableSpots <= 3) return `Solo ${availableSpots} cupos`
+      return `${availableSpots} cupos libres`
+    }
     return `${registeredCount} / ${maxCapacity} inscritos`
   }
-  return 'Sin limite de cupos'
+  return 'Cupos abiertos'
+}
+
+function getCategoryCapacityBadgeStyle(category, isOpen) {
+  const availableSpots = category?.available_spots == null ? null : Number(category.available_spots)
+  const scarce = isOpen && Number.isFinite(availableSpots) && availableSpots > 0 && availableSpots <= 3
+  if (!isOpen) return { background: 'rgba(107,114,128,0.16)', color: '#D7DEE8' }
+  if (scarce) return { background: 'rgba(255,107,0,0.14)', color: '#FFB36F' }
+  return { background: 'rgba(0,194,168,0.14)', color: '#8DF1E4' }
 }
 
 const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
@@ -153,6 +166,12 @@ function ensureBoldButtonLibrary({ reload = false } = {}) {
     script.onerror = () => reject(new Error('No se pudo cargar el boton de Bold'))
     document.head.appendChild(script)
   })
+}
+
+function isSocialInAppBrowser() {
+  if (typeof navigator === 'undefined') return false
+  const ua = `${navigator.userAgent || ''} ${navigator.vendor || ''}`.toLowerCase()
+  return /instagram|fbav|fb_iab|fban|messenger|line\/|tiktok|musical_ly/.test(ua)
 }
 
 function BoldPaymentButton({ config, onError, onPaymentClick }) {
@@ -244,6 +263,28 @@ function BoldPaymentButton({ config, onError, onPaymentClick }) {
   }, [config, onError, onPaymentClick])
 
   return <div ref={containerRef} />
+}
+
+function ExternalBrowserPaymentPrompt({ url, copied, onOpen, onCopy }) {
+  return (
+    <div style={{ display: 'grid', gap: 12, borderRadius: 14, border: '1px solid rgba(255,107,0,0.34)', background: 'rgba(255,107,0,0.10)', padding: 14 }}>
+      <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 900 }}>Abre el pago en Safari o Chrome</div>
+      <div style={{ color: '#D7DEE8', fontSize: 13, lineHeight: 1.55 }}>
+        Instagram puede bloquear la conexion con Bold. Abre este registro en tu navegador y continua el pago desde alli.
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" className="btn-primary" onClick={onOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <ExternalLink size={16} />
+          Abrir registro
+        </button>
+        <button type="button" className="btn-secondary" onClick={onCopy} style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <Copy size={16} />
+          {copied ? 'Enlace copiado' : 'Copiar enlace'}
+        </button>
+      </div>
+      <div style={{ color: '#AAB2C0', fontSize: 12, lineHeight: 1.5, wordBreak: 'break-word' }}>{url}</div>
+    </div>
+  )
 }
 
 function parseScheduleItems(raw) {
@@ -400,6 +441,8 @@ export default function CompetitionEnrollmentPage() {
   const [countries, setCountries] = useState([])
   const [allCities, setAllCities] = useState([])
   const [appliedDiscount, setAppliedDiscount] = useState(null)
+  const [externalLinkCopied, setExternalLinkCopied] = useState(false)
+  const [socialInAppBrowser] = useState(() => isSocialInAppBrowser())
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -496,6 +539,10 @@ export default function CompetitionEnrollmentPage() {
   const isFreeEnrollment = pricing.totalPrice === 0
   const stageTestPaymentEnabled = isStageEnvironment && !isFreeEnrollment
   const directPaymentsDisabled = paymentsDisabled && !isFreeEnrollment
+  const shouldUseExternalBrowserForBold = socialInAppBrowser && !isFreeEnrollment && !stageTestPaymentEnabled && !directPaymentsDisabled
+  const registrationUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/competitions/${competitionId}/register`
+    : `/competitions/${competitionId}/register`
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
@@ -788,6 +835,21 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const copyRegistrationUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(registrationUrl)
+      setExternalLinkCopied(true)
+      setMsg({ type: 'success', text: 'Enlace copiado. Pegalo en Safari o Chrome para continuar el pago.' })
+    } catch {
+      setMsg({ type: 'error', text: 'No se pudo copiar el enlace. Usa el menu del navegador y abre esta pagina en Safari o Chrome.' })
+    }
+  }
+
+  const openRegistrationExternally = async () => {
+    await copyRegistrationUrl()
+    window.open(registrationUrl, '_blank', 'noopener,noreferrer')
+  }
+
   const confirmFreeEnrollment = async () => {
     if (!competition) return
     const validationError = validateBeforeConfirmation()
@@ -841,7 +903,7 @@ export default function CompetitionEnrollmentPage() {
       const saved = await saveMissingProfileFields()
       if (!saved) return
     }
-    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment && !directPaymentsDisabled) {
+    if (currentStep === 3 && !paymentInProgress && !boldButtonConfig && !isFreeEnrollment && !directPaymentsDisabled && !shouldUseExternalBrowserForBold) {
       const ready = await prepareBoldCheckout()
       if (!ready) return
     }
@@ -895,7 +957,7 @@ export default function CompetitionEnrollmentPage() {
             </p>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 16 }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><MapPin size={14} color="#5EEAD4" />{competition.lugar || 'Lugar por confirmar'}</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#5EEAD4" />{formatDateRange(competition.enrollment_start, competition.enrollment_end)}</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><CalendarDays size={14} color="#5EEAD4" />{formatDateRange(competition.enrollment_start, competition.enrollment_end, competition.timezone)}</span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 999, background: 'rgba(9,11,14,0.62)', border: '1px solid #252A33', color: '#F5F7FA', fontSize: 13 }}><Medal size={14} color="#5EEAD4" />{categories.length || 0} categorias disponibles</span>
             </div>
           </div>
@@ -980,6 +1042,7 @@ export default function CompetitionEnrollmentPage() {
                     const isExpanded = expandedCategoryId === category.id
                     const isOpen = categoryIsOpen(category)
                     const capacityLabel = categoryCapacityLabel(category)
+                    const capacityBadgeStyle = getCategoryCapacityBadgeStyle(category, isOpen)
                     const categoryBasePrice = normalizeEnrollmentPrice(category.enrollment_price)
                     const categoryDiscountAmount = isSelected ? (appliedDiscount?.discount_amount ?? 0) : 0
                     const categoryPricing = calculateEnrollmentPricing(Math.max(0, categoryBasePrice - categoryDiscountAmount), platformFeeRate, minPlatformFee)
@@ -991,7 +1054,7 @@ export default function CompetitionEnrollmentPage() {
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#F5F7FA', fontSize: 16, fontWeight: 800 }}>{category.nombre}</span>
                                 {isSelected ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 8px', borderRadius: 999, background: 'rgba(94,234,212,0.16)', color: '#8DF1E4', fontSize: 11, fontWeight: 800 }}><Check size={12} />Seleccionada</span> : null}
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: isOpen ? 'rgba(0,194,168,0.14)' : 'rgba(107,114,128,0.16)', color: isOpen ? '#8DF1E4' : '#D7DEE8', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: capacityBadgeStyle.background, color: capacityBadgeStyle.color, fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
                                   {capacityLabel}
                                 </span>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '4px 8px', borderRadius: 999, background: categoryDiscountAmount > 0 ? 'rgba(94,234,212,0.14)' : 'rgba(214,217,224,0.14)', color: categoryDiscountAmount > 0 ? '#8DF1E4' : '#FFB36F', fontSize: 11, fontWeight: 800, flexWrap: 'wrap' }}>
@@ -1306,6 +1369,13 @@ export default function CompetitionEnrollmentPage() {
                         >
                           {checkoutLoading ? 'Confirmando...' : 'Confirmar inscripcion gratuita'}
                         </button>
+                      ) : shouldUseExternalBrowserForBold ? (
+                        <ExternalBrowserPaymentPrompt
+                          url={registrationUrl}
+                          copied={externalLinkCopied}
+                          onOpen={openRegistrationExternally}
+                          onCopy={copyRegistrationUrl}
+                        />
                       ) : boldButtonConfig ? (
                         <div style={{ display: 'grid', gap: 10 }}>
                           <BoldPaymentButton

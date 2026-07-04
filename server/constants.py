@@ -2,13 +2,14 @@ class Role:
     ADMIN = "admin"
     ORGANIZER = "organizer"
     JUDGE = "judge"
+    ANNOUNCER = "announcer"
     USER = "user"
     PARTICIPANT = "participant"
 
     STAFF = {ADMIN, ORGANIZER}
-    APP_ROLES = {ADMIN, ORGANIZER, JUDGE, USER}
+    APP_ROLES = {ADMIN, ORGANIZER, JUDGE, ANNOUNCER, USER}
     END_USER_ROLES = {PARTICIPANT, USER}
-    EXTRA_ROLES = {ADMIN, ORGANIZER, JUDGE}
+    EXTRA_ROLES = {ADMIN, ORGANIZER, JUDGE, ANNOUNCER}
 
 
 class EstadoParticipante:
@@ -203,6 +204,7 @@ ATHLETE_USERNAME_RESERVED = {
     "auth",
     "athlete",
     "athletes",
+    "announcer",
     "competition",
     "competitions",
     "event",

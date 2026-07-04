@@ -13,6 +13,7 @@ class HomeUserFirstContractTest(unittest.TestCase):
         source = AUTH_CONTEXT_PATH.read_text(encoding="utf-8")
 
         self.assertIn("export function getHomePath(role)", source)
+        self.assertIn("if (normalized === 'organizer') return '/admin'", source)
         self.assertIn("if (normalized === 'judge') return '/judge'", source)
         self.assertIn("return '/'", source)
         self.assertNotIn("return '/profile'\n}", source)

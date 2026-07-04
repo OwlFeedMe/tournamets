@@ -15,7 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from auth import get_current_user_optional, get_effective_user_id, has_admin_access, invalidate_user, is_end_user, require_admin, require_auth
+from auth import get_current_user_optional, get_effective_user_id, invalidate_user, is_end_user, require_admin, require_auth
 from constants import AthleteProfileVisibility, GymMembershipStatus
 from database import get_session
 from models import AthleteUsernameAlias, Competition, CompetitionParticipant, CompetitionPhase, Gym, GymMembership, Participant, ParticipantCreate, ParticipantUpdate, ParticipantProfile, ParticipantSelfUpdate, Result
@@ -127,6 +127,15 @@ def _validate_participant_payload(data: dict) -> None:
         raise HTTPException(400, "Selecciona un genero valido")
 
 
+def _require_profile_phone(payload: dict, participant: Participant) -> None:
+    if "celular" in payload:
+        phone = str(payload.get("celular") or "").strip()
+    else:
+        phone = str(participant.celular or "").strip()
+    if not phone:
+        raise HTTPException(400, "El celular es obligatorio")
+
+
 def _remove_immutable_email(payload: dict, participant: Participant) -> None:
     if "email" not in payload:
         return
@@ -223,7 +232,12 @@ def _public_results(session: Session, participant_id: int, limit: int = 24) -> l
             "competition_id": result.competition_id,
             "competition_name": competition.nombre if competition else "Competencia",
             "competition_slug": competition.slug if competition else None,
+            "competition_start": competition.competition_start.isoformat() if competition and competition.competition_start else None,
+            "competition_end": competition.competition_end.isoformat() if competition and competition.competition_end else None,
+            "competition_location": competition.lugar if competition else None,
+            "phase_id": result.phase_id,
             "phase_name": phase.nombre if phase else None,
+            "phase_order": int(phase.orden or 0) if phase else 0,
             "measurement_method": getattr(phase, "measurement_method", None) if phase else None,
             "puntos": result.puntos,
             "marca": result.marca,
@@ -233,11 +247,82 @@ def _public_results(session: Session, participant_id: int, limit: int = 24) -> l
     return items
 
 
+def _public_event_history(session: Session, participant_id: int, results: list[dict]) -> list[dict]:
+    enrollment_rows = session.exec(
+        select(CompetitionParticipant, Competition)
+        .join(Competition, Competition.id == CompetitionParticipant.competition_id)
+        .where(CompetitionParticipant.user_id == participant_id)
+        .order_by(Competition.competition_start.desc(), CompetitionParticipant.inscrito_at.desc())
+    ).all()
+    events: dict[int, dict] = {}
+    for enrollment, competition in enrollment_rows:
+        if not competition or competition.id is None:
+            continue
+        events[int(competition.id)] = {
+            "id": int(competition.id),
+            "name": competition.nombre or "Evento",
+            "slug": competition.slug,
+            "location": competition.lugar,
+            "start_at": competition.competition_start.isoformat() if competition.competition_start else None,
+            "end_at": competition.competition_end.isoformat() if competition.competition_end else None,
+            "category": enrollment.categoria,
+            "enrollment_status": enrollment.estado,
+            "enrolled_at": enrollment.inscrito_at.isoformat() if enrollment.inscrito_at else None,
+            "results": [],
+        }
+
+    for item in results:
+        competition_id = int(item.get("competition_id") or 0)
+        if not competition_id:
+            continue
+        if competition_id not in events:
+            events[competition_id] = {
+                "id": competition_id,
+                "name": item.get("competition_name") or "Evento",
+                "slug": item.get("competition_slug"),
+                "location": item.get("competition_location"),
+                "start_at": item.get("competition_start"),
+                "end_at": item.get("competition_end"),
+                "category": None,
+                "enrollment_status": None,
+                "enrolled_at": None,
+                "results": [],
+            }
+        events[competition_id]["results"].append(item)
+
+    history = []
+    for event in events.values():
+        event_results = sorted(
+            event["results"],
+            key=lambda item: (
+                int(item.get("phase_order") or 0),
+                item.get("created_at") or "",
+                int(item.get("id") or 0),
+            ),
+        )
+        points_values = [int(item["puntos"]) for item in event_results if item.get("puntos") not in (None, "")]
+        positions = [int(item["posicion"]) for item in event_results if item.get("posicion") not in (None, "")]
+        event["results"] = event_results
+        event["results_count"] = len(event_results)
+        event["total_points"] = sum(points_values) if points_values and sum(points_values) > 0 else None
+        event["best_position"] = min(positions) if positions else None
+        history.append(event)
+
+    def _event_sort_key(event: dict) -> tuple:
+        return (
+            event.get("start_at") or event.get("enrolled_at") or "",
+            int(event.get("id") or 0),
+        )
+
+    return sorted(history, key=_event_sort_key, reverse=True)
+
+
 def _serialize_public_profile(session: Session, participant: Participant, requested_username: Optional[str] = None) -> dict:
     results = _public_results(session, int(participant.id), limit=24) if int(participant.public_show_results or 0) else []
     enrollments = session.exec(
         select(CompetitionParticipant).where(CompetitionParticipant.user_id == int(participant.id))
     ).all()
+    event_history = _public_event_history(session, int(participant.id), results) if int(participant.public_show_results or 0) else []
     return {
         "id": participant.id,
         "username": participant.username,
@@ -254,6 +339,7 @@ def _serialize_public_profile(session: Session, participant: Participant, reques
         "gym": _resolve_primary_gym(session, int(participant.id)) if int(participant.public_show_gym or 0) else None,
         "verified_athlete": bool(participant.verified_athlete),
         "results": results,
+        "events": event_history,
         "stats": {
             "competitions_count": len({int(item.competition_id) for item in enrollments}),
             "results_count": len(results),
@@ -383,6 +469,7 @@ def update_my_profile(
     payload = _sync_genero_fields(body.model_dump(exclude_unset=True))
     _validate_participant_payload(payload)
     _remove_immutable_email(payload, p)
+    _require_profile_phone(payload, p)
 
     for field, value in payload.items():
         setattr(p, field, value)
@@ -438,8 +525,8 @@ def update_my_public_profile(
 
     payload = body.model_dump(exclude_unset=True)
     previous_username = participant.username
-    if "public_profile_visibility" in payload and payload["public_profile_visibility"] not in AthleteProfileVisibility.ALL:
-        raise HTTPException(400, "La visibilidad del perfil no es valida")
+    payload["public_profile_enabled"] = 1
+    payload["public_profile_visibility"] = AthleteProfileVisibility.PUBLIC
     if "display_name" in payload:
         payload["display_name"] = str(payload["display_name"] or "").strip() or build_default_display_name(participant)
     if "username" in payload:
@@ -495,15 +582,15 @@ def get_public_profile(
     if not participant:
         raise HTTPException(404, "Atleta no encontrado")
 
-    requester_user_id = get_effective_user_id(user) if user and is_end_user(user) else None
-    is_owner_preview = requester_user_id == int(participant.id or 0)
-    is_admin_preview = has_admin_access(user)
-    is_public = bool(
-        int(participant.public_profile_enabled or 0)
-        and participant.public_profile_visibility == AthleteProfileVisibility.PUBLIC
-    )
-    if not is_public and not is_owner_preview and not is_admin_preview:
-        raise HTTPException(404, "Atleta no encontrado")
+    if not participant.username:
+        participant.username = ensure_unique_username(
+            session,
+            build_public_username_seed(participant),
+            exclude_user_id=participant.id,
+        )
+        session.add(participant)
+        session.commit()
+        session.refresh(participant)
 
     return _serialize_public_profile(session, participant, requested_username=normalized)
 
@@ -527,6 +614,8 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
             extra_role = "organizer"
         elif int(participant.judge_enabled or 0):
             extra_role = "judge"
+        elif int(getattr(participant, "announcer_enabled", 0) or 0):
+            extra_role = "announcer"
 
         payload = participant.model_dump()
         payload["user_id"] = participant.id
@@ -536,6 +625,7 @@ def list_admin_users(session: Session = Depends(get_session), _=Depends(require_
         payload["extra_role"] = extra_role
         payload["organizer_enabled"] = bool(int(participant.organizer_enabled or 0))
         payload["judge_enabled"] = bool(int(participant.judge_enabled or 0))
+        payload["announcer_enabled"] = bool(int(getattr(participant, "announcer_enabled", 0) or 0))
         payload["admin_enabled"] = bool(int(participant.admin_enabled or 0))
         items.append(payload)
     return items
@@ -553,12 +643,13 @@ def update_participant_role(
         raise HTTPException(404, "Usuario no encontrado")
 
     extra_role = str(body.get("extra_role") or "").strip().lower()
-    if extra_role not in {"", "user", "organizer", "judge", "admin"}:
+    if extra_role not in {"", "user", "organizer", "judge", "announcer", "admin"}:
         raise HTTPException(400, "Rol invalido")
 
     participant.role = "user"
     participant.organizer_enabled = 1 if extra_role == "organizer" else 0
     participant.judge_enabled = 1 if extra_role == "judge" else 0
+    participant.announcer_enabled = 1 if extra_role == "announcer" else 0
     participant.admin_enabled = 1 if extra_role == "admin" else 0
     session.add(participant)
     session.commit()
