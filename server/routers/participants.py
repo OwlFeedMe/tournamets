@@ -127,6 +127,16 @@ def _validate_participant_payload(data: dict) -> None:
         raise HTTPException(400, "Selecciona un genero valido")
 
 
+def _remove_immutable_email(payload: dict, participant: Participant) -> None:
+    if "email" not in payload:
+        return
+    current_email = str(participant.email or "").strip().lower()
+    requested_email = str(payload.get("email") or "").strip().lower()
+    if requested_email != current_email:
+        raise HTTPException(400, "El email no se puede cambiar")
+    payload.pop("email", None)
+
+
 def _sync_account_fields(participant: Participant, session: Session | None = None) -> int | None:
     participant.display_name = str(participant.display_name or "").strip() or build_default_display_name(participant)
     if participant.username and not is_sensitive_username(participant.username, cedula=participant.cedula):
@@ -372,6 +382,7 @@ def update_my_profile(
 
     payload = _sync_genero_fields(body.model_dump(exclude_unset=True))
     _validate_participant_payload(payload)
+    _remove_immutable_email(payload, p)
 
     for field, value in payload.items():
         setattr(p, field, value)
@@ -594,6 +605,7 @@ def update_participant(user_id: int, body: ParticipantUpdate,
 
     payload = _sync_genero_fields(body.model_dump(exclude_unset=True))
     _validate_participant_payload(payload)
+    _remove_immutable_email(payload, p)
 
     for field, value in payload.items():
         setattr(p, field, value)
