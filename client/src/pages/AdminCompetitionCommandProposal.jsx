@@ -3093,7 +3093,7 @@ function ScoringPanel({ bundle, reload, notify }) {
         </div>
       ) : null}
 
-      <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+      <div className="fr-form-grid fr-scoring-mode-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
         {scoringModeOptions.map((item) => {
           const active = draft.scoring_system === item.id
           return (
@@ -3106,7 +3106,7 @@ function ScoringPanel({ bundle, reload, notify }) {
         })}
       </div>
 
-      <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+      <div className="fr-scoring-settings" style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div>
             <h3 style={{ fontSize: 16 }}>{selectedMode.label}</h3>
@@ -3166,7 +3166,7 @@ function ScoringPanel({ bundle, reload, notify }) {
           const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
           const phaseWeight = Number(phaseScoring.scoring_weight_percent ?? phase.scoring_weight_percent ?? 100)
           return (
-            <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 160px 130px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
+            <div key={phase.id} className="fr-scoring-phase-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 160px 130px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
               <div>
                 <strong>{phase.nombre}</strong>
                 <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Personalizado' : 'Regla de la competencia'}</div>
@@ -4593,6 +4593,28 @@ function ResponsiveStyles() {
         .fr-panel-action > div > button,
         .fr-panel-action > div > a {
           width: 100%;
+        }
+        .fr-panel-body > * {
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        .fr-scoring-mode-grid,
+        .fr-scoring-settings,
+        .fr-scoring-phase-row {
+          grid-template-columns: 1fr !important;
+          width: 100% !important;
+          min-width: 0 !important;
+        }
+        .fr-scoring-mode-grid > button,
+        .fr-scoring-settings > *,
+        .fr-scoring-phase-row > * {
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        .fr-scoring-mode-grid span,
+        .fr-scoring-settings,
+        .fr-scoring-phase-row {
+          overflow-wrap: break-word;
         }
         .fr-panel-body [style*="grid-template-columns: minmax(0, 1fr) auto"],
         .fr-panel-body [style*="grid-template-columns: 1fr auto"],
