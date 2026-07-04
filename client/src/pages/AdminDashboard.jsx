@@ -10654,6 +10654,7 @@ function ParticipantsTab() {
         ciudad_pais: city && countryName ? buildCityCountry(city, countryName) : '',
       }
       const extraRole = payload.extra_role || 'user'
+      delete payload.email
       delete payload.city
       delete payload.countryCode
       delete payload.extra_role
@@ -10798,7 +10799,7 @@ function ParticipantsTab() {
               <div className="form-group"><label>Cedula *</label><input value={editForm.cedula} onChange={e => setEditForm({ ...editForm, cedula: e.target.value })} required /></div>
               <div className="form-group"><label>Nombre *</label><input value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} required /></div>
               <div className="form-group"><label>Apellido *</label><input value={editForm.apellido} onChange={e => setEditForm({ ...editForm, apellido: e.target.value })} required /></div>
-              <div className="form-group"><label>Email</label><input type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></div>
+              <div className="form-group"><label>Email</label><input type="email" value={editForm.email} readOnly aria-readonly="true" style={{ opacity: 0.72, cursor: 'not-allowed' }} /></div>
               <div className="form-group"><label>Celular</label><input value={editForm.celular} onChange={e => setEditForm({ ...editForm, celular: e.target.value })} /></div>
               <div className="form-group"><label>Genero</label>
                 <select value={editForm.genero} onChange={e => setEditForm({ ...editForm, genero: e.target.value })}>

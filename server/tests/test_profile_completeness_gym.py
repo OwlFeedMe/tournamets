@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from routers.participants import _get_missing_profile_fields, _require_profile_phone
+from routers.participants import _get_missing_profile_fields, _remove_immutable_email, _require_profile_phone
 
 
 def _profile(**extra):
@@ -40,6 +40,21 @@ class ProfileCompletenessGymTests(unittest.TestCase):
 
         self.assertEqual(ctx.exception.status_code, 400)
         self.assertEqual(ctx.exception.detail, "El celular es obligatorio")
+
+    def test_profile_email_is_removed_when_unchanged(self):
+        payload = {"email": "ana@example.com", "nombre": "Ana"}
+
+        _remove_immutable_email(payload, _profile(email="ana@example.com"))
+
+        self.assertNotIn("email", payload)
+        self.assertEqual(payload["nombre"], "Ana")
+
+    def test_profile_email_change_is_rejected(self):
+        with self.assertRaises(HTTPException) as ctx:
+            _remove_immutable_email({"email": "otra@example.com"}, _profile(email="ana@example.com"))
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(ctx.exception.detail, "El email no se puede cambiar")
 
 
 if __name__ == "__main__":

@@ -1081,7 +1081,7 @@ export default function ParticipantProfile() {
     const payload = {}
     const publicPayload = {}
     for (const [k, v] of Object.entries(editForm)) {
-      if (['city', 'countryCode', 'ciudad_pais', 'username', 'display_name', 'public_profile_enabled', 'public_profile_indexable', 'public_profile_visibility', 'public_bio', 'public_cover_url', 'public_show_city', 'public_show_gym', 'public_show_age', 'public_show_results'].includes(k)) continue
+      if (['city', 'countryCode', 'ciudad_pais', 'email', 'username', 'display_name', 'public_profile_enabled', 'public_profile_indexable', 'public_profile_visibility', 'public_bio', 'public_cover_url', 'public_show_city', 'public_show_gym', 'public_show_age', 'public_show_results'].includes(k)) continue
       const trimmed = typeof v === 'string' ? v.trim() : v
       if (trimmed) payload[k] = trimmed
     }
@@ -2005,7 +2005,7 @@ export default function ParticipantProfile() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Email</label>
-                  <input value={editForm.email || ''} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="Email" type="email" inputMode="email" style={inputHighlightStyle(shouldHighlightField('email'))} />
+                  <input value={editForm.email || ''} placeholder="Email" type="email" inputMode="email" readOnly aria-readonly="true" style={{ ...inputHighlightStyle(shouldHighlightField('email')), opacity: 0.72, cursor: 'not-allowed' }} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Genero</label>
