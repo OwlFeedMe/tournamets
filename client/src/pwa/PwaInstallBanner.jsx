@@ -19,33 +19,34 @@ export function PwaInstallBanner() {
       <div style={{
         maxWidth: 460,
         marginLeft: 'auto',
-        background: 'linear-gradient(135deg, rgba(241,244,248,0.98) 0%, rgba(199,205,214,0.96) 100%)',
-        color: '#fff',
+        background: '#171B21',
+        color: '#F5F7FA',
         borderRadius: 18,
         padding: '14px 14px 14px 16px',
-        boxShadow: '0 18px 40px rgba(0,0,0,0.32)',
-        border: '1px solid rgba(255,255,255,0.16)',
+        boxShadow: '0 22px 42px rgba(0,0,0,0.48)',
+        border: '1px solid #252A33',
         display: 'flex',
         gap: 12,
         alignItems: 'center',
         pointerEvents: 'auto',
-        backdropFilter: 'blur(10px)',
       }}>
         <div style={{
           width: 40,
           height: 40,
           borderRadius: 12,
-          background: 'rgba(9,11,14,0.18)',
+          background: 'linear-gradient(135deg, rgba(255,107,0,0.2) 0%, rgba(0,194,168,0.16) 100%)',
+          border: '1px solid rgba(255,107,0,0.28)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
+          color: '#FF9A3D',
         }}>
           <Sparkles size={18} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2 }}>Instalar FinalRep</div>
-          <div style={{ fontSize: 12, opacity: 0.92, marginTop: 2 }}>Acceso rapido desde la pantalla de inicio.</div>
+          <div style={{ fontSize: 14, fontWeight: 800, lineHeight: 1.2, color: '#F5F7FA' }}>Instalar FinalRep</div>
+          <div style={{ fontSize: 12, color: '#AAB2C0', marginTop: 2 }}>Acceso rapido desde la pantalla de inicio.</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
@@ -53,9 +54,9 @@ export function PwaInstallBanner() {
             onClick={dismissInstallPrompt}
             aria-label="Cerrar aviso de instalacion"
             style={{
-              background: 'rgba(255,255,255,0.12)',
-              color: '#fff',
-              border: '1px solid rgba(255,255,255,0.18)',
+              background: '#0D0F12',
+              color: '#AAB2C0',
+              border: '1px solid #252A33',
               borderRadius: 12,
               width: 36,
               height: 36,
@@ -72,14 +73,15 @@ export function PwaInstallBanner() {
             onClick={promptInstall}
             className="btn-secondary"
             style={{
-              background: '#090B0E',
-              color: '#fff',
-              borderColor: 'rgba(255,255,255,0.12)',
+              background: '#FF6B00',
+              color: '#0D0F12',
+              borderColor: '#FF6B00',
               borderRadius: 12,
               display: 'inline-flex',
               alignItems: 'center',
               gap: 8,
               whiteSpace: 'nowrap',
+              fontWeight: 800,
             }}
           >
             <Download size={15} />
