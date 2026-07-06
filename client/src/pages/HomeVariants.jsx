@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3, Flame, MapPin, Medal, QrCode, TrendingDown, TrendingUp, Trash2, X } from 'lucide-react'
 import api from '../api/axios'
 import {
@@ -939,6 +939,8 @@ export default function HomeVariants({ variant = 1 }) {
   const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [spectatorDetails, setSpectatorDetails] = useState({})
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
+  const personalDetailsKeyRef = useRef('')
+  const personalDetailsLoadedRef = useRef(false)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768)
@@ -1030,6 +1032,8 @@ export default function HomeVariants({ variant = 1 }) {
 
   useEffect(() => {
     if (!session || !isAthlete || !userId || !primaryCompetition?.id || !hasCurrentOrFuture) {
+      personalDetailsKeyRef.current = ''
+      personalDetailsLoadedRef.current = false
       setSchedulePayload(null)
       setLeaderboardPayload(null)
       setResultItems([])
@@ -1038,7 +1042,16 @@ export default function HomeVariants({ variant = 1 }) {
     }
 
     let active = true
-    setDetailsLoading(true)
+    const detailsKey = `${userId}:${primaryCompetition.id}`
+    if (personalDetailsKeyRef.current !== detailsKey) {
+      personalDetailsKeyRef.current = detailsKey
+      personalDetailsLoadedRef.current = false
+      setSchedulePayload(null)
+      setLeaderboardPayload(null)
+      setResultItems([])
+    }
+    const shouldShowSkeleton = !personalDetailsLoadedRef.current
+    if (shouldShowSkeleton) setDetailsLoading(true)
     Promise.all([
       api.get(`/competitions/${primaryCompetition.id}/my-schedule`).catch(() => ({ data: null })),
       api.get(`/leaderboard/${primaryCompetition.id}`).catch(() => ({ data: null })),
@@ -1049,6 +1062,7 @@ export default function HomeVariants({ variant = 1 }) {
         setSchedulePayload(scheduleResponse.data || null)
         setLeaderboardPayload(leaderboardResponse.data || null)
         setResultItems(Array.isArray(resultsResponse.data) ? resultsResponse.data : [])
+        personalDetailsLoadedRef.current = true
       })
       .finally(() => {
         if (!active) return
