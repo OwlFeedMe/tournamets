@@ -4,6 +4,7 @@ import os
 
 from sqlmodel import Session, select
 
+from competition_rules import normalize_phase_measurement_method, type_from_measurement_method
 from models import AppNotification, Competition, CompetitionPhase, Participant, Result, TeamMember
 from services.email_templates import render_result_notification
 from services.emailer import send_email
@@ -19,13 +20,40 @@ def _action_url(competition_id: int) -> str:
     return f"{_base_url()}/leaderboard/{competition_id}"
 
 
-def _mark_label(result: Result) -> str:
+def _phase_uses_time_input(phase: CompetitionPhase | None) -> bool:
+    if phase is None:
+        return False
+    method = normalize_phase_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None))
+    return type_from_measurement_method(method) == "tiempo" or method in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _phase_tiebreak_uses_time_input(phase: CompetitionPhase | None) -> bool:
+    if phase is None:
+        return True
+    method = normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo")
+    return type_from_measurement_method(method) == "tiempo" or method in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _format_seconds(total_seconds: int) -> str:
+    safe = max(0, int(total_seconds))
+    hours = safe // 3600
+    minutes = (safe % 3600) // 60
+    seconds = safe % 60
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
+def _format_result_mark(result: Result, phase: CompetitionPhase | None) -> str:
     value = result.marca if result.marca is not None else result.puntos
-    parts = [str(value)]
+    if value is None:
+        return "-"
+    parts = [_format_seconds(int(value)) if _phase_uses_time_input(phase) else str(value)]
     if result.extra is not None:
         parts.append(f"+ {result.extra} reps")
     if result.tiebreak is not None:
-        parts.append(f"TB {result.tiebreak}")
+        tiebreak = _format_seconds(int(result.tiebreak)) if _phase_tiebreak_uses_time_input(phase) else str(result.tiebreak)
+        parts.append(f"TB {tiebreak}")
     return " | ".join(parts)
 
 
@@ -52,7 +80,8 @@ def notify_result_saved(session: Session, result: Result, *, updated: bool) -> N
     phase_name = phase.nombre if phase else "Workout"
     action = "actualizado" if updated else "cargado"
     title = f"Resultado {action}: {phase_name}"
-    body = f"{competition_name}: marca {_mark_label(result)}"
+    mark_label = _format_result_mark(result, phase)
+    body = f"{competition_name}: marca {mark_label}"
     if result.posicion is not None:
         body = f"{body} | posicion {result.posicion}"
     url = _action_url(int(result.competition_id))
@@ -83,7 +112,7 @@ def notify_result_saved(session: Session, result: Result, *, updated: bool) -> N
                 nombre=(recipient.nombre or "Atleta"),
                 competition_name=competition_name,
                 phase_name=phase_name,
-                mark_label=_mark_label(result),
+                mark_label=mark_label,
                 position=result.posicion,
                 points=result.puntos,
                 action_url=url,
