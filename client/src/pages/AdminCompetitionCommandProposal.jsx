@@ -29,6 +29,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { AdminToolsNav } from '../components/admin/AdminToolsNav'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const colors = {
@@ -4966,6 +4967,9 @@ export default function AdminCompetitionCommandProposal() {
       {toast ? <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 10020, border: `1px solid ${toast.type === 'error' ? colors.error : colors.accent}`, background: colors.surface, borderRadius: 8, padding: '11px 13px' }}>{toast.text}</div> : null}
       {createOpen ? <CreateCompetitionModal onClose={() => setCreateOpen(false)} notify={notify} onCreated={(created) => { setCreateOpen(false); setSelectedId(created.id); setView('wizard') }} /> : null}
       <div className="fr-command-page" style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '22px 16px 34px' }}>
+        <div style={{ marginBottom: 16 }}>
+          <AdminToolsNav />
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button onClick={loadPortfolio}><RefreshCw size={16} />Refrescar</Button>

@@ -29,6 +29,8 @@ const GymSuggestPage = lazy(() => import('./pages/GymSuggestPage'))
 const GymPublicProfile = lazy(() => import('./pages/GymPublicProfile'))
 const GymConsole = lazy(() => import('./pages/GymConsole'))
 const AdminGymsPanel = lazy(() => import('./pages/AdminGymsPanel'))
+const AdminFinancePanel = lazy(() => import('./pages/AdminFinancePanel'))
+const AdminUsersPanel = lazy(() => import('./pages/AdminUsersPanel'))
 
 function AppFallback() {
   return (
@@ -204,6 +206,22 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['admin']}>
                       <AdminGymsPanel />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin/finance"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminFinancePanel />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/admin/users"
+                  element={
+                    <RoleGate allowedRoles={['admin']}>
+                      <AdminUsersPanel />
                     </RoleGate>
                   }
                 />
