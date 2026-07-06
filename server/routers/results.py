@@ -19,6 +19,7 @@ from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.result_notifications import notify_result_saved
 from services.scoring import (
     compute_result_points,
     normalize_scoring_scope,
@@ -637,6 +638,9 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
     if body.phase_id:
         _recompute_phase_positions_and_points(session, body.competition_id, int(body.phase_id))
         recompute_and_persist_phase_status(session, body.competition_id, int(body.phase_id))
+    session.flush()
+    session.refresh(result)
+    notify_result_saved(session, result, updated=False)
     session.commit()
     session.refresh(result)
     invalidate_leaderboard_results_snapshot(body.competition_id)
@@ -711,6 +715,9 @@ def update_result(result_id: int, body: ResultUpdate,
     if prev_phase_id is not None and (phase_id is None or int(phase_id) != prev_phase_id):
         _recompute_phase_positions_and_points(session, r.competition_id, prev_phase_id)
         recompute_and_persist_phase_status(session, r.competition_id, prev_phase_id)
+    session.flush()
+    session.refresh(r)
+    notify_result_saved(session, r, updated=True)
     session.commit()
     invalidate_leaderboard_results_snapshot(r.competition_id)
     return _enrich(session, result_id)

@@ -17,6 +17,7 @@ from auth import invalidate_user, require_auth, require_staff
 from services.emailer import send_email
 from services.email_templates import render_judge_invitation
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.result_notifications import notify_result_saved
 from services.scoring import phase_scoring_config
 from competition_rules import normalize_phase_measurement_method
 from database import get_session
@@ -1312,6 +1313,9 @@ def judge_score_submit(
             "marca_raw": str(raw_mark).strip(),
         },
     )
+    session.flush()
+    session.refresh(result)
+    notify_result_saved(session, result, updated=False)
     session.commit()
     session.refresh(result)
     out = _score_payload_for_entity(
@@ -1391,6 +1395,9 @@ def judge_score_edit(
             "marca_raw": str(raw_mark).strip(),
         },
     )
+    session.flush()
+    session.refresh(existing)
+    notify_result_saved(session, existing, updated=True)
     session.commit()
     session.refresh(existing)
     out = _score_payload_for_entity(

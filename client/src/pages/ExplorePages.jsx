@@ -687,10 +687,30 @@ export function NotificationsPage() {
   const { session, displayName } = useAuth()
   const [spectatorFollows, setSpectatorFollows] = useState(() => readSpectatorFollows())
   const [spectatorFeed, setSpectatorFeed] = useState([])
+  const [appNotifications, setAppNotifications] = useState([])
   const [detailsByKey, setDetailsByKey] = useState({})
   const [checking, setChecking] = useState(false)
 
   useEffect(() => subscribeSpectatorFollows(setSpectatorFollows), [])
+
+  useEffect(() => {
+    if (!session) {
+      setAppNotifications([])
+      return
+    }
+    let active = true
+    api.get('/me/notifications')
+      .then(({ data }) => {
+        if (!active) return
+        setAppNotifications(Array.isArray(data?.items) ? data.items : [])
+      })
+      .catch(() => {
+        if (active) setAppNotifications([])
+      })
+    return () => {
+      active = false
+    }
+  }, [session])
 
   useEffect(() => {
     if (!spectatorFollows.length) {
@@ -786,11 +806,23 @@ export function NotificationsPage() {
               <Bell size={18} color="#D6D9E0" />
               <div style={{ fontWeight: 800 }}>{session ? `Avisos para ${displayName || 'tu cuenta'}` : 'Novedades y acceso personal'}</div>
             </div>
-            <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
-              {session
-                ? 'Revisa aperturas de eventos, recordatorios de evento, movimientos del leaderboard y mensajes relacionados con tu participacion.'
-                : 'Este seguimiento se guarda solo en este navegador. Para avisos push reales se necesitara activar notificaciones del dispositivo.'}
-            </div>
+            {session && appNotifications.length ? (
+              <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+                {appNotifications.slice(0, 10).map((item) => (
+                  <div key={item.id} style={{ border: `1px solid ${item.read_at ? '#252A33' : 'rgba(255,107,0,0.34)'}`, background: item.read_at ? 'rgba(13,15,18,0.5)' : 'rgba(255,107,0,0.08)', borderRadius: 12, padding: 12 }}>
+                    <div style={{ color: '#F5F7FA', fontWeight: 900 }}>{item.title}</div>
+                    <div style={{ marginTop: 4, color: '#AAB2C0', fontSize: 13, lineHeight: 1.45 }}>{item.body}</div>
+                    {item.action_url ? (
+                      <a href={item.action_url} style={{ display: 'inline-flex', marginTop: 8, color: '#FF9A3D', fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>Ver leaderboard</a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ marginTop: 10, color: '#AAB2C0', lineHeight: 1.6 }}>
+                {session ? 'Sin avisos nuevos de tu cuenta.' : 'Ingresa para recibir avisos de tus competencias.'}
+              </div>
+            )}
           </article>
 
           {!session ? (

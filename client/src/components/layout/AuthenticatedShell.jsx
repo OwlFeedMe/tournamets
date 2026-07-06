@@ -46,6 +46,14 @@ function appealStatusLabel(status) {
   return labels[status] || status || 'Sin estado'
 }
 
+function parseNotificationData(item) {
+  try {
+    return JSON.parse(item?.data_json || '{}')
+  } catch {
+    return {}
+  }
+}
+
 const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
 const footerLegalLinks = [
   {
@@ -454,6 +462,11 @@ export function AuthenticatedShell() {
         .then(({ data }) => ({ kind: 'competitor', data }))
         .catch(() => ({ kind: 'competitor', data: [] }))
     )
+    requests.push(
+      api.get('/me/notifications')
+        .then(({ data }) => ({ kind: 'appNotifications', data }))
+        .catch(() => ({ kind: 'appNotifications', data: { items: [], unread_count: 0 } }))
+    )
     if (session) {
       const spectatorFollows = readSpectatorFollows()
       if (spectatorFollows.length) {
@@ -497,6 +510,24 @@ export function AuthenticatedShell() {
       if (!active) return
       const dynamicItems = []
       let unread = 0
+
+      const appNotificationsResult = results.find((item) => item.kind === 'appNotifications')
+      if (appNotificationsResult) {
+        const payload = appNotificationsResult.data || {}
+        const items = Array.isArray(payload.items) ? payload.items : []
+        items.forEach((item) => {
+          const data = parseNotificationData(item)
+          dynamicItems.push({
+            title: item.title || 'Notificacion',
+            text: item.body || '',
+            tone: item.read_at ? 'neutral' : 'success',
+            actions: data.competition_id ? [
+              { id: `app-notification-${item.id}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: data.competition_id },
+            ] : [],
+          })
+        })
+        unread += Number(payload.unread_count || 0)
+      }
 
       const athleteResult = results.find((item) => item.kind === 'athlete')
       if (athleteResult) {
@@ -727,6 +758,7 @@ export function AuthenticatedShell() {
 
   useEffect(() => {
     if (!notificationsOpen || !session || !userId) return
+    api.post('/me/notifications/read').catch(() => {})
     notificationItems.forEach((item) => {
       ;(item.actions || []).forEach((action) => {
         if (action.actionType === 'go-to-profile' && action.profileSeenKey) {

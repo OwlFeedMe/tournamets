@@ -418,6 +418,33 @@ class CompetitionInterestNotification(SQLModel, table=True):
     )
 
 
+class AppNotification(SQLModel, table=True):
+    __tablename__ = "app_notifications"
+    __table_args__ = (
+        Index("ix_app_notifications_user_created", "user_id", "created_at"),
+        Index("ix_app_notifications_user_read", "user_id", "read_at"),
+        Index("ix_app_notifications_type", "notification_type"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    notification_type: str = Field(default="result_created", index=True)
+    title: str
+    body: str
+    action_url: Optional[str] = None
+    data_json: Optional[str] = None
+    read_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("nombre", "competition_id"),)
