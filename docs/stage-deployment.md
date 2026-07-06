@@ -28,6 +28,9 @@ LEADERBOARD_BASE_URL=https://stage.finalrep.co/
 STAGE_EMAIL_GUARD_ENABLED=1
 ADMIN_NOTIFICATION_EMAIL=admin@finalrep.co
 STAGE_EMAIL_ALLOWED_EMAILS=admin@finalrep.co
+VAPID_PUBLIC_KEY=...
+VAPID_PRIVATE_KEY=...
+VAPID_SUBJECT=mailto:support@finalrep.co
 ```
 
 Keep Brevo configured in stage if email delivery must be tested.

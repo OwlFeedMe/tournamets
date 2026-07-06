@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 
-from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
+from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, Text, ForeignKey, DateTime, Date, func
 from sqlmodel import SQLModel, Field
 
 from constants import (
@@ -442,6 +442,35 @@ class AppNotification(SQLModel, table=True):
     created_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class PushSubscription(SQLModel, table=True):
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
+        Index("ix_push_subscriptions_user", "user_id"),
+        Index("ix_push_subscriptions_disabled", "disabled_at"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    endpoint: str = Field(sa_column=Column(Text, nullable=False))
+    p256dh: str = Field(sa_column=Column(Text, nullable=False))
+    auth: str = Field(sa_column=Column(Text, nullable=False))
+    user_agent: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    failure_count: int = Field(default=0)
+    disabled_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    last_success_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
     )
 
 

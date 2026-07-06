@@ -8,6 +8,7 @@ from competition_rules import normalize_phase_measurement_method, type_from_meas
 from models import AppNotification, Competition, CompetitionPhase, Participant, Result, TeamMember
 from services.email_templates import render_result_notification
 from services.emailer import send_email
+from services.push_notifications import send_push_to_user
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,15 @@ def notify_result_saved(session: Session, result: Result, *, updated: bool) -> N
             data_json=json.dumps(data, separators=(",", ":")),
         )
         session.add(notification)
+        session.flush()
+        send_push_to_user(
+            session,
+            user_id=int(recipient.id),
+            title=title,
+            body=body,
+            url=url,
+            notification_id=int(notification.id) if notification.id is not None else None,
+        )
 
         email = (recipient.email or "").strip()
         if not email:

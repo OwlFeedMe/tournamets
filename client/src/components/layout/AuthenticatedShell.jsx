@@ -82,6 +82,34 @@ function canDisplayNativeNotificationNow() {
     && (typeof document === 'undefined' || document.visibilityState !== 'visible')
 }
 
+function urlBase64ToUint8Array(value) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4)
+  const base64 = `${value}${padding}`.replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  const output = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; i += 1) {
+    output[i] = rawData.charCodeAt(i)
+  }
+  return output
+}
+
+async function subscribeToServerPush() {
+  if (notificationPermissionState() !== 'granted' || !('PushManager' in window)) return false
+  const { data } = await api.get('/me/notifications/push-public-key')
+  if (!data?.enabled || !data?.public_key) return false
+
+  const registration = await navigator.serviceWorker.ready
+  let subscription = await registration.pushManager.getSubscription()
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(data.public_key),
+    })
+  }
+  await api.post('/me/notifications/push-subscriptions', subscription.toJSON())
+  return true
+}
+
 async function showNativeAppNotification(item, data) {
   if (!canDisplayNativeNotificationNow()) return false
   const registration = await navigator.serviceWorker.ready
@@ -490,6 +518,11 @@ export function AuthenticatedShell() {
   }, [session])
 
   useEffect(() => {
+    if (!session || nativeNotificationPermission !== 'granted') return
+    subscribeToServerPush().catch(() => {})
+  }, [session, nativeNotificationPermission])
+
+  useEffect(() => {
     if (typeof document === 'undefined' || isMobile || isLoginRoute) return
     if (document.querySelector("script[data-iubenda-loader='true']")) return
 
@@ -874,6 +907,7 @@ export function AuthenticatedShell() {
       const permission = await window.Notification.requestPermission()
       setNativeNotificationPermission(permission || notificationPermissionState())
       if (permission === 'granted') {
+        await subscribeToServerPush().catch(() => {})
         setNotificationsRefreshTick((current) => current + 1)
       }
     } catch {
