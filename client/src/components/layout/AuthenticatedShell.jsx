@@ -54,6 +54,51 @@ function parseNotificationData(item) {
   }
 }
 
+function notificationPermissionState() {
+  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) return 'unsupported'
+  return window.Notification.permission || 'default'
+}
+
+function appNotificationSeenKey(userId) {
+  return `finalrep:pwa-notifications-shown:${userId || 'anon'}`
+}
+
+function readShownAppNotifications(userId) {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(appNotificationSeenKey(userId)) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function writeShownAppNotifications(userId, value) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(appNotificationSeenKey(userId), JSON.stringify(value))
+}
+
+function canDisplayNativeNotificationNow() {
+  return notificationPermissionState() === 'granted'
+    && (typeof document === 'undefined' || document.visibilityState !== 'visible')
+}
+
+async function showNativeAppNotification(item, data) {
+  if (!canDisplayNativeNotificationNow()) return false
+  const registration = await navigator.serviceWorker.ready
+  await registration.showNotification(item.title || 'FinalRep', {
+    body: item.body || '',
+    icon: '/icons/finalrep-192.png',
+    badge: '/icons/finalrep-192.png',
+    tag: `finalrep-app-notification-${item.id}`,
+    renotify: false,
+    data: {
+      url: data?.competition_id ? `/leaderboard/${data.competition_id}` : '/notifications',
+      notificationId: item.id,
+    },
+  })
+  return true
+}
+
 const IUBENDA_SCRIPT_SRC = 'https://cdn.iubenda.com/iubenda.js'
 const footerLegalLinks = [
   {
@@ -66,7 +111,17 @@ const footerLegalLinks = [
   },
 ]
 
-function NotificationSheet({ open, onClose, session, displayName, items = [], busyActionId = '', onAction = null }) {
+function NotificationSheet({
+  open,
+  onClose,
+  session,
+  displayName,
+  items = [],
+  busyActionId = '',
+  onAction = null,
+  nativePermission = 'unsupported',
+  onEnableNativeNotifications = null,
+}) {
   const fallbackItems = useMemo(() => {
     if (session) {
       return [
@@ -163,6 +218,45 @@ function NotificationSheet({ open, onClose, session, displayName, items = [], bu
               Cerrar
             </button>
           </div>
+
+          {session && nativePermission !== 'unsupported' ? (
+            <div style={{
+              border: '1px solid rgba(255,107,0,0.22)',
+              background: 'rgba(255,107,0,0.08)',
+              borderRadius: 14,
+              padding: 12,
+              marginBottom: 12,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+            }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: 'var(--oa-text)', fontSize: 13, fontWeight: 850 }}>Avisos PWA</div>
+                <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45, marginTop: 2 }}>
+                  {nativePermission === 'granted' ? 'Activos en este dispositivo.' : nativePermission === 'denied' ? 'Bloqueados por el navegador.' : 'Recibe resultados aunque la app este en segundo plano.'}
+                </div>
+              </div>
+              {nativePermission === 'default' ? (
+                <button
+                  type="button"
+                  onClick={onEnableNativeNotifications}
+                  style={{
+                    border: '1px solid rgba(255,107,0,0.34)',
+                    background: '#FF6B00',
+                    color: '#090B0E',
+                    borderRadius: 999,
+                    padding: '8px 11px',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Activar avisos
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div style={{ display: 'grid', gap: 10 }}>
             {renderedItems.map((item, idx) => (
@@ -375,6 +469,7 @@ export function AuthenticatedShell() {
   const [pendingQuestionUploadId, setPendingQuestionUploadId] = useState('')
   const [pendingQuestionError, setPendingQuestionError] = useState('')
   const [notificationsRefreshTick, setNotificationsRefreshTick] = useState(0)
+  const [nativeNotificationPermission, setNativeNotificationPermission] = useState(() => notificationPermissionState())
   const isLoginRoute = location.pathname === '/login'
   const topInset = isMobile
     ? 'calc(68px + env(safe-area-inset-top, 0px))'
@@ -389,6 +484,10 @@ export function AuthenticatedShell() {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+
+  useEffect(() => {
+    setNativeNotificationPermission(notificationPermissionState())
+  }, [session])
 
   useEffect(() => {
     if (typeof document === 'undefined' || isMobile || isLoginRoute) return
@@ -515,6 +614,8 @@ export function AuthenticatedShell() {
       if (appNotificationsResult) {
         const payload = appNotificationsResult.data || {}
         const items = Array.isArray(payload.items) ? payload.items : []
+        const shownNativeNotifications = readShownAppNotifications(userId)
+        let shownNativeNotificationsChanged = false
         items.forEach((item) => {
           const data = parseNotificationData(item)
           dynamicItems.push({
@@ -525,7 +626,15 @@ export function AuthenticatedShell() {
               { id: `app-notification-${item.id}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: data.competition_id },
             ] : [],
           })
+          if (!item.read_at && item.id && !shownNativeNotifications[String(item.id)] && canDisplayNativeNotificationNow()) {
+            shownNativeNotifications[String(item.id)] = 1
+            shownNativeNotificationsChanged = true
+            showNativeAppNotification(item, data).catch(() => {})
+          }
         })
+        if (shownNativeNotificationsChanged) {
+          writeShownAppNotifications(userId, shownNativeNotifications)
+        }
         unread += Number(payload.unread_count || 0)
       }
 
@@ -745,7 +854,7 @@ export function AuthenticatedShell() {
     return () => {
       active = false
     }
-  }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick])
+  }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick, nativeNotificationPermission])
 
   useEffect(() => subscribeSpectatorFollows(() => {
     setNotificationsRefreshTick((current) => current + 1)
@@ -754,6 +863,22 @@ export function AuthenticatedShell() {
   const openNotifications = () => {
     setNotificationsRefreshTick((current) => current + 1)
     setNotificationsOpen(true)
+  }
+
+  const enableNativeNotifications = async () => {
+    if (notificationPermissionState() === 'unsupported') {
+      setNativeNotificationPermission('unsupported')
+      return
+    }
+    try {
+      const permission = await window.Notification.requestPermission()
+      setNativeNotificationPermission(permission || notificationPermissionState())
+      if (permission === 'granted') {
+        setNotificationsRefreshTick((current) => current + 1)
+      }
+    } catch {
+      setNativeNotificationPermission(notificationPermissionState())
+    }
   }
 
   useEffect(() => {
@@ -1070,6 +1195,8 @@ export function AuthenticatedShell() {
         items={notificationItems}
         busyActionId={notificationActionBusyId}
         onAction={handleNotificationAction}
+        nativePermission={nativeNotificationPermission}
+        onEnableNativeNotifications={enableNativeNotifications}
       />
       <PendingQuestionsModal
         task={pendingQuestionTask}
