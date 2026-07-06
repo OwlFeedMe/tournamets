@@ -110,6 +110,11 @@ async function subscribeToServerPush() {
   return true
 }
 
+async function syncSpectatorFollowsToServer() {
+  const follows = readSpectatorFollows()
+  await api.post('/follows/sync', { follows })
+}
+
 async function showNativeAppNotification(item, data) {
   if (!canDisplayNativeNotificationNow()) return false
   const registration = await navigator.serviceWorker.ready
@@ -521,6 +526,14 @@ export function AuthenticatedShell() {
     if (!session || nativeNotificationPermission !== 'granted') return
     subscribeToServerPush().catch(() => {})
   }, [session, nativeNotificationPermission])
+
+  useEffect(() => {
+    if (!session) return undefined
+    syncSpectatorFollowsToServer().catch(() => {})
+    return subscribeSpectatorFollows(() => {
+      syncSpectatorFollowsToServer().catch(() => {})
+    })
+  }, [session])
 
   useEffect(() => {
     if (typeof document === 'undefined' || isMobile || isLoginRoute) return

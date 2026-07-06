@@ -474,6 +474,38 @@ class PushSubscription(SQLModel, table=True):
     )
 
 
+class AthleteFollow(SQLModel, table=True):
+    __tablename__ = "athlete_follows"
+    __table_args__ = (
+        UniqueConstraint("follower_user_id", "competition_id", "athlete_user_id", name="uq_athlete_follows_user_comp_athlete"),
+        Index("ix_athlete_follows_athlete", "competition_id", "athlete_user_id"),
+        Index("ix_athlete_follows_follower", "follower_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    follower_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    athlete_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    athlete_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    username: Optional[str] = None
+    category: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("nombre", "competition_id"),)

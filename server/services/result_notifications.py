@@ -5,7 +5,7 @@ import os
 from sqlmodel import Session, select
 
 from competition_rules import normalize_phase_measurement_method, type_from_measurement_method
-from models import AppNotification, Competition, CompetitionPhase, Participant, Result, TeamMember
+from models import AppNotification, AthleteFollow, Competition, CompetitionPhase, Participant, Result, TeamMember
 from services.email_templates import render_result_notification
 from services.emailer import send_email
 from services.push_notifications import send_push_to_user
@@ -136,3 +136,82 @@ def notify_result_saved(session: Session, result: Result, *, updated: bool) -> N
             )
         except Exception:
             logger.exception("Could not notify result %s to user %s", result.id, recipient.id)
+
+    if result.user_id is not None:
+        notify_followers_result_saved(
+            session,
+            result=result,
+            competition_name=competition_name,
+            phase_name=phase_name,
+            mark_label=mark_label,
+            updated=updated,
+            action_url=url,
+        )
+
+
+def notify_followers_result_saved(
+    session: Session,
+    *,
+    result: Result,
+    competition_name: str,
+    phase_name: str,
+    mark_label: str,
+    updated: bool,
+    action_url: str,
+) -> None:
+    if result.user_id is None:
+        return
+    athlete = session.get(Participant, int(result.user_id))
+    athlete_name = (
+        f"{(athlete.nombre or '').strip()} {(athlete.apellido or '').strip()}".strip()
+        if athlete
+        else ""
+    ) or "Atleta"
+    followers = session.exec(
+        select(AthleteFollow).where(
+            AthleteFollow.competition_id == int(result.competition_id),
+            AthleteFollow.athlete_user_id == int(result.user_id),
+            AthleteFollow.follower_user_id != int(result.user_id),
+        )
+    ).all()
+    if not followers:
+        return
+
+    action = "actualizado" if updated else "cargado"
+    title = f"{athlete_name}: resultado {action}"
+    body = f"{competition_name} | {phase_name}: {mark_label}"
+    if result.posicion is not None:
+        body = f"{body} | posicion {result.posicion}"
+
+    data = {
+        "competition_id": int(result.competition_id),
+        "phase_id": int(result.phase_id) if result.phase_id is not None else None,
+        "result_id": int(result.id) if result.id is not None else None,
+        "athlete_user_id": int(result.user_id),
+        "followed": True,
+        "updated": bool(updated),
+    }
+    notified_user_ids: set[int] = set()
+    for follow in followers:
+        follower_id = int(follow.follower_user_id)
+        if follower_id in notified_user_ids:
+            continue
+        notified_user_ids.add(follower_id)
+        notification = AppNotification(
+            user_id=follower_id,
+            notification_type="followed_result_updated" if updated else "followed_result_created",
+            title=title,
+            body=body,
+            action_url=action_url,
+            data_json=json.dumps(data, separators=(",", ":")),
+        )
+        session.add(notification)
+        session.flush()
+        send_push_to_user(
+            session,
+            user_id=follower_id,
+            title=title,
+            body=body,
+            url=action_url,
+            notification_id=int(notification.id) if notification.id is not None else None,
+        )

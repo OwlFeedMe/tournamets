@@ -4,12 +4,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, text
-from sqlmodel import Session
+from sqlmodel import Session, select
 
+from auth import get_current_user_id, require_auth
 from database import get_session
-from models import Competition
+from models import AthleteFollow, Competition
 from routers.leaderboard import _build_leaderboard_results_snapshot
 from services.leaderboard_cache import get_leaderboard_results_snapshot, set_leaderboard_results_snapshot
 
@@ -28,7 +29,7 @@ class FollowSummaryItem(BaseModel):
 
 
 class FollowSummaryRequest(BaseModel):
-    follows: list[FollowSummaryItem] = []
+    follows: list[FollowSummaryItem] = Field(default_factory=list)
 
 
 def _flatten_individual_rows(individual_data: dict | None) -> list[dict]:
@@ -48,6 +49,17 @@ def _leaderboard_for_competition(session: Session, competition_id: int) -> dict:
     payload = _build_leaderboard_results_snapshot(competition_id, session)
     set_leaderboard_results_snapshot(competition_id, payload)
     return payload
+
+
+def _normalize_follow_item(item: FollowSummaryItem) -> tuple[int, int] | None:
+    try:
+        competition_id = int(item.competitionId)
+        athlete_id = int(item.athleteId)
+    except (TypeError, ValueError):
+        return None
+    if competition_id <= 0 or athlete_id <= 0:
+        return None
+    return competition_id, athlete_id
 
 
 def _athlete_snapshot(leaderboard: dict, athlete_id: int) -> dict | None:
@@ -177,3 +189,53 @@ def get_follow_summary(body: FollowSummaryRequest, session: Session = Depends(ge
             })
 
     return {"items": summaries}
+
+
+@router.post("/sync")
+def sync_follows(
+    body: FollowSummaryRequest,
+    session: Session = Depends(get_session),
+    user=Depends(require_auth),
+):
+    follower_user_id = get_current_user_id(user)
+    if follower_user_id is None:
+        return {"synced": 0}
+
+    normalized: dict[tuple[int, int], FollowSummaryItem] = {}
+    for item in body.follows[:120]:
+        key = _normalize_follow_item(item)
+        if key:
+            normalized[key] = item
+
+    existing = session.exec(
+        select(AthleteFollow).where(AthleteFollow.follower_user_id == int(follower_user_id))
+    ).all()
+    existing_by_key = {(int(row.competition_id), int(row.athlete_user_id)): row for row in existing}
+    next_keys = {
+        key
+        for key in normalized.keys()
+        if key[1] != int(follower_user_id)
+    }
+
+    for key, row in existing_by_key.items():
+        if key not in next_keys:
+            session.delete(row)
+
+    for (competition_id, athlete_id), item in normalized.items():
+        if (competition_id, athlete_id) not in next_keys:
+            continue
+        row = existing_by_key.get((competition_id, athlete_id))
+        if row is None:
+            row = AthleteFollow(
+                follower_user_id=int(follower_user_id),
+                competition_id=competition_id,
+                athlete_user_id=athlete_id,
+            )
+        row.competition_name = (item.competitionName or "").strip()[:500] or None
+        row.athlete_name = (item.athleteName or "").strip()[:500] or None
+        row.username = (item.username or "").strip()[:255] or None
+        row.category = (item.category or "").strip()[:255] or None
+        session.add(row)
+
+    session.commit()
+    return {"synced": len(next_keys)}
