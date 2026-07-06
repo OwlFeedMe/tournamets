@@ -411,7 +411,10 @@ def _enrich(session: Session, result_id: int) -> dict:
                p.categoria     AS categoria,
                c.nombre        AS competencia,
                t.nombre        AS equipo,
-               ph.nombre       AS fase
+               ph.nombre       AS fase,
+               ph.tipo         AS tipo,
+               ph.measurement_method AS measurement_method,
+               ph.time_cap_seconds AS time_cap_seconds
         FROM results r
         LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id
@@ -522,7 +525,10 @@ def list_results(
                p.categoria AS categoria,
                c.nombre   AS competencia,
                t.nombre   AS equipo,
-               ph.nombre  AS fase
+               ph.nombre  AS fase,
+               ph.tipo    AS tipo,
+               ph.measurement_method AS measurement_method,
+               ph.time_cap_seconds AS time_cap_seconds
         FROM results r
         LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id

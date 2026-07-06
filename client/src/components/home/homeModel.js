@@ -310,9 +310,13 @@ export function extractUserLeaderboardSummary(payload, userId) {
           rank: individualRow.rank ?? null,
           points: individualRow.total_puntos ?? 0,
           mark: individualRow.mejor_marca ?? null,
+          extra: individualRow.extra ?? null,
           events: individualRow.total_eventos ?? 0,
           status: phase.estado || null,
           category: individualRow.category || individualRow.categoria || null,
+          tipo: phase.tipo || null,
+          measurementMethod: phase.measurement_method || null,
+          timeCapSeconds: phase.time_cap_seconds ?? null,
         }
       }
 
@@ -327,10 +331,14 @@ export function extractUserLeaderboardSummary(payload, userId) {
         rank: teamRow.rank ?? null,
         points: teamRow.total_puntos ?? member.puntos_propios ?? 0,
         mark: teamRow.mejor_marca ?? member.mejor_marca ?? null,
+        extra: teamRow.extra ?? member.extra ?? null,
         events: teamRow.total_eventos ?? member.intentos ?? 0,
         status: phase.estado || null,
         category: teamRow.team_category || member.categoria || null,
         teamName: teamRow.nombre || null,
+        tipo: phase.tipo || null,
+        measurementMethod: phase.measurement_method || null,
+        timeCapSeconds: phase.time_cap_seconds ?? null,
       }
     })
     .filter(Boolean)
@@ -351,8 +359,12 @@ export function normalizeUserResults(results = []) {
     phaseId: result.phase_id,
     phaseName: result.fase || 'Workout',
     mark: result.marca ?? null,
+    extra: result.extra ?? null,
     points: result.puntos ?? 0,
     position: result.posicion ?? null,
+    tipo: result.tipo ?? null,
+    measurementMethod: result.measurement_method ?? null,
+    timeCapSeconds: result.time_cap_seconds ?? null,
     createdAt: result.created_at || null,
   }))
 }

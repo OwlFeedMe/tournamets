@@ -570,6 +570,27 @@ function NextHeatPanel({ heat, timeZone }) {
   )
 }
 
+function formatScoreSeconds(totalSeconds) {
+  const value = Number(totalSeconds)
+  if (!Number.isFinite(value)) return '--'
+  const safe = Math.max(0, Math.floor(value))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const seconds = safe % 60
+  if (hours > 0) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function scoreMarkLabel(item) {
+  if (item.mark == null) return '--'
+  const method = String(item.measurementMethod || '').trim().toLowerCase()
+  const type = String(item.tipo || '').trim().toLowerCase()
+  const isTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(method) || type === 'tiempo'
+  const mark = isTime ? formatScoreSeconds(item.mark) : String(item.mark)
+  if (isTime && item.extra != null && Number(item.timeCapSeconds) === Number(item.mark)) return `${mark} + ${item.extra}`
+  return mark
+}
+
 function ScorePanel({ leaderboard, results }) {
   const phaseRows = leaderboard?.phases?.length ? leaderboard.phases : []
   const rows = phaseRows.length
@@ -579,7 +600,11 @@ function ScorePanel({ leaderboard, results }) {
       rank: item.rank,
       points: item.points,
       mark: item.mark,
+      extra: item.extra,
       status: item.status,
+      tipo: item.tipo,
+      measurementMethod: item.measurementMethod,
+      timeCapSeconds: item.timeCapSeconds,
     }))
     : results.slice(0, 4).map((item) => ({
       key: item.id,
@@ -587,7 +612,11 @@ function ScorePanel({ leaderboard, results }) {
       rank: item.position,
       points: item.points,
       mark: item.mark,
+      extra: item.extra,
       status: '',
+      tipo: item.tipo,
+      measurementMethod: item.measurementMethod,
+      timeCapSeconds: item.timeCapSeconds,
     }))
 
   return (
@@ -606,7 +635,7 @@ function ScorePanel({ leaderboard, results }) {
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: premium.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
                 <div style={{ marginTop: 4, color: premium.textSoft, fontSize: 12 }}>
-                  Marca {item.mark ?? '--'} {item.status ? `· ${item.status}` : ''}
+                  Marca {scoreMarkLabel(item)} {item.status ? `· ${item.status}` : ''}
                 </div>
               </div>
               <div style={{ color: premium.text, textAlign: 'right', fontSize: 13, fontWeight: 800 }}>
