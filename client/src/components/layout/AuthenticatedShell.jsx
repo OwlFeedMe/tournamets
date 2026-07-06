@@ -260,9 +260,9 @@ function NotificationSheet({
               gap: 10,
             }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ color: 'var(--oa-text)', fontSize: 13, fontWeight: 850 }}>Avisos PWA</div>
+                <div style={{ color: 'var(--oa-text)', fontSize: 13, fontWeight: 850 }}>Avisos en este dispositivo</div>
                 <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45, marginTop: 2 }}>
-                  {nativePermission === 'granted' ? 'Activos en este dispositivo.' : nativePermission === 'denied' ? 'Bloqueados por el navegador.' : 'Recibe resultados aunque la app este en segundo plano.'}
+                  {nativePermission === 'granted' ? 'Activos para tus competencias.' : nativePermission === 'denied' ? 'Activalos desde los ajustes del navegador.' : 'Recibe tus resultados aunque no estes mirando la app.'}
                 </div>
               </div>
               {nativePermission === 'default' ? (
