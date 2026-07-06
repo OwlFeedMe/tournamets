@@ -1,3 +1,27 @@
+const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000
+
+function installUpdateChecks(registration) {
+  let lastUpdateCheck = 0
+
+  const checkForUpdate = () => {
+    const now = Date.now()
+    if (now - lastUpdateCheck < UPDATE_CHECK_INTERVAL_MS) return
+    lastUpdateCheck = now
+    registration.update().catch(() => {})
+  }
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      checkForUpdate()
+    }
+  }
+
+  window.addEventListener('focus', checkForUpdate)
+  window.addEventListener('online', checkForUpdate)
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS)
+}
+
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null
 
@@ -10,6 +34,7 @@ export async function registerServiceWorker() {
       window.location.reload()
     })
     registration.update().catch(() => {})
+    installUpdateChecks(registration)
     return registration
   } catch {
     return null
