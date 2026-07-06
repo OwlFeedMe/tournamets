@@ -87,8 +87,8 @@ async function showNativeAppNotification(item, data) {
   const registration = await navigator.serviceWorker.ready
   await registration.showNotification(item.title || 'FinalRep', {
     body: item.body || '',
-    icon: '/icons/finalrep-192.png',
-    badge: '/icons/finalrep-192.png',
+    icon: '/icons/finalrep-maskable-512.png',
+    badge: '/icons/finalrep-notification-badge.svg',
     tag: `finalrep-app-notification-${item.id}`,
     renotify: false,
     data: {

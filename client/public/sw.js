@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finalrep-pwa-v4'
+const CACHE_NAME = 'finalrep-pwa-v5'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const APP_SHELL = [
   '/icons/finalrep-maskable-512.png',
   '/icons/finalrep.svg',
   '/icons/finalrep-maskable.svg',
+  '/icons/finalrep-notification-badge.svg',
 ]
 
 function isApiRequest(url) {
