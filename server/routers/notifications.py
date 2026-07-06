@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from auth import get_user_id, require_auth
+from auth import get_current_user_id, require_auth
 from database import get_session
 from models import AppNotification
 
@@ -29,7 +29,7 @@ def list_my_notifications(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    user_id = get_user_id(user)
+    user_id = get_current_user_id(user)
     rows = session.exec(
         select(AppNotification)
         .where(AppNotification.user_id == user_id)
@@ -53,7 +53,7 @@ def mark_my_notifications_read(
     session: Session = Depends(get_session),
     user=Depends(require_auth),
 ):
-    user_id = get_user_id(user)
+    user_id = get_current_user_id(user)
     now = datetime.now(timezone.utc)
     rows = session.exec(
         select(AppNotification).where(
