@@ -174,6 +174,7 @@ function ScoreTable({ assignment, phases, notify }) {
   const [loading, setLoading] = useState(false)
   const [marks, setMarks] = useState({})
   const [editing, setEditing] = useState({})
+  const [activeEditor, setActiveEditor] = useState(null)
 
   useEffect(() => {
     if (!phaseId && phases[0]?.id) setPhaseId(String(phases[0].id))
@@ -193,6 +194,7 @@ function ScoreTable({ assignment, phases, notify }) {
       })
       setMarks({})
       setEditing({})
+      setActiveEditor(null)
     } catch (error) {
       setOptions({ items: [], heats: [] })
       notify(error.response?.data?.detail || 'No se pudo cargar la lista de atletas.', 'error')
@@ -205,6 +207,15 @@ function ScoreTable({ assignment, phases, notify }) {
     loadOptions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assignment?.competition_id, phaseId])
+
+  useEffect(() => {
+    if (!activeEditor) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [activeEditor])
 
   const categories = useMemo(() => (
     Array.from(new Set((options.items || []).map((item) => String(item.category || 'Sin categoria').trim() || 'Sin categoria')))
@@ -231,6 +242,15 @@ function ScoreTable({ assignment, phases, notify }) {
   const setField = (row, field, value) => {
     const key = rowKey(phaseId, row)
     setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
+  }
+  const setMarkField = (row, value) => {
+    const nextValue = isTimePhase(phase) ? formatTimeEntryInput(value) : value
+    const parsed = isTimePhase(phase) ? parseTimeInput(nextValue) : null
+    if (timeCapSeconds && parsed !== null && parsed > timeCapSeconds) {
+      setField(row, 'marca', timeCapLabel)
+      return
+    }
+    setField(row, 'marca', nextValue)
   }
   const dnfMark = () => lowerIsBetter(phase) ? DNF_MARK_HIGH : DNF_MARK_LOW
   const markValue = (row) => {
@@ -289,6 +309,12 @@ function ScoreTable({ assignment, phases, notify }) {
       return
     }
     setField(row, 'dnf', !currentDnf)
+  }
+  const openScoreEditor = (row) => {
+    setActiveEditor(row)
+  }
+  const closeScoreEditor = () => {
+    setActiveEditor(null)
   }
 
   const preview = useMemo(() => {
@@ -359,14 +385,29 @@ function ScoreTable({ assignment, phases, notify }) {
     const capDnf = isCapDnf(row)
     const dnf = isDnf(row) && !capDnf
     const mark = markValue(row)
-    if (!dnf && mark === '') return notify('Ingresa una marca o DNF', 'error')
+    if (!dnf && mark === '') {
+      notify('Ingresa una marca o DNF', 'error')
+      return false
+    }
     const parsedMark = dnf ? dnfMark() : capDnf ? timeCapSeconds : parseMark(mark)
-    if (!dnf && parsedMark === null) return notify(isTimePhase(phase) ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
-    if (!dnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
+    if (!dnf && parsedMark === null) {
+      notify(isTimePhase(phase) ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
+      return false
+    }
+    if (!dnf && timeCapSeconds && parsedMark > timeCapSeconds) {
+      notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
+      return false
+    }
     const extra = extraValue(row)
-    if (capDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+    if (capDnf && extra === '') {
+      notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+      return false
+    }
     const parsedExtra = capDnf ? Number(extra) : null
-    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes debe ser un entero mayor o igual a 0', 'error')
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) {
+      notify('Reps faltantes debe ser un entero mayor o igual a 0', 'error')
+      return false
+    }
     const tiebreak = tbValue(row)
     const existing = row.status === 'scored' || row.existing_mark != null
     try {
@@ -381,9 +422,12 @@ function ScoreTable({ assignment, phases, notify }) {
         station: 'Panel juez',
       })
       notify(existing ? 'Resultado actualizado' : 'Resultado guardado')
+      setActiveEditor(null)
       await loadOptions()
+      return true
     } catch (error) {
       notify(error.response?.data?.detail || 'No se pudo guardar el resultado.', 'error')
+      return false
     }
   }
 
@@ -393,53 +437,240 @@ function ScoreTable({ assignment, phases, notify }) {
   const scoreGridColumns = phase?.tie_break_enabled
     ? '56px minmax(180px, 1fr) 120px 170px 120px 120px 90px 90px 120px'
     : '56px minmax(180px, 1fr) 120px 170px 120px 90px 90px 120px'
+  const activeEditorKey = activeEditor ? rowKey(phaseId, activeEditor) : ''
+  const activeEditorCap = activeEditor ? isCapDnf(activeEditor) : false
+  const activeEditorDnf = activeEditor ? isDnf(activeEditor) && !activeEditorCap : false
+  const activeEditorRank = activeEditor ? preview[activeEditorKey] : null
+  const activeEditorExisting = activeEditor ? activeEditor.status === 'scored' || activeEditor.existing_mark != null : false
 
   return (
-    <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+    <section className="fr-judge-score-panel" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+      <style>{`
+        @media (max-width: 760px) {
+          .fr-judge-score-panel {
+            padding: 10px !important;
+            gap: 10px !important;
+            border-radius: 8px !important;
+          }
+          .fr-judge-filter-grid {
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+          }
+          .fr-judge-filter-grid label:nth-child(2) {
+            grid-column: 1 / -1;
+          }
+          .fr-judge-filter-grid label span {
+            font-size: 11px !important;
+          }
+          .fr-judge-filter-grid select {
+            min-height: 38px !important;
+            padding: 8px 9px !important;
+            font-size: 13px !important;
+          }
+          .fr-judge-filter-stats {
+            grid-column: 1 / -1;
+            align-items: center !important;
+          }
+          .fr-judge-rules {
+            padding: 9px !important;
+            gap: 7px !important;
+          }
+          .fr-judge-rules-text {
+            width: 100%;
+            font-size: 11px !important;
+            line-height: 1.4 !important;
+          }
+          .fr-judge-score-scroll {
+            overflow: visible !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+          }
+          .fr-judge-score-table {
+            min-width: 0 !important;
+            display: grid !important;
+            gap: 10px !important;
+          }
+          .fr-judge-score-header {
+            display: none !important;
+          }
+          .fr-judge-score-row {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 10px !important;
+            align-items: stretch !important;
+            padding: 12px !important;
+            border: 1px solid #252A33 !important;
+            border-radius: 8px !important;
+            background: #171B21 !important;
+          }
+          .fr-judge-score-row.is-dirty {
+            border-color: rgba(255,107,0,0.55) !important;
+            background: rgba(255,107,0,0.08) !important;
+          }
+          .fr-judge-lane {
+            grid-column: 1 / 2;
+            color: #FF6B00 !important;
+            font-size: 12px !important;
+            align-self: center;
+          }
+          .fr-judge-lane::before {
+            content: "Carril ";
+            color: #AAB2C0;
+          }
+          .fr-judge-athlete {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            padding-left: 74px;
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: clip !important;
+            overflow-wrap: anywhere;
+            font-size: 15px;
+          }
+          .fr-judge-heat {
+            grid-column: 1 / -1;
+            font-size: 11px !important;
+            padding-bottom: 2px;
+            border-bottom: 1px solid #252A33;
+          }
+          .fr-judge-field,
+          .fr-judge-result-meta {
+            display: grid !important;
+            gap: 5px !important;
+            min-width: 0;
+          }
+          .fr-judge-field::before,
+          .fr-judge-result-meta::before {
+            content: attr(data-label);
+            color: #AAB2C0;
+            font-size: 11px;
+            font-weight: 850;
+          }
+          .fr-judge-field input {
+            min-height: 42px !important;
+            font-size: 15px !important;
+          }
+          .fr-judge-actions {
+            grid-column: 1 / -1;
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 8px !important;
+          }
+          .fr-judge-actions button {
+            width: 100%;
+            min-height: 42px !important;
+          }
+          .fr-judge-readonly-mark {
+            min-height: 42px;
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            border: 1px solid #252A33;
+            border-radius: 8px;
+            background: #090B0E;
+          }
+          .fr-judge-editor-backdrop {
+            align-items: end !important;
+            padding: 0 !important;
+          }
+          .fr-judge-editor-sheet {
+            width: 100% !important;
+            max-width: none !important;
+            border-radius: 18px 18px 0 0 !important;
+            max-height: 86vh !important;
+          }
+          .fr-judge-editor-actions {
+            grid-template-columns: 1fr 1.45fr !important;
+          }
+        }
+      `}</style>
+      <div className="fr-judge-filter-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
         <Field label="WOD"><select style={inputStyle()} value={phaseId} onChange={(event) => { setPhaseId(event.target.value); setCategory(''); setHeatId('') }}>{phases.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></Field>
         <Field label="Categoria"><select style={inputStyle()} value={activeCategory} onChange={(event) => { setCategory(event.target.value); setHeatId('') }}>{categories.map((item) => <option key={item} value={item}>{item}</option>)}</select></Field>
         <Field label="Heat"><select style={inputStyle()} value={activeHeatId} onChange={(event) => setHeatId(event.target.value)}>{heatOptions.length ? heatOptions.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>) : <option value="">Sin heats</option>}</select></Field>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}><Pill tone={colors.primary}>{rows.length} atletas</Pill><Pill tone={colors.accent}>{loadedCount} cargados</Pill></div>
+        <div className="fr-judge-filter-stats" style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}><Pill tone={colors.primary}>{rows.length} atletas</Pill><Pill tone={colors.accent}>{loadedCount} cargados</Pill></div>
       </div>
-      <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="fr-judge-rules" style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Pill tone={colors.primary}>{lowerIsBetter(phase) ? 'Menor marca gana' : 'Mayor marca gana'}</Pill>
         {isTimePhase(phase) && timeCapSeconds ? <Pill tone={colors.accent}>Cap {timeCapLabel}</Pill> : null}
-        {isTimePhase(phase) && timeCapSeconds ? <span style={{ color: colors.secondary, fontSize: 12 }}>Tiempo es el valor por defecto. CAP coloca el time cap y habilita reps faltantes.</span> : null}
-        {isTimePhase(phase) && !timeCapSeconds ? <span style={{ color: colors.secondary, fontSize: 12 }}>Configura el time cap del WOD para cargar reps faltantes.</span> : null}
+        {isTimePhase(phase) && timeCapSeconds ? <span className="fr-judge-rules-text" style={{ color: colors.secondary, fontSize: 12 }}>CAP coloca el time cap y habilita reps faltantes.</span> : null}
+        {isTimePhase(phase) && !timeCapSeconds ? <span className="fr-judge-rules-text" style={{ color: colors.secondary, fontSize: 12 }}>Configura el time cap del WOD para cargar reps faltantes.</span> : null}
         {phase?.tie_break_enabled ? <Pill tone={colors.accent}>{tiebreakLowerIsBetter(phase) ? 'Menor tiebreak gana' : 'Mayor tiebreak gana'}</Pill> : null}
         {loading ? <span style={{ color: colors.secondary, fontSize: 12 }}>Cargando atletas...</span> : null}
       </div>
-      <div style={{ overflow: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
-        <div style={{ minWidth: 900 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
+      <div className="fr-judge-score-scroll" style={{ overflow: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
+        <div className="fr-judge-score-table" style={{ minWidth: 900 }}>
+          <div className="fr-judge-score-header" style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
             <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>{extraLabel}</span>{phase?.tie_break_enabled ? <span>Tiebreak</span> : null}<span>Pos</span><span>Puntos</span><span>Accion</span>
           </div>
           {rows.length ? rows.map((row) => {
             const key = rowKey(phaseId, row)
             const dirty = Object.prototype.hasOwnProperty.call(marks, key)
-            const editable = row.status !== 'scored' || editing[key] || dirty
             const capDnf = isCapDnf(row)
             const dnf = isDnf(row) && !capDnf
             const rank = preview[key]
+            const existing = row.status === 'scored' || row.existing_mark != null
             return (
-              <div key={key} style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
-                <span style={{ color: colors.muted, fontWeight: 900 }}>{row.lane_number || '-'}</span>
-                <span style={{ fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name || 'Atleta'}</span>
-                <span style={{ color: colors.secondary, fontSize: 12 }}>{row.heat_name || '-'}</span>
-                {editable ? <span style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}><input style={inputStyle()} type={isTimePhase(phase) ? 'text' : 'number'} value={dnf ? '' : capDnf ? timeCapLabel : markValue(row)} disabled={dnf || capDnf} placeholder={dnf ? 'DNF' : isTimePhase(phase) ? (timeCapLabel || '07:33') : 'Valor'} onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'marca', isTimePhase(phase) ? formatTimeEntryInput(event.target.value) : event.target.value)} /></span> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
-                {editable && showCapReps && capDnf ? <input style={inputStyle()} type="number" step="1" min="0" value={extraValue(row)} placeholder="Faltantes" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{showCapReps && !dnf && isAtTimeCap(row) ? extraValue(row) || '0' : '-'}</span>}
-                {phase?.tie_break_enabled ? (editable ? <input style={inputStyle()} type="number" value={dnf ? '' : tbValue(row)} disabled={dnf} placeholder="Opcional" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'tiebreak', event.target.value)} /> : <span style={{ color: colors.secondary }}>{!dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span>) : null}
-                <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.posicion ?? '-'}</span>
-                <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.puntos ?? '-'}</span>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {editable ? <><Button tone={(showCapReps ? capDnf : dnf) ? 'danger' : 'default'} onClick={() => setDnfResult(row, showCapReps ? capDnf : dnf)}>{showCapReps ? 'CAP' : 'DNF'}</Button><Button tone="primary" onClick={() => saveRow(row)}><Save size={14} /></Button></> : <Button onClick={() => setEditing((prev) => ({ ...prev, [key]: true }))}><Pencil size={14} /></Button>}
+              <div key={key} className={`fr-judge-score-row${dirty ? ' is-dirty' : ''}`} style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
+                <span className="fr-judge-lane" style={{ color: colors.muted, fontWeight: 900 }}>{row.lane_number || '-'}</span>
+                <span className="fr-judge-athlete" style={{ fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name || 'Atleta'}</span>
+                <span className="fr-judge-heat" style={{ color: colors.secondary, fontSize: 12 }}>{row.heat_name || '-'}</span>
+                <span className="fr-judge-field" data-label={markLabel}><span className="fr-judge-readonly-mark" style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span></span>
+                <span className="fr-judge-result-meta" data-label={extraLabel} style={{ color: colors.secondary }}>{showCapReps && !dnf && isAtTimeCap(row) ? extraValue(row) || '0' : '-'}</span>
+                {phase?.tie_break_enabled ? <span className="fr-judge-result-meta" data-label="Tiebreak" style={{ color: colors.secondary }}>{!dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span> : null}
+                <span className="fr-judge-result-meta" data-label="Pos" style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.posicion ?? '-'}</span>
+                <span className="fr-judge-result-meta" data-label="Puntos" style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.puntos ?? '-'}</span>
+                <div className="fr-judge-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  <Button tone={dirty ? 'primary' : 'default'} onClick={() => openScoreEditor(row)}>{existing ? <Pencil size={14} /> : null}{existing ? 'Editar' : 'Cargar'}</Button>
                 </div>
               </div>
             )
           }) : <div style={{ padding: 16, color: colors.secondary }}>{loading ? 'Cargando...' : 'No hay atletas para esta categoria y heat.'}</div>}
         </div>
       </div>
+      {activeEditor ? (
+        <div className="fr-judge-editor-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeScoreEditor}>
+          <div className="fr-judge-editor-sheet" style={{ width: 'min(520px, 100%)', maxHeight: 'min(720px, calc(100vh - 32px))', overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 12, background: colors.surface, boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }} onClick={(event) => event.stopPropagation()}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, background: colors.surface, borderBottom: `1px solid ${colors.border}`, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+              <div>
+                <div style={{ fontWeight: 950 }}>{activeEditorExisting ? 'Editar resultado' : 'Cargar resultado'}</div>
+                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>{activeEditor.display_name || 'Atleta'} · Carril {activeEditor.lane_number || '-'} · {activeEditor.heat_name || '-'}</div>
+              </div>
+              <button type="button" onClick={closeScoreEditor} aria-label="Cerrar editor" style={{ border: 0, background: 'transparent', color: colors.secondary, fontSize: 22, lineHeight: 1, padding: 2, cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: 14, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <Pill tone={colors.primary}>{markLabel}: {activeEditorDnf ? 'DNF' : activeEditorCap ? timeCapLabel : markValue(activeEditor) || '-'}</Pill>
+                <Pill tone={colors.accent}>Pos {activeEditorRank?.posicion ?? '-'} · {activeEditorRank?.puntos ?? '-'} pts</Pill>
+              </div>
+              <Field label={markLabel}>
+                <input style={inputStyle()} autoFocus type={isTimePhase(phase) ? 'text' : 'number'} value={activeEditorDnf ? '' : activeEditorCap ? timeCapLabel : markValue(activeEditor)} disabled={activeEditorDnf || activeEditorCap} placeholder={activeEditorDnf ? 'DNF' : isTimePhase(phase) ? (timeCapLabel || '07:33') : 'Valor'} onWheel={preventNumberInputWheel} onChange={(event) => setMarkField(activeEditor, event.target.value)} />
+              </Field>
+              <div style={{ display: 'grid', gridTemplateColumns: showCapReps ? '1fr 1fr' : '1fr', gap: 8 }}>
+                <Button tone={(showCapReps ? activeEditorCap : activeEditorDnf) ? 'danger' : 'default'} onClick={() => setDnfResult(activeEditor, showCapReps ? activeEditorCap : activeEditorDnf)}>{showCapReps ? 'CAP' : 'DNF'}</Button>
+                {showCapReps ? <span style={{ color: colors.secondary, fontSize: 12, alignSelf: 'center' }}>CAP habilita reps faltantes.</span> : null}
+              </div>
+              {showCapReps && activeEditorCap ? (
+                <Field label={extraLabel}>
+                  <input style={inputStyle()} type="number" step="1" min="0" value={extraValue(activeEditor)} placeholder="Faltantes" onWheel={preventNumberInputWheel} onChange={(event) => setField(activeEditor, 'extra', event.target.value)} />
+                </Field>
+              ) : null}
+              {phase?.tie_break_enabled ? (
+                <Field label="Tie-break">
+                  <input style={inputStyle()} type="number" value={activeEditorDnf ? '' : tbValue(activeEditor)} disabled={activeEditorDnf} placeholder="Opcional" onWheel={preventNumberInputWheel} onChange={(event) => setField(activeEditor, 'tiebreak', event.target.value)} />
+                </Field>
+              ) : null}
+              <div className="fr-judge-editor-actions" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 8, paddingTop: 4 }}>
+                <Button onClick={closeScoreEditor}>Cancelar</Button>
+                <Button tone="primary" onClick={() => saveRow(activeEditor)}><Save size={14} />Guardar resultado</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }
