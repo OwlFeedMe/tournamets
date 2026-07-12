@@ -299,7 +299,7 @@ def _tie_break_enabled(phase: CompetitionPhase | None) -> bool:
 
 
 def _extra_reps_enabled(phase: CompetitionPhase | None) -> bool:
-    return _phase_uses_time_input(phase)
+    return _phase_uses_time_input(phase) and int(getattr(phase, "time_cap_seconds", 0) or 0) > 0
 
 
 def _tie_break_phase_proxy(phase: CompetitionPhase | None) -> dict:
@@ -318,6 +318,7 @@ def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
         "extra_enabled": 1 if extra_enabled else 0,
         "extra_label": "Extra" if extra_enabled else None,
         "extra_helper": "Repeticiones al time cap" if extra_enabled else None,
+        "time_cap_seconds": int(getattr(phase, "time_cap_seconds", 0) or 0) if phase else 0,
         "tie_break_enabled": 1 if _tie_break_enabled(phase) else 0,
         "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
         "tie_break_label": "Tie break",
@@ -437,6 +438,19 @@ def _parse_extra_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
     if value < 0:
         raise HTTPException(400, "Extra no puede ser negativo")
     return value
+
+
+def _validate_time_cap_result(phase: CompetitionPhase | None, mark: int | None, extra: int | None) -> int | None:
+    cap = getattr(phase, "time_cap_seconds", None)
+    if not _phase_uses_time_input(phase) or cap is None or mark is None or _is_dnf_mark(mark):
+        return extra
+    cap_seconds = int(cap)
+    if int(mark) > cap_seconds:
+        cap_label = _format_mark_for_phase(cap_seconds, phase) or str(cap_seconds)
+        raise HTTPException(400, f"El tiempo no puede superar el cap de {cap_label}")
+    if int(mark) != cap_seconds:
+        return None
+    return extra
 
 
 def _result_for_entity(
@@ -1249,6 +1263,7 @@ def judge_score_submit(
     extra_int = None
     if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
         extra_int = _parse_extra_for_phase(raw_extra, phase)
+    extra_int = _validate_time_cap_result(phase, mark_int, extra_int)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
     if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
@@ -1352,6 +1367,7 @@ def judge_score_edit(
     extra_int = None
     if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
         extra_int = _parse_extra_for_phase(raw_extra, phase)
+    extra_int = _validate_time_cap_result(phase, mark_int, extra_int)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
     if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":

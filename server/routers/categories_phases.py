@@ -161,6 +161,17 @@ def _normalize_time_cap_seconds(raw: object) -> int | None:
     return max(1, min(value, 24 * 60 * 60))
 
 
+def _requires_time_cap(measurement_method: str | None, workout_format: str | None = None) -> bool:
+    measurement = _normalize_measurement_method(measurement_method, None)
+    workout = _normalize_workout_format(workout_format, measurement)
+    return measurement in {"for_time", "tiempo_hms", "tiempo"} or workout in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _validate_required_time_cap(measurement_method: str | None, workout_format: str | None, time_cap_seconds: int | None) -> None:
+    if _requires_time_cap(measurement_method, workout_format) and not time_cap_seconds:
+        raise HTTPException(400, "Time cap requerido para WODs for time")
+
+
 def _normalize_scoring_override_enabled(raw: object) -> int:
     if isinstance(raw, bool):
         return 1 if raw else 0
@@ -777,6 +788,9 @@ def create_phase(competition_id: int, body: PhaseCreate,
     end_at = _normalize_competition_dt(body.end_at, competition)
     if start_at and end_at and start_at > end_at:
         raise HTTPException(400, "La fecha inicial de la fase no puede ser mayor a la final")
+    normalized_workout_format = _normalize_workout_format(body.workout_format, body.measurement_method)
+    normalized_time_cap = _normalize_time_cap_seconds(body.time_cap_seconds)
+    _validate_required_time_cap(primary_activity["measurement_method"], normalized_workout_format, normalized_time_cap)
     phase = CompetitionPhase(
         competition_id=competition_id,
         nombre=body.nombre,
@@ -787,7 +801,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         phase_format=phase_format,
         tipo=primary_activity["tipo"],
         measurement_method=primary_activity["measurement_method"],
-        workout_format=_normalize_workout_format(body.workout_format, body.measurement_method),
+        workout_format=normalized_workout_format,
         winner_rule=primary_activity["winner_rule"],
         scoring_rules=body.scoring_rules,
         activities=activities,
@@ -796,7 +810,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         team_result_mode=team_mode,
         tie_break_enabled=1 if body.tie_break_enabled else 0,
         tie_break_method=_normalize_measurement_method(body.tie_break_method, "tiempo"),
-        time_cap_seconds=_normalize_time_cap_seconds(body.time_cap_seconds),
+        time_cap_seconds=normalized_time_cap,
         scoring_override_enabled=_normalize_scoring_override_enabled(body.scoring_override_enabled),
         scoring_system=normalize_scoring_system(body.scoring_system, fallback="dynamic_points") if body.scoring_system else None,
         scoring_weight_percent=normalize_weight_percent(body.scoring_weight_percent),
@@ -914,6 +928,11 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["winner_rule"] = primary_activity["winner_rule"]
         data["points_mode"] = primary_activity["points_mode"]
         data["phase_format"] = _phase_format_from_count(len(parsed_activities))
+    _validate_required_time_cap(
+        data.get("measurement_method", phase.measurement_method),
+        data.get("workout_format", phase.workout_format),
+        data.get("time_cap_seconds", phase.time_cap_seconds),
+    )
     if "start_at" in data:
         data["start_at"] = _normalize_competition_dt(data["start_at"], competition)
     if "end_at" in data:

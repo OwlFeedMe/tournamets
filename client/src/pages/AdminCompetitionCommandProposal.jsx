@@ -360,14 +360,26 @@ function inputStyle() {
 }
 
 function parseTimeInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
   const raw = String(value ?? '').trim()
   if (!raw) return null
-  if (/^\d+$/.test(raw)) return Number(raw)
+  if (/^\d+$/.test(raw)) {
+    const parts = clockPartsFromDigits(raw)
+    if (parts) return (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+    return Number(raw)
+  }
   const parts = raw.split(':').map((item) => Number(item.trim()))
   if (![2, 3].includes(parts.length) || parts.some((item) => !Number.isFinite(item) || item < 0)) return null
   const [hours, minutes, seconds] = parts.length === 3 ? parts : [0, parts[0], parts[1]]
   if (minutes > 59 || seconds > 59) return null
   return (hours * 3600) + (minutes * 60) + seconds
+}
+
+function parseTimeCapInput(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return Number(raw) * 60
+  return parseTimeInput(raw)
 }
 
 function formatSeconds(value) {
@@ -377,6 +389,38 @@ function formatSeconds(value) {
   const minutes = Math.floor((total % 3600) / 60)
   const seconds = total % 60
   return hours > 0 ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function clockPartsFromDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
+  if (digits.length < 3) return null
+  const valid = (hours, minutes, seconds) => (
+    Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds)
+    && hours >= 0 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59
+  )
+  const candidate = (hours, minutes, seconds) => valid(hours, minutes, seconds) ? { hours, minutes, seconds } : null
+  if (digits.length === 3) return candidate(0, Number(digits.slice(0, 1)), Number(digits.slice(1)))
+  if (digits.length === 4) {
+    return candidate(0, Number(digits.slice(0, 2)), Number(digits.slice(2)))
+      || clockPartsFromDigits(digits.slice(0, 3))
+  }
+  if (digits.length === 5) {
+    return (digits.startsWith('0') ? clockPartsFromDigits(digits.slice(1)) : null)
+      || candidate(Number(digits.slice(0, 1)), Number(digits.slice(1, 3)), Number(digits.slice(3)))
+      || clockPartsFromDigits(digits.slice(0, 4))
+  }
+  return candidate(Number(digits.slice(0, 2)), Number(digits.slice(2, 4)), Number(digits.slice(4)))
+    || clockPartsFromDigits(digits.slice(0, 5))
+}
+
+function formatTimeEntryInput(value) {
+  const raw = String(value ?? '')
+  if (!raw.trim()) return ''
+  const digits = raw.replace(/\D/g, '')
+  const parts = clockPartsFromDigits(digits)
+  if (!parts) return digits || raw.replace(/[^\d:]/g, '')
+  const seconds = (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+  return formatSeconds(seconds)
 }
 
 function resolveAssetUrl(value) {
@@ -1453,8 +1497,9 @@ function PhasesPanel({ bundle, reload, notify }) {
     if (!draft.nombre.trim()) return notify('Nombre de fase requerido', 'error')
     const selectedMeasurement = measurementOptions.find((item) => item.value === draft.measurement_method)
     const draftIsTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(draft.measurement_method || draft.workout_format || '').trim().toLowerCase())
-    const parsedCap = draftIsTime && String(draft.time_cap_seconds || '').trim() ? parseTimeInput(draft.time_cap_seconds) : null
-    if (draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa MM:SS o HH:MM:SS', 'error')
+    const parsedCap = draftIsTime && String(draft.time_cap_seconds || '').trim() ? parseTimeCapInput(draft.time_cap_seconds) : null
+    if (draftIsTime && !String(draft.time_cap_seconds || '').trim()) return notify('Time cap requerido para WODs for time', 'error')
+    if (draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa minutos, MM:SS o HH:MM:SS', 'error')
     const payload = {
       ...draft,
       tipo: draft.measurement_method === 'for_time' ? 'tiempo' : 'cantidad',
@@ -1559,7 +1604,7 @@ function PhasesPanel({ bundle, reload, notify }) {
               <Field label="Medicion"><select style={inputStyle()} value={draft.measurement_method} onChange={(e) => setMeasurement(e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
               <Field label="Formato"><select style={inputStyle()} value={draft.workout_format} onChange={(e) => setDraft((p) => ({ ...p, workout_format: e.target.value }))}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
               {draft.measurement_method === 'for_time' ? (
-                <Field label="Time cap"><input style={inputStyle()} value={draft.time_cap_seconds} placeholder="12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
+                <Field label="Time cap *"><input style={inputStyle()} required value={draft.time_cap_seconds} placeholder="12 o 12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
               ) : null}
               <Field label="Gana"><select style={inputStyle()} value={draft.winner_rule} onChange={(e) => setDraft((p) => ({ ...p, winner_rule: e.target.value }))}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
               {draft.modality === 'teams' ? (
@@ -3273,6 +3318,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const isDnfMark = (value) => Number(value) === DNF_MARK_HIGH || Number(value) === DNF_MARK_LOW
   const markValue = (item) => {
     const key = resultKey(scoreDraft.phase_id, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return timeCapLabel
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     const existing = existingResultFor(item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf') && marks[key].dnf === false && isDnfMark(existing?.marca)) return ''
@@ -3280,6 +3326,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const isDnfValue = (item) => {
     const key = resultKey(scoreDraft.phase_id, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(existingResultFor(item)?.marca)
   }
@@ -3309,6 +3356,13 @@ function ResultsPanel({ bundle, reload, notify }) {
   const isTiebreakTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(tiebreakMethod)
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(tiebreakMethod)
   const showExtraField = isTimePhase && !!timeCapSeconds
+  const isCapDnfValue = (item) => {
+    if (!showExtraField) return false
+    const key = resultKey(scoreDraft.phase_id, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
+    const existing = existingResultFor(item)
+    return Number(existing?.marca) === Number(timeCapSeconds) && existing?.extra !== null && existing?.extra !== undefined
+  }
   const competitionScoring = bundle.scoring || {}
   const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(selectedPhase?.id))
   const effectiveScoring = {
@@ -3333,17 +3387,29 @@ function ResultsPanel({ bundle, reload, notify }) {
     return Number.isFinite(parsed) ? parsed : null
   }
   const tiebreakLabel = isTiebreakTime ? 'Tiebreak tiempo' : tiebreakMethod === 'rm' ? 'Tiebreak peso' : tiebreakMethod === 'metros' ? 'Tiebreak metros' : 'Tiebreak reps'
-  const isAtTimeCap = (item) => !!timeCapSeconds && parseMarkValue(markValue(item)) === timeCapSeconds
   const displayMarkWithExtra = (item) => {
     if (isDnfValue(item)) return 'DNF'
     const mark = markValue(item)
     const extra = extraValue(item)
     return showExtraField && parseMarkValue(mark) === timeCapSeconds && extra !== '' && extra !== null && extra !== undefined ? `${mark} + ${extra}` : (mark || '-')
   }
-  const setCapResult = (item) => {
-    if (!timeCapSeconds) return
-    const key = resultKey(scoreDraft.phase_id, item)
-    setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), marca: timeCapLabel } }))
+  const setDnfResult = (item, currentDnf) => {
+    if (showExtraField) {
+      const key = resultKey(scoreDraft.phase_id, item)
+      const nextActive = !currentDnf
+      setMarks((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          capDnf: nextActive,
+          dnf: false,
+          marca: nextActive ? timeCapLabel : '',
+          extra: '',
+        },
+      }))
+      return
+    }
+    setResultField(item, 'dnf', !currentDnf)
   }
   const previewPool = [...phaseHeats.flatMap((heat) => heatParticipants(heat).map((participant) => ({ ...participant, categoria: heat.categoria || participant.categoria || 'Todas' }))), ...allConfirmedRows]
     .reduce((items, item) => {
@@ -3364,8 +3430,9 @@ function ResultsPanel({ bundle, reload, notify }) {
       const key = resultKey(scoreDraft.phase_id, item)
       const existing = existingResultFor(item)
       const draft = marks[key] || {}
-      const draftDnf = !!draft.dnf
-      const rawMarca = Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
+      const draftCapDnf = !!draft.capDnf
+      const draftDnf = !!draft.dnf && !draftCapDnf
+      const rawMarca = draftCapDnf ? timeCapLabel : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
       const marca = draftDnf ? dnfMark() : parseMarkValue(rawMarca)
       const extra = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : existing?.extra
       const tiebreak = tieBreakActive && !draftDnf ? Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? parseTiebreakValue(draft.tiebreak) : existing?.tiebreak : null
@@ -3481,14 +3548,16 @@ function ResultsPanel({ bundle, reload, notify }) {
         const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
         const existing = existingResultFor(row)
         const rowDraft = marks[resultKey(scoreDraft.phase_id, row)] || {}
-        const rowDnf = !!rowDraft.dnf
-        const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
+        const rowCapDnf = !!rowDraft.capDnf
+        const rowDnf = !!rowDraft.dnf && !rowCapDnf
+        const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
         if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
         if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
         const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
         if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-        const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
-        if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
+        if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+        const parsedExtra = rowCapDnf ? Number(extra) : null
+        if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
         if (existing) {
           await api(`/results/${existing.id}`, {
             method: 'PUT',
@@ -3521,19 +3590,21 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
     const key = resultKey(scoreDraft.phase_id, row)
     const rowDraft = marks[key] || {}
-    const rowDnf = !!rowDraft.dnf
+    const rowCapDnf = !!rowDraft.capDnf
+    const rowDnf = !!rowDraft.dnf && !rowCapDnf
     const value = markValue(row)
     if (!rowDnf && value === '') return notify('Ingresa una marca o marca DNF', 'error')
     const extra = extraValue(row)
     const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
     const existing = existingResultFor(row)
-    const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
+    const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
     if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
     if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
     const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
     if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-    const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
-    if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
+    if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+    const parsedExtra = rowCapDnf ? Number(extra) : null
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
     try {
       if (existing) {
         await api(`/results/${existing.id}`, {
@@ -3568,7 +3639,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const resultCountForPhase = rows.filter((row) => existingResultFor(row)).length
   const markLabel = isTimePhase ? 'Tiempo' : selectedPhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
-  const extraLabel = 'Extra'
+  const extraLabel = showExtraField ? 'Reps faltantes' : 'Extra'
   const resultFormatLabels = {
     for_time: 'Tiempo / For time',
     tiempo: 'Tiempo',
@@ -3618,7 +3689,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           <Pill tone={colors.accent}>{markRuleLabel}</Pill>
           {tieBreakActive ? <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill> : null}
           <Pill tone={colors.secondary}>{scoringRuleLabel}</Pill>
-          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Extra aparece solo al cap y se guarda como tiempo + reps.' : 'Configura un cap para usar extra al time cap.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
+          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Tiempo es el valor por defecto. CAP coloca el time cap y habilita reps faltantes.' : 'Configura un cap para usar reps faltantes.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
           <div className="fr-results-list" style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
@@ -3628,9 +3699,10 @@ function ResultsPanel({ bundle, reload, notify }) {
               const dirty = Object.prototype.hasOwnProperty.call(marks, key)
               const preview = previewRankMap[key]
               const editable = !existing || editingRows[key] || dirty
-              const rowDnf = isDnfValue(row)
+              const capDnf = isCapDnfValue(row)
+              const rowDnf = isDnfValue(row) && !capDnf
               const showTiebreakWarning = persistedTieKeys.has(key)
-              const showExtraInput = editable && showExtraField && !rowDnf && isAtTimeCap(row)
+              const showExtraInput = editable && showExtraField && capDnf
               return (
                 <div className="fr-result-row" key={key} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: dirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
                   <div className="fr-result-card-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center' }}>
@@ -3639,7 +3711,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                     <div className="fr-result-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {editable ? (
                         <>
-                          <Button onClick={() => setResultField(row, 'dnf', !rowDnf)} tone={rowDnf ? 'danger' : 'default'}>DNF</Button>
+                          <Button onClick={() => setDnfResult(row, showExtraField ? capDnf : rowDnf)} tone={(showExtraField ? capDnf : rowDnf) ? 'danger' : 'default'}>{showExtraField ? 'CAP' : 'DNF'}</Button>
                           <Button tone="primary" onClick={() => saveRowResult(row)}><Save size={14} /></Button>
                         </>
                       ) : (
@@ -3652,9 +3724,8 @@ function ResultsPanel({ bundle, reload, notify }) {
                     {editable ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{markLabel}</span>
-                        <span style={{ display: 'grid', gridTemplateColumns: timeCapSeconds ? 'minmax(0, 1fr) auto' : '1fr', gap: 6 }}>
-                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf} />
-                          {timeCapSeconds ? <Button onClick={() => setCapResult(row)} disabled={rowDnf}>CAP</Button> : null}
+                        <span style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : capDnf ? timeCapLabel : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', isTimePhase ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf || capDnf} />
                         </span>
                       </label>
                     ) : (
@@ -3663,7 +3734,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                     {showExtraInput ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{extraLabel}</span>
-                        <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={extraValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" />
+                        <input className="fr-result-extra" type="number" step="1" min="0" style={inputStyle()} value={extraValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Faltantes" />
                       </label>
                     ) : null}
                     {tieBreakActive && editable ? (
@@ -3676,7 +3747,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                             </span>
                           ) : null}
                         </span>
-                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
+                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'tiebreak', isTiebreakTime ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
                       </label>
                     ) : tieBreakActive ? (
                       <span className={`fr-result-readonly${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`} data-label={tiebreakLabel} style={{ color: colors.secondary, fontSize: 13 }}>

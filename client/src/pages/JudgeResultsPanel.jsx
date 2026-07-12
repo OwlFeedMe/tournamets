@@ -46,6 +46,73 @@ function isTimePhase(phase) {
   return ['for_time', 'tiempo_hms', 'tiempo'].includes(String(phase?.measurement_method || phase?.tipo || '').toLowerCase())
 }
 
+function formatSeconds(totalSeconds) {
+  if (!Number.isFinite(Number(totalSeconds))) return ''
+  const safe = Math.max(0, Math.round(Number(totalSeconds)))
+  const hours = Math.floor(safe / 3600)
+  const minutes = Math.floor((safe % 3600) / 60)
+  const seconds = safe % 60
+  if (hours > 0) return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function clockPartsFromDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
+  if (digits.length < 3) return null
+  const valid = (hours, minutes, seconds) => (
+    Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds)
+    && hours >= 0 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59
+  )
+  const candidate = (hours, minutes, seconds) => valid(hours, minutes, seconds) ? { hours, minutes, seconds } : null
+  if (digits.length === 3) return candidate(0, Number(digits.slice(0, 1)), Number(digits.slice(1)))
+  if (digits.length === 4) {
+    return candidate(0, Number(digits.slice(0, 2)), Number(digits.slice(2)))
+      || clockPartsFromDigits(digits.slice(0, 3))
+  }
+  if (digits.length === 5) {
+    return (digits.startsWith('0') ? clockPartsFromDigits(digits.slice(1)) : null)
+      || candidate(Number(digits.slice(0, 1)), Number(digits.slice(1, 3)), Number(digits.slice(3)))
+      || clockPartsFromDigits(digits.slice(0, 4))
+  }
+  return candidate(Number(digits.slice(0, 2)), Number(digits.slice(2, 4)), Number(digits.slice(4)))
+    || clockPartsFromDigits(digits.slice(0, 5))
+}
+
+function formatTimeEntryInput(value) {
+  const raw = String(value ?? '')
+  if (!raw.trim()) return ''
+  const digits = raw.replace(/\D/g, '')
+  const parts = clockPartsFromDigits(digits)
+  if (!parts) return digits || raw.replace(/[^\d:]/g, '')
+  const seconds = (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+  return formatSeconds(seconds)
+}
+
+function parseTimeInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) {
+    const parts = clockPartsFromDigits(raw)
+    if (parts) return (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+    return Number(raw)
+  }
+  const parts = raw.split(':').map((item) => item.trim())
+  if (parts.length !== 2 && parts.length !== 3) return null
+  const nums = parts.map(Number)
+  if (nums.some((item) => !Number.isFinite(item) || item < 0)) return null
+  let hours = 0
+  let minutes = 0
+  let seconds = 0
+  if (nums.length === 2) {
+    ;[minutes, seconds] = nums
+  } else {
+    ;[hours, minutes, seconds] = nums
+  }
+  if (minutes > 59 || seconds > 59) return null
+  return (hours * 3600) + (minutes * 60) + seconds
+}
+
 function lowerIsBetter(phase) {
   const winner = String(phase?.winner_rule || '').toLowerCase()
   if (winner === 'lower_wins') return true
@@ -168,8 +235,10 @@ function ScoreTable({ assignment, phases, notify }) {
   const dnfMark = () => lowerIsBetter(phase) ? DNF_MARK_HIGH : DNF_MARK_LOW
   const markValue = (row) => {
     const key = rowKey(phaseId, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return timeCapLabel
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf') && marks[key].dnf === false && isDnfMark(row.existing_mark)) return ''
+    if (isTimePhase(phase) && row.existing_mark != null && !isDnfMark(row.existing_mark)) return row.existing_formatted || formatSeconds(row.existing_mark)
     return row.existing_mark ?? ''
   }
   const tbValue = (row) => {
@@ -184,8 +253,42 @@ function ScoreTable({ assignment, phases, notify }) {
   }
   const isDnf = (row) => {
     const key = rowKey(phaseId, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(row.existing_mark)
+  }
+  const parseMark = (value) => {
+    if (isTimePhase(phase)) return parseTimeInput(value)
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const timeCapSeconds = isTimePhase(phase) && Number(phase?.time_cap_seconds) > 0 ? Number(phase.time_cap_seconds) : null
+  const timeCapLabel = timeCapSeconds ? formatSeconds(timeCapSeconds) : ''
+  const showCapReps = !!timeCapSeconds
+  const isCapDnf = (row) => {
+    if (!showCapReps) return false
+    const key = rowKey(phaseId, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
+    return Number(row.existing_mark) === Number(timeCapSeconds) && row.existing_extra !== null && row.existing_extra !== undefined
+  }
+  const isAtTimeCap = (row) => showCapReps && parseMark(markValue(row)) === timeCapSeconds
+  const setDnfResult = (row, currentDnf) => {
+    if (showCapReps) {
+      const key = rowKey(phaseId, row)
+      const nextActive = !currentDnf
+      setMarks((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          capDnf: nextActive,
+          dnf: false,
+          marca: nextActive ? timeCapLabel : '',
+          extra: '',
+        },
+      }))
+      return
+    }
+    setField(row, 'dnf', !currentDnf)
   }
 
   const preview = useMemo(() => {
@@ -195,8 +298,9 @@ function ScoreTable({ assignment, phases, notify }) {
     const pool = (options.items || []).map((item) => {
       const key = rowKey(phaseId, item)
       const draft = marks[key] || {}
-      const dnf = !!draft.dnf
-      const marca = dnf ? dnfMark() : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : item.existing_mark
+      const capDnf = !!draft.capDnf
+      const dnf = !!draft.dnf && !capDnf
+      const marca = dnf ? dnfMark() : capDnf ? timeCapLabel : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : item.existing_mark
       const extra = phase?.extra_enabled && !dnf
         ? Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : item.existing_extra
         : null
@@ -206,8 +310,8 @@ function ScoreTable({ assignment, phases, notify }) {
       return {
         key,
         category: scoring.scope === 'global' ? '__global__' : (item.category || 'Sin categoria'),
-        marca: marca === '' || marca == null ? null : Number(marca),
-        extra: extra === '' || extra == null ? null : Number(extra),
+        marca: marca === '' || marca == null ? null : (isTimePhase(phase) && !isDnfMark(Number(marca)) ? parseTimeInput(marca) : Number(marca)),
+        extra: extra === '' || extra == null || (isTimePhase(phase) && (!timeCapSeconds || parseMark(marca) !== timeCapSeconds)) ? null : Number(extra),
         tiebreak: tiebreak === '' || tiebreak == null ? null : Number(tiebreak),
       }
     }).filter((item) => item.marca !== null && !Number.isNaN(item.marca))
@@ -252,10 +356,17 @@ function ScoreTable({ assignment, phases, notify }) {
   }, [options.items, marks, phase, phaseId])
 
   const saveRow = async (row) => {
-    const dnf = isDnf(row)
+    const capDnf = isCapDnf(row)
+    const dnf = isDnf(row) && !capDnf
     const mark = markValue(row)
     if (!dnf && mark === '') return notify('Ingresa una marca o DNF', 'error')
+    const parsedMark = dnf ? dnfMark() : capDnf ? timeCapSeconds : parseMark(mark)
+    if (!dnf && parsedMark === null) return notify(isTimePhase(phase) ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
+    if (!dnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
     const extra = extraValue(row)
+    if (capDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+    const parsedExtra = capDnf ? Number(extra) : null
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes debe ser un entero mayor o igual a 0', 'error')
     const tiebreak = tbValue(row)
     const existing = row.status === 'scored' || row.existing_mark != null
     try {
@@ -265,7 +376,7 @@ function ScoreTable({ assignment, phases, notify }) {
         user_id: row.user_id ?? null,
         team_id: row.team_id ?? null,
         marca_raw: String(dnf ? dnfMark() : mark).trim(),
-        extra_raw: phase?.extra_enabled && !dnf && extra !== '' ? String(extra).trim() : undefined,
+        extra_raw: parsedExtra !== null ? String(parsedExtra).trim() : undefined,
         tiebreak_raw: phase?.tie_break_enabled && !dnf && tiebreak !== '' ? String(tiebreak).trim() : undefined,
         station: 'Panel juez',
       })
@@ -277,10 +388,11 @@ function ScoreTable({ assignment, phases, notify }) {
   }
 
   const markLabel = isTimePhase(phase) ? 'Tiempo' : String(phase?.tipo || '').toLowerCase() === 'posicion' ? 'Posicion' : 'Marca'
+  const extraLabel = showCapReps ? 'Reps faltantes' : 'Extra'
   const loadedCount = rows.filter((row) => row.status === 'scored' || row.existing_mark != null).length
   const scoreGridColumns = phase?.tie_break_enabled
-    ? '56px minmax(180px, 1fr) 120px 120px 90px 120px 90px 90px 120px'
-    : '56px minmax(180px, 1fr) 120px 120px 90px 90px 90px 120px'
+    ? '56px minmax(180px, 1fr) 120px 170px 120px 120px 90px 90px 120px'
+    : '56px minmax(180px, 1fr) 120px 170px 120px 90px 90px 120px'
 
   return (
     <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
@@ -292,32 +404,36 @@ function ScoreTable({ assignment, phases, notify }) {
       </div>
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Pill tone={colors.primary}>{lowerIsBetter(phase) ? 'Menor marca gana' : 'Mayor marca gana'}</Pill>
+        {isTimePhase(phase) && timeCapSeconds ? <Pill tone={colors.accent}>Cap {timeCapLabel}</Pill> : null}
+        {isTimePhase(phase) && timeCapSeconds ? <span style={{ color: colors.secondary, fontSize: 12 }}>Tiempo es el valor por defecto. CAP coloca el time cap y habilita reps faltantes.</span> : null}
+        {isTimePhase(phase) && !timeCapSeconds ? <span style={{ color: colors.secondary, fontSize: 12 }}>Configura el time cap del WOD para cargar reps faltantes.</span> : null}
         {phase?.tie_break_enabled ? <Pill tone={colors.accent}>{tiebreakLowerIsBetter(phase) ? 'Menor tiebreak gana' : 'Mayor tiebreak gana'}</Pill> : null}
         {loading ? <span style={{ color: colors.secondary, fontSize: 12 }}>Cargando atletas...</span> : null}
       </div>
       <div style={{ overflow: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8 }}>
         <div style={{ minWidth: 900 }}>
           <div style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, padding: 10, borderBottom: `1px solid ${colors.border}`, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
-            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>Extra</span>{phase?.tie_break_enabled ? <span>Tiebreak</span> : null}<span>Pos</span><span>Puntos</span><span>Accion</span>
+            <span>Carril</span><span>Atleta</span><span>Heat</span><span>{markLabel}</span><span>{extraLabel}</span>{phase?.tie_break_enabled ? <span>Tiebreak</span> : null}<span>Pos</span><span>Puntos</span><span>Accion</span>
           </div>
           {rows.length ? rows.map((row) => {
             const key = rowKey(phaseId, row)
             const dirty = Object.prototype.hasOwnProperty.call(marks, key)
             const editable = row.status !== 'scored' || editing[key] || dirty
-            const dnf = isDnf(row)
+            const capDnf = isCapDnf(row)
+            const dnf = isDnf(row) && !capDnf
             const rank = preview[key]
             return (
               <div key={key} style={{ display: 'grid', gridTemplateColumns: scoreGridColumns, gap: 8, alignItems: 'center', padding: 10, borderBottom: `1px solid ${colors.border}`, background: dirty ? 'rgba(255,107,0,0.08)' : colors.surface }}>
                 <span style={{ color: colors.muted, fontWeight: 900 }}>{row.lane_number || '-'}</span>
                 <span style={{ fontWeight: 850, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name || 'Atleta'}</span>
                 <span style={{ color: colors.secondary, fontSize: 12 }}>{row.heat_name || '-'}</span>
-                {editable ? <input style={inputStyle()} type="number" value={dnf ? '' : markValue(row)} disabled={dnf} placeholder={dnf ? 'DNF' : 'Valor'} onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'marca', event.target.value)} /> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
-                {editable && phase?.extra_enabled ? <input style={inputStyle()} type="number" step="1" value={dnf ? '' : extraValue(row)} disabled={dnf} placeholder="Reps" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{phase?.extra_enabled && !dnf ? extraValue(row) || '-' : '-'}</span>}
+                {editable ? <span style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}><input style={inputStyle()} type={isTimePhase(phase) ? 'text' : 'number'} value={dnf ? '' : capDnf ? timeCapLabel : markValue(row)} disabled={dnf || capDnf} placeholder={dnf ? 'DNF' : isTimePhase(phase) ? (timeCapLabel || '07:33') : 'Valor'} onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'marca', isTimePhase(phase) ? formatTimeEntryInput(event.target.value) : event.target.value)} /></span> : <span style={{ color: dnf ? colors.error : colors.text, fontWeight: 850 }}>{dnf ? 'DNF' : row.existing_formatted || markValue(row) || '-'}</span>}
+                {editable && showCapReps && capDnf ? <input style={inputStyle()} type="number" step="1" min="0" value={extraValue(row)} placeholder="Faltantes" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'extra', event.target.value)} /> : <span style={{ color: colors.secondary }}>{showCapReps && !dnf && isAtTimeCap(row) ? extraValue(row) || '0' : '-'}</span>}
                 {phase?.tie_break_enabled ? (editable ? <input style={inputStyle()} type="number" value={dnf ? '' : tbValue(row)} disabled={dnf} placeholder="Opcional" onWheel={preventNumberInputWheel} onChange={(event) => setField(row, 'tiebreak', event.target.value)} /> : <span style={{ color: colors.secondary }}>{!dnf ? row.existing_tiebreak_formatted || tbValue(row) || '-' : '-'}</span>) : null}
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.posicion ?? '-'}</span>
                 <span style={{ color: dirty ? colors.primary : colors.secondary, fontWeight: 850 }}>{rank?.puntos ?? '-'}</span>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {editable ? <><Button tone={dnf ? 'danger' : 'default'} onClick={() => setField(row, 'dnf', !dnf)}>DNF</Button><Button tone="primary" onClick={() => saveRow(row)}><Save size={14} /></Button></> : <Button onClick={() => setEditing((prev) => ({ ...prev, [key]: true }))}><Pencil size={14} /></Button>}
+                  {editable ? <><Button tone={(showCapReps ? capDnf : dnf) ? 'danger' : 'default'} onClick={() => setDnfResult(row, showCapReps ? capDnf : dnf)}>{showCapReps ? 'CAP' : 'DNF'}</Button><Button tone="primary" onClick={() => saveRow(row)}><Save size={14} /></Button></> : <Button onClick={() => setEditing((prev) => ({ ...prev, [key]: true }))}><Pencil size={14} /></Button>}
                 </div>
               </div>
             )
