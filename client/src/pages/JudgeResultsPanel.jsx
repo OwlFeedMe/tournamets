@@ -179,7 +179,7 @@ function autoTablePoints(position, totalRanked) {
 
 function normalizePointStep(value) {
   const parsed = Number(value || 1)
-  return Math.max(1, Math.min(1000, Number.isFinite(parsed) ? Math.round(parsed) : 1))
+  return Math.max(1, Math.min(99, Number.isFinite(parsed) ? Math.round(parsed) : 1))
 }
 
 function previewPointsForScoring(config, position, totalRanked, mark) {

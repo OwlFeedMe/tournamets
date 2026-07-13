@@ -93,7 +93,7 @@ def normalize_point_step(raw: Any) -> int:
         value = int(raw if raw is not None else 1)
     except Exception:
         value = 1
-    return max(1, min(value, 1000))
+    return max(1, min(value, 99))
 
 
 def normalize_scoring_table(raw: Any) -> list[dict]:

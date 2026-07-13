@@ -12,6 +12,7 @@ from services.scoring import (
     auto_table_points,
     compute_result_points,
     competition_total_lower_is_better,
+    normalize_point_step,
     normalize_scoring_table,
     phase_scoring_config,
 )
@@ -61,6 +62,10 @@ class ScoringServiceTest(unittest.TestCase):
         ph = phase(scoring_override_enabled=1, scoring_system="dynamic_step", scoring_point_step=5)
 
         self.assertEqual(compute_result_points(position=2, total_ranked=10, mark=120, competition=comp, phase=ph), 45)
+
+    def test_point_step_is_limited_to_99(self):
+        self.assertEqual(normalize_point_step(0), 1)
+        self.assertEqual(normalize_point_step(100), 99)
 
     def test_placement_uses_position_and_lower_total_wins(self):
         comp = competition(scoring_system="placement")

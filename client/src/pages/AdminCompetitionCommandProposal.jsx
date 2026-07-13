@@ -3081,7 +3081,14 @@ function autoTablePoints(position, totalRanked) {
 
 function normalizePointStep(value) {
   const parsed = Number(value || 1)
-  return Math.max(1, Math.min(1000, Number.isFinite(parsed) ? Math.round(parsed) : 1))
+  return Math.max(1, Math.min(99, Number.isFinite(parsed) ? Math.round(parsed) : 1))
+}
+
+function pointStepInputValue(value) {
+  if (value === '') return ''
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  return String(Math.min(99, Math.max(1, Number(digits))))
 }
 
 function previewPointsForScoring(config, position, totalRanked, mark) {
@@ -3226,7 +3233,7 @@ function ScoringPanel({ bundle, reload, notify }) {
             ) : null}
             {draft.scoring_system === 'dynamic_step' ? (
               <Field label="Diferencia">
-                <input type="number" min="1" max="1000" step="1" style={inputStyle()} value={draft.scoring_point_step} onWheel={preventNumberInputWheel} onChange={(event) => updateDraft('scoring_point_step', normalizePointStep(event.target.value))} />
+                <input type="number" min="1" max="99" step="1" style={inputStyle()} value={draft.scoring_point_step ?? ''} onWheel={preventNumberInputWheel} onBlur={(event) => updateDraft('scoring_point_step', normalizePointStep(event.target.value))} onChange={(event) => updateDraft('scoring_point_step', pointStepInputValue(event.target.value))} />
               </Field>
             ) : null}
           </div>
@@ -3272,7 +3279,7 @@ function ScoringPanel({ bundle, reload, notify }) {
                 <option value="custom">Personalizado</option>
               </select>
               <input type="number" min="0" max="1000" step="25" style={inputStyle()} value={phaseWeight} disabled={!override} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_weight_percent: Number(event.target.value || 0) })} />
-              <input type="number" min="1" max="1000" step="1" style={inputStyle()} value={phasePointStep} disabled={!override || phaseSystem !== 'dynamic_step'} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_point_step: normalizePointStep(event.target.value) })} />
+              <input type="number" min="1" max="99" step="1" style={inputStyle()} value={phasePointStep} disabled={!override || phaseSystem !== 'dynamic_step'} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_point_step: normalizePointStep(event.target.value) })} />
               <select style={inputStyle()} value={phaseSystem} disabled={!override} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
                 {(visibleScoringModeOptions.some((item) => item.id === phaseSystem) ? visibleScoringModeOptions : [...visibleScoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === phaseSystem)]).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
