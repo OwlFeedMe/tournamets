@@ -41,6 +41,7 @@ from services.scoring import (
     normalize_scoring_system,
     normalize_scoring_table,
     normalize_scoring_tiebreak,
+    normalize_point_step,
     scoring_mode_for_system,
     scoring_summary_payload,
     serialize_scoring_table,
@@ -68,7 +69,7 @@ MODALITY_ALIAS = {
     "equipos": "teams",
     "por_equipo": "teams",
 }
-SCORING_SYSTEM_VALIDOS = {"dynamic_points", "placement", "fixed_table", "cumulative"}
+SCORING_SYSTEM_VALIDOS = {"dynamic_points", "dynamic_step", "placement", "fixed_table", "auto_table", "cumulative"}
 COMPETITION_ASSET_DIR = Path(__file__).resolve().parents[1] / "uploads" / "competition_assets"
 COMPETITION_ASSET_DIR.mkdir(parents=True, exist_ok=True)
 COMPETITION_ASSET_SPECS = {
@@ -350,6 +351,7 @@ def _normalize_competition_scoring(payload: dict) -> None:
         "scoring_system",
         "scoring_scope",
         "scoring_table",
+        "scoring_point_step",
         "scoring_tiebreak",
         "cumulative_direction",
     ))
@@ -363,6 +365,8 @@ def _normalize_competition_scoring(payload: dict) -> None:
         payload["cumulative_direction"] = normalize_scoring_direction(payload.get("cumulative_direction"))
     if "scoring_table" in payload:
         payload["scoring_table"] = serialize_scoring_table(payload.get("scoring_table"))
+    if "scoring_point_step" in payload:
+        payload["scoring_point_step"] = normalize_point_step(payload.get("scoring_point_step"))
     if touched:
         system = payload.get("scoring_system", "dynamic_points")
         direction = payload.get("cumulative_direction", "higher_wins")
@@ -1036,7 +1040,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     c = require_competition_access(session, competition_id, user)
 
     data = body.model_dump(exclude_unset=True)
-    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_point_step", "scoring_tiebreak", "cumulative_direction")):
         data.setdefault("scoring_system", getattr(c, "scoring_system", None))
         data.setdefault("cumulative_direction", getattr(c, "cumulative_direction", None))
     _normalize_competition_scoring(data)
@@ -1097,6 +1101,7 @@ class CompetitionScoringUpdate(BaseModel):
     scoring_system: Optional[str] = None
     scoring_scope: Optional[str] = None
     scoring_table: Optional[list[dict]] = None
+    scoring_point_step: Optional[int] = None
     scoring_tiebreak: Optional[str] = None
     cumulative_direction: Optional[str] = None
     recalculate: int = 0
@@ -1132,7 +1137,7 @@ def update_competition_scoring(
     competition = require_competition_access(session, competition_id, user)
     data = body.model_dump(exclude_unset=True)
     recalculate = bool(int(data.pop("recalculate", 0) or 0))
-    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_tiebreak", "cumulative_direction")):
+    if any(key in data for key in ("scoring_system", "scoring_scope", "scoring_table", "scoring_point_step", "scoring_tiebreak", "cumulative_direction")):
         data.setdefault("scoring_system", getattr(competition, "scoring_system", None))
         data.setdefault("cumulative_direction", getattr(competition, "cumulative_direction", None))
     _normalize_competition_scoring(data)

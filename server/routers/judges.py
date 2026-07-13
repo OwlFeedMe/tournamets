@@ -1051,6 +1051,7 @@ def list_judge_score_manual_options(
         select(CompetitionHeatAssignment)
         .where(CompetitionHeatAssignment.heat_id.in_(list(heat_map.keys())) if heat_map else False)
     ).all() if heat_map else []
+    has_phase_heats = bool(heat_map)
 
     if phase_mode == "total":
         teams = session.exec(
@@ -1090,6 +1091,8 @@ def list_judge_score_manual_options(
             team_id_value = int(team.id)
             assignment = assignment_by_team.get(team_id_value)
             heat = heat_map.get(int(assignment.heat_id)) if assignment and assignment.heat_id is not None else None
+            if has_phase_heats and heat is None:
+                continue
             existing = existing_by_team.get(team_id_value)
             team_name = str(team.nombre or "").strip() or f"Equipo {team_id_value}"
             search_blob = " ".join([team_name, *member_names.get(team_id_value, [])]).lower()
@@ -1165,6 +1168,8 @@ def list_judge_score_manual_options(
         participant_id_value = int(participant.id)
         assignment = assignment_by_participant.get(participant_id_value)
         heat = heat_map.get(int(assignment.heat_id)) if assignment and assignment.heat_id is not None else None
+        if has_phase_heats and heat is None:
+            continue
         full_name = f"{(participant.nombre or '').strip()} {(participant.apellido or '').strip()}".strip() or f"Participante {participant_id_value}"
         participant_category = str(enrollment.categoria or participant.categoria or "").strip() or "Sin categoria"
         existing = existing_by_participant.get(participant_id_value)

@@ -200,9 +200,10 @@ class Competition(SQLModel, table=True):
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
     scoring_mode: str = Field(default=ReglaGanador.HIGHER_WINS)  # highest_wins | lowest_wins
-    scoring_system: str = Field(default="dynamic_points")  # dynamic_points | placement | fixed_table | cumulative
+    scoring_system: str = Field(default="dynamic_points")  # dynamic_points | dynamic_step | placement | fixed_table | auto_table | cumulative
     scoring_scope: str = Field(default="category")  # category | global
     scoring_table: Optional[str] = None  # JSON rank -> points table
+    scoring_point_step: int = Field(default=1)
     scoring_tiebreak: str = Field(default="best_positions")  # best_positions | first_places | final_workout
     cumulative_direction: str = Field(default="higher_wins")  # higher_wins | lower_wins
     rm_unit: str = Field(default=UnidadRM.KG)
@@ -602,6 +603,7 @@ class CompetitionPhase(SQLModel, table=True):
     scoring_override_enabled: int = Field(default=0)
     scoring_system: Optional[str] = None
     scoring_weight_percent: int = Field(default=100)
+    scoring_point_step: int = Field(default=1)
     scoring_table: Optional[str] = None
     heat_transition_seconds: int = Field(default=0)
     category_transition_seconds: int = Field(default=0)
@@ -1866,6 +1868,7 @@ class CompetitionCreate(SQLModel):
     scoring_system: str = "dynamic_points"
     scoring_scope: str = "category"
     scoring_table: Optional[str] = None
+    scoring_point_step: int = 1
     scoring_tiebreak: str = "best_positions"
     cumulative_direction: str = "higher_wins"
     rm_unit: str = UnidadRM.KG
@@ -1928,6 +1931,7 @@ class CompetitionUpdate(SQLModel):
     scoring_system: Optional[str] = None
     scoring_scope: Optional[str] = None
     scoring_table: Optional[List[dict]] = None
+    scoring_point_step: Optional[int] = None
     scoring_tiebreak: Optional[str] = None
     cumulative_direction: Optional[str] = None
     rm_unit: Optional[str] = None
@@ -2054,6 +2058,7 @@ class PhaseCreate(SQLModel):
     scoring_override_enabled: int = 0
     scoring_system: Optional[str] = None
     scoring_weight_percent: int = 100
+    scoring_point_step: int = 1
     scoring_table: Optional[List[dict]] = None
     heat_transition_seconds: int = 0
     category_transition_seconds: int = 0
@@ -2086,6 +2091,7 @@ class PhaseUpdate(SQLModel):
     scoring_override_enabled: Optional[int] = None
     scoring_system: Optional[str] = None
     scoring_weight_percent: Optional[int] = None
+    scoring_point_step: Optional[int] = None
     scoring_table: Optional[List[dict]] = None
     heat_transition_seconds: Optional[int] = None
     category_transition_seconds: Optional[int] = None

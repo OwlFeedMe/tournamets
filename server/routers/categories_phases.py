@@ -26,6 +26,7 @@ from models import (
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.scoring import (
+    normalize_point_step,
     normalize_scoring_system,
     normalize_scoring_table,
     normalize_weight_percent,
@@ -504,6 +505,7 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload["scoring_override_enabled"] = _normalize_scoring_override_enabled(getattr(phase, "scoring_override_enabled", 0))
     payload["scoring_system"] = normalize_scoring_system(getattr(phase, "scoring_system", None), fallback="dynamic_points") if payload["scoring_override_enabled"] else getattr(phase, "scoring_system", None)
     payload["scoring_weight_percent"] = normalize_weight_percent(getattr(phase, "scoring_weight_percent", 100))
+    payload["scoring_point_step"] = normalize_point_step(getattr(phase, "scoring_point_step", 1))
     payload["scoring_table"] = normalize_scoring_table(getattr(phase, "scoring_table", None))
     payload["heat_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "heat_transition_seconds", 0))
     payload["category_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "category_transition_seconds", 0))
@@ -814,6 +816,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         scoring_override_enabled=_normalize_scoring_override_enabled(body.scoring_override_enabled),
         scoring_system=normalize_scoring_system(body.scoring_system, fallback="dynamic_points") if body.scoring_system else None,
         scoring_weight_percent=normalize_weight_percent(body.scoring_weight_percent),
+        scoring_point_step=normalize_point_step(body.scoring_point_step),
         scoring_table=serialize_scoring_table(body.scoring_table),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
@@ -842,6 +845,7 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         "scoring_override_enabled",
         "scoring_system",
         "scoring_weight_percent",
+        "scoring_point_step",
         "scoring_table",
     ))
     if "modality" in data:
@@ -888,6 +892,8 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["scoring_system"] = normalize_scoring_system(data["scoring_system"], fallback="dynamic_points") if data["scoring_system"] else None
     if "scoring_weight_percent" in data:
         data["scoring_weight_percent"] = normalize_weight_percent(data["scoring_weight_percent"])
+    if "scoring_point_step" in data:
+        data["scoring_point_step"] = normalize_point_step(data["scoring_point_step"])
     if "scoring_table" in data:
         data["scoring_table"] = serialize_scoring_table(data["scoring_table"])
     if "heat_transition_seconds" in data:

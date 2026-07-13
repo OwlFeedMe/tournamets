@@ -1447,10 +1447,9 @@ function PhasesPanel({ bundle, reload, notify }) {
     is_visible: 1,
   }
   const measurementOptions = [
-    { value: 'amrap', label: 'Reps / AMRAP', winner: 'higher_wins', workout: 'amrap' },
+    { value: 'amrap', label: 'Repeticiones', winner: 'higher_wins', workout: 'amrap' },
     { value: 'for_time', label: 'Tiempo / For time', winner: 'lower_wins', workout: 'for_time' },
     { value: 'rm', label: 'Peso / RM', winner: 'higher_wins', workout: 'max_weight' },
-    { value: 'emom', label: 'EMOM', winner: 'higher_wins', workout: 'emom' },
     { value: 'metros', label: 'Metros', winner: 'higher_wins', workout: 'other' },
   ]
   const workoutFormatOptions = [
@@ -2991,32 +2990,49 @@ function TeamsPanel({ bundle, reload, notify }) {
 
 const scoringModeOptions = [
   {
-    id: 'dynamic_points',
-    label: 'Puntos dinamicos',
-    summary: 'Gana mayor total. Cada WOD reparte puntos segun atletas con resultado.',
-    example: ['10 atletas', '1o = 10 pts', '2o = 9 pts', '10o = 1 pt'],
-    warning: 'Si un WOD tiene menos resultados cargados, reparte menos puntos.',
+    id: 'auto_table',
+    label: 'Tipo CrossFit Games',
+    summary: 'Gana mayor total. Reparte de 100 a 0 segun atletas rankeados.',
+    example: ['30 atletas', '1o = 100 pts', '2o = 96 pts', '30o = 0 pts'],
+    warning: 'Pensado para categorias de 20+ participantes. Cada categoria usa su propio tamano de field.',
+  },
+  {
+    id: 'dynamic_step',
+    label: 'Puntos por paso',
+    summary: 'Gana mayor total. Cada puesto baja una diferencia fija.',
+    example: ['Paso 3', '10 atletas', '1o = 30 pts', '10o = 3 pts'],
+    warning: 'Usa la totalidad de atletas rankeados y multiplica cada puesto por el paso definido.',
   },
   {
     id: 'placement',
-    label: 'Posicion',
+    label: 'Tipo Open',
     summary: 'Gana menor total. La posicion se convierte directamente en puntos.',
     example: ['1o = 1 pt', '2o = 2 pts', '3o = 3 pts'],
-    warning: 'Modelo simple tipo Open. Puede empatar mas en divisiones pequenas.',
+    warning: 'Modelo oficial tipo Open o clasificatorio. Gana quien acumula menos puntos.',
   },
   {
     id: 'fixed_table',
-    label: 'Tabla fija',
+    label: 'Tabla fija avanzada',
     summary: 'Gana mayor total. Cada posicion tiene puntos definidos.',
     example: ['1o = 100 pts', '2o = 95 pts', '3o = 90 pts'],
-    warning: 'Todos los WODs pesan igual aunque falten resultados.',
+    warning: 'Modo avanzado para reglamentos con tabla propia o finales con pesos especiales.',
+  },
+]
+
+const legacyScoringModeOptions = [
+  {
+    id: 'dynamic_points',
+    label: 'Puntos dinamicos clasico',
+    summary: 'Gana mayor total. Cada WOD reparte puntos segun atletas con resultado.',
+    example: ['10 atletas', '1o = 10 pts', '2o = 9 pts', '10o = 1 pt'],
+    warning: 'Modo heredado. Para nuevas competencias usa Puntos por paso con diferencia 1 o mas.',
   },
   {
     id: 'cumulative',
     label: 'Puntos acumulados',
     summary: 'Suma marcas crudas. Usalo solo si todos los WODs comparten unidad.',
     example: ['120 reps + 95 reps', 'Total = 215 reps'],
-    warning: 'No recomendado si mezclas tiempo, reps y peso.',
+    warning: 'Modo avanzado. No recomendado si mezclas tiempo, reps y peso.',
   },
 ]
 
@@ -3049,12 +3065,33 @@ function scoringTablePoints(table, position) {
   return row ? Number(row.points || 0) : 0
 }
 
+function autoTablePoints(position, totalRanked) {
+  const pos = Number(position || 0)
+  const total = Number(totalRanked || 0)
+  if (pos <= 0 || total <= 0 || pos > total) return 0
+  if (total === 1) return 100
+  const gaps = total - 1
+  const baseDrop = Math.floor(100 / gaps)
+  const largerDropCount = 100 % gaps
+  const completedGaps = pos - 1
+  const largerGapsUsed = Math.min(completedGaps, largerDropCount)
+  const regularGapsUsed = completedGaps - largerGapsUsed
+  return Math.max(0, 100 - (largerGapsUsed * (baseDrop + 1)) - (regularGapsUsed * baseDrop))
+}
+
+function normalizePointStep(value) {
+  const parsed = Number(value || 1)
+  return Math.max(1, Math.min(1000, Number.isFinite(parsed) ? Math.round(parsed) : 1))
+}
+
 function previewPointsForScoring(config, position, totalRanked, mark) {
   if (Number(mark) === 2147483647 || Number(mark) === -2147483648) return 0
   const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
   let base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1)
   if (system === 'placement') base = Number(position || 0)
   if (system === 'fixed_table') base = scoringTablePoints(config?.table || config?.scoring_table || defaultScoringTable, position)
+  if (system === 'auto_table') base = autoTablePoints(position, totalRanked)
+  if (system === 'dynamic_step') base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1) * normalizePointStep(config?.point_step ?? config?.scoring_point_step)
   if (system === 'cumulative') base = Number(mark || 0)
   const weight = Number(config?.weight_percent ?? config?.scoring_weight_percent ?? 100)
   return Math.round(base * weight / 100)
@@ -3062,8 +3099,10 @@ function previewPointsForScoring(config, position, totalRanked, mark) {
 
 function scoringPreviewLabel(config) {
   const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
+  if (system === 'dynamic_step') return 'Puntos por paso: mayor total gana'
   if (system === 'placement') return 'Posicion: menor total gana'
   if (system === 'fixed_table') return 'Tabla fija: mayor total gana'
+  if (system === 'auto_table') return 'Tipo CrossFit Games: mayor total gana'
   if (system === 'cumulative') return String(config?.cumulative_direction || '').toLowerCase() === 'lower_wins' ? 'Acumulado: menor total gana' : 'Acumulado: mayor total gana'
   return 'Puntos dinamicos: mayor total gana'
 }
@@ -3077,11 +3116,15 @@ function ScoringPanel({ bundle, reload, notify }) {
     scoring_scope: scoring.scoring_scope || competition.scoring_scope || 'category',
     scoring_tiebreak: scoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
     cumulative_direction: scoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
+    scoring_point_step: normalizePointStep(scoring.scoring_point_step ?? competition.scoring_point_step ?? 3),
     scoring_table: normalizeScoringTableInput(scoring.scoring_table || competition.scoring_table || defaultScoringTable),
   }))
   const [saving, setSaving] = useState(false)
   const updateDraft = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }))
-  const selectedMode = scoringModeOptions.find((item) => item.id === draft.scoring_system) || scoringModeOptions[0]
+  const visibleScoringModeOptions = scoringModeOptions.some((item) => item.id === draft.scoring_system)
+    ? scoringModeOptions
+    : [...scoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === draft.scoring_system)]
+  const selectedMode = visibleScoringModeOptions.find((item) => item.id === draft.scoring_system) || scoringModeOptions[0]
   const tableRows = draft.scoring_table.length ? draft.scoring_table : defaultScoringTable
   const setTableRow = (index, key, value) => {
     const next = [...tableRows]
@@ -3104,6 +3147,7 @@ function ScoringPanel({ bundle, reload, notify }) {
         body: JSON.stringify({
           ...draft,
           scoring_table: draft.scoring_system === 'fixed_table' ? tableRows : [],
+          scoring_point_step: normalizePointStep(draft.scoring_point_step),
           recalculate: resultsCount > 0 ? 1 : 0,
         }),
       })
@@ -3139,8 +3183,8 @@ function ScoringPanel({ bundle, reload, notify }) {
         </div>
       ) : null}
 
-      <div className="fr-form-grid fr-scoring-mode-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
-        {scoringModeOptions.map((item) => {
+      <div className="fr-form-grid fr-scoring-mode-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        {visibleScoringModeOptions.map((item) => {
           const active = draft.scoring_system === item.id
           return (
             <button key={item.id} type="button" onClick={() => updateDraft('scoring_system', item.id)} style={{ textAlign: 'left', border: `1px solid ${active ? colors.primary : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, borderRadius: 8, padding: 12, display: 'grid', gap: 9 }}>
@@ -3180,6 +3224,11 @@ function ScoringPanel({ bundle, reload, notify }) {
                 </select>
               </Field>
             ) : null}
+            {draft.scoring_system === 'dynamic_step' ? (
+              <Field label="Diferencia">
+                <input type="number" min="1" max="1000" step="1" style={inputStyle()} value={draft.scoring_point_step} onWheel={preventNumberInputWheel} onChange={(event) => updateDraft('scoring_point_step', normalizePointStep(event.target.value))} />
+              </Field>
+            ) : null}
           </div>
         </div>
 
@@ -3211,8 +3260,9 @@ function ScoringPanel({ bundle, reload, notify }) {
           const override = Number(phaseScoring.scoring_override_enabled || phase.scoring_override_enabled || 0) ? 1 : 0
           const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
           const phaseWeight = Number(phaseScoring.scoring_weight_percent ?? phase.scoring_weight_percent ?? 100)
+          const phasePointStep = normalizePointStep(phaseScoring.scoring_point_step ?? phase.scoring_point_step ?? draft.scoring_point_step ?? 3)
           return (
-            <div key={phase.id} className="fr-scoring-phase-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 160px 130px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
+            <div key={phase.id} className="fr-scoring-phase-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 150px 110px 110px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
               <div>
                 <strong>{phase.nombre}</strong>
                 <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Personalizado' : 'Regla de la competencia'}</div>
@@ -3222,8 +3272,9 @@ function ScoringPanel({ bundle, reload, notify }) {
                 <option value="custom">Personalizado</option>
               </select>
               <input type="number" min="0" max="1000" step="25" style={inputStyle()} value={phaseWeight} disabled={!override} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_weight_percent: Number(event.target.value || 0) })} />
+              <input type="number" min="1" max="1000" step="1" style={inputStyle()} value={phasePointStep} disabled={!override || phaseSystem !== 'dynamic_step'} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_point_step: normalizePointStep(event.target.value) })} />
               <select style={inputStyle()} value={phaseSystem} disabled={!override} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
-                {scoringModeOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                {(visibleScoringModeOptions.some((item) => item.id === phaseSystem) ? visibleScoringModeOptions : [...visibleScoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === phaseSystem)]).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
               </select>
             </div>
           )
