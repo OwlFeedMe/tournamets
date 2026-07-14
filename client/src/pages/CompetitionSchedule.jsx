@@ -208,13 +208,15 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
   const firstParticipant = participants[0]
   const wodTone = wodColorFor(item.phaseId || item.phaseName || item.title)
   return (
-    <div className="fr-cut-card" style={{
+    <div className="fr-cut-card fr-schedule-item-card" style={{
       border: `1px solid ${hexToRgba(wodTone, 0.56)}`,
       borderLeft: `6px solid ${wodTone}`,
       background: `linear-gradient(135deg, ${hexToRgba(wodTone, 0.13)}, ${hexToRgba(theme.background, 0.62)} 46%)`,
       padding: 16,
       display: 'grid',
       gap: 10,
+      minWidth: 0,
+      maxWidth: '100%',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
@@ -260,36 +262,39 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       </div>
 
       {participants.length ? (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className="fr-schedule-participants" style={{ display: 'grid', gap: 8, minWidth: 0 }}>
           <div style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {personal ? 'Tu salida' : 'Asignados'}
           </div>
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
             {participants.map((participant) => (
               <div
                 key={participant.id}
+                className="fr-schedule-participant-row"
                 style={{
                   borderRadius: 6,
                   border: `1px solid ${hexToRgba(wodTone, 0.38)}`,
                   borderLeft: `4px solid ${wodTone}`,
                   background: participant.note ? hexToRgba(wodTone, 0.10) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
+                  display: 'grid',
+                  gridTemplateColumns: participant.lane != null ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
                   gap: 10,
                   alignItems: 'center',
+                  minWidth: 0,
+                  maxWidth: '100%',
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: theme.text, fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className="fr-schedule-participant-name" style={{ color: theme.text, fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {participant.name}
                   </div>
                   {participant.category ? (
-                    <div style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Cat: {participant.category}</div>
+                    <div style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2, overflowWrap: 'anywhere' }}>Cat: {participant.category}</div>
                   ) : null}
                 </div>
                 {participant.lane != null ? (
-                  <span style={{ color: wodTone, fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
+                  <span className="fr-schedule-lane" style={{ color: wodTone, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>Lane {participant.lane}</span>
                 ) : null}
               </div>
             ))}
@@ -319,15 +324,17 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
 
 function ScheduleSection({ section, personal = false, theme, timeZone }) {
   return (
-    <section className="fr-cut-card" style={{
+    <section className="fr-cut-card fr-schedule-section" style={{
       border: `1px solid ${theme.border}`,
       background: theme.surface,
       padding: 18,
       display: 'grid',
       gap: 14,
+      minWidth: 0,
+      maxWidth: '100%',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
             {section.kind === 'phase' ? 'Fase' : 'Bloque'}
           </div>
@@ -336,7 +343,7 @@ function ScheduleSection({ section, personal = false, theme, timeZone }) {
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 14, lineHeight: 1.5 }}>{section.subtitle}</div>
           ) : null}
         </div>
-        <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
+        <div className="fr-schedule-section-meta" style={{ display: 'grid', gap: 8, justifyItems: 'end', minWidth: 0 }}>
           {section.startAt || section.endAt ? (
             <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
               {formatDateRange(section.startAt, section.endAt, timeZone)}
@@ -352,7 +359,7 @@ function ScheduleSection({ section, personal = false, theme, timeZone }) {
       </div>
 
       {section.items?.length ? (
-        <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
           {section.items.map((item) => (
             <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
           ))}
@@ -501,8 +508,8 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
   const primaryTextColor = useMemo(() => getReadableTextColor(theme.primary), [theme.primary])
 
   return (
-    <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
-      <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 72px' }}>
+    <div className="fr-schedule-page" style={{ minHeight: '100vh', background: pageBg, color: theme.text, overflowX: 'clip' }}>
+      <div className="fr-schedule-page-inner" style={{ width: '100%', maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 72px', minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
           <Link
             to={heroLink}
@@ -605,7 +612,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           ) : null}
         </section>
 
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
+        <section className="fr-schedule-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
           <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
             <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
             <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{isPersonal ? 'Personal' : 'Publica'}</div>
@@ -642,7 +649,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
             <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>{error}</div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gap: 14, minWidth: 0 }}>
             {sections.length ? sections.map((section) => (
               <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} timeZone={timeZone} />
             )) : (

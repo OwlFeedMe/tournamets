@@ -419,6 +419,70 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
     padding: 3px 9px;
   }
 
+  .fr-schedule-page {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .fr-schedule-page-inner {
+    padding: 14px 12px calc(132px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .fr-schedule-section,
+  .fr-schedule-item-card,
+  .fr-schedule-participants,
+  .fr-schedule-participant-row {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .fr-schedule-section {
+    padding: 14px !important;
+    --fr-card-cut: 14px;
+  }
+
+  .fr-schedule-section > div:first-child {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .fr-schedule-section-meta {
+    justify-items: start !important;
+  }
+
+  .fr-schedule-section-meta > div {
+    text-align: left !important;
+    overflow-wrap: anywhere;
+  }
+
+  .fr-schedule-item-card {
+    padding: 12px !important;
+    --fr-card-cut: 14px;
+  }
+
+  .fr-schedule-participant-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: start !important;
+  }
+
+  .fr-schedule-participant-name {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: anywhere;
+    line-height: 1.3;
+  }
+
+  .fr-schedule-lane {
+    justify-self: start;
+  }
+
+  .fr-schedule-stats {
+    grid-template-columns: 1fr !important;
+  }
+
   .responsive-grid-2 {
     grid-template-columns: 1fr !important;
   }
