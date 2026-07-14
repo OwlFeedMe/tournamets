@@ -430,6 +430,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   }
 
   .fr-schedule-section,
+  .fr-schedule-section-toggle,
+  .fr-schedule-heat-toggle,
   .fr-schedule-item-card,
   .fr-schedule-participants,
   .fr-schedule-participant-row {
@@ -443,9 +445,22 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
     --fr-card-cut: 14px;
   }
 
-  .fr-schedule-section > div:first-child {
-    display: grid !important;
+  .fr-schedule-section-toggle {
     grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .fr-schedule-heat-toggle {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .fr-schedule-section-toggle > div:last-child,
+  .fr-schedule-heat-toggle > div:last-child {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    justify-content: stretch !important;
+    width: 100%;
   }
 
   .fr-schedule-section-meta {
@@ -477,10 +492,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 
   .fr-schedule-lane {
     justify-self: start;
-  }
-
-  .fr-schedule-stats {
-    grid-template-columns: 1fr !important;
   }
 
   .responsive-grid-2 {

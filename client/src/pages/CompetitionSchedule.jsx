@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Clock3, MapPin, Medal, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, MapPin, Medal, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
@@ -70,6 +70,10 @@ function formatDateRange(start, end, timeZone) {
 function getPhaseId(value) {
   if (value == null || value === '') return ''
   return String(value)
+}
+
+function toDomId(value) {
+  return String(value || 'section').replace(/[^a-zA-Z0-9_-]+/g, '-')
 }
 
 function normalizeParticipant(item, index) {
@@ -204,9 +208,12 @@ async function fetchWithFallback(urls) {
 }
 
 function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
+  const [isOpen, setIsOpen] = useState(true)
   const participants = item.participants || []
   const firstParticipant = participants[0]
+  const participantCount = participants.length
   const wodTone = wodColorFor(item.phaseId || item.phaseName || item.title)
+  const contentId = `schedule-heat-${toDomId(item.id)}`
   return (
     <div className="fr-cut-card fr-schedule-item-card" style={{
       border: `1px solid ${hexToRgba(wodTone, 0.56)}`,
@@ -218,26 +225,68 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       minWidth: 0,
       maxWidth: '100%',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+      <button
+        type="button"
+        className="fr-schedule-heat-toggle"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 12,
+          alignItems: 'start',
+          width: '100%',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: theme.text,
+          textAlign: 'left',
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: wodTone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-            {item.kind === 'heat' ? 'Heat' : item.kind === 'block' ? 'Bloque' : 'Salida'}
-            {item.heatNumber != null ? ` ${item.heatNumber}` : ''}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ color: wodTone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              {item.kind === 'heat' ? 'Heat' : item.kind === 'block' ? 'Bloque' : 'Salida'}
+              {item.heatNumber != null ? ` ${item.heatNumber}` : ''}
+            </span>
+            <span style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 800 }}>
+              {participantCount ? `${participantCount} ${participantCount === 1 ? 'asignado' : 'asignados'}` : 'Sin asignados'}
+            </span>
           </div>
-          <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>
-            {item.title}
-          </div>
+          <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>{item.title}</div>
           {item.phaseName ? (
             <div style={{ color: theme.textSecondary, fontSize: 13, marginTop: 4 }}>{item.phaseName}</div>
           ) : null}
         </div>
-        {item.lane != null ? (
-          <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
-            Lane {item.lane}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 10, minWidth: 0 }}>
+          {item.lane != null ? (
+            <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, color: theme.text, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
+              Lane {item.lane}
+            </span>
+          ) : null}
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              borderRadius: 6,
+              border: `1px solid ${hexToRgba(wodTone, 0.28)}`,
+              background: hexToRgba(theme.background, 0.48),
+              color: wodTone,
+              flexShrink: 0,
+            }}
+          >
+            {isOpen ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
           </span>
-        ) : null}
-      </div>
+        </div>
+      </button>
 
+      {isOpen ? (
+        <div id={contentId} style={{ display: 'grid', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'grid', gap: 8 }}>
         {(item.startAt || item.endAt) ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
@@ -318,11 +367,17 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       {firstParticipant?.note ? (
         <div style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 1.5 }}>{firstParticipant.note}</div>
       ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function ScheduleSection({ section, personal = false, theme, timeZone }) {
+  const [isOpen, setIsOpen] = useState(true)
+  const contentId = `schedule-section-${toDomId(section.id)}`
+  const itemCount = section.items?.length || 0
+
   return (
     <section className="fr-cut-card fr-schedule-section" style={{
       border: `1px solid ${theme.border}`,
@@ -333,42 +388,86 @@ function ScheduleSection({ section, personal = false, theme, timeZone }) {
       minWidth: 0,
       maxWidth: '100%',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+      <button
+        type="button"
+        className="fr-schedule-section-toggle"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 12,
+          alignItems: 'start',
+          width: '100%',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: theme.text,
+          textAlign: 'left',
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
-            {section.kind === 'phase' ? 'Fase' : 'Bloque'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+              {section.kind === 'phase' ? 'Fase' : 'Bloque'}
+            </span>
+            <span style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 800 }}>
+              {itemCount ? `${itemCount} ${itemCount === 1 ? 'heat' : 'heats'}` : 'Sin heats'}
+            </span>
           </div>
           <h2 style={{ margin: '6px 0 0', fontSize: 22, lineHeight: 1.1 }}>{section.title}</h2>
           {section.subtitle ? (
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 14, lineHeight: 1.5 }}>{section.subtitle}</div>
           ) : null}
         </div>
-        <div className="fr-schedule-section-meta" style={{ display: 'grid', gap: 8, justifyItems: 'end', minWidth: 0 }}>
-          {section.startAt || section.endAt ? (
-            <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
-              {formatDateRange(section.startAt, section.endAt, timeZone)}
-            </div>
-          ) : null}
-          {section.locationName || section.locationDetail ? (
-            <div style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'right' }}>
-              {section.locationName || 'Ubicacion por confirmar'}
-              {section.locationDetail ? <span style={{ color: '#6B7280' }}> · {section.locationDetail}</span> : null}
-            </div>
-          ) : null}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 10, minWidth: 0 }}>
+          <div className="fr-schedule-section-meta" style={{ display: 'grid', gap: 8, justifyItems: 'end', minWidth: 0 }}>
+            {section.startAt || section.endAt ? (
+              <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
+                {formatDateRange(section.startAt, section.endAt, timeZone)}
+              </div>
+            ) : null}
+            {section.locationName || section.locationDetail ? (
+              <div style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'right' }}>
+                {section.locationName || 'Ubicacion por confirmar'}
+                {section.locationDetail ? <span style={{ color: '#6B7280' }}> · {section.locationDetail}</span> : null}
+              </div>
+            ) : null}
+          </div>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              border: `1px solid ${hexToRgba(theme.accent, 0.24)}`,
+              background: hexToRgba(theme.background, 0.52),
+              color: theme.accent,
+              flexShrink: 0,
+            }}
+          >
+            {isOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+          </span>
         </div>
-      </div>
+      </button>
 
-      {section.items?.length ? (
-        <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
-          {section.items.map((item) => (
-            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
-          ))}
-        </div>
-      ) : (
-        <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
-          {personal ? scheduleCopy.personal.empty : scheduleCopy.public.empty}
-        </div>
-      )}
+      {isOpen ? (
+        section.items?.length ? (
+          <div id={contentId} style={{ display: 'grid', gap: 12, minWidth: 0 }}>
+            {section.items.map((item) => (
+              <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
+            ))}
+          </div>
+        ) : (
+          <div id={contentId} style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
+            {personal ? scheduleCopy.personal.empty : scheduleCopy.public.empty}
+          </div>
+        )
+      ) : null}
     </section>
   )
 }
@@ -500,7 +599,6 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
   const title = competition?.nombre || 'Cronograma'
   const lastUpdated = formatDateTime(schedule.updatedAt, timeZone)
-  const sectionCount = sections.length
   const totalHeats = schedule.items.filter(item => item.kind === 'heat').length || Number(stats.heats_total || 0) || 0
   const totalParticipants = Number(stats.participants_total || stats.confirmed_total || 0) || 0
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
@@ -610,26 +708,6 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
               Actualizado {lastUpdated}
             </div>
           ) : null}
-        </section>
-
-        <section className="fr-schedule-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{isPersonal ? 'Personal' : 'Publica'}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
-              {isPersonal ? 'Solo tus salidas y tus cambios.' : 'Todo lo que ya esta publicado.'}
-            </div>
-          </div>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{sectionCount}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Eventos, heats y bloques publicados.</div>
-          </div>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{competition?.lugar || 'Por confirmar'}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Si cambia el venue por heat, quedara indicado en cada card.</div>
-          </div>
         </section>
 
         {loading ? (
