@@ -68,9 +68,30 @@ def compute_phase_status_map(session: Session, competition_id: int) -> dict[int,
 
     expected_participants, expected_teams = _fetch_expected_counts(session, competition_id)
     loaded_by_phase = _fetch_loaded_counts_by_phase(session, competition_id)
+    children_by_parent: dict[int, list[CompetitionPhase]] = {}
+    for phase in phases:
+        parent_id = int(getattr(phase, "parent_phase_id", 0) or 0)
+        if parent_id:
+            children_by_parent.setdefault(parent_id, []).append(phase)
 
     out: dict[int, str] = {}
     for phase in phases:
+        children = children_by_parent.get(int(phase.id or 0), [])
+        if children and int(getattr(phase, "is_result_container", 0) or 0):
+            child_states = []
+            for child in children:
+                mode = (getattr(child, "team_result_mode", None) or "sum_two").strip().lower()
+                counts = loaded_by_phase.get(int(child.id), {"participants": 0, "teams": 0})
+                expected = expected_teams if mode == "total" else expected_participants
+                loaded = counts["teams"] if mode == "total" else counts["participants"]
+                child_states.append(_status_from_counts(expected, loaded))
+            if child_states and all(state == EstadoFase.FINALIZADA for state in child_states):
+                out[int(phase.id)] = EstadoFase.FINALIZADA
+            elif child_states and any(state != EstadoFase.PENDIENTE for state in child_states):
+                out[int(phase.id)] = EstadoFase.EN_PROGRESO
+            else:
+                out[int(phase.id)] = EstadoFase.PENDIENTE
+            continue
         mode = (getattr(phase, "team_result_mode", None) or "sum_two").strip().lower()
         counts = loaded_by_phase.get(int(phase.id), {"participants": 0, "teams": 0})
         if mode == "total":

@@ -1001,6 +1001,8 @@ def list_judge_score_phases(
     ).all()
     payload: list[dict] = []
     for phase in rows:
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            continue
         payload.append(
             {
                 "id": int(phase.id),
@@ -1032,7 +1034,10 @@ def list_judge_score_manual_options(
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or int(phase.competition_id) != int(competition_id):
         raise HTTPException(404, "La fase indicada no pertenece a la competencia")
+    if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+        raise HTTPException(400, "Selecciona una parte puntuable del WOD")
     phase_mode = _phase_score_mode(phase)
+    heat_phase_id = int(getattr(phase, "parent_phase_id", None) or phase_id)
 
     normalized_query = str(q or "").strip().lower()
     normalized_category = str(category or "").strip().lower()
@@ -1042,7 +1047,7 @@ def list_judge_score_manual_options(
         select(CompetitionHeat)
         .where(
             CompetitionHeat.competition_id == competition_id,
-            CompetitionHeat.phase_id == phase_id,
+            CompetitionHeat.phase_id == heat_phase_id,
         )
         .order_by(CompetitionHeat.heat_number.asc(), CompetitionHeat.start_at.asc(), CompetitionHeat.id.asc())
     ).all()

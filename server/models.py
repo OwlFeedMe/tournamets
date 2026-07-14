@@ -582,6 +582,13 @@ class CompetitionPhase(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
+    parent_phase_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="CASCADE"), nullable=True, index=True),
+    )
+    score_key: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    is_scoring_unit: int = Field(default=1)
+    is_result_container: int = Field(default=0)
     nombre: str
     descripcion: Optional[str] = None
     modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
@@ -2039,6 +2046,11 @@ class CategoryUpdate(SQLModel):
 class PhaseCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    parent_phase_id: Optional[int] = None
+    score_key: Optional[str] = None
+    is_scoring_unit: int = 1
+    is_result_container: int = 0
+    scoring_parts: Optional[List[dict]] = None
     modality: str = Modalidad.INDIVIDUAL
     block_name: Optional[str] = None
     block_order: int = 0
@@ -2072,6 +2084,11 @@ class PhaseCreate(SQLModel):
 class PhaseUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    parent_phase_id: Optional[int] = None
+    score_key: Optional[str] = None
+    is_scoring_unit: Optional[int] = None
+    is_result_container: Optional[int] = None
+    scoring_parts: Optional[List[dict]] = None
     modality: Optional[str] = None
     block_name: Optional[str] = None
     block_order: Optional[int] = None

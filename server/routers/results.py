@@ -246,6 +246,8 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     if not comp:
         return
     phase = session.get(CompetitionPhase, phase_id)
+    if phase is not None and int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+        return
     lower_is_better = _phase_lower_is_better(phase, comp)
     tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
     tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
@@ -597,6 +599,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         phase = session.get(CompetitionPhase, body.phase_id)
         if not phase or phase.competition_id != body.competition_id:
             raise HTTPException(400, "La fase no pertenece a esta competencia")
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            raise HTTPException(400, "Selecciona una parte puntuable del WOD")
         phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:
@@ -672,6 +676,8 @@ def update_result(result_id: int, body: ResultUpdate,
         phase = session.get(CompetitionPhase, phase_id)
         if not phase or phase.competition_id != r.competition_id:
             raise HTTPException(400, "La fase no pertenece a esta competencia")
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            raise HTTPException(400, "Selecciona una parte puntuable del WOD")
         phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:

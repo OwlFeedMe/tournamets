@@ -1479,6 +1479,11 @@ function PhasesPanel({ bundle, reload, notify }) {
   const emptyDraft = {
     nombre: '',
     descripcion: '',
+    score_mode: 'single',
+    scoring_parts: [
+      { score_key: 'A', nombre: 'Parte A', measurement_method: 'amrap', workout_format: 'amrap', winner_rule: 'higher_wins', time_cap_seconds: '' },
+      { score_key: 'B', nombre: 'Parte B', measurement_method: 'amrap', workout_format: 'amrap', winner_rule: 'higher_wins', time_cap_seconds: '' },
+    ],
     modality: 'individual',
     measurement_method: 'amrap',
     workout_format: 'amrap',
@@ -1523,6 +1528,15 @@ function PhasesPanel({ bundle, reload, notify }) {
     setDraft({
       nombre: phase.nombre || '',
       descripcion: phase.descripcion || '',
+      score_mode: (phase.scoring_parts || []).length > 1 ? 'double' : 'single',
+      scoring_parts: (phase.scoring_parts || []).length > 1 ? phase.scoring_parts.map((part, index) => ({
+        score_key: part.score_key || (index === 0 ? 'A' : 'B'),
+        nombre: part.nombre || `Parte ${index === 0 ? 'A' : 'B'}`,
+        measurement_method: part.measurement_method || 'amrap',
+        workout_format: part.workout_format || 'amrap',
+        winner_rule: part.winner_rule || 'higher_wins',
+        time_cap_seconds: part.time_cap_seconds ? formatSeconds(part.time_cap_seconds) : '',
+      })) : emptyDraft.scoring_parts,
       modality: phase.modality || 'individual',
       measurement_method: method,
       workout_format: phase.workout_format || measurementOptions.find((item) => item.value === method)?.workout || 'other',
@@ -1537,13 +1551,35 @@ function PhasesPanel({ bundle, reload, notify }) {
   }
   const save = async () => {
     if (!draft.nombre.trim()) return notify('Nombre de fase requerido', 'error')
+    const isDoubleScore = !editingId && draft.score_mode === 'double'
     const selectedMeasurement = measurementOptions.find((item) => item.value === draft.measurement_method)
     const draftIsTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(draft.measurement_method || draft.workout_format || '').trim().toLowerCase())
     const parsedCap = draftIsTime && String(draft.time_cap_seconds || '').trim() ? parseTimeCapInput(draft.time_cap_seconds) : null
-    if (draftIsTime && !String(draft.time_cap_seconds || '').trim()) return notify('Time cap requerido para WODs for time', 'error')
-    if (draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa minutos, MM:SS o HH:MM:SS', 'error')
+    if (!isDoubleScore && draftIsTime && !String(draft.time_cap_seconds || '').trim()) return notify('Time cap requerido para WODs for time', 'error')
+    if (!isDoubleScore && draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa minutos, MM:SS o HH:MM:SS', 'error')
+    const normalizedParts = (draft.scoring_parts || []).map((part, index) => {
+      const selected = measurementOptions.find((item) => item.value === part.measurement_method)
+      const partIsTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(part.measurement_method || part.workout_format || '').trim().toLowerCase())
+      const partCap = partIsTime && String(part.time_cap_seconds || '').trim() ? parseTimeCapInput(part.time_cap_seconds) : null
+      if (partIsTime && !String(part.time_cap_seconds || '').trim()) return { error: `Time cap requerido en puntaje ${part.score_key || index + 1}` }
+      if (partIsTime && partCap === null) return { error: `Time cap invalido en puntaje ${part.score_key || index + 1}` }
+      return {
+        ...part,
+        score_key: part.score_key || (index === 0 ? 'A' : 'B'),
+        nombre: part.nombre || `Parte ${part.score_key || (index === 0 ? 'A' : 'B')}`,
+        tipo: part.measurement_method === 'for_time' ? 'tiempo' : 'cantidad',
+        workout_format: part.workout_format || selected?.workout || 'other',
+        winner_rule: part.winner_rule || selected?.winner || 'higher_wins',
+        points_mode: 'manual',
+        time_cap_seconds: partIsTime ? partCap : null,
+        scoring_weight_percent: 100,
+      }
+    })
+    const invalidPart = normalizedParts.find((part) => part.error)
+    if (isDoubleScore && invalidPart) return notify(invalidPart.error, 'error')
     const payload = {
       ...draft,
+      scoring_parts: isDoubleScore ? normalizedParts : undefined,
       tipo: draft.measurement_method === 'for_time' ? 'tiempo' : 'cantidad',
       workout_format: draft.workout_format || selectedMeasurement?.workout || 'other',
       winner_rule: draft.winner_rule || selectedMeasurement?.winner || 'higher_wins',
@@ -1571,6 +1607,22 @@ function PhasesPanel({ bundle, reload, notify }) {
       workout_format: selected?.workout || prev.workout_format,
       winner_rule: selected?.winner || prev.winner_rule,
       time_cap_seconds: value === 'for_time' ? prev.time_cap_seconds : '',
+    }))
+  }
+  const setPartField = (index, field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      scoring_parts: (prev.scoring_parts || []).map((part, idx) => {
+        if (idx !== index) return part
+        const next = { ...part, [field]: value }
+        if (field === 'measurement_method') {
+          const selected = measurementOptions.find((item) => item.value === value)
+          next.workout_format = selected?.workout || next.workout_format
+          next.winner_rule = selected?.winner || next.winner_rule
+          if (value !== 'for_time') next.time_cap_seconds = ''
+        }
+        return next
+      }),
     }))
   }
   const insertDescriptionText = (before, after = '') => {
@@ -1602,7 +1654,9 @@ function PhasesPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
-  const orderedPhases = [...(bundle.phases || [])].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const orderedPhases = [...(bundle.phases || [])]
+    .filter((phase) => !phase.parent_phase_id)
+    .sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
   const movePhase = async (phase, direction) => {
     const index = orderedPhases.findIndex((item) => String(item.id) === String(phase.id))
     const targetIndex = index + direction
@@ -1631,6 +1685,9 @@ function PhasesPanel({ bundle, reload, notify }) {
             <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <Field label="Nombre"><input style={inputStyle()} value={draft.nombre} onChange={(e) => setDraft((p) => ({ ...p, nombre: e.target.value }))} /></Field>
               <Field label="Modalidad"><select style={inputStyle()} value={draft.modality} onChange={(e) => setDraft((p) => ({ ...p, modality: e.target.value }))}><option value="individual">Individual</option><option value="teams">Equipos</option></select></Field>
+              {!editingId ? (
+                <Field label="Puntaje"><select style={inputStyle()} value={draft.score_mode} onChange={(e) => setDraft((p) => ({ ...p, score_mode: e.target.value }))}><option value="single">Un puntaje</option><option value="double">Doble puntaje independiente</option></select></Field>
+              ) : null}
               <div style={{ gridColumn: '1 / -1', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ color: colors.secondary, fontSize: 12, fontWeight: 850 }}>Descripcion</span>
@@ -1643,20 +1700,45 @@ function PhasesPanel({ bundle, reload, notify }) {
                 </div>
                 <textarea ref={descriptionRef} style={{ ...inputStyle(), minHeight: 150, resize: 'vertical', lineHeight: 1.55, whiteSpace: 'pre-wrap' }} value={draft.descripcion} placeholder="Ej: **Time cap:** 12 min&#10;&#10;- 21 cal row&#10;- 15 burpees&#10;- 9 snatches" onChange={(e) => setDraft((p) => ({ ...p, descripcion: e.target.value }))} />
               </div>
-              <Field label="Medicion"><select style={inputStyle()} value={draft.measurement_method} onChange={(e) => setMeasurement(e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-              <Field label="Formato"><select style={inputStyle()} value={draft.workout_format} onChange={(e) => setDraft((p) => ({ ...p, workout_format: e.target.value }))}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-              {draft.measurement_method === 'for_time' ? (
-                <Field label="Time cap *"><input style={inputStyle()} required value={draft.time_cap_seconds} placeholder="12 o 12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
-              ) : null}
-              <Field label="Gana"><select style={inputStyle()} value={draft.winner_rule} onChange={(e) => setDraft((p) => ({ ...p, winner_rule: e.target.value }))}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
-              {draft.modality === 'teams' ? (
-                <Field label="Resultado equipos"><select style={inputStyle()} value={draft.team_result_mode} onChange={(e) => setDraft((p) => ({ ...p, team_result_mode: e.target.value }))}><option value="single_member">Un integrante</option><option value="sum_two">Suma integrantes</option><option value="total">Resultado del equipo</option></select></Field>
-              ) : null}
-              <Field label="Tiebreak"><select style={inputStyle()} value={draft.tie_break_enabled} onChange={(e) => setDraft((p) => ({ ...p, tie_break_enabled: Number(e.target.value) }))}><option value={0}>No</option><option value={1}>Si</option></select></Field>
-              {Number(draft.tie_break_enabled) ? (
-                <Field label="Medicion tiebreak"><select style={inputStyle()} value={draft.tie_break_method} onChange={(e) => setDraft((p) => ({ ...p, tie_break_method: e.target.value }))}><option value="for_time">Tiempo</option><option value="amrap">Reps</option><option value="rm">Peso</option><option value="metros">Metros</option></select></Field>
+              {editingId || draft.score_mode !== 'double' ? (
+                <>
+                  <Field label="Medicion"><select style={inputStyle()} value={draft.measurement_method} onChange={(e) => setMeasurement(e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                  <Field label="Formato"><select style={inputStyle()} value={draft.workout_format} onChange={(e) => setDraft((p) => ({ ...p, workout_format: e.target.value }))}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                  {draft.measurement_method === 'for_time' ? (
+                    <Field label="Time cap *"><input style={inputStyle()} required value={draft.time_cap_seconds} placeholder="12 o 12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
+                  ) : null}
+                  <Field label="Gana"><select style={inputStyle()} value={draft.winner_rule} onChange={(e) => setDraft((p) => ({ ...p, winner_rule: e.target.value }))}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
+                  {draft.modality === 'teams' ? (
+                    <Field label="Resultado equipos"><select style={inputStyle()} value={draft.team_result_mode} onChange={(e) => setDraft((p) => ({ ...p, team_result_mode: e.target.value }))}><option value="single_member">Un integrante</option><option value="sum_two">Suma integrantes</option><option value="total">Resultado del equipo</option></select></Field>
+                  ) : null}
+                  <Field label="Tiebreak"><select style={inputStyle()} value={draft.tie_break_enabled} onChange={(e) => setDraft((p) => ({ ...p, tie_break_enabled: Number(e.target.value) }))}><option value={0}>No</option><option value={1}>Si</option></select></Field>
+                  {Number(draft.tie_break_enabled) ? (
+                    <Field label="Medicion tiebreak"><select style={inputStyle()} value={draft.tie_break_method} onChange={(e) => setDraft((p) => ({ ...p, tie_break_method: e.target.value }))}><option value="for_time">Tiempo</option><option value="amrap">Reps</option><option value="rm">Peso</option><option value="metros">Metros</option></select></Field>
+                  ) : null}
+                </>
               ) : null}
               <Field label="Visibilidad"><select style={inputStyle()} value={draft.is_visible} onChange={(e) => setDraft((p) => ({ ...p, is_visible: Number(e.target.value) }))}><option value={1}>Visible</option><option value={0}>Oculta</option></select></Field>
+              {!editingId && draft.score_mode === 'double' ? (
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>
+                  {(draft.scoring_parts || []).map((part, partIndex) => (
+                    <div key={part.score_key || partIndex} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <strong>Puntaje {part.score_key || (partIndex === 0 ? 'A' : 'B')}</strong>
+                        <Pill tone={colors.accent}>100%</Pill>
+                      </div>
+                      <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                        <Field label="Nombre"><input style={inputStyle()} value={part.nombre || ''} onChange={(e) => setPartField(partIndex, 'nombre', e.target.value)} /></Field>
+                        <Field label="Medicion"><select style={inputStyle()} value={part.measurement_method || 'amrap'} onChange={(e) => setPartField(partIndex, 'measurement_method', e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                        <Field label="Formato"><select style={inputStyle()} value={part.workout_format || 'amrap'} onChange={(e) => setPartField(partIndex, 'workout_format', e.target.value)}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                        <Field label="Gana"><select style={inputStyle()} value={part.winner_rule || 'higher_wins'} onChange={(e) => setPartField(partIndex, 'winner_rule', e.target.value)}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
+                        {part.measurement_method === 'for_time' ? (
+                          <Field label="Time cap *"><input style={inputStyle()} value={part.time_cap_seconds || ''} placeholder="12 o 12:00" onChange={(e) => setPartField(partIndex, 'time_cap_seconds', e.target.value)} /></Field>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Button onClick={reset}>Cancelar</Button>
@@ -1677,9 +1759,16 @@ function PhasesPanel({ bundle, reload, notify }) {
           <div>
             <strong>{phase.nombre}</strong>
             <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>
-              {phase.modality === 'teams' ? 'Equipos' : 'Individual'} - {labelFor(measurementOptions, phase.measurement_method, phase.measurement_method || 'Medicion')} - {labelFor(workoutFormatOptions, phase.workout_format, phase.workout_format || 'Formato')}{phase.time_cap_seconds ? ` - Cap ${formatSeconds(phase.time_cap_seconds)}` : ''} - {phase.winner_rule === 'lower_wins' ? 'menor gana' : 'mayor gana'} - Estado automatico: {phaseStatusLabel(phase.estado)}
+              {phase.modality === 'teams' ? 'Equipos' : 'Individual'} - {(phase.scoring_parts || []).length ? `${phase.scoring_parts.length} puntajes independientes` : `${labelFor(measurementOptions, phase.measurement_method, phase.measurement_method || 'Medicion')} - ${labelFor(workoutFormatOptions, phase.workout_format, phase.workout_format || 'Formato')}${phase.time_cap_seconds ? ` - Cap ${formatSeconds(phase.time_cap_seconds)}` : ''} - ${phase.winner_rule === 'lower_wins' ? 'menor gana' : 'mayor gana'}`} - Estado automatico: {phaseStatusLabel(phase.estado)}
             </div>
             {phase.descripcion ? <div style={{ color: colors.secondary, fontSize: 12, marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{renderDescription(phase.descripcion)}</div> : null}
+            {(phase.scoring_parts || []).length ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                {phase.scoring_parts.map((part) => (
+                  <Pill key={part.id} tone={colors.accent}>{part.score_key || ''} {part.nombre} - 100%</Pill>
+                ))}
+              </div>
+            ) : null}
           </div>
           <Button onClick={() => startEdit(phase)}>Editar</Button>
           <Button onClick={async () => { await api(`/competitions/${competition.id}/phases/${phase.id}`, { method: 'PUT', body: JSON.stringify({ is_visible: phase.is_visible ? 0 : 1 }) }); await reload() }}>{phase.is_visible ? 'Ocultar' : 'Mostrar'}</Button>
@@ -2360,7 +2449,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                   first_heat_start_at: p.first_heat_start_at || dateTimeInput(nextPhase?.start_at),
                   category_transition_minutes: p.category_transition_minutes || Math.round(Number(nextPhase?.category_transition_seconds || 0) / 60),
                 }))
-              }}><option value="">Seleccionar</option>{(bundle.phases || []).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+              }}><option value="">Seleccionar</option>{(bundle.phases || []).filter((phase) => !phase.parent_phase_id).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
               <Field label="Modo"><select style={inputStyle()} value={draft.generation_mode} onChange={(e) => setDraft((p) => ({ ...p, generation_mode: e.target.value }))}><option value="by_category">Por categoria</option><option value="mixed">Mixto</option></select></Field>
               <Field label="Numeracion"><select style={inputStyle()} value={draft.heat_numbering_mode} onChange={(e) => setDraft((p) => ({ ...p, heat_numbering_mode: e.target.value }))}><option value="by_category">Reiniciar por categoria</option><option value="continuous">Continua ascendente</option></select></Field>
               <Field label="Carriles"><input type="number" style={inputStyle()} value={draft.lane_count} onChange={(e) => setDraft((p) => ({ ...p, lane_count: e.target.value }))} /></Field>
@@ -2694,7 +2783,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                 Esto solo mueve horarios. No cambia atletas, carriles ni categorias.
               </div>
               <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                <Field label="WOD"><select style={inputStyle()} value={scheduleDraft.phase_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, phase_id: event.target.value, categoria: '', from_heat_id: '' }))}><option value="">Seleccionar</option>{(bundle.phases || []).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+                <Field label="WOD"><select style={inputStyle()} value={scheduleDraft.phase_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, phase_id: event.target.value, categoria: '', from_heat_id: '' }))}><option value="">Seleccionar</option>{(bundle.phases || []).filter((phase) => !phase.parent_phase_id).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
                 <Field label="Categoria"><select style={inputStyle()} value={scheduleDraft.categoria} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, categoria: event.target.value, from_heat_id: '' }))}><option value="">Todas</option>{[...new Set(heats.filter((heat) => String(heat.phase_id) === String(scheduleDraft.phase_id)).map((heat) => heat.categoria || 'Todas'))].map((category) => <option key={category} value={category}>{category}</option>)}</select></Field>
                 <Field label="Desde heat"><select style={inputStyle()} value={scheduleDraft.from_heat_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, from_heat_id: event.target.value }))}><option value="">Desde el primero</option>{heats.filter((heat) => String(heat.phase_id) === String(scheduleDraft.phase_id)).filter((heat) => !scheduleDraft.categoria || String(heat.categoria || 'Todas') === String(scheduleDraft.categoria)).map((heat) => <option key={heat.id} value={heat.id}>{heat.categoria || 'Todas'} - {heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`} - {formatHeatSchedule(heat)}</option>)}</select></Field>
                 <Field label="Cantidad de heats"><input type="number" min="0" style={inputStyle()} value={scheduleDraft.heat_count} placeholder="Todos" onChange={(event) => setScheduleDraft((prev) => ({ ...prev, heat_count: event.target.value }))} /></Field>
@@ -3405,7 +3494,7 @@ function ScoringPanel({ bundle, reload, notify }) {
 function PreparePanel({ bundle, reload, notify }) {
   const [section, setSection] = useState('phases')
   const modules = [
-    { id: 'phases', label: 'Fases', icon: CalendarDays, count: (bundle.phases || []).length },
+    { id: 'phases', label: 'Fases', icon: CalendarDays, count: (bundle.phases || []).filter((phase) => !phase.parent_phase_id).length },
     { id: 'scoring', label: 'Puntuacion', icon: Trophy },
     { id: 'heats', label: 'Heats', icon: Zap, count: (bundle.heats?.items || []).length },
     { id: 'teams', label: 'Equipos', icon: Users, count: (bundle.teams || []).length },
@@ -3424,11 +3513,22 @@ function PreparePanel({ bundle, reload, notify }) {
 function ResultsPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
   const heats = bundle.heats?.items || []
-  const phaseOptions = bundle.phases || []
+  const phaseOptions = (bundle.phases || []).filter((phase) => !phase.parent_phase_id)
   const [scoreDraft, setScoreDraft] = useState({ phase_id: phaseOptions[0]?.id ? String(phaseOptions[0].id) : '', heat_id: '', category: '' })
+  const [activeScorePartId, setActiveScorePartId] = useState('')
   const [marks, setMarks] = useState({})
   const [editingRows, setEditingRows] = useState({})
   const selectedPhase = (bundle.phases || []).find((phase) => String(phase.id) === String(scoreDraft.phase_id))
+  const scoringParts = selectedPhase?.scoring_parts?.length ? selectedPhase.scoring_parts : []
+  const activeScorePhase = scoringParts.length
+    ? (scoringParts.find((part) => String(part.id) === String(activeScorePartId)) || scoringParts[0])
+    : selectedPhase
+  const resultParts = scoringParts.length ? scoringParts : (selectedPhase ? [{
+    ...selectedPhase,
+    score_key: '',
+    nombre: 'Resultado',
+  }] : [])
+  const activeResultPhaseId = activeScorePhase?.id ? String(activeScorePhase.id) : scoreDraft.phase_id
   const phaseHeats = heats
     .filter((heat) => String(heat.phase_id) === String(scoreDraft.phase_id))
     .sort((a, b) => String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas')) || Number(a.heat_number || 0) - Number(b.heat_number || 0))
@@ -3440,7 +3540,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     const userId = item.user_id || item.id
     const teamId = item.team_id
     return (bundle.results || []).find((result) => (
-      String(result.phase_id) === String(scoreDraft.phase_id)
+      String(result.phase_id) === String(activeResultPhaseId)
       && (teamId ? String(result.team_id) === String(teamId) : String(result.user_id) === String(userId))
     ))
   }
@@ -3476,7 +3576,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     return participantName(a).localeCompare(participantName(b))
   })
   const setResultField = (item, field, value) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
   }
   const DNF_MARK_HIGH = 2147483647
@@ -3484,7 +3584,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const dnfMark = () => lowerIsBetter ? DNF_MARK_HIGH : DNF_MARK_LOW
   const isDnfMark = (value) => Number(value) === DNF_MARK_HIGH || Number(value) === DNF_MARK_LOW
   const markValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return timeCapLabel
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     const existing = existingResultFor(item)
@@ -3492,53 +3592,53 @@ function ResultsPanel({ bundle, reload, notify }) {
     return formatMarkValue(existing?.marca)
   }
   const isDnfValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(existingResultFor(item)?.marca)
   }
   const tiebreakValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'tiebreak')) return marks[key].tiebreak
     const existing = existingResultFor(item)
     return formatTiebreakValue(existing?.tiebreak)
   }
   const extraValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
     const existing = existingResultFor(item)
     return existing?.extra ?? ''
   }
   const lowerIsBetter = (() => {
-    const winnerRule = String(selectedPhase?.winner_rule || '').trim().toLowerCase()
+    const winnerRule = String(activeScorePhase?.winner_rule || '').trim().toLowerCase()
     if (winnerRule === 'lower_wins') return true
     if (winnerRule === 'higher_wins') return false
-    return ['tiempo', 'posicion'].includes(String(selectedPhase?.tipo || '').trim().toLowerCase())
+    return ['tiempo', 'posicion'].includes(String(activeScorePhase?.tipo || '').trim().toLowerCase())
   })()
-  const isTimePhase = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || '').trim().toLowerCase()) || String(selectedPhase?.tipo || '').trim().toLowerCase() === 'tiempo'
-  const timeCapSeconds = isTimePhase && Number(selectedPhase?.time_cap_seconds) > 0 ? Number(selectedPhase.time_cap_seconds) : null
+  const isTimePhase = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(activeScorePhase?.measurement_method || activeScorePhase?.workout_format || activeScorePhase?.tipo || '').trim().toLowerCase()) || String(activeScorePhase?.tipo || '').trim().toLowerCase() === 'tiempo'
+  const timeCapSeconds = isTimePhase && Number(activeScorePhase?.time_cap_seconds) > 0 ? Number(activeScorePhase.time_cap_seconds) : null
   const timeCapLabel = timeCapSeconds ? formatSeconds(timeCapSeconds) : ''
-  const tiebreakMethod = String(selectedPhase?.tie_break_method || 'for_time').trim().toLowerCase()
-  const tieBreakActive = !!Number(selectedPhase?.tie_break_enabled || 0)
+  const tiebreakMethod = String(activeScorePhase?.tie_break_method || 'for_time').trim().toLowerCase()
+  const tieBreakActive = !!Number(activeScorePhase?.tie_break_enabled || 0)
   const isTiebreakTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(tiebreakMethod)
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(tiebreakMethod)
   const showExtraField = isTimePhase && !!timeCapSeconds
   const isCapDnfValue = (item) => {
     if (!showExtraField) return false
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
     const existing = existingResultFor(item)
     return Number(existing?.marca) === Number(timeCapSeconds) && existing?.extra !== null && existing?.extra !== undefined
   }
   const competitionScoring = bundle.scoring || {}
-  const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(selectedPhase?.id))
+  const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(activeScorePhase?.id))
   const effectiveScoring = {
-    system: selectedPhaseScoring?.scoring_system || selectedPhase?.scoring_system || competitionScoring.scoring_system || competition.scoring_system || 'dynamic_points',
+    system: selectedPhaseScoring?.scoring_system || activeScorePhase?.scoring_system || competitionScoring.scoring_system || competition.scoring_system || 'dynamic_points',
     scope: competitionScoring.scoring_scope || competition.scoring_scope || 'category',
-    table: selectedPhaseScoring?.scoring_table || selectedPhase?.scoring_table || competitionScoring.scoring_table || competition.scoring_table || defaultScoringTable,
+    table: selectedPhaseScoring?.scoring_table || activeScorePhase?.scoring_table || competitionScoring.scoring_table || competition.scoring_table || defaultScoringTable,
     tiebreak: competitionScoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
     cumulative_direction: competitionScoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
-    weight_percent: selectedPhaseScoring?.scoring_weight_percent ?? selectedPhase?.scoring_weight_percent ?? 100,
+    weight_percent: selectedPhaseScoring?.scoring_weight_percent ?? activeScorePhase?.scoring_weight_percent ?? 100,
   }
   const formatMarkValue = (value) => isTimePhase && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
   const parseMarkValue = (value) => {
@@ -3562,7 +3662,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const setDnfResult = (item, currentDnf) => {
     if (showExtraField) {
-      const key = resultKey(scoreDraft.phase_id, item)
+      const key = resultKey(activeResultPhaseId, item)
       const nextActive = !currentDnf
       setMarks((prev) => ({
         ...prev,
@@ -3589,12 +3689,12 @@ function ResultsPanel({ bundle, reload, notify }) {
       map[resultEntityKey(item)] = item.categoria || 'Todas'
       return map
     }, {})
-    ;(bundle.results || []).filter((result) => String(result.phase_id) === String(scoreDraft.phase_id)).forEach((result) => {
+    ;(bundle.results || []).filter((result) => String(result.phase_id) === String(activeResultPhaseId)).forEach((result) => {
       const key = result.team_id ? `team-${result.team_id}` : `user-${result.user_id}`
       if (!categoryMap[key]) categoryMap[key] = result.categoria || 'Todas'
     })
     const entities = previewPool.map((item) => {
-      const key = resultKey(scoreDraft.phase_id, item)
+      const key = resultKey(activeResultPhaseId, item)
       const existing = existingResultFor(item)
       const draft = marks[key] || {}
       const draftCapDnf = !!draft.capDnf
@@ -3692,19 +3792,19 @@ function ResultsPanel({ bundle, reload, notify }) {
       return `${category}:${mark}`
     }
     const groups = (bundle.results || [])
-      .filter((result) => String(result.phase_id) === String(scoreDraft.phase_id) && !isDnfMark(result.marca))
+      .filter((result) => String(result.phase_id) === String(activeResultPhaseId) && !isDnfMark(result.marca))
       .reduce((map, result) => {
         const groupKey = persistedTieGroupKey(result)
         if (!groupKey) return map
         if (!map[groupKey]) map[groupKey] = []
-        map[groupKey].push(resultKey(scoreDraft.phase_id, { user_id: result.user_id, team_id: result.team_id }))
+        map[groupKey].push(resultKey(activeResultPhaseId, { user_id: result.user_id, team_id: result.team_id }))
         return map
       }, {})
     return new Set(Object.values(groups).filter((items) => items.length > 1).flat())
   })()
   const saveFastResults = async () => {
-    if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
-    const changed = rows.filter((row) => Object.prototype.hasOwnProperty.call(marks, resultKey(scoreDraft.phase_id, row)))
+    if (!activeResultPhaseId) return notify('Selecciona un WOD', 'error')
+    const changed = rows.filter((row) => Object.prototype.hasOwnProperty.call(marks, resultKey(activeResultPhaseId, row)))
     if (!changed.length) return notify('No hay cambios por guardar', 'error')
     try {
       let saved = 0
@@ -3714,7 +3814,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         const extra = extraValue(row)
         const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
         const existing = existingResultFor(row)
-        const rowDraft = marks[resultKey(scoreDraft.phase_id, row)] || {}
+        const rowDraft = marks[resultKey(activeResultPhaseId, row)] || {}
         const rowCapDnf = !!rowDraft.capDnf
         const rowDnf = !!rowDraft.dnf && !rowCapDnf
         const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
@@ -3735,7 +3835,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             method: 'POST',
             body: JSON.stringify({
               competition_id: competition.id,
-              phase_id: Number(scoreDraft.phase_id),
+              phase_id: Number(activeResultPhaseId),
               user_id: row.user_id ? Number(row.user_id) : null,
               team_id: row.team_id ? Number(row.team_id) : null,
               marca: parsedMark,
@@ -3754,8 +3854,8 @@ function ResultsPanel({ bundle, reload, notify }) {
     }
   }
   const saveRowResult = async (row) => {
-    if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
-    const key = resultKey(scoreDraft.phase_id, row)
+    if (!activeResultPhaseId) return notify('Selecciona un WOD', 'error')
+    const key = resultKey(activeResultPhaseId, row)
     const rowDraft = marks[key] || {}
     const rowCapDnf = !!rowDraft.capDnf
     const rowDnf = !!rowDraft.dnf && !rowCapDnf
@@ -3783,7 +3883,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           method: 'POST',
           body: JSON.stringify({
             competition_id: competition.id,
-            phase_id: Number(scoreDraft.phase_id),
+            phase_id: Number(activeResultPhaseId),
             user_id: row.user_id ? Number(row.user_id) : null,
             team_id: row.team_id ? Number(row.team_id) : null,
             marca: parsedMark,
@@ -3804,8 +3904,170 @@ function ResultsPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
+  const partResultKey = (part, row) => resultKey(part.id, row)
+  const existingResultForPart = (row, part) => {
+    const userId = row.user_id || row.id
+    const teamId = row.team_id
+    return (bundle.results || []).find((result) => (
+      String(result.phase_id) === String(part.id)
+      && (teamId ? String(result.team_id) === String(teamId) : String(result.user_id) === String(userId))
+    ))
+  }
+  const partIsTime = (part) => ['for_time', 'tiempo_hms', 'tiempo'].includes(String(part?.measurement_method || part?.workout_format || part?.tipo || '').trim().toLowerCase()) || String(part?.tipo || '').trim().toLowerCase() === 'tiempo'
+  const partTimeCap = (part) => partIsTime(part) && Number(part?.time_cap_seconds) > 0 ? Number(part.time_cap_seconds) : null
+  const partLowerIsBetter = (part) => {
+    const winnerRule = String(part?.winner_rule || '').trim().toLowerCase()
+    if (winnerRule === 'lower_wins') return true
+    if (winnerRule === 'higher_wins') return false
+    return ['tiempo', 'posicion'].includes(String(part?.tipo || '').trim().toLowerCase())
+  }
+  const partLabel = (part) => {
+    const value = String(part?.measurement_method || part?.workout_format || part?.tipo || 'marca').trim().toLowerCase()
+    return resultFormatLabels[value] || part?.measurement_method || part?.workout_format || part?.tipo || 'Marca'
+  }
+  const formatPartMarkValue = (part, value) => partIsTime(part) && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
+  const parsePartMarkValue = (part, value) => {
+    if (partIsTime(part)) return parseTimeInput(value)
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const partMarkValue = (row, part) => {
+    const key = partResultKey(part, row)
+    const cap = partTimeCap(part)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return cap ? formatSeconds(cap) : ''
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
+    const existing = existingResultForPart(row, part)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf') && marks[key].dnf === false && isDnfMark(existing?.marca)) return ''
+    return formatPartMarkValue(part, existing?.marca)
+  }
+  const partExtraValue = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
+    const existing = existingResultForPart(row, part)
+    return existing?.extra ?? ''
+  }
+  const setPartResultField = (row, part, field, value) => {
+    const key = partResultKey(part, row)
+    setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
+  }
+  const isPartCap = (row, part) => {
+    const cap = partTimeCap(part)
+    if (!cap) return false
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
+    const existing = existingResultForPart(row, part)
+    return Number(existing?.marca) === Number(cap) && existing?.extra !== null && existing?.extra !== undefined
+  }
+  const isPartDnf = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
+    return isDnfMark(existingResultForPart(row, part)?.marca)
+  }
+  const setPartDnfResult = (row, part) => {
+    const key = partResultKey(part, row)
+    const cap = partTimeCap(part)
+    if (cap) {
+      const nextActive = !isPartCap(row, part)
+      setMarks((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          capDnf: nextActive,
+          dnf: false,
+          marca: nextActive ? formatSeconds(cap) : '',
+          extra: '',
+        },
+      }))
+      return
+    }
+    setPartResultField(row, part, 'dnf', !isPartDnf(row, part))
+  }
+  const validatePartDraft = (row, part) => {
+    const key = partResultKey(part, row)
+    const draft = marks[key] || {}
+    const cap = partTimeCap(part)
+    const capActive = !!draft.capDnf
+    const dnfActive = !!draft.dnf && !capActive
+    const value = partMarkValue(row, part)
+    if (!dnfActive && value === '') return null
+    const parsedMark = dnfActive ? (partLowerIsBetter(part) ? DNF_MARK_HIGH : DNF_MARK_LOW) : capActive ? cap : parsePartMarkValue(part, value)
+    if (!dnfActive && parsedMark === null) throw new Error(partIsTime(part) ? `Tiempo invalido en ${part.score_key || part.nombre}` : `Marca invalida en ${part.score_key || part.nombre}`)
+    if (!dnfActive && cap && parsedMark > cap) throw new Error(`El tiempo de ${part.score_key || part.nombre} no puede superar el cap de ${formatSeconds(cap)}`)
+    const extra = partExtraValue(row, part)
+    if (capActive && extra === '') throw new Error(`Ingresa reps faltantes en ${part.score_key || part.nombre}. Usa 0 si termino justo en el cap.`)
+    const parsedExtra = capActive ? Number(extra) : null
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) throw new Error(`Reps faltantes invalidas en ${part.score_key || part.nombre}`)
+    return {
+      key,
+      existing: existingResultForPart(row, part),
+      payload: {
+        competition_id: competition.id,
+        phase_id: Number(part.id),
+        user_id: row.user_id ? Number(row.user_id) : null,
+        team_id: row.team_id ? Number(row.team_id) : null,
+        marca: parsedMark,
+        extra: parsedExtra,
+        tiebreak: null,
+      },
+    }
+  }
+  const saveMultiPartChanges = async (rowFilter = null) => {
+    if (!resultParts.length) return
+    try {
+      let saved = 0
+      const keysToClear = []
+      const targetRows = rowFilter ? rows.filter(rowFilter) : rows
+      for (const row of targetRows) {
+        for (const part of resultParts) {
+          const key = partResultKey(part, row)
+          if (!Object.prototype.hasOwnProperty.call(marks, key)) continue
+          const item = validatePartDraft(row, part)
+          if (!item) continue
+          if (item.existing) {
+            await api(`/results/${item.existing.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: null }),
+            })
+          } else {
+            await api('/results', { method: 'POST', body: JSON.stringify(item.payload) })
+          }
+          saved += 1
+          keysToClear.push(item.key)
+        }
+      }
+      if (!saved) return notify('No hay cambios por guardar', 'error')
+      notify(`${saved} resultados guardados`)
+      setMarks((prev) => {
+        const next = { ...prev }
+        keysToClear.forEach((key) => { delete next[key] })
+        return next
+      })
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    }
+  }
+  const partCompletionForRow = (row) => {
+    const count = resultParts.filter((part) => existingResultForPart(row, part) || Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row))).length
+    if (count >= resultParts.length) return 'Completo'
+    return 'Pendiente'
+  }
+  const missingPartsForRow = (row) => resultParts
+    .filter((part) => !(existingResultForPart(row, part) || Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row))))
+    .map((part) => part.score_key || part.nombre)
+  const multiPartStats = (() => {
+    const stats = { complete: 0, pending: 0, dirty: 0 }
+    rows.forEach((row) => {
+      const state = partCompletionForRow(row)
+      if (state === 'Completo') stats.complete += 1
+      else stats.pending += 1
+      if (resultParts.some((part) => Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row)))) stats.dirty += 1
+    })
+    return stats
+  })()
   const resultCountForPhase = rows.filter((row) => existingResultFor(row)).length
-  const markLabel = isTimePhase ? 'Tiempo' : selectedPhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
+  const markLabel = isTimePhase ? 'Tiempo' : activeScorePhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
   const extraLabel = showExtraField ? 'Reps faltantes' : 'Extra'
   const resultFormatLabels = {
     for_time: 'Tiempo / For time',
@@ -3817,20 +4079,124 @@ function ResultsPanel({ bundle, reload, notify }) {
     metros: 'Metros',
     other: 'Marca',
   }
-  const phaseFormatValue = String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || 'marca').trim().toLowerCase()
-  const phaseFormatLabel = selectedPhase ? (resultFormatLabels[phaseFormatValue] || selectedPhase.measurement_method || selectedPhase.workout_format || selectedPhase.tipo || 'Marca') : 'Sin WOD'
+  const phaseFormatValue = String(activeScorePhase?.measurement_method || activeScorePhase?.workout_format || activeScorePhase?.tipo || 'marca').trim().toLowerCase()
+  const phaseFormatLabel = activeScorePhase ? (resultFormatLabels[phaseFormatValue] || activeScorePhase.measurement_method || activeScorePhase.workout_format || activeScorePhase.tipo || 'Marca') : 'Sin WOD'
   const markRuleLabel = lowerIsBetter ? 'Menor marca gana' : 'Mayor marca gana'
   const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata; luego tiebreak' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
   const scoringRuleLabel = scoringPreviewLabel(effectiveScoring)
   const resultCardGridColumns = tieBreakActive
     ? 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))'
     : 'minmax(120px, 1.1fr) repeat(4, minmax(90px, 1fr))'
+  const heatProgressPercent = rows.length ? Math.round((multiPartStats.complete / rows.length) * 100) : 0
+  if (resultParts.length) {
+    return (
+      <Panel title="Resultados" subtitle="Carga los puntajes del WOD por atleta y heat." action={<Button tone="primary" onClick={() => saveMultiPartChanges()}><Save size={16} />Guardar heat</Button>}>
+        <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+          <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+            <Field label="WOD">
+              <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setMarks({}); setEditingRows({}); }}>
+                <option value="">Seleccionar</option>
+                {phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}
+              </select>
+            </Field>
+            <Field label="Categoria">
+              <select style={inputStyle()} value={activeCategory} onChange={(event) => setScoreDraft((prev) => ({ ...prev, category: event.target.value, heat_id: '' }))}>
+                {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </Field>
+            <Field label="Heat">
+              <select style={inputStyle()} value={activeHeatId} onChange={(event) => setScoreDraft((prev) => ({ ...prev, heat_id: event.target.value }))}>
+                {categoryHeats.length ? categoryHeats.map((heat) => <option key={heat.id} value={heat.id}>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</option>) : <option value="">Sin heats</option>}
+              </select>
+            </Field>
+            <div style={{ display: 'grid', gap: 7, alignSelf: 'end', minWidth: 180 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: colors.text, fontSize: 12, fontWeight: 900 }}>
+                <span>{rows.length} atletas</span>
+                <span>{multiPartStats.complete}/{rows.length || 0} completos</span>
+              </div>
+              <div aria-label={`${heatProgressPercent}% completo`} style={{ height: 7, borderRadius: 999, background: colors.bg, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
+                <div style={{ width: `${heatProgressPercent}%`, height: '100%', background: colors.accent, borderRadius: 999 }} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {resultParts.map((part) => {
+              const cap = partTimeCap(part)
+              return (
+                <Pill key={part.id} tone={colors.accent}>
+                  {part.score_key || ''} · {partLabel(part)}{cap ? ` · Cap ${formatSeconds(cap)}` : ''} · {partLowerIsBetter(part) ? 'menor gana' : 'mayor gana'} · 100%
+                </Pill>
+              )
+            })}
+          </div>
+
+          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
+            <div style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
+              {rows.length ? rows.map((row) => {
+                const rowDirty = resultParts.some((part) => Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row)))
+                const status = partCompletionForRow(row)
+                const missingParts = missingPartsForRow(row)
+                const statusTone = status === 'Completo' ? colors.accent : colors.warning
+                return (
+                  <div key={resultEntityKey(row)} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${rowDirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: rowDirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center' }}>
+                      <span style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
+                      <span style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
+                      <Pill tone={statusTone}>{status === 'Completo' ? 'Completo' : `Pendiente${missingParts.length ? ` · falta ${missingParts.join('/')}` : ''}`}</Pill>
+                      <Button tone={rowDirty ? 'primary' : 'default'} disabled={!rowDirty} onClick={() => saveMultiPartChanges((item) => resultEntityKey(item) === resultEntityKey(row))}><Save size={14} /></Button>
+                    </div>
+                    <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(resultParts.length, 2)}, minmax(240px, 1fr))`, gap: 10 }}>
+                      {resultParts.map((part) => {
+                        const key = partResultKey(part, row)
+                        const existing = existingResultForPart(row, part)
+                        const dirty = Object.prototype.hasOwnProperty.call(marks, key)
+                        const isTime = partIsTime(part)
+                        const cap = partTimeCap(part)
+                        const capActive = isPartCap(row, part)
+                        const dnfActive = isPartDnf(row, part) && !capActive
+                        return (
+                          <div key={part.id} style={{ border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: colors.surface, padding: 10, display: 'grid', gap: 9 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <strong>{part.score_key || ''} {part.nombre}</strong>
+                              <Pill tone={colors.accent}>100%</Pill>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: capActive ? 'minmax(0, 1fr) minmax(120px, .7fr) auto' : 'minmax(0, 1fr) auto', gap: 8, alignItems: 'end' }}>
+                              <Field label={isTime ? 'Tiempo' : part?.tipo === 'posicion' ? 'Posicion' : 'Marca'}>
+                                <input type={isTime ? 'text' : 'number'} style={inputStyle()} value={dnfActive ? '' : capActive && cap ? formatSeconds(cap) : partMarkValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnfActive || capActive} placeholder={dnfActive ? 'DNF' : isTime ? (cap ? formatSeconds(cap) : '12:00') : 'Valor'} onChange={(event) => setPartResultField(row, part, 'marca', isTime ? formatTimeEntryInput(event.target.value) : event.target.value)} />
+                              </Field>
+                              {capActive ? (
+                                <Field label="Reps faltantes">
+                                  <input type="number" min="0" step="1" style={inputStyle()} value={partExtraValue(row, part)} onWheel={preventNumberInputWheel} onChange={(event) => setPartResultField(row, part, 'extra', event.target.value)} />
+                                </Field>
+                              ) : null}
+                              <Button onClick={() => setPartDnfResult(row, part)} tone={(cap ? capActive : dnfActive) ? 'danger' : 'default'}>{cap ? 'CAP' : 'DNF'}</Button>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: colors.secondary, fontSize: 12 }}>
+                              <span>Posicion {existing?.posicion ?? '-'}</span>
+                              <span>Puntos {existing?.puntos ?? '-'}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              }) : (
+                <div style={{ padding: 16, color: colors.secondary, fontSize: 13 }}>Selecciona un WOD con atletas para cargar resultados.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Panel>
+    )
+  }
   return (
     <Panel title="Resultados" subtitle="Carga por categoria y heat con guardado por atleta." action={<Pill tone={colors.accent}>{resultCountForPhase} cargados</Pill>}>
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
         <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
           <Field label="WOD">
-            <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' }))}>
+            <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setActiveScorePartId(''); setMarks({}); }}>
               <option value="">Seleccionar</option>
               {phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}
             </select>
@@ -3850,6 +4216,18 @@ function ResultsPanel({ bundle, reload, notify }) {
             <Pill tone={colors.accent}>{resultCountForPhase} resultados</Pill>
           </div>
         </div>
+        {scoringParts.length ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {scoringParts.map((part) => {
+              const active = String(part.id) === String(activeResultPhaseId)
+              return (
+                <button key={part.id} type="button" onClick={() => { setActiveScorePartId(String(part.id)); setMarks({}); setEditingRows({}); }} style={{ border: `1px solid ${active ? colors.accent : colors.border}`, background: active ? 'rgba(0,194,168,0.14)' : colors.top, color: colors.text, borderRadius: 8, minHeight: 36, padding: '8px 11px', fontWeight: 900 }}>
+                  {part.score_key || ''} {part.nombre} · 100%
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
         <div className="fr-result-rules" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Pill tone={colors.primary}>Formato {phaseFormatLabel}</Pill>
           {timeCapSeconds ? <Pill tone={colors.primary}>Cap {timeCapLabel}</Pill> : null}
@@ -3862,7 +4240,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           <div className="fr-results-list" style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
             {rows.length ? rows.map((row) => {
               const existing = existingResultFor(row)
-              const key = resultKey(scoreDraft.phase_id, row)
+              const key = resultKey(activeResultPhaseId, row)
               const dirty = Object.prototype.hasOwnProperty.call(marks, key)
               const preview = previewRankMap[key]
               const editable = !existing || editingRows[key] || dirty

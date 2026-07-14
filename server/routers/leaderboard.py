@@ -650,12 +650,20 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         tiebreak=comp_tiebreak,
     ) if show_individual else {}
 
-    phases = session.exec(
+    all_phases = session.exec(
         select(CompetitionPhase)
         .where(CompetitionPhase.competition_id == competition_id)
         .where(CompetitionPhase.is_visible == 1)
         .order_by(CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
+    children_by_parent: dict[int, list[CompetitionPhase]] = defaultdict(list)
+    phases = []
+    for phase in all_phases:
+        parent_id = int(getattr(phase, "parent_phase_id", 0) or 0)
+        if parent_id:
+            children_by_parent[parent_id].append(phase)
+        else:
+            phases.append(phase)
     phase_status_map = compute_phase_status_map(session, competition_id)
 
     if team_enabled:
@@ -680,8 +688,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         categories_map = {}
         team_member_totals_by_team_pid = {}
 
-    phases_data = []
-    for phase in phases:
+    def build_phase_payload(phase: CompetitionPhase, *, as_part: bool = False) -> dict:
         phase_lower_is_better = _phase_lower_is_better(phase)
         phase_tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
         phase_rows = _build_ind_rows(
@@ -710,13 +717,17 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             categories_map,
             rank_by_category=rank_by_category,
         ) if team_enabled else []
-        phases_data.append({
+        return {
             "id": phase.id,
             "nombre": phase.nombre,
+            "parent_phase_id": int(getattr(phase, "parent_phase_id", 0) or 0) or None,
+            "score_key": getattr(phase, "score_key", None),
+            "is_scoring_unit": int(getattr(phase, "is_scoring_unit", 1) or 0),
+            "is_result_container": int(getattr(phase, "is_result_container", 0) or 0),
             "modality": getattr(phase, "modality", "individual") or "individual",
             "block_name": getattr(phase, "block_name", None),
             "block_order": int(getattr(phase, "block_order", 0) or 0),
-            "phase_format": getattr(phase, "phase_format", "activity") or "activity",
+            "phase_format": "wod" if int(getattr(phase, "is_result_container", 0) or 0) else (getattr(phase, "phase_format", "activity") or "activity"),
             "tipo": type_from_measurement_method(getattr(phase, "measurement_method", None)),
             "measurement_method": normalize_phase_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None)),
             "winner_rule": getattr(phase, "winner_rule", None),
@@ -731,7 +742,53 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "team_result_mode": phase_mode,
             "individual": _rank_by_category(phase_rows, lower_is_better=comp_lower_is_better, tiebreak=comp_tiebreak) if (getattr(phase, "modality", "individual") or "individual") == "individual" and show_individual else {},
             "teams": team_phase_rows if (getattr(phase, "modality", "individual") or "individual") == "teams" and team_enabled else [],
-        })
+            "scoring_parts": [],
+        }
+
+    def aggregate_parent_individual(parent: CompetitionPhase, child_ids: list[int]) -> dict:
+        rows = []
+        for p in participants_meta:
+            total = 0
+            count = 0
+            has_active_appeal = False
+            positions = []
+            for phase_id in child_ids:
+                data = ind_points_per_phase.get((phase_id, p["id"]))
+                if not data:
+                    continue
+                total += int(data["sum"])
+                count += int(data["count"])
+                has_active_appeal = bool(has_active_appeal or data.get("has_active_appeal"))
+                if data.get("best_position") is not None:
+                    positions.append(int(data["best_position"]))
+            rows.append({
+                "id": p["id"],
+                "nombre": p["nombre"],
+                "apellido": p["apellido"],
+                "username": p.get("username"),
+                "profile_photo_url": p.get("profile_photo_url"),
+                "ciudad_pais": p.get("ciudad_pais"),
+                "box": p.get("box"),
+                "categoria": p["categoria"],
+                "sexo": p["sexo"],
+                "total_puntos": total,
+                "total_eventos": count,
+                "total_position_tiebreak": positions,
+                "mejor_marca": None,
+                "has_active_appeal": has_active_appeal,
+            })
+        return _rank_by_category(rows, lower_is_better=comp_lower_is_better, tiebreak=comp_tiebreak) if show_individual else {}
+
+    phases_data = []
+    for phase in phases:
+        payload = build_phase_payload(phase)
+        children = sorted(children_by_parent.get(int(phase.id), []), key=lambda item: (str(getattr(item, "score_key", "") or ""), int(getattr(item, "orden", 0) or 0), int(item.id or 0)))
+        if children:
+            child_payloads = [build_phase_payload(child, as_part=True) for child in children]
+            payload["scoring_parts"] = child_payloads
+            payload["individual"] = aggregate_parent_individual(phase, [int(child.id) for child in children if child.id is not None])
+            payload["has_scoring_parts"] = True
+        phases_data.append(payload)
 
     # Team total = suma de puntos por fase respetando el modo de cada fase.
     team_totals_map: dict[int, dict] = {}
