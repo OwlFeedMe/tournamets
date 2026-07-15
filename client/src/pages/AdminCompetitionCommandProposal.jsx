@@ -26,6 +26,7 @@ import {
   Trash2,
   Trophy,
   Users,
+  X,
   Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -3467,18 +3468,18 @@ function ScoringPanel({ bundle, reload, notify }) {
             const phaseOptions = visibleScoringModeOptions.some((item) => item.id === phaseSystem) ? visibleScoringModeOptions : [...visibleScoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === phaseSystem)]
             return (
               <div key={phase.id} className="fr-scoring-phase-row" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 180px', gap: 10, alignItems: 'center' }}>
+                <div className="fr-scoring-phase-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 180px', gap: 10, alignItems: 'center' }}>
                   <div>
                     <strong>{phase.nombre}</strong>
                     <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Usa una regla propia para este WOD' : 'Usa la regla general del evento'}</div>
                   </div>
-                  <select style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
+                  <select className="fr-scoring-phase-select" style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
                     <option value="event">Usar regla general</option>
                     <option value="custom">Personalizar este WOD</option>
                   </select>
                 </div>
                 {override ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) 120px 130px', gap: 10, alignItems: 'end' }}>
+                  <div className="fr-scoring-phase-controls" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) 120px 130px', gap: 10, alignItems: 'end' }}>
                     <Field label="Tipo de puntuacion">
                       <select style={inputStyle()} value={phaseSystem} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
                         {phaseOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -4925,6 +4926,7 @@ function WizardWorkspace({ selectedId, onBack }) {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
   const [activeStepIdState, setActiveStepIdState] = useState('identity')
+  const [stepSheetOpen, setStepSheetOpen] = useState(false)
 
   const notify = (text, type = 'success') => {
     setToast({ text, type })
@@ -4960,6 +4962,15 @@ function WizardWorkspace({ selectedId, onBack }) {
     return () => { active = false }
   }, [selectedId])
 
+  useEffect(() => {
+    if (!stepSheetOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [stepSheetOpen])
+
   if (loading && !bundle) {
     return <main style={{ minHeight: '100%', background: colors.bg, color: colors.text, display: 'grid', placeItems: 'center' }}>Cargando centro de mando...</main>
   }
@@ -4979,7 +4990,12 @@ function WizardWorkspace({ selectedId, onBack }) {
   const competition = normalizeCompetition(bundle.competition, bundle)
   const steps = buildSteps(bundle.competition, summary)
   const activeStep = steps.find((step) => step.id === activeStepIdState) || steps[0]
+  const activeStepIndex = Math.max(0, steps.findIndex((step) => step.id === activeStep.id))
   const totalProgress = Math.round(steps.reduce((sum, step) => sum + step.progress, 0) / steps.length)
+  const chooseStep = (stepId) => {
+    setActiveStepIdState(stepId)
+    setStepSheetOpen(false)
+  }
 
   return (
     <main className="fr-command-scope" style={{ minHeight: '100%', background: colors.bg, color: colors.text }}>
@@ -5027,13 +5043,31 @@ function WizardWorkspace({ selectedId, onBack }) {
         </section>
 
         <section className="fr-wizard-layout" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '292px minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+          <button
+            type="button"
+            className="fr-mobile-step-trigger"
+            onClick={() => setStepSheetOpen(true)}
+            aria-label="Cambiar etapa"
+            style={{ display: 'none', border: `1px solid ${colors.border}`, background: colors.surface, color: colors.text, borderRadius: 8, padding: 12, textAlign: 'left' }}
+          >
+            <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+                <span style={{ color: colors.muted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Etapa {activeStepIndex + 1} de {steps.length}</span>
+                <span style={{ color: colors.text, fontSize: 15, fontWeight: 950, overflowWrap: 'anywhere' }}>{activeStep.label}</span>
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: colors.secondary, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                Cambiar <ChevronDown size={16} />
+              </span>
+            </span>
+          </button>
+
           <aside className="fr-wizard-sidebar" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 10, position: 'sticky', top: 90 }}>
             <div><div style={{ fontWeight: 900 }}>Flujo de competencia</div><div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Elige una etapa para operar.</div></div>
             {steps.map((step, index) => {
               const Icon = step.icon
               const active = step.id === activeStep.id
               return (
-                <button key={step.id} type="button" onClick={() => setActiveStepIdState(step.id)} style={{ display: 'grid', gridTemplateColumns: '34px 1fr auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
+                <button key={step.id} type="button" onClick={() => chooseStep(step.id)} style={{ display: 'grid', gridTemplateColumns: '34px 1fr auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
                   <span style={{ width: 34, height: 34, borderRadius: 8, display: 'grid', placeItems: 'center', background: active ? colors.primary : colors.surface, color: active ? colors.bg : colors.secondary }}><Icon size={17} /></span>
                   <span style={{ minWidth: 0 }}><span style={{ display: 'block', color: colors.muted, fontSize: 10, fontWeight: 900 }}>Paso {index + 1}</span><span style={{ display: 'block', fontSize: 13, fontWeight: 900 }}>{step.label}</span></span>
                   <WizardStatusDot state={step.state} />
@@ -5066,6 +5100,37 @@ function WizardWorkspace({ selectedId, onBack }) {
           </section>
         </section>
       </div>
+      {stepSheetOpen ? (
+        <div className="fr-step-sheet-overlay" role="presentation" onClick={() => setStepSheetOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10030, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'flex-end', padding: 10 }}>
+          <div className="fr-step-sheet" role="dialog" aria-modal="true" aria-label="Cambiar etapa" onClick={(event) => event.stopPropagation()} style={{ width: '100%', border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 12, overflow: 'hidden', boxShadow: '0 -22px 60px rgba(0,0,0,0.45)' }}>
+            <div style={{ padding: 14, borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: colors.text, fontWeight: 950 }}>Etapas de la competencia</div>
+                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Elige una etapa para operar.</div>
+              </div>
+              <button type="button" onClick={() => setStepSheetOpen(false)} aria-label="Cerrar" style={{ width: 38, height: 38, borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.top, color: colors.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={17} />
+              </button>
+            </div>
+            <div style={{ display: 'grid', gap: 8, padding: 12, maxHeight: 'min(66dvh, 520px)', overflowY: 'auto' }}>
+              {steps.map((step, index) => {
+                const Icon = step.icon
+                const active = step.id === activeStep.id
+                return (
+                  <button key={step.id} type="button" onClick={() => chooseStep(step.id)} style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
+                    <span style={{ width: 36, height: 36, borderRadius: 8, display: 'grid', placeItems: 'center', background: active ? colors.primary : colors.surface, color: active ? colors.bg : colors.secondary }}><Icon size={17} /></span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', color: colors.muted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Paso {index + 1}</span>
+                      <span style={{ display: 'block', fontSize: 14, fontWeight: 950 }}>{step.label}</span>
+                    </span>
+                    <WizardStatusDot state={step.state} />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ResponsiveStyles />
     </main>
   )
@@ -5273,6 +5338,8 @@ function ResponsiveStyles() {
         }
         .fr-scoring-mode-grid,
         .fr-scoring-settings,
+        .fr-scoring-phase-head,
+        .fr-scoring-phase-controls,
         .fr-scoring-phase-row {
           grid-template-columns: 1fr !important;
           width: 100% !important;
@@ -5280,12 +5347,20 @@ function ResponsiveStyles() {
         }
         .fr-scoring-mode-grid > button,
         .fr-scoring-settings > *,
+        .fr-scoring-phase-head > *,
+        .fr-scoring-phase-controls > *,
         .fr-scoring-phase-row > * {
           min-width: 0 !important;
           max-width: 100% !important;
         }
+        .fr-scoring-phase-select {
+          width: 100% !important;
+          min-width: 0 !important;
+        }
         .fr-scoring-mode-grid span,
         .fr-scoring-settings,
+        .fr-scoring-phase-head,
+        .fr-scoring-phase-controls,
         .fr-scoring-phase-row {
           overflow-wrap: break-word;
         }
@@ -5493,29 +5568,13 @@ function ResponsiveStyles() {
         .fr-mobile-card-table td[data-label="Acciones"] button {
           width: 100%;
         }
+        .fr-mobile-step-trigger {
+          display: block !important;
+          width: 100%;
+          margin-bottom: 10px;
+        }
         .fr-wizard-sidebar {
-          display: flex !important;
-          gap: 8px !important;
-          overflow-x: auto !important;
-          position: sticky !important;
-          top: 0 !important;
-          z-index: 30 !important;
-          padding: 8px !important;
-          scroll-snap-type: x proximity;
-        }
-        .fr-wizard-sidebar > div:first-child,
-        .fr-wizard-sidebar-stats {
           display: none !important;
-        }
-        .fr-wizard-sidebar > button {
-          min-width: 174px;
-          grid-template-columns: 30px minmax(0, 1fr) auto !important;
-          scroll-snap-align: start;
-          padding: 9px !important;
-        }
-        .fr-wizard-sidebar > button > span:first-child {
-          width: 30px !important;
-          height: 30px !important;
         }
         .fr-module-tabs {
           margin-left: -2px;

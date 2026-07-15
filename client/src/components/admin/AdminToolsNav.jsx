@@ -1,4 +1,5 @@
 import { CreditCard, Dumbbell, ShieldCheck, Trophy, Users } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 const adminItems = [
@@ -16,6 +17,11 @@ function isActive(pathname, target) {
 export function AdminToolsNav({ compact = false }) {
   const location = useLocation()
   const navigate = useNavigate()
+  const activeItemRef = useRef(null)
+
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [location.pathname])
 
   return (
     <nav
@@ -56,6 +62,7 @@ export function AdminToolsNav({ compact = false }) {
         return (
           <button
             key={item.to}
+            ref={active ? activeItemRef : null}
             type="button"
             onClick={() => navigate(item.to)}
             style={{

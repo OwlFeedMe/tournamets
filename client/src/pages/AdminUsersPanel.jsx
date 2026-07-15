@@ -154,8 +154,8 @@ export default function AdminUsersPanel() {
           {!loading && filteredUsers.length === 0 ? <div style={{ padding: 18, color: colors.secondary }}>Sin usuarios para mostrar.</div> : null}
 
           {!loading && filteredUsers.length > 0 ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+            <div style={{ overflowX: 'auto' }} className="fr-users-table-wrap">
+              <table className="fr-users-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr style={{ background: colors.top, color: colors.muted, fontSize: 12, textAlign: 'left' }}>
                     <th style={{ padding: 12 }}>Usuario</th>
@@ -170,16 +170,16 @@ export default function AdminUsersPanel() {
                     const userId = user.user_id || user.id
                     return (
                       <tr key={userId} style={{ borderTop: `1px solid ${colors.border}` }}>
-                        <td style={{ padding: 12 }}>
+                        <td data-label="Usuario" style={{ padding: 12 }}>
                           <div style={{ fontWeight: 900 }}>{displayName(user)}</div>
                           <div style={{ color: colors.muted, fontSize: 12 }}>#{userId}{user.cedula ? ` · ${user.cedula}` : ''}</div>
                         </td>
-                        <td style={{ padding: 12, color: colors.secondary, fontSize: 13 }}>
+                        <td data-label="Contacto" style={{ padding: 12, color: colors.secondary, fontSize: 13 }}>
                           <div>{user.email || 'Sin email'}</div>
                           <div style={{ color: colors.muted }}>{user.celular || 'Sin celular'}</div>
                         </td>
-                        <td style={{ padding: 12, color: colors.secondary, fontSize: 13 }}>{user.username || '-'}</td>
-                        <td style={{ padding: 12, width: 190 }}>
+                        <td data-label="Username" style={{ padding: 12, color: colors.secondary, fontSize: 13 }}>{user.username || '-'}</td>
+                        <td data-label="Rol operativo" style={{ padding: 12, width: 190 }}>
                           <select
                             value={user.extra_role || ''}
                             disabled={savingId === userId}
@@ -189,7 +189,7 @@ export default function AdminUsersPanel() {
                             {roleOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                           </select>
                         </td>
-                        <td style={{ padding: 12 }}>
+                        <td data-label="Estado" style={{ padding: 12 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 999, border: `1px solid ${user.extra_role ? 'rgba(0,194,168,0.36)' : colors.border}`, background: user.extra_role ? 'rgba(0,194,168,0.10)' : colors.top, color: user.extra_role ? colors.accent : colors.secondary, fontSize: 12, fontWeight: 900 }}>
                             {user.extra_role ? <ShieldCheck size={13} /> : null}
                             {roleLabel(user.extra_role)}
@@ -204,6 +204,56 @@ export default function AdminUsersPanel() {
           ) : null}
         </section>
       </div>
+      <style>{`
+        @media (max-width: 760px) {
+          .fr-users-table-wrap {
+            overflow-x: visible !important;
+          }
+          .fr-users-table {
+            min-width: 0 !important;
+            border-collapse: separate !important;
+            border-spacing: 0 10px !important;
+          }
+          .fr-users-table thead {
+            display: none !important;
+          }
+          .fr-users-table tbody,
+          .fr-users-table tr,
+          .fr-users-table td {
+            display: block !important;
+            width: 100% !important;
+          }
+          .fr-users-table tr {
+            border: 1px solid ${colors.border};
+            border-radius: 8px;
+            background: ${colors.top};
+            overflow: hidden;
+          }
+          .fr-users-table td {
+            display: grid !important;
+            grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+            gap: 10px;
+            align-items: center;
+            padding: 10px 12px !important;
+            border-bottom: 1px solid ${colors.border};
+            overflow-wrap: anywhere;
+          }
+          .fr-users-table td:last-child {
+            border-bottom: 0;
+          }
+          .fr-users-table td::before {
+            content: attr(data-label);
+            color: ${colors.muted};
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
+          }
+          .fr-users-table select {
+            width: 100%;
+            min-width: 0;
+          }
+        }
+      `}</style>
     </main>
   )
 }

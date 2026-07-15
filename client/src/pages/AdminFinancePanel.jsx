@@ -137,8 +137,8 @@ export default function AdminFinancePanel() {
                 <CreditCard size={17} color={colors.accent} />
                 Competencias
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <div style={{ overflowX: 'auto' }} className="fr-finance-table-wrap">
+                <table className="fr-finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                   <thead>
                     <tr style={{ background: colors.top, color: colors.muted, fontSize: 12, textAlign: 'left' }}>
                       <th style={{ padding: 12 }}>Competencia</th>
@@ -151,14 +151,14 @@ export default function AdminFinancePanel() {
                   <tbody>
                     {competitions.map((competition) => (
                       <tr key={competition.competition_id} style={{ borderTop: `1px solid ${colors.border}` }}>
-                        <td style={{ padding: 12 }}>
+                        <td data-label="Competencia" style={{ padding: 12 }}>
                           <div style={{ fontWeight: 900 }}>{competition.competition_name}</div>
                           <div style={{ color: colors.muted, fontSize: 12 }}>#{competition.competition_id}</div>
                         </td>
-                        <td style={{ padding: 12, color: colors.primary, fontWeight: 900 }}>{formatMoney(competition.total_collected)}</td>
-                        <td style={{ padding: 12, color: colors.secondary }}>{formatMoney(competition.organizer_revenue)}</td>
-                        <td style={{ padding: 12, color: colors.accent, fontWeight: 900 }}>{formatMoney(competition.platform_revenue_net)}</td>
-                        <td style={{ padding: 12 }}>
+                        <td data-label="Recaudo" style={{ padding: 12, color: colors.primary, fontWeight: 900 }}>{formatMoney(competition.total_collected)}</td>
+                        <td data-label="Organizador" style={{ padding: 12, color: colors.secondary }}>{formatMoney(competition.organizer_revenue)}</td>
+                        <td data-label="FinalRep neto" style={{ padding: 12, color: colors.accent, fontWeight: 900 }}>{formatMoney(competition.platform_revenue_net)}</td>
+                        <td data-label="Retiro" style={{ padding: 12 }}>
                           <Badge tone={statusTone(competition.disbursement_status)}>{statusLabel(competition.disbursement_status)}</Badge>
                         </td>
                       </tr>
@@ -201,6 +201,50 @@ export default function AdminFinancePanel() {
         @media (max-width: 980px) {
           .fr-admin-finance-grid {
             grid-template-columns: 1fr !important;
+          }
+        }
+        @media (max-width: 760px) {
+          .fr-finance-table-wrap {
+            overflow-x: visible !important;
+          }
+          .fr-finance-table {
+            min-width: 0 !important;
+            border-collapse: separate !important;
+            border-spacing: 0 10px !important;
+          }
+          .fr-finance-table thead {
+            display: none !important;
+          }
+          .fr-finance-table tbody,
+          .fr-finance-table tr,
+          .fr-finance-table td {
+            display: block !important;
+            width: 100% !important;
+          }
+          .fr-finance-table tr {
+            border: 1px solid ${colors.border};
+            border-radius: 8px;
+            background: ${colors.top};
+            overflow: hidden;
+          }
+          .fr-finance-table td {
+            display: grid !important;
+            grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+            gap: 10px;
+            align-items: center;
+            padding: 10px 12px !important;
+            border-bottom: 1px solid ${colors.border};
+            overflow-wrap: anywhere;
+          }
+          .fr-finance-table td:last-child {
+            border-bottom: 0;
+          }
+          .fr-finance-table td::before {
+            content: attr(data-label);
+            color: ${colors.muted};
+            font-size: 10px;
+            font-weight: 900;
+            text-transform: uppercase;
           }
         }
       `}</style>
