@@ -9,8 +9,10 @@ if str(SERVER_PATH) not in sys.path:
     sys.path.insert(0, str(SERVER_PATH))
 
 from services.scoring import (
+    auto_table_points,
     compute_result_points,
     competition_total_lower_is_better,
+    normalize_point_step,
     normalize_scoring_table,
     phase_scoring_config,
 )
@@ -48,6 +50,23 @@ class ScoringServiceTest(unittest.TestCase):
 
         self.assertEqual(points, 9)
 
+    def test_dynamic_step_uses_configured_point_gap(self):
+        comp = competition(scoring_system="dynamic_step", scoring_point_step=3)
+
+        self.assertEqual(compute_result_points(position=1, total_ranked=10, mark=120, competition=comp), 30)
+        self.assertEqual(compute_result_points(position=2, total_ranked=10, mark=120, competition=comp), 27)
+        self.assertEqual(compute_result_points(position=10, total_ranked=10, mark=120, competition=comp), 3)
+
+    def test_phase_override_can_change_dynamic_step_gap(self):
+        comp = competition(scoring_system="dynamic_step", scoring_point_step=3)
+        ph = phase(scoring_override_enabled=1, scoring_system="dynamic_step", scoring_point_step=5)
+
+        self.assertEqual(compute_result_points(position=2, total_ranked=10, mark=120, competition=comp, phase=ph), 45)
+
+    def test_point_step_is_limited_to_99(self):
+        self.assertEqual(normalize_point_step(0), 1)
+        self.assertEqual(normalize_point_step(100), 99)
+
     def test_placement_uses_position_and_lower_total_wins(self):
         comp = competition(scoring_system="placement")
 
@@ -61,6 +80,20 @@ class ScoringServiceTest(unittest.TestCase):
 
         self.assertEqual(compute_result_points(position=2, total_ranked=10, mark=120, competition=comp), 90)
         self.assertEqual(compute_result_points(position=3, total_ranked=10, mark=120, competition=comp), 0)
+
+    def test_auto_table_distributes_100_to_zero_for_30_athletes(self):
+        comp = competition(scoring_system="auto_table")
+
+        self.assertEqual(compute_result_points(position=1, total_ranked=30, mark=120, competition=comp), 100)
+        self.assertEqual(compute_result_points(position=2, total_ranked=30, mark=120, competition=comp), 96)
+        self.assertEqual(compute_result_points(position=14, total_ranked=30, mark=120, competition=comp), 48)
+        self.assertEqual(compute_result_points(position=15, total_ranked=30, mark=120, competition=comp), 45)
+        self.assertEqual(compute_result_points(position=30, total_ranked=30, mark=120, competition=comp), 0)
+
+    def test_auto_table_adapts_to_field_size(self):
+        self.assertEqual([auto_table_points(position, 40) for position in (1, 2, 23, 24, 40)], [100, 97, 34, 32, 0])
+        self.assertEqual([auto_table_points(position, 25) for position in (1, 2, 5, 6, 25)], [100, 95, 80, 76, 0])
+        self.assertEqual(auto_table_points(1, 1), 100)
 
     def test_cumulative_uses_mark_and_direction(self):
         comp = competition(scoring_system="cumulative", cumulative_direction="lower_wins")

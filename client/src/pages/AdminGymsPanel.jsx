@@ -2,6 +2,7 @@ import { Check, ChevronRight, Dumbbell, GitMerge, MapPin, ScrollText, X } from '
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
+import { AdminToolsNav } from '../components/admin/AdminToolsNav'
 import { SkeletonList } from '../components/layout/Skeleton'
 
 const SUBMISSION_STATUS_COLORS = {
@@ -724,6 +725,9 @@ export default function AdminGymsPanel() {
   return (
     <div style={{ minHeight: '100vh', background: '#0d0f12', paddingBottom: 120 }}>
       <div style={{ padding: '32px 20px 0', maxWidth: 860, margin: '0 auto' }}>
+        <div style={{ marginBottom: 20 }}>
+          <AdminToolsNav />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
           <Dumbbell size={22} color="var(--oa-accent)" />
           <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--oa-text)', margin: 0, fontFamily: 'Bebas Neue, sans-serif', letterSpacing: 1 }}>

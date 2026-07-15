@@ -26,9 +26,11 @@ import {
   Trash2,
   Trophy,
   Users,
+  X,
   Zap,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { AdminToolsNav } from '../components/admin/AdminToolsNav'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
 
 const colors = {
@@ -47,16 +49,31 @@ const colors = {
   gradient: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)',
 }
 
-const wodColorPalette = ['#FF6B00', '#00C2A8', '#D4A537', '#8B5CF6', '#38BDF8', '#F59E0B', '#EF4444', '#22C55E']
+const heatStatusColors = {
+  done: colors.muted,
+  live: colors.accent,
+  upcoming: colors.primary,
+}
 
-function wodColorFor(value) {
-  const raw = String(value ?? 'wod').trim() || 'wod'
-  let hash = 0
-  for (let index = 0; index < raw.length; index += 1) {
-    hash = ((hash << 5) - hash) + raw.charCodeAt(index)
-    hash |= 0
-  }
-  return wodColorPalette[Math.abs(hash) % wodColorPalette.length]
+function heatScheduleStatus(heat, nowValue = Date.now()) {
+  const start = heat?.start_at ? new Date(heat.start_at) : null
+  const end = heat?.end_at ? new Date(heat.end_at) : null
+  const startMs = start && !Number.isNaN(start.getTime()) ? start.getTime() : null
+  const endMs = end && !Number.isNaN(end.getTime()) ? end.getTime() : null
+  if (startMs == null) return { key: 'upcoming', label: 'Sin horario', color: heatStatusColors.upcoming }
+  if (endMs != null && endMs <= nowValue) return { key: 'done', label: 'Finalizado', color: heatStatusColors.done }
+  if (startMs <= nowValue && (endMs == null || endMs > nowValue)) return { key: 'live', label: 'En curso', color: heatStatusColors.live }
+  return { key: 'upcoming', label: 'Proximo', color: heatStatusColors.upcoming }
+}
+
+function heatGroupScheduleStatus(heats = []) {
+  if (!heats.length) return { key: 'upcoming', label: 'Sin heats', color: heatStatusColors.upcoming }
+  const statuses = heats.map((heat) => heatScheduleStatus(heat))
+  const live = statuses.find((status) => status.key === 'live')
+  if (live) return live
+  const upcoming = statuses.find((status) => status.key === 'upcoming')
+  if (upcoming) return { key: 'upcoming', label: 'Proximo', color: heatStatusColors.upcoming }
+  return { key: 'done', label: 'Finalizado', color: heatStatusColors.done }
 }
 
 function preventNumberInputWheel(event) {
@@ -188,6 +205,13 @@ function formatHeatScheduleCompact(heat) {
     : `${dateFormatter.format(start)}, ${timeFormatter.format(start)} - ${dateFormatter.format(end)}, ${timeFormatter.format(end)}`
 }
 
+function formatHeatStart(value) {
+  if (!value) return 'Sin hora'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Sin hora'
+  return new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
 function formatHeatDuration(heat) {
   if (!heat?.start_at || !heat?.end_at) return null
   const start = new Date(heat.start_at)
@@ -195,6 +219,42 @@ function formatHeatDuration(heat) {
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
   const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
   return minutes ? `${minutes} min` : null
+}
+
+function summarizeHeatTiming(heats = []) {
+  const timedHeats = heats
+    .map((heat) => {
+      const start = heat?.start_at ? new Date(heat.start_at) : null
+      const end = heat?.end_at ? new Date(heat.end_at) : null
+      return {
+        start: start && !Number.isNaN(start.getTime()) ? start : null,
+        end: end && !Number.isNaN(end.getTime()) ? end : null,
+      }
+    })
+    .filter((item) => item.start)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
+  const unscheduled = Math.max(0, heats.length - timedHeats.length)
+  if (!timedHeats.length) {
+    return {
+      label: 'Horario pendiente',
+      dayLabel: 'Sin dia',
+      timeLabel: 'Sin hora',
+      firstStartMs: Number.MAX_SAFE_INTEGER,
+      unscheduled,
+    }
+  }
+  const first = timedHeats[0]
+  const dateFormatter = new Intl.DateTimeFormat('es-CO', { weekday: 'short', day: '2-digit', month: 'short' })
+  const timeFormatter = new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' })
+  const dayLabel = dateFormatter.format(first.start)
+  const timeLabel = timeFormatter.format(first.start)
+  return {
+    label: `${dayLabel} · inicia ${timeLabel}`,
+    dayLabel,
+    timeLabel,
+    firstStartMs: first.start.getTime(),
+    unscheduled,
+  }
 }
 
 function formatMoney(value) {
@@ -347,7 +407,10 @@ function Field({ label, children }) {
 
 function inputStyle() {
   return {
+    boxSizing: 'border-box',
     width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
     minHeight: 40,
     border: `1px solid ${colors.border}`,
     background: colors.top,
@@ -359,14 +422,26 @@ function inputStyle() {
 }
 
 function parseTimeInput(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
   const raw = String(value ?? '').trim()
   if (!raw) return null
-  if (/^\d+$/.test(raw)) return Number(raw)
+  if (/^\d+$/.test(raw)) {
+    const parts = clockPartsFromDigits(raw)
+    if (parts) return (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+    return Number(raw)
+  }
   const parts = raw.split(':').map((item) => Number(item.trim()))
   if (![2, 3].includes(parts.length) || parts.some((item) => !Number.isFinite(item) || item < 0)) return null
   const [hours, minutes, seconds] = parts.length === 3 ? parts : [0, parts[0], parts[1]]
   if (minutes > 59 || seconds > 59) return null
   return (hours * 3600) + (minutes * 60) + seconds
+}
+
+function parseTimeCapInput(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) return Number(raw) * 60
+  return parseTimeInput(raw)
 }
 
 function formatSeconds(value) {
@@ -376,6 +451,38 @@ function formatSeconds(value) {
   const minutes = Math.floor((total % 3600) / 60)
   const seconds = total % 60
   return hours > 0 ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
+function clockPartsFromDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
+  if (digits.length < 3) return null
+  const valid = (hours, minutes, seconds) => (
+    Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds)
+    && hours >= 0 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59
+  )
+  const candidate = (hours, minutes, seconds) => valid(hours, minutes, seconds) ? { hours, minutes, seconds } : null
+  if (digits.length === 3) return candidate(0, Number(digits.slice(0, 1)), Number(digits.slice(1)))
+  if (digits.length === 4) {
+    return candidate(0, Number(digits.slice(0, 2)), Number(digits.slice(2)))
+      || clockPartsFromDigits(digits.slice(0, 3))
+  }
+  if (digits.length === 5) {
+    return (digits.startsWith('0') ? clockPartsFromDigits(digits.slice(1)) : null)
+      || candidate(Number(digits.slice(0, 1)), Number(digits.slice(1, 3)), Number(digits.slice(3)))
+      || clockPartsFromDigits(digits.slice(0, 4))
+  }
+  return candidate(Number(digits.slice(0, 2)), Number(digits.slice(2, 4)), Number(digits.slice(4)))
+    || clockPartsFromDigits(digits.slice(0, 5))
+}
+
+function formatTimeEntryInput(value) {
+  const raw = String(value ?? '')
+  if (!raw.trim()) return ''
+  const digits = raw.replace(/\D/g, '')
+  const parts = clockPartsFromDigits(digits)
+  if (!parts) return digits || raw.replace(/[^\d:]/g, '')
+  const seconds = (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+  return formatSeconds(seconds)
 }
 
 function resolveAssetUrl(value) {
@@ -1391,6 +1498,11 @@ function PhasesPanel({ bundle, reload, notify }) {
   const emptyDraft = {
     nombre: '',
     descripcion: '',
+    score_mode: 'single',
+    scoring_parts: [
+      { score_key: 'A', nombre: 'Parte A', measurement_method: 'amrap', workout_format: 'amrap', winner_rule: 'higher_wins', time_cap_seconds: '' },
+      { score_key: 'B', nombre: 'Parte B', measurement_method: 'amrap', workout_format: 'amrap', winner_rule: 'higher_wins', time_cap_seconds: '' },
+    ],
     modality: 'individual',
     measurement_method: 'amrap',
     workout_format: 'amrap',
@@ -1402,10 +1514,9 @@ function PhasesPanel({ bundle, reload, notify }) {
     is_visible: 1,
   }
   const measurementOptions = [
-    { value: 'amrap', label: 'Reps / AMRAP', winner: 'higher_wins', workout: 'amrap' },
+    { value: 'amrap', label: 'Repeticiones', winner: 'higher_wins', workout: 'amrap' },
     { value: 'for_time', label: 'Tiempo / For time', winner: 'lower_wins', workout: 'for_time' },
     { value: 'rm', label: 'Peso / RM', winner: 'higher_wins', workout: 'max_weight' },
-    { value: 'emom', label: 'EMOM', winner: 'higher_wins', workout: 'emom' },
     { value: 'metros', label: 'Metros', winner: 'higher_wins', workout: 'other' },
   ]
   const workoutFormatOptions = [
@@ -1436,6 +1547,15 @@ function PhasesPanel({ bundle, reload, notify }) {
     setDraft({
       nombre: phase.nombre || '',
       descripcion: phase.descripcion || '',
+      score_mode: (phase.scoring_parts || []).length > 1 ? 'double' : 'single',
+      scoring_parts: (phase.scoring_parts || []).length > 1 ? phase.scoring_parts.map((part, index) => ({
+        score_key: part.score_key || (index === 0 ? 'A' : 'B'),
+        nombre: part.nombre || `Parte ${index === 0 ? 'A' : 'B'}`,
+        measurement_method: part.measurement_method || 'amrap',
+        workout_format: part.workout_format || 'amrap',
+        winner_rule: part.winner_rule || 'higher_wins',
+        time_cap_seconds: part.time_cap_seconds ? formatSeconds(part.time_cap_seconds) : '',
+      })) : emptyDraft.scoring_parts,
       modality: phase.modality || 'individual',
       measurement_method: method,
       workout_format: phase.workout_format || measurementOptions.find((item) => item.value === method)?.workout || 'other',
@@ -1450,12 +1570,35 @@ function PhasesPanel({ bundle, reload, notify }) {
   }
   const save = async () => {
     if (!draft.nombre.trim()) return notify('Nombre de fase requerido', 'error')
+    const isDoubleScore = !editingId && draft.score_mode === 'double'
     const selectedMeasurement = measurementOptions.find((item) => item.value === draft.measurement_method)
     const draftIsTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(draft.measurement_method || draft.workout_format || '').trim().toLowerCase())
-    const parsedCap = draftIsTime && String(draft.time_cap_seconds || '').trim() ? parseTimeInput(draft.time_cap_seconds) : null
-    if (draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa MM:SS o HH:MM:SS', 'error')
+    const parsedCap = draftIsTime && String(draft.time_cap_seconds || '').trim() ? parseTimeCapInput(draft.time_cap_seconds) : null
+    if (!isDoubleScore && draftIsTime && !String(draft.time_cap_seconds || '').trim()) return notify('Time cap requerido para WODs for time', 'error')
+    if (!isDoubleScore && draftIsTime && String(draft.time_cap_seconds || '').trim() && parsedCap === null) return notify('Time cap invalido. Usa minutos, MM:SS o HH:MM:SS', 'error')
+    const normalizedParts = (draft.scoring_parts || []).map((part, index) => {
+      const selected = measurementOptions.find((item) => item.value === part.measurement_method)
+      const partIsTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(part.measurement_method || part.workout_format || '').trim().toLowerCase())
+      const partCap = partIsTime && String(part.time_cap_seconds || '').trim() ? parseTimeCapInput(part.time_cap_seconds) : null
+      if (partIsTime && !String(part.time_cap_seconds || '').trim()) return { error: `Time cap requerido en puntaje ${part.score_key || index + 1}` }
+      if (partIsTime && partCap === null) return { error: `Time cap invalido en puntaje ${part.score_key || index + 1}` }
+      return {
+        ...part,
+        score_key: part.score_key || (index === 0 ? 'A' : 'B'),
+        nombre: part.nombre || `Parte ${part.score_key || (index === 0 ? 'A' : 'B')}`,
+        tipo: part.measurement_method === 'for_time' ? 'tiempo' : 'cantidad',
+        workout_format: part.workout_format || selected?.workout || 'other',
+        winner_rule: part.winner_rule || selected?.winner || 'higher_wins',
+        points_mode: 'manual',
+        time_cap_seconds: partIsTime ? partCap : null,
+        scoring_weight_percent: 100,
+      }
+    })
+    const invalidPart = normalizedParts.find((part) => part.error)
+    if (isDoubleScore && invalidPart) return notify(invalidPart.error, 'error')
     const payload = {
       ...draft,
+      scoring_parts: isDoubleScore ? normalizedParts : undefined,
       tipo: draft.measurement_method === 'for_time' ? 'tiempo' : 'cantidad',
       workout_format: draft.workout_format || selectedMeasurement?.workout || 'other',
       winner_rule: draft.winner_rule || selectedMeasurement?.winner || 'higher_wins',
@@ -1483,6 +1626,22 @@ function PhasesPanel({ bundle, reload, notify }) {
       workout_format: selected?.workout || prev.workout_format,
       winner_rule: selected?.winner || prev.winner_rule,
       time_cap_seconds: value === 'for_time' ? prev.time_cap_seconds : '',
+    }))
+  }
+  const setPartField = (index, field, value) => {
+    setDraft((prev) => ({
+      ...prev,
+      scoring_parts: (prev.scoring_parts || []).map((part, idx) => {
+        if (idx !== index) return part
+        const next = { ...part, [field]: value }
+        if (field === 'measurement_method') {
+          const selected = measurementOptions.find((item) => item.value === value)
+          next.workout_format = selected?.workout || next.workout_format
+          next.winner_rule = selected?.winner || next.winner_rule
+          if (value !== 'for_time') next.time_cap_seconds = ''
+        }
+        return next
+      }),
     }))
   }
   const insertDescriptionText = (before, after = '') => {
@@ -1514,7 +1673,9 @@ function PhasesPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
-  const orderedPhases = [...(bundle.phases || [])].sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const orderedPhases = [...(bundle.phases || [])]
+    .filter((phase) => !phase.parent_phase_id)
+    .sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
   const movePhase = async (phase, direction) => {
     const index = orderedPhases.findIndex((item) => String(item.id) === String(phase.id))
     const targetIndex = index + direction
@@ -1543,6 +1704,9 @@ function PhasesPanel({ bundle, reload, notify }) {
             <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
               <Field label="Nombre"><input style={inputStyle()} value={draft.nombre} onChange={(e) => setDraft((p) => ({ ...p, nombre: e.target.value }))} /></Field>
               <Field label="Modalidad"><select style={inputStyle()} value={draft.modality} onChange={(e) => setDraft((p) => ({ ...p, modality: e.target.value }))}><option value="individual">Individual</option><option value="teams">Equipos</option></select></Field>
+              {!editingId ? (
+                <Field label="Puntaje"><select style={inputStyle()} value={draft.score_mode} onChange={(e) => setDraft((p) => ({ ...p, score_mode: e.target.value }))}><option value="single">Un puntaje</option><option value="double">Doble puntaje independiente</option></select></Field>
+              ) : null}
               <div style={{ gridColumn: '1 / -1', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ color: colors.secondary, fontSize: 12, fontWeight: 850 }}>Descripcion</span>
@@ -1555,20 +1719,45 @@ function PhasesPanel({ bundle, reload, notify }) {
                 </div>
                 <textarea ref={descriptionRef} style={{ ...inputStyle(), minHeight: 150, resize: 'vertical', lineHeight: 1.55, whiteSpace: 'pre-wrap' }} value={draft.descripcion} placeholder="Ej: **Time cap:** 12 min&#10;&#10;- 21 cal row&#10;- 15 burpees&#10;- 9 snatches" onChange={(e) => setDraft((p) => ({ ...p, descripcion: e.target.value }))} />
               </div>
-              <Field label="Medicion"><select style={inputStyle()} value={draft.measurement_method} onChange={(e) => setMeasurement(e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-              <Field label="Formato"><select style={inputStyle()} value={draft.workout_format} onChange={(e) => setDraft((p) => ({ ...p, workout_format: e.target.value }))}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
-              {draft.measurement_method === 'for_time' ? (
-                <Field label="Time cap"><input style={inputStyle()} value={draft.time_cap_seconds} placeholder="12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
-              ) : null}
-              <Field label="Gana"><select style={inputStyle()} value={draft.winner_rule} onChange={(e) => setDraft((p) => ({ ...p, winner_rule: e.target.value }))}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
-              {draft.modality === 'teams' ? (
-                <Field label="Resultado equipos"><select style={inputStyle()} value={draft.team_result_mode} onChange={(e) => setDraft((p) => ({ ...p, team_result_mode: e.target.value }))}><option value="single_member">Un integrante</option><option value="sum_two">Suma integrantes</option><option value="total">Resultado del equipo</option></select></Field>
-              ) : null}
-              <Field label="Tiebreak"><select style={inputStyle()} value={draft.tie_break_enabled} onChange={(e) => setDraft((p) => ({ ...p, tie_break_enabled: Number(e.target.value) }))}><option value={0}>No</option><option value={1}>Si</option></select></Field>
-              {Number(draft.tie_break_enabled) ? (
-                <Field label="Medicion tiebreak"><select style={inputStyle()} value={draft.tie_break_method} onChange={(e) => setDraft((p) => ({ ...p, tie_break_method: e.target.value }))}><option value="for_time">Tiempo</option><option value="amrap">Reps</option><option value="rm">Peso</option><option value="metros">Metros</option></select></Field>
+              {editingId || draft.score_mode !== 'double' ? (
+                <>
+                  <Field label="Medicion"><select style={inputStyle()} value={draft.measurement_method} onChange={(e) => setMeasurement(e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                  <Field label="Formato"><select style={inputStyle()} value={draft.workout_format} onChange={(e) => setDraft((p) => ({ ...p, workout_format: e.target.value }))}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                  {draft.measurement_method === 'for_time' ? (
+                    <Field label="Time cap *"><input style={inputStyle()} required value={draft.time_cap_seconds} placeholder="12 o 12:00" onChange={(e) => setDraft((p) => ({ ...p, time_cap_seconds: e.target.value }))} /></Field>
+                  ) : null}
+                  <Field label="Gana"><select style={inputStyle()} value={draft.winner_rule} onChange={(e) => setDraft((p) => ({ ...p, winner_rule: e.target.value }))}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
+                  {draft.modality === 'teams' ? (
+                    <Field label="Resultado equipos"><select style={inputStyle()} value={draft.team_result_mode} onChange={(e) => setDraft((p) => ({ ...p, team_result_mode: e.target.value }))}><option value="single_member">Un integrante</option><option value="sum_two">Suma integrantes</option><option value="total">Resultado del equipo</option></select></Field>
+                  ) : null}
+                  <Field label="Tiebreak"><select style={inputStyle()} value={draft.tie_break_enabled} onChange={(e) => setDraft((p) => ({ ...p, tie_break_enabled: Number(e.target.value) }))}><option value={0}>No</option><option value={1}>Si</option></select></Field>
+                  {Number(draft.tie_break_enabled) ? (
+                    <Field label="Medicion tiebreak"><select style={inputStyle()} value={draft.tie_break_method} onChange={(e) => setDraft((p) => ({ ...p, tie_break_method: e.target.value }))}><option value="for_time">Tiempo</option><option value="amrap">Reps</option><option value="rm">Peso</option><option value="metros">Metros</option></select></Field>
+                  ) : null}
+                </>
               ) : null}
               <Field label="Visibilidad"><select style={inputStyle()} value={draft.is_visible} onChange={(e) => setDraft((p) => ({ ...p, is_visible: Number(e.target.value) }))}><option value={1}>Visible</option><option value={0}>Oculta</option></select></Field>
+              {!editingId && draft.score_mode === 'double' ? (
+                <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 10 }}>
+                  {(draft.scoring_parts || []).map((part, partIndex) => (
+                    <div key={part.score_key || partIndex} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <strong>Puntaje {part.score_key || (partIndex === 0 ? 'A' : 'B')}</strong>
+                        <Pill tone={colors.accent}>100%</Pill>
+                      </div>
+                      <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                        <Field label="Nombre"><input style={inputStyle()} value={part.nombre || ''} onChange={(e) => setPartField(partIndex, 'nombre', e.target.value)} /></Field>
+                        <Field label="Medicion"><select style={inputStyle()} value={part.measurement_method || 'amrap'} onChange={(e) => setPartField(partIndex, 'measurement_method', e.target.value)}>{measurementOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                        <Field label="Formato"><select style={inputStyle()} value={part.workout_format || 'amrap'} onChange={(e) => setPartField(partIndex, 'workout_format', e.target.value)}>{workoutFormatOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
+                        <Field label="Gana"><select style={inputStyle()} value={part.winner_rule || 'higher_wins'} onChange={(e) => setPartField(partIndex, 'winner_rule', e.target.value)}><option value="higher_wins">Mayor marca</option><option value="lower_wins">Menor marca</option></select></Field>
+                        {part.measurement_method === 'for_time' ? (
+                          <Field label="Time cap *"><input style={inputStyle()} value={part.time_cap_seconds || ''} placeholder="12 o 12:00" onChange={(e) => setPartField(partIndex, 'time_cap_seconds', e.target.value)} /></Field>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Button onClick={reset}>Cancelar</Button>
@@ -1589,9 +1778,16 @@ function PhasesPanel({ bundle, reload, notify }) {
           <div>
             <strong>{phase.nombre}</strong>
             <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>
-              {phase.modality === 'teams' ? 'Equipos' : 'Individual'} - {labelFor(measurementOptions, phase.measurement_method, phase.measurement_method || 'Medicion')} - {labelFor(workoutFormatOptions, phase.workout_format, phase.workout_format || 'Formato')}{phase.time_cap_seconds ? ` - Cap ${formatSeconds(phase.time_cap_seconds)}` : ''} - {phase.winner_rule === 'lower_wins' ? 'menor gana' : 'mayor gana'} - Estado automatico: {phaseStatusLabel(phase.estado)}
+              {phase.modality === 'teams' ? 'Equipos' : 'Individual'} - {(phase.scoring_parts || []).length ? `${phase.scoring_parts.length} puntajes independientes` : `${labelFor(measurementOptions, phase.measurement_method, phase.measurement_method || 'Medicion')} - ${labelFor(workoutFormatOptions, phase.workout_format, phase.workout_format || 'Formato')}${phase.time_cap_seconds ? ` - Cap ${formatSeconds(phase.time_cap_seconds)}` : ''} - ${phase.winner_rule === 'lower_wins' ? 'menor gana' : 'mayor gana'}`} - Estado automatico: {phaseStatusLabel(phase.estado)}
             </div>
             {phase.descripcion ? <div style={{ color: colors.secondary, fontSize: 12, marginTop: 8, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>{renderDescription(phase.descripcion)}</div> : null}
+            {(phase.scoring_parts || []).length ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                {phase.scoring_parts.map((part) => (
+                  <Pill key={part.id} tone={colors.accent}>{part.score_key || ''} {part.nombre} - 100%</Pill>
+                ))}
+              </div>
+            ) : null}
           </div>
           <Button onClick={() => startEdit(phase)}>Editar</Button>
           <Button onClick={async () => { await api(`/competitions/${competition.id}/phases/${phase.id}`, { method: 'PUT', body: JSON.stringify({ is_visible: phase.is_visible ? 0 : 1 }) }); await reload() }}>{phase.is_visible ? 'Ocultar' : 'Mostrar'}</Button>
@@ -1777,10 +1973,13 @@ function HeatsPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
-  const moveCategoryOrder = async (category, direction) => {
+  const saveDraggedCategoryOrder = async (category, targetCategory) => {
+    if (!category || !targetCategory) return
+    if (String(category.id) === String(targetCategory.id)) return
+    if (String(category.modality || 'individual') !== String(targetCategory.modality || 'individual')) return
     const scopedCategories = orderedHeatCategories.filter((item) => String(item.modality || 'individual') === String(category.modality || 'individual'))
     const index = scopedCategories.findIndex((item) => String(item.id) === String(category.id))
-    const targetIndex = index + direction
+    const targetIndex = scopedCategories.findIndex((item) => String(item.id) === String(targetCategory.id))
     if (index < 0 || targetIndex < 0 || targetIndex >= scopedCategories.length) return
     const nextOrder = [...scopedCategories]
     const [item] = nextOrder.splice(index, 1)
@@ -1977,13 +2176,25 @@ function HeatsPanel({ bundle, reload, notify }) {
     workout.heats += 1
     workout.athletes += participants.length
     return groups
-  }, []).map((workout) => ({
-    ...workout,
-    categories: workout.categories.map((group) => ({
-      ...group,
-      heats: [...group.heats].sort((a, b) => Number(a.heat_number || 0) - Number(b.heat_number || 0) || Number(a.id || 0) - Number(b.id || 0)),
-    })),
-  }))
+  }, []).map((workout) => {
+    const orderedCategories = workout.categories.map((group) => {
+      const groupHeats = [...group.heats].sort((a, b) => Number(a.heat_number || 0) - Number(b.heat_number || 0) || Number(a.id || 0) - Number(b.id || 0))
+      return {
+        ...group,
+        heats: groupHeats,
+        timing: summarizeHeatTiming(groupHeats),
+        status: heatGroupScheduleStatus(groupHeats),
+      }
+    })
+    const workoutHeats = orderedCategories.flatMap((group) => group.heats)
+    const timing = summarizeHeatTiming(workoutHeats)
+    return {
+      ...workout,
+      categories: orderedCategories,
+      timing,
+      status: heatGroupScheduleStatus(workoutHeats),
+    }
+  }).sort((a, b) => a.timing.firstStartMs - b.timing.firstStartMs || String(a.name || '').localeCompare(String(b.name || '')))
   const schedulePhaseOptions = heatsByWorkout.map((workout) => ({ id: workout.id, name: workout.name }))
   const activeSchedulePhaseId = schedulePhaseId || 'all'
   const showingAllSchedule = activeSchedulePhaseId === 'all'
@@ -2094,12 +2305,13 @@ function HeatsPanel({ bundle, reload, notify }) {
   const previewLast = previewEndDate ? new Date(previewEndDate) : null
   if (previewLast) previewLast.setMinutes(Math.ceil(previewLast.getMinutes() / 5) * 5, 0, 0)
   const previewSlotCount = previewBase && previewLast ? Math.max(12, Math.ceil((previewLast.getTime() - previewBase.getTime()) / 300000) + 6) : 0
-  const previewSlots = Array.from({ length: previewSlotCount }, (_, index) => new Date(previewBase.getTime() + index * 5 * 60000))
+  const scheduleSlotMs = 5 * 60000
+  const previewSlots = Array.from({ length: previewSlotCount }, (_, index) => new Date(previewBase.getTime() + index * scheduleSlotMs))
   const previewHeatsAtSlot = (slot, locationName) => previewCalendarItems.filter((heat) => {
     if (!heat.start_at) return false
     if (String(heat.location_name || '').trim().toLowerCase() !== String(locationName || '').trim().toLowerCase()) return false
     const start = new Date(heat.start_at)
-    return Math.abs(start.getTime() - slot.getTime()) < 60000
+    return start.getTime() >= slot.getTime() && start.getTime() < slot.getTime() + scheduleSlotMs
   })
   const previewHasOverlap = (heat) => {
     if (!heat.location_name || !heat.start_at) return false
@@ -2128,12 +2340,12 @@ function HeatsPanel({ bundle, reload, notify }) {
   const scheduleLast = scheduleEndDate ? new Date(scheduleEndDate) : null
   if (scheduleLast) scheduleLast.setMinutes(Math.ceil(scheduleLast.getMinutes() / 5) * 5, 0, 0)
   const scheduleSlotCount = scheduleBase && scheduleLast ? Math.max(12, Math.ceil((scheduleLast.getTime() - scheduleBase.getTime()) / 300000) + 6) : 0
-  const scheduleSlots = Array.from({ length: scheduleSlotCount }, (_, index) => new Date(scheduleBase.getTime() + index * 5 * 60000))
+  const scheduleSlots = Array.from({ length: scheduleSlotCount }, (_, index) => new Date(scheduleBase.getTime() + index * scheduleSlotMs))
   const heatsAtSlot = (slot, locationName) => scheduleDayHeats.filter((heat) => {
     if (!heat.start_at) return false
     if (String(heat.location_name || '').trim().toLowerCase() !== String(locationName || '').trim().toLowerCase()) return false
     const start = new Date(heat.start_at)
-    return Math.abs(start.getTime() - slot.getTime()) < 60000
+    return start.getTime() >= slot.getTime() && start.getTime() < slot.getTime() + scheduleSlotMs
   }).sort((a, b) => String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas')) || Number(a.heat_number || 0) - Number(b.heat_number || 0))
   const moveHeatSchedule = async (heat, slot, locationName = heat.location_name || '') => {
     const oldStart = heat.start_at ? new Date(heat.start_at) : null
@@ -2169,19 +2381,34 @@ function HeatsPanel({ bundle, reload, notify }) {
               Este orden se usa cuando generas heats por categoria. Normalmente se inicia desde categorias base hacia categorias avanzadas.
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
-              {orderedHeatCategories.length ? orderedHeatCategories.map((category, index) => {
+              {orderedHeatCategories.length ? orderedHeatCategories.map((category) => {
                 const scopedCategories = orderedHeatCategories.filter((item) => String(item.modality || 'individual') === String(category.modality || 'individual'))
                 const scopedIndex = scopedCategories.findIndex((item) => String(item.id) === String(category.id))
                 return (
-                <div key={category.id} style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10 }}>
-                  <span style={{ color: colors.muted, fontSize: 12, fontWeight: 900, width: 28 }}>#{index + 1}</span>
+                <div
+                  key={category.id}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.setData('text/plain', String(category.id))
+                    event.dataTransfer.effectAllowed = 'move'
+                  }}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    const sourceId = event.dataTransfer.getData('text/plain')
+                    const sourceCategory = orderedHeatCategories.find((item) => String(item.id) === String(sourceId))
+                    saveDraggedCategoryOrder(sourceCategory, category)
+                  }}
+                  style={{ display: 'grid', gridTemplateColumns: 'auto auto minmax(0, 1fr)', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, cursor: 'grab' }}
+                >
+                  <span style={{ color: colors.muted, fontSize: 12, fontWeight: 900, width: 28 }}>#{scopedIndex + 1}</span>
+                  <span style={{ color: colors.secondary, fontSize: 18, fontWeight: 900, lineHeight: 1 }}>⋮⋮</span>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ color: colors.text, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{category.nombre}</div>
                     <div style={{ color: colors.secondary, fontSize: 12, marginTop: 2 }}>{category.modality === 'teams' ? 'Equipos' : 'Individual'}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <Button disabled={scopedIndex === 0} onClick={() => moveCategoryOrder(category, -1)}><ChevronUp size={15} /></Button>
-                    <Button disabled={scopedIndex === scopedCategories.length - 1} onClick={() => moveCategoryOrder(category, 1)}><ChevronDown size={15} /></Button>
                   </div>
                 </div>
               )}) : (
@@ -2245,7 +2472,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                   first_heat_start_at: p.first_heat_start_at || dateTimeInput(nextPhase?.start_at),
                   category_transition_minutes: p.category_transition_minutes || Math.round(Number(nextPhase?.category_transition_seconds || 0) / 60),
                 }))
-              }}><option value="">Seleccionar</option>{(bundle.phases || []).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+              }}><option value="">Seleccionar</option>{(bundle.phases || []).filter((phase) => !phase.parent_phase_id).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
               <Field label="Modo"><select style={inputStyle()} value={draft.generation_mode} onChange={(e) => setDraft((p) => ({ ...p, generation_mode: e.target.value }))}><option value="by_category">Por categoria</option><option value="mixed">Mixto</option></select></Field>
               <Field label="Numeracion"><select style={inputStyle()} value={draft.heat_numbering_mode} onChange={(e) => setDraft((p) => ({ ...p, heat_numbering_mode: e.target.value }))}><option value="by_category">Reiniciar por categoria</option><option value="continuous">Continua ascendente</option></select></Field>
               <Field label="Carriles"><input type="number" style={inputStyle()} value={draft.lane_count} onChange={(e) => setDraft((p) => ({ ...p, lane_count: e.target.value }))} /></Field>
@@ -2579,7 +2806,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                 Esto solo mueve horarios. No cambia atletas, carriles ni categorias.
               </div>
               <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
-                <Field label="WOD"><select style={inputStyle()} value={scheduleDraft.phase_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, phase_id: event.target.value, categoria: '', from_heat_id: '' }))}><option value="">Seleccionar</option>{(bundle.phases || []).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+                <Field label="WOD"><select style={inputStyle()} value={scheduleDraft.phase_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, phase_id: event.target.value, categoria: '', from_heat_id: '' }))}><option value="">Seleccionar</option>{(bundle.phases || []).filter((phase) => !phase.parent_phase_id).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
                 <Field label="Categoria"><select style={inputStyle()} value={scheduleDraft.categoria} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, categoria: event.target.value, from_heat_id: '' }))}><option value="">Todas</option>{[...new Set(heats.filter((heat) => String(heat.phase_id) === String(scheduleDraft.phase_id)).map((heat) => heat.categoria || 'Todas'))].map((category) => <option key={category} value={category}>{category}</option>)}</select></Field>
                 <Field label="Desde heat"><select style={inputStyle()} value={scheduleDraft.from_heat_id} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, from_heat_id: event.target.value }))}><option value="">Desde el primero</option>{heats.filter((heat) => String(heat.phase_id) === String(scheduleDraft.phase_id)).filter((heat) => !scheduleDraft.categoria || String(heat.categoria || 'Todas') === String(scheduleDraft.categoria)).map((heat) => <option key={heat.id} value={heat.id}>{heat.categoria || 'Todas'} - {heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`} - {formatHeatSchedule(heat)}</option>)}</select></Field>
                 <Field label="Cantidad de heats"><input type="number" min="0" style={inputStyle()} value={scheduleDraft.heat_count} placeholder="Todos" onChange={(event) => setScheduleDraft((prev) => ({ ...prev, heat_count: event.target.value }))} /></Field>
@@ -2685,9 +2912,10 @@ function HeatsPanel({ bundle, reload, notify }) {
                   const participants = heatParticipants(heat)
                   const duration = formatHeatDuration(heat)
                   const locationConflict = hasLocationConflict(heat)
-                  const wodTone = wodColorFor(heat.phase_id || heat.phase_name)
+                  const heatStatus = heatScheduleStatus(heat)
+                  const heatTone = heatStatus.color
                   return (
-                    <div key={heat.id} className="fr-schedule-card" style={{ border: `1px solid ${locationConflict ? colors.error : wodTone}`, borderLeft: `5px solid ${wodTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${wodTone}14`, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+                    <div key={heat.id} className="fr-schedule-card" style={{ border: `1px solid ${locationConflict ? colors.error : heatTone}`, borderLeft: `5px solid ${heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${heatTone}14`, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ color: colors.primary, fontSize: 12, fontWeight: 950 }}>{formatHeatScheduleCompact(heat)}</div>
@@ -2696,7 +2924,8 @@ function HeatsPanel({ bundle, reload, notify }) {
                         <Button onClick={() => openSingleSchedule(heat)}><Clock3 size={14} />Editar</Button>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {showingAllSchedule ? <Pill tone={wodTone}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
+                        <Pill tone={heatTone}>{heatStatus.label}</Pill>
+                        {showingAllSchedule ? <Pill tone={colors.secondary}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
                         <Pill tone={colors.accent}>{heat.categoria || 'Todas'}</Pill>
                         <Pill tone={heat.location_name ? colors.primary : colors.warning}>{locationLabel(heat.location_name)}</Pill>
                         {duration ? <Pill tone={colors.primary}>{duration}</Pill> : null}
@@ -2751,7 +2980,8 @@ function HeatsPanel({ bundle, reload, notify }) {
                               const participants = heatParticipants(heat)
                               const duration = formatHeatDuration(heat)
                               const locationConflict = hasLocationConflict(heat)
-                              const wodTone = wodColorFor(heat.phase_id || heat.phase_name)
+                              const heatStatus = heatScheduleStatus(heat)
+                              const heatTone = heatStatus.color
                               return (
                                 <div
                                   key={heat.id}
@@ -2761,12 +2991,13 @@ function HeatsPanel({ bundle, reload, notify }) {
                                     event.dataTransfer.setData('text/plain', String(heat.id))
                                   }}
                                   onDragEnd={() => setDraggingHeatId('')}
-                                  style={{ border: `1px solid ${locationConflict ? colors.error : wodTone}88`, borderLeft: `5px solid ${wodTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${wodTone}14`, borderRadius: 8, padding: 9, cursor: 'grab', display: 'grid', gap: 6 }}
+                                  style={{ border: `1px solid ${locationConflict ? colors.error : heatTone}88`, borderLeft: `5px solid ${heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${heatTone}14`, borderRadius: 8, padding: 9, cursor: 'grab', display: 'grid', gap: 6 }}
                                 >
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                           <strong style={{ color: colors.text, fontSize: 13 }}>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</strong>
                                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                            {showingAllSchedule ? <Pill tone={wodTone}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
+                                            <Pill tone={heatTone}>{heatStatus.label}</Pill>
+                                            {showingAllSchedule ? <Pill tone={colors.secondary}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
                                             <Pill tone={colors.accent}>{heat.categoria || 'Todas'}</Pill>
                                             {locationConflict ? <Pill tone={colors.error}>Solape</Pill> : null}
                                             <Pill tone={colors.accent}>{participants.length}</Pill>
@@ -2797,54 +3028,58 @@ function HeatsPanel({ bundle, reload, notify }) {
       <div style={{ display: 'grid', gap: 12 }}>
         {heatsByWorkout.map((workout, workoutIndex) => {
           const collapsed = collapsedWorkouts[workout.id] ?? workoutIndex > 0
-          const workoutTone = wodColorFor(workout.id || workout.name)
+          const workoutTone = workout.status?.color || heatStatusColors.upcoming
           return (
-          <section key={workout.id} style={{ border: `1px solid ${workoutTone}66`, background: colors.top, borderRadius: 8, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '11px 12px', borderBottom: `1px solid ${colors.border}`, borderLeft: `6px solid ${workoutTone}`, background: `${workoutTone}14`, flexWrap: 'wrap' }}>
+          <section key={workout.id} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '11px 12px', borderBottom: collapsed ? 0 : `1px solid ${colors.border}`, borderLeft: `5px solid ${workoutTone}`, background: colors.top, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => setCollapsedWorkouts((prev) => ({ ...prev, [workout.id]: !collapsed }))} style={{ border: 0, background: 'transparent', color: colors.text, padding: 0, display: 'flex', gap: 10, alignItems: 'center', textAlign: 'left', minWidth: 0 }}>
                 {collapsed ? <ChevronRight size={18} /> : <ChevronDown size={18} />}
                 <div>
                   <div style={{ color: colors.text, fontWeight: 950 }}>{workout.name}</div>
                   <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{workout.categories.length} categorias - {workout.heats} heats - {workout.athletes} atletas asignados</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
+                    <Pill tone={workoutTone}>{workout.status?.label || 'Proximo'}</Pill>
+                    <Pill tone={workout.timing.firstStartMs === Number.MAX_SAFE_INTEGER ? colors.warning : colors.secondary}>{workout.timing.dayLabel}</Pill>
+                    <Pill tone={workout.timing.firstStartMs === Number.MAX_SAFE_INTEGER ? colors.warning : colors.accent}>Inicio {workout.timing.timeLabel}</Pill>
+                    {workout.timing.unscheduled ? <Pill tone={colors.warning}>{workout.timing.unscheduled} sin hora</Pill> : null}
+                  </div>
                 </div>
               </button>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Pill tone={workoutTone}>{workout.heats} heats</Pill>
                 <Button tone="danger" onClick={() => setDeleteWorkout(workout)}>Eliminar WOD</Button>
               </div>
             </div>
-            {!collapsed ? <div style={{ display: 'grid', gap: 10, padding: 10 }}>
-              {workout.categories.map((group) => (
-                <section key={`${workout.id}-${group.category}`} style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.bg, overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '9px 10px', borderBottom: `1px solid ${colors.border}`, flexWrap: 'wrap' }}>
+            {!collapsed ? <div style={{ display: 'grid', gap: 0, padding: '2px 10px 10px' }}>
+              {workout.categories.map((group) => {
+                const groupTone = group.status?.color || workoutTone
+                return (
+                <section key={`${workout.id}-${group.category}`} style={{ borderBottom: `1px solid ${colors.border}`, background: 'transparent', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '12px 2px 8px', flexWrap: 'wrap' }}>
                     <div>
                       <div style={{ color: colors.text, fontWeight: 900 }}>{group.category}</div>
-                      <div style={{ color: colors.secondary, fontSize: 12, marginTop: 2 }}>{group.heats.length} heats - {group.athletes} atletas asignados</div>
+                      <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{group.heats.length} heats · {group.athletes} atletas · {group.timing.label}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                        <Pill tone={groupTone}>{group.status?.label || 'Proximo'}</Pill>
+                      </div>
                     </div>
-                    <Pill tone={colors.accent}>{group.athletes} atletas</Pill>
                   </div>
-                  <div style={{ display: 'grid', gap: 8, padding: 10 }}>
+                  <div style={{ display: 'grid', gap: 0, padding: '0 0 8px' }}>
                     {group.heats.map((heat) => {
                       const participants = heatParticipants(heat)
                       const destinations = heatDestinations(heat)
-                      const duration = formatHeatDuration(heat)
-                      const heatGap = Math.round(Number(heat.heat_transition_seconds || 0) / 60)
-                      const categoryGap = Math.round(Number(heat.category_transition_seconds || 0) / 60)
                       const locationConflict = hasLocationConflict(heat)
-                      const wodTone = wodColorFor(heat.phase_id || workout.id || workout.name)
+                      const heatStatus = heatScheduleStatus(heat)
+                      const heatTone = heatStatus.color
                       return (
-                        <div key={heat.id} style={{ border: `1px solid ${locationConflict ? colors.error : wodTone}88`, borderLeft: `5px solid ${wodTone}`, background: locationConflict ? 'rgba(239,68,68,0.08)' : `${wodTone}10`, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
+                        <div key={heat.id} style={{ borderTop: `1px solid ${colors.border}`, borderLeft: `4px solid ${locationConflict ? colors.error : heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.08)' : 'transparent', padding: '10px 0 10px 10px', display: 'grid', gap: 8 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center' }}>
                             <div>
                               <strong>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</strong>
-                              <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{formatHeatSchedule(heat)}</div>
+                              <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Inicio {formatHeatStart(heat.start_at)} · {participants.length} atletas · {heat.location_name || 'Sin ubicacion'}</div>
                               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
-                                <Pill tone={wodTone}>{participants.length} atletas</Pill>
-                                <Pill tone={heat.location_name ? colors.primary : colors.warning}>{heat.location_name || 'Sin ubicacion'}</Pill>
+                                <Pill tone={heatTone}>{heatStatus.label}</Pill>
                                 {locationConflict ? <Pill tone={colors.error}>Solape</Pill> : null}
-                                {duration ? <Pill tone={colors.primary}>Duracion {duration}</Pill> : null}
-                                {heatGap ? <Pill tone={colors.border}>+{heatGap} min entre heats</Pill> : null}
-                                {categoryGap ? <Pill tone={colors.warning}>+{categoryGap} min categoria</Pill> : null}
+                                {!heat.location_name ? <Pill tone={colors.warning}>Sin ubicacion</Pill> : null}
                               </div>
                               {heat.location_detail ? <div style={{ color: colors.secondary, fontSize: 12, marginTop: 5 }}><MapPin size={12} style={{ verticalAlign: -2 }} /> {heat.location_detail}</div> : null}
                             </div>
@@ -2852,11 +3087,11 @@ function HeatsPanel({ bundle, reload, notify }) {
                             <Button onClick={() => openSingleSchedule(heat)}><Clock3 size={16} />Horario</Button>
                             <Button tone="danger" onClick={() => removeHeat(heat)}>Eliminar</Button>
                           </div>
-                          <details style={{ borderTop: `1px solid ${colors.border}`, paddingTop: 9 }}>
-                            <summary style={{ cursor: 'pointer', color: colors.accent, fontSize: 12, fontWeight: 900 }}>Ver atletas del heat</summary>
+                          <details>
+                            <summary style={{ cursor: 'pointer', color: colors.secondary, fontSize: 12, fontWeight: 800 }}>Ver atletas</summary>
                             <div style={{ display: 'grid', gap: 6, marginTop: 9, maxHeight: 260, overflowY: 'auto' }}>
                               {participants.length ? participants.map((participant) => (
-                                  <div key={participant.id || `${participant.user_id || participant.team_id}-${participant.lane_number || participant.seed_order}`} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${wodTone}55`, borderLeft: `4px solid ${wodTone}`, borderRadius: 8, background: colors.surface, padding: '7px 9px' }}>
+                                  <div key={participant.id || `${participant.user_id || participant.team_id}-${participant.lane_number || participant.seed_order}`} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${heatTone}55`, borderLeft: `4px solid ${heatTone}`, borderRadius: 8, background: colors.surface, padding: '7px 9px' }}>
                                     <span style={{ color: colors.muted, fontSize: 11, fontWeight: 900 }}>Carril {participant.lane_number || '-'}</span>
                                     <span style={{ color: colors.text, fontSize: 13, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{participant.participant_name || participant.user_name || participant.team_name || 'Atleta'}</span>
                                     <Button onClick={() => openMoveConfirmation(heat, participant)} disabled={!destinations.length}>Mover</Button>
@@ -2871,7 +3106,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                     })}
                   </div>
                 </section>
-              ))}
+              )})}
             </div> : null}
           </section>
         )})}
@@ -2945,32 +3180,49 @@ function TeamsPanel({ bundle, reload, notify }) {
 
 const scoringModeOptions = [
   {
-    id: 'dynamic_points',
-    label: 'Puntos dinamicos',
-    summary: 'Gana mayor total. Cada WOD reparte puntos segun atletas con resultado.',
-    example: ['10 atletas', '1o = 10 pts', '2o = 9 pts', '10o = 1 pt'],
-    warning: 'Si un WOD tiene menos resultados cargados, reparte menos puntos.',
+    id: 'auto_table',
+    label: 'Tipo CrossFit Games',
+    summary: 'Usa la metodologia actual de Games: 1o recibe 100 pts y el ultimo 0.',
+    example: ['30 atletas', '1o = 100 pts', '2o = 96 pts', '30o = 0 pts'],
+    warning: 'Los puestos intermedios se calculan automaticamente. Pensado para categorias de 20+ participantes.',
+  },
+  {
+    id: 'dynamic_step',
+    label: 'Puntos con diferencia fija',
+    summary: 'Gana mayor total. Cada puesto baja los puntos definidos.',
+    example: ['Paso 3', '10 atletas', '1o = 30 pts', '10o = 3 pts'],
+    warning: 'Usa la totalidad de atletas rankeados y multiplica cada puesto por el paso definido.',
   },
   {
     id: 'placement',
-    label: 'Posicion',
+    label: 'Tipo Open',
     summary: 'Gana menor total. La posicion se convierte directamente en puntos.',
     example: ['1o = 1 pt', '2o = 2 pts', '3o = 3 pts'],
-    warning: 'Modelo simple tipo Open. Puede empatar mas en divisiones pequenas.',
+    warning: 'Modelo oficial tipo Open o clasificatorio. Gana quien acumula menos puntos.',
   },
   {
     id: 'fixed_table',
-    label: 'Tabla fija',
+    label: 'Tabla fija avanzada',
     summary: 'Gana mayor total. Cada posicion tiene puntos definidos.',
     example: ['1o = 100 pts', '2o = 95 pts', '3o = 90 pts'],
-    warning: 'Todos los WODs pesan igual aunque falten resultados.',
+    warning: 'Modo avanzado para reglamentos con tabla propia o finales con pesos especiales.',
+  },
+]
+
+const legacyScoringModeOptions = [
+  {
+    id: 'dynamic_points',
+    label: 'Puntos dinamicos clasico',
+    summary: 'Gana mayor total. Cada WOD reparte puntos segun atletas con resultado.',
+    example: ['10 atletas', '1o = 10 pts', '2o = 9 pts', '10o = 1 pt'],
+    warning: 'Modo heredado. Para nuevas competencias usa Puntos por paso con diferencia 1 o mas.',
   },
   {
     id: 'cumulative',
     label: 'Puntos acumulados',
     summary: 'Suma marcas crudas. Usalo solo si todos los WODs comparten unidad.',
     example: ['120 reps + 95 reps', 'Total = 215 reps'],
-    warning: 'No recomendado si mezclas tiempo, reps y peso.',
+    warning: 'Modo avanzado. No recomendado si mezclas tiempo, reps y peso.',
   },
 ]
 
@@ -3003,12 +3255,40 @@ function scoringTablePoints(table, position) {
   return row ? Number(row.points || 0) : 0
 }
 
+function autoTablePoints(position, totalRanked) {
+  const pos = Number(position || 0)
+  const total = Number(totalRanked || 0)
+  if (pos <= 0 || total <= 0 || pos > total) return 0
+  if (total === 1) return 100
+  const gaps = total - 1
+  const baseDrop = Math.floor(100 / gaps)
+  const largerDropCount = 100 % gaps
+  const completedGaps = pos - 1
+  const largerGapsUsed = Math.min(completedGaps, largerDropCount)
+  const regularGapsUsed = completedGaps - largerGapsUsed
+  return Math.max(0, 100 - (largerGapsUsed * (baseDrop + 1)) - (regularGapsUsed * baseDrop))
+}
+
+function normalizePointStep(value) {
+  const parsed = Number(value || 1)
+  return Math.max(1, Math.min(99, Number.isFinite(parsed) ? Math.round(parsed) : 1))
+}
+
+function pointStepInputValue(value) {
+  if (value === '') return ''
+  const digits = String(value || '').replace(/\D/g, '')
+  if (!digits) return ''
+  return String(Math.min(99, Math.max(1, Number(digits))))
+}
+
 function previewPointsForScoring(config, position, totalRanked, mark) {
   if (Number(mark) === 2147483647 || Number(mark) === -2147483648) return 0
   const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
   let base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1)
   if (system === 'placement') base = Number(position || 0)
   if (system === 'fixed_table') base = scoringTablePoints(config?.table || config?.scoring_table || defaultScoringTable, position)
+  if (system === 'auto_table') base = autoTablePoints(position, totalRanked)
+  if (system === 'dynamic_step') base = Math.max(0, Number(totalRanked || 0) - Number(position || 0) + 1) * normalizePointStep(config?.point_step ?? config?.scoring_point_step)
   if (system === 'cumulative') base = Number(mark || 0)
   const weight = Number(config?.weight_percent ?? config?.scoring_weight_percent ?? 100)
   return Math.round(base * weight / 100)
@@ -3016,8 +3296,10 @@ function previewPointsForScoring(config, position, totalRanked, mark) {
 
 function scoringPreviewLabel(config) {
   const system = String(config?.system || config?.scoring_system || 'dynamic_points').trim().toLowerCase()
+  if (system === 'dynamic_step') return 'Puntos con diferencia fija: mayor total gana'
   if (system === 'placement') return 'Posicion: menor total gana'
   if (system === 'fixed_table') return 'Tabla fija: mayor total gana'
+  if (system === 'auto_table') return 'Tipo CrossFit Games: mayor total gana'
   if (system === 'cumulative') return String(config?.cumulative_direction || '').toLowerCase() === 'lower_wins' ? 'Acumulado: menor total gana' : 'Acumulado: mayor total gana'
   return 'Puntos dinamicos: mayor total gana'
 }
@@ -3031,11 +3313,17 @@ function ScoringPanel({ bundle, reload, notify }) {
     scoring_scope: scoring.scoring_scope || competition.scoring_scope || 'category',
     scoring_tiebreak: scoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
     cumulative_direction: scoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
+    scoring_point_step: normalizePointStep(scoring.scoring_point_step ?? competition.scoring_point_step ?? 3),
     scoring_table: normalizeScoringTableInput(scoring.scoring_table || competition.scoring_table || defaultScoringTable),
   }))
   const [saving, setSaving] = useState(false)
+  const [showAdvancedOverrides, setShowAdvancedOverrides] = useState(false)
+  const [confirmRecalculateOpen, setConfirmRecalculateOpen] = useState(false)
   const updateDraft = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }))
-  const selectedMode = scoringModeOptions.find((item) => item.id === draft.scoring_system) || scoringModeOptions[0]
+  const visibleScoringModeOptions = scoringModeOptions.some((item) => item.id === draft.scoring_system)
+    ? scoringModeOptions
+    : [...scoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === draft.scoring_system)]
+  const selectedMode = visibleScoringModeOptions.find((item) => item.id === draft.scoring_system) || scoringModeOptions[0]
   const tableRows = draft.scoring_table.length ? draft.scoring_table : defaultScoringTable
   const setTableRow = (index, key, value) => {
     const next = [...tableRows]
@@ -3046,11 +3334,7 @@ function ScoringPanel({ bundle, reload, notify }) {
     const nextRank = Math.max(0, ...tableRows.map((item) => Number(item.rank || 0))) + 1
     updateDraft('scoring_table', [...tableRows, { rank: nextRank, points: 0 }])
   }
-  const save = async () => {
-    const shouldRecalculate = resultsCount > 0
-      ? window.confirm(`Hay ${resultsCount} resultado(s) cargado(s). Guardar esta configuracion recalculara puntos y posiciones.`)
-      : true
-    if (!shouldRecalculate) return
+  const saveScoring = async ({ recalculate }) => {
     setSaving(true)
     try {
       await api(`/competitions/${competition.id}/scoring`, {
@@ -3058,16 +3342,25 @@ function ScoringPanel({ bundle, reload, notify }) {
         body: JSON.stringify({
           ...draft,
           scoring_table: draft.scoring_system === 'fixed_table' ? tableRows : [],
-          recalculate: resultsCount > 0 ? 1 : 0,
+          scoring_point_step: normalizePointStep(draft.scoring_point_step),
+          recalculate: recalculate ? 1 : 0,
         }),
       })
-      notify(resultsCount > 0 ? 'Puntuacion guardada y recalculada' : 'Puntuacion guardada')
+      setConfirmRecalculateOpen(false)
+      notify(recalculate ? 'Puntuacion guardada y recalculada' : 'Puntuacion guardada')
       await reload()
     } catch (error) {
       notify(error.message, 'error')
     } finally {
       setSaving(false)
     }
+  }
+  const save = async () => {
+    if (resultsCount > 0) {
+      setConfirmRecalculateOpen(true)
+      return
+    }
+    await saveScoring({ recalculate: false })
   }
   const updatePhaseScoring = async (phase, patch) => {
     try {
@@ -3082,7 +3375,7 @@ function ScoringPanel({ bundle, reload, notify }) {
     }
   }
   return (
-    <Panel title="Puntuacion" subtitle="Define como las posiciones de cada WOD se convierten en puntos del leaderboard." action={<Button tone="primary" onClick={save} disabled={saving}><Save size={16} />{saving ? 'Guardando...' : 'Guardar regla'}</Button>}>
+    <Panel title="Puntuacion" subtitle="Define como las posiciones de cada WOD se convierten en puntos del leaderboard." action={<Button tone="primary" onClick={save} disabled={saving}><Save size={16} />{saving ? 'Aplicando...' : 'Aplicar regla'}</Button>}>
       {resultsCount > 0 ? (
         <div style={{ border: `1px solid rgba(245,158,11,0.45)`, background: 'rgba(245,158,11,0.10)', borderRadius: 8, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', color: colors.text }}>
           <AlertTriangle size={18} color={colors.warning} />
@@ -3093,8 +3386,8 @@ function ScoringPanel({ bundle, reload, notify }) {
         </div>
       ) : null}
 
-      <div className="fr-form-grid fr-scoring-mode-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
-        {scoringModeOptions.map((item) => {
+      <div className="fr-form-grid fr-scoring-mode-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+        {visibleScoringModeOptions.map((item) => {
           const active = draft.scoring_system === item.id
           return (
             <button key={item.id} type="button" onClick={() => updateDraft('scoring_system', item.id)} style={{ textAlign: 'left', border: `1px solid ${active ? colors.primary : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, borderRadius: 8, padding: 12, display: 'grid', gap: 9 }}>
@@ -3134,6 +3427,11 @@ function ScoringPanel({ bundle, reload, notify }) {
                 </select>
               </Field>
             ) : null}
+            {draft.scoring_system === 'dynamic_step' ? (
+              <Field label="Diferencia">
+                <input type="number" min="1" max="99" step="1" style={inputStyle()} value={draft.scoring_point_step ?? ''} onWheel={preventNumberInputWheel} onBlur={(event) => updateDraft('scoring_point_step', normalizePointStep(event.target.value))} onChange={(event) => updateDraft('scoring_point_step', pointStepInputValue(event.target.value))} />
+              </Field>
+            ) : null}
           </div>
         </div>
 
@@ -3156,35 +3454,75 @@ function ScoringPanel({ bundle, reload, notify }) {
       </div>
 
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
-        <div>
-          <h3 style={{ fontSize: 16 }}>Overrides por WOD</h3>
-          <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>Usa el peso para finales o WODs decisivos. 200% duplica los puntos de ese WOD.</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ fontSize: 16 }}>Configuracion avanzada por WOD</h3>
+            <div style={{ color: colors.secondary, fontSize: 12, marginTop: 4 }}>Cambia la puntuacion de un WOD solo si debe valer distinto al resto del evento.</div>
+          </div>
+          <Button onClick={() => setShowAdvancedOverrides((value) => !value)}>{showAdvancedOverrides ? 'Ocultar' : 'Configurar WODs'}</Button>
         </div>
-        {(bundle.phases || []).length ? (bundle.phases || []).map((phase) => {
-          const phaseScoring = (scoring.phases || []).find((item) => String(item.id) === String(phase.id)) || phase
-          const override = Number(phaseScoring.scoring_override_enabled || phase.scoring_override_enabled || 0) ? 1 : 0
-          const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
-          const phaseWeight = Number(phaseScoring.scoring_weight_percent ?? phase.scoring_weight_percent ?? 100)
-          return (
-            <div key={phase.id} className="fr-scoring-phase-row" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 160px 130px 150px', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10 }}>
-              <div>
-                <strong>{phase.nombre}</strong>
-                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Personalizado' : 'Regla de la competencia'}</div>
+        {showAdvancedOverrides ? (
+          (bundle.phases || []).length ? (bundle.phases || []).map((phase) => {
+            const phaseScoring = (scoring.phases || []).find((item) => String(item.id) === String(phase.id)) || phase
+            const override = Number(phaseScoring.scoring_override_enabled || phase.scoring_override_enabled || 0) ? 1 : 0
+            const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
+            const phaseWeight = Number(phaseScoring.scoring_weight_percent ?? phase.scoring_weight_percent ?? 100)
+            const phasePointStep = normalizePointStep(phaseScoring.scoring_point_step ?? phase.scoring_point_step ?? draft.scoring_point_step ?? 3)
+            const phaseOptions = visibleScoringModeOptions.some((item) => item.id === phaseSystem) ? visibleScoringModeOptions : [...visibleScoringModeOptions, ...legacyScoringModeOptions.filter((item) => item.id === phaseSystem)]
+            return (
+              <div key={phase.id} className="fr-scoring-phase-row" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
+                <div className="fr-scoring-phase-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 180px', gap: 10, alignItems: 'center' }}>
+                  <div>
+                    <strong>{phase.nombre}</strong>
+                    <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Usa una regla propia para este WOD' : 'Usa la regla general del evento'}</div>
+                  </div>
+                  <select className="fr-scoring-phase-select" style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
+                    <option value="event">Usar regla general</option>
+                    <option value="custom">Personalizar este WOD</option>
+                  </select>
+                </div>
+                {override ? (
+                  <div className="fr-scoring-phase-controls" style={{ display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) 120px 130px', gap: 10, alignItems: 'end' }}>
+                    <Field label="Tipo de puntuacion">
+                      <select style={inputStyle()} value={phaseSystem} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
+                        {phaseOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label="Peso WOD">
+                      <input type="number" min="0" max="1000" step="25" style={inputStyle()} value={phaseWeight} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_weight_percent: Number(event.target.value || 0) })} />
+                    </Field>
+                    {phaseSystem === 'dynamic_step' ? (
+                      <Field label="Diferencia">
+                        <input type="number" min="1" max="99" step="1" style={inputStyle()} value={phasePointStep} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_point_step: normalizePointStep(event.target.value) })} />
+                      </Field>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
-              <select style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
-                <option value="event">Regla evento</option>
-                <option value="custom">Personalizado</option>
-              </select>
-              <input type="number" min="0" max="1000" step="25" style={inputStyle()} value={phaseWeight} disabled={!override} onWheel={preventNumberInputWheel} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_weight_percent: Number(event.target.value || 0) })} />
-              <select style={inputStyle()} value={phaseSystem} disabled={!override} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: 1, scoring_system: event.target.value })}>
-                {scoringModeOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-            </div>
+            )
+          }) : (
+            <div style={{ color: colors.secondary, fontSize: 13 }}>Crea WODs antes de configurar reglas avanzadas.</div>
           )
-        }) : (
-          <div style={{ color: colors.secondary, fontSize: 13 }}>Crea fases antes de configurar overrides.</div>
-        )}
+        ) : null}
       </div>
+      {confirmRecalculateOpen ? (
+        <Modal title="Recalcular puntuacion" onClose={() => !saving && setConfirmRecalculateOpen(false)}>
+          <div style={{ display: 'grid', gap: 14 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', border: `1px solid rgba(245,158,11,0.45)`, background: 'rgba(245,158,11,0.10)', borderRadius: 8, padding: 12 }}>
+              <AlertTriangle size={18} color={colors.warning} />
+              <div>
+                <strong>{resultsCount} resultado(s) cargado(s)</strong>
+                <div style={{ color: colors.secondary, fontSize: 13, lineHeight: 1.45, marginTop: 4 }}>Guardar esta regla recalculara posiciones y puntos de los WODs con resultados. El leaderboard puede cambiar de inmediato.</div>
+              </div>
+            </div>
+            <div style={{ color: colors.secondary, fontSize: 13, lineHeight: 1.5 }}>Usa esta accion cuando estes ajustando la regla oficial del evento. Si solo estas revisando opciones, cancela y no se aplicaran cambios.</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+              <Button onClick={() => setConfirmRecalculateOpen(false)} disabled={saving}>Cancelar</Button>
+              <Button tone="primary" onClick={() => saveScoring({ recalculate: true })} disabled={saving}><Save size={16} />{saving ? 'Aplicando...' : 'Aplicar y recalcular'}</Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </Panel>
   )
 }
@@ -3192,7 +3530,7 @@ function ScoringPanel({ bundle, reload, notify }) {
 function PreparePanel({ bundle, reload, notify }) {
   const [section, setSection] = useState('phases')
   const modules = [
-    { id: 'phases', label: 'Fases', icon: CalendarDays, count: (bundle.phases || []).length },
+    { id: 'phases', label: 'Fases', icon: CalendarDays, count: (bundle.phases || []).filter((phase) => !phase.parent_phase_id).length },
     { id: 'scoring', label: 'Puntuacion', icon: Trophy },
     { id: 'heats', label: 'Heats', icon: Zap, count: (bundle.heats?.items || []).length },
     { id: 'teams', label: 'Equipos', icon: Users, count: (bundle.teams || []).length },
@@ -3211,11 +3549,23 @@ function PreparePanel({ bundle, reload, notify }) {
 function ResultsPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
   const heats = bundle.heats?.items || []
-  const phaseOptions = bundle.phases || []
+  const phaseOptions = (bundle.phases || []).filter((phase) => !phase.parent_phase_id)
   const [scoreDraft, setScoreDraft] = useState({ phase_id: phaseOptions[0]?.id ? String(phaseOptions[0].id) : '', heat_id: '', category: '' })
+  const [activeScorePartId, setActiveScorePartId] = useState('')
   const [marks, setMarks] = useState({})
   const [editingRows, setEditingRows] = useState({})
+  const [resultSearch, setResultSearch] = useState('')
   const selectedPhase = (bundle.phases || []).find((phase) => String(phase.id) === String(scoreDraft.phase_id))
+  const scoringParts = selectedPhase?.scoring_parts?.length ? selectedPhase.scoring_parts : []
+  const activeScorePhase = scoringParts.length
+    ? (scoringParts.find((part) => String(part.id) === String(activeScorePartId)) || scoringParts[0])
+    : selectedPhase
+  const resultParts = scoringParts.length ? scoringParts : (selectedPhase ? [{
+    ...selectedPhase,
+    score_key: '',
+    nombre: 'Resultado',
+  }] : [])
+  const activeResultPhaseId = activeScorePhase?.id ? String(activeScorePhase.id) : scoreDraft.phase_id
   const phaseHeats = heats
     .filter((heat) => String(heat.phase_id) === String(scoreDraft.phase_id))
     .sort((a, b) => String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas')) || Number(a.heat_number || 0) - Number(b.heat_number || 0))
@@ -3227,7 +3577,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     const userId = item.user_id || item.id
     const teamId = item.team_id
     return (bundle.results || []).find((result) => (
-      String(result.phase_id) === String(scoreDraft.phase_id)
+      String(result.phase_id) === String(activeResultPhaseId)
       && (teamId ? String(result.team_id) === String(teamId) : String(result.user_id) === String(userId))
     ))
   }
@@ -3262,8 +3612,25 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (hasLaneA !== hasLaneB) return hasLaneA ? -1 : 1
     return participantName(a).localeCompare(participantName(b))
   })
+  const normalizedResultSearch = resultSearch.trim().toLowerCase()
+  const visibleRows = normalizedResultSearch
+    ? rows.filter((row) => [
+        participantName(row),
+        row.heat_label,
+        row.heat_name,
+        selectedHeat?.heat_label,
+        selectedHeat?.nombre,
+        row.categoria,
+        activeCategory,
+        row.lane_number ? `carril ${row.lane_number}` : '',
+        row.lane_number ? String(row.lane_number) : '',
+        row.team_name,
+        row.user_name,
+        row.participant_name,
+      ].some((value) => String(value || '').toLowerCase().includes(normalizedResultSearch)))
+    : rows
   const setResultField = (item, field, value) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
   }
   const DNF_MARK_HIGH = 2147483647
@@ -3271,52 +3638,61 @@ function ResultsPanel({ bundle, reload, notify }) {
   const dnfMark = () => lowerIsBetter ? DNF_MARK_HIGH : DNF_MARK_LOW
   const isDnfMark = (value) => Number(value) === DNF_MARK_HIGH || Number(value) === DNF_MARK_LOW
   const markValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return timeCapLabel
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     const existing = existingResultFor(item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf') && marks[key].dnf === false && isDnfMark(existing?.marca)) return ''
     return formatMarkValue(existing?.marca)
   }
   const isDnfValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(existingResultFor(item)?.marca)
   }
   const tiebreakValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'tiebreak')) return marks[key].tiebreak
     const existing = existingResultFor(item)
     return formatTiebreakValue(existing?.tiebreak)
   }
   const extraValue = (item) => {
-    const key = resultKey(scoreDraft.phase_id, item)
+    const key = resultKey(activeResultPhaseId, item)
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
     const existing = existingResultFor(item)
     return existing?.extra ?? ''
   }
   const lowerIsBetter = (() => {
-    const winnerRule = String(selectedPhase?.winner_rule || '').trim().toLowerCase()
+    const winnerRule = String(activeScorePhase?.winner_rule || '').trim().toLowerCase()
     if (winnerRule === 'lower_wins') return true
     if (winnerRule === 'higher_wins') return false
-    return ['tiempo', 'posicion'].includes(String(selectedPhase?.tipo || '').trim().toLowerCase())
+    return ['tiempo', 'posicion'].includes(String(activeScorePhase?.tipo || '').trim().toLowerCase())
   })()
-  const isTimePhase = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || '').trim().toLowerCase()) || String(selectedPhase?.tipo || '').trim().toLowerCase() === 'tiempo'
-  const timeCapSeconds = isTimePhase && Number(selectedPhase?.time_cap_seconds) > 0 ? Number(selectedPhase.time_cap_seconds) : null
+  const isTimePhase = ['for_time', 'tiempo_hms', 'tiempo'].includes(String(activeScorePhase?.measurement_method || activeScorePhase?.workout_format || activeScorePhase?.tipo || '').trim().toLowerCase()) || String(activeScorePhase?.tipo || '').trim().toLowerCase() === 'tiempo'
+  const timeCapSeconds = isTimePhase && Number(activeScorePhase?.time_cap_seconds) > 0 ? Number(activeScorePhase.time_cap_seconds) : null
   const timeCapLabel = timeCapSeconds ? formatSeconds(timeCapSeconds) : ''
-  const tiebreakMethod = String(selectedPhase?.tie_break_method || 'for_time').trim().toLowerCase()
-  const tieBreakActive = !!Number(selectedPhase?.tie_break_enabled || 0)
+  const tiebreakMethod = String(activeScorePhase?.tie_break_method || 'for_time').trim().toLowerCase()
+  const tieBreakActive = !!Number(activeScorePhase?.tie_break_enabled || 0)
   const isTiebreakTime = ['for_time', 'tiempo_hms', 'tiempo'].includes(tiebreakMethod)
   const tiebreakLowerIsBetter = ['for_time', 'tiempo_hms', 'tiempo', 'posicion'].includes(tiebreakMethod)
   const showExtraField = isTimePhase && !!timeCapSeconds
+  const isCapDnfValue = (item) => {
+    if (!showExtraField) return false
+    const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
+    const existing = existingResultFor(item)
+    return Number(existing?.marca) === Number(timeCapSeconds) && existing?.extra !== null && existing?.extra !== undefined
+  }
   const competitionScoring = bundle.scoring || {}
-  const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(selectedPhase?.id))
+  const selectedPhaseScoring = (competitionScoring.phases || []).find((item) => String(item.id) === String(activeScorePhase?.id))
   const effectiveScoring = {
-    system: selectedPhaseScoring?.scoring_system || selectedPhase?.scoring_system || competitionScoring.scoring_system || competition.scoring_system || 'dynamic_points',
+    system: selectedPhaseScoring?.scoring_system || activeScorePhase?.scoring_system || competitionScoring.scoring_system || competition.scoring_system || 'dynamic_points',
     scope: competitionScoring.scoring_scope || competition.scoring_scope || 'category',
-    table: selectedPhaseScoring?.scoring_table || selectedPhase?.scoring_table || competitionScoring.scoring_table || competition.scoring_table || defaultScoringTable,
+    table: selectedPhaseScoring?.scoring_table || activeScorePhase?.scoring_table || competitionScoring.scoring_table || competition.scoring_table || defaultScoringTable,
     tiebreak: competitionScoring.scoring_tiebreak || competition.scoring_tiebreak || 'best_positions',
     cumulative_direction: competitionScoring.cumulative_direction || competition.cumulative_direction || 'higher_wins',
-    weight_percent: selectedPhaseScoring?.scoring_weight_percent ?? selectedPhase?.scoring_weight_percent ?? 100,
+    weight_percent: selectedPhaseScoring?.scoring_weight_percent ?? activeScorePhase?.scoring_weight_percent ?? 100,
   }
   const formatMarkValue = (value) => isTimePhase && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
   const parseMarkValue = (value) => {
@@ -3332,17 +3708,29 @@ function ResultsPanel({ bundle, reload, notify }) {
     return Number.isFinite(parsed) ? parsed : null
   }
   const tiebreakLabel = isTiebreakTime ? 'Tiebreak tiempo' : tiebreakMethod === 'rm' ? 'Tiebreak peso' : tiebreakMethod === 'metros' ? 'Tiebreak metros' : 'Tiebreak reps'
-  const isAtTimeCap = (item) => !!timeCapSeconds && parseMarkValue(markValue(item)) === timeCapSeconds
   const displayMarkWithExtra = (item) => {
     if (isDnfValue(item)) return 'DNF'
     const mark = markValue(item)
     const extra = extraValue(item)
     return showExtraField && parseMarkValue(mark) === timeCapSeconds && extra !== '' && extra !== null && extra !== undefined ? `${mark} + ${extra}` : (mark || '-')
   }
-  const setCapResult = (item) => {
-    if (!timeCapSeconds) return
-    const key = resultKey(scoreDraft.phase_id, item)
-    setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), marca: timeCapLabel } }))
+  const setDnfResult = (item, currentDnf) => {
+    if (showExtraField) {
+      const key = resultKey(activeResultPhaseId, item)
+      const nextActive = !currentDnf
+      setMarks((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          capDnf: nextActive,
+          dnf: false,
+          marca: nextActive ? timeCapLabel : '',
+          extra: '',
+        },
+      }))
+      return
+    }
+    setResultField(item, 'dnf', !currentDnf)
   }
   const previewPool = [...phaseHeats.flatMap((heat) => heatParticipants(heat).map((participant) => ({ ...participant, categoria: heat.categoria || participant.categoria || 'Todas' }))), ...allConfirmedRows]
     .reduce((items, item) => {
@@ -3355,16 +3743,17 @@ function ResultsPanel({ bundle, reload, notify }) {
       map[resultEntityKey(item)] = item.categoria || 'Todas'
       return map
     }, {})
-    ;(bundle.results || []).filter((result) => String(result.phase_id) === String(scoreDraft.phase_id)).forEach((result) => {
+    ;(bundle.results || []).filter((result) => String(result.phase_id) === String(activeResultPhaseId)).forEach((result) => {
       const key = result.team_id ? `team-${result.team_id}` : `user-${result.user_id}`
       if (!categoryMap[key]) categoryMap[key] = result.categoria || 'Todas'
     })
     const entities = previewPool.map((item) => {
-      const key = resultKey(scoreDraft.phase_id, item)
+      const key = resultKey(activeResultPhaseId, item)
       const existing = existingResultFor(item)
       const draft = marks[key] || {}
-      const draftDnf = !!draft.dnf
-      const rawMarca = Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
+      const draftCapDnf = !!draft.capDnf
+      const draftDnf = !!draft.dnf && !draftCapDnf
+      const rawMarca = draftCapDnf ? timeCapLabel : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
       const marca = draftDnf ? dnfMark() : parseMarkValue(rawMarca)
       const extra = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : existing?.extra
       const tiebreak = tieBreakActive && !draftDnf ? Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? parseTiebreakValue(draft.tiebreak) : existing?.tiebreak : null
@@ -3457,19 +3846,19 @@ function ResultsPanel({ bundle, reload, notify }) {
       return `${category}:${mark}`
     }
     const groups = (bundle.results || [])
-      .filter((result) => String(result.phase_id) === String(scoreDraft.phase_id) && !isDnfMark(result.marca))
+      .filter((result) => String(result.phase_id) === String(activeResultPhaseId) && !isDnfMark(result.marca))
       .reduce((map, result) => {
         const groupKey = persistedTieGroupKey(result)
         if (!groupKey) return map
         if (!map[groupKey]) map[groupKey] = []
-        map[groupKey].push(resultKey(scoreDraft.phase_id, { user_id: result.user_id, team_id: result.team_id }))
+        map[groupKey].push(resultKey(activeResultPhaseId, { user_id: result.user_id, team_id: result.team_id }))
         return map
       }, {})
     return new Set(Object.values(groups).filter((items) => items.length > 1).flat())
   })()
   const saveFastResults = async () => {
-    if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
-    const changed = rows.filter((row) => Object.prototype.hasOwnProperty.call(marks, resultKey(scoreDraft.phase_id, row)))
+    if (!activeResultPhaseId) return notify('Selecciona un WOD', 'error')
+    const changed = rows.filter((row) => Object.prototype.hasOwnProperty.call(marks, resultKey(activeResultPhaseId, row)))
     if (!changed.length) return notify('No hay cambios por guardar', 'error')
     try {
       let saved = 0
@@ -3479,15 +3868,17 @@ function ResultsPanel({ bundle, reload, notify }) {
         const extra = extraValue(row)
         const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
         const existing = existingResultFor(row)
-        const rowDraft = marks[resultKey(scoreDraft.phase_id, row)] || {}
-        const rowDnf = !!rowDraft.dnf
-        const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
+        const rowDraft = marks[resultKey(activeResultPhaseId, row)] || {}
+        const rowCapDnf = !!rowDraft.capDnf
+        const rowDnf = !!rowDraft.dnf && !rowCapDnf
+        const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
         if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
         if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
         const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
         if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-        const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
-        if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
+        if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+        const parsedExtra = rowCapDnf ? Number(extra) : null
+        if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
         if (existing) {
           await api(`/results/${existing.id}`, {
             method: 'PUT',
@@ -3498,7 +3889,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             method: 'POST',
             body: JSON.stringify({
               competition_id: competition.id,
-              phase_id: Number(scoreDraft.phase_id),
+              phase_id: Number(activeResultPhaseId),
               user_id: row.user_id ? Number(row.user_id) : null,
               team_id: row.team_id ? Number(row.team_id) : null,
               marca: parsedMark,
@@ -3517,22 +3908,24 @@ function ResultsPanel({ bundle, reload, notify }) {
     }
   }
   const saveRowResult = async (row) => {
-    if (!scoreDraft.phase_id) return notify('Selecciona un WOD', 'error')
-    const key = resultKey(scoreDraft.phase_id, row)
+    if (!activeResultPhaseId) return notify('Selecciona un WOD', 'error')
+    const key = resultKey(activeResultPhaseId, row)
     const rowDraft = marks[key] || {}
-    const rowDnf = !!rowDraft.dnf
+    const rowCapDnf = !!rowDraft.capDnf
+    const rowDnf = !!rowDraft.dnf && !rowCapDnf
     const value = markValue(row)
     if (!rowDnf && value === '') return notify('Ingresa una marca o marca DNF', 'error')
     const extra = extraValue(row)
     const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
     const existing = existingResultFor(row)
-    const parsedMark = rowDnf ? dnfMark() : parseMarkValue(value)
+    const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
     if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
     if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
     const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
     if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-    const parsedExtra = extra === '' || rowDnf || !showExtraField || parsedMark !== timeCapSeconds ? null : Number(extra)
-    if (parsedExtra !== null && !Number.isFinite(parsedExtra)) return notify('Extra invalido', 'error')
+    if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+    const parsedExtra = rowCapDnf ? Number(extra) : null
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
     try {
       if (existing) {
         await api(`/results/${existing.id}`, {
@@ -3544,7 +3937,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           method: 'POST',
           body: JSON.stringify({
             competition_id: competition.id,
-            phase_id: Number(scoreDraft.phase_id),
+            phase_id: Number(activeResultPhaseId),
             user_id: row.user_id ? Number(row.user_id) : null,
             team_id: row.team_id ? Number(row.team_id) : null,
             marca: parsedMark,
@@ -3565,9 +3958,171 @@ function ResultsPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
+  const partResultKey = (part, row) => resultKey(part.id, row)
+  const existingResultForPart = (row, part) => {
+    const userId = row.user_id || row.id
+    const teamId = row.team_id
+    return (bundle.results || []).find((result) => (
+      String(result.phase_id) === String(part.id)
+      && (teamId ? String(result.team_id) === String(teamId) : String(result.user_id) === String(userId))
+    ))
+  }
+  const partIsTime = (part) => ['for_time', 'tiempo_hms', 'tiempo'].includes(String(part?.measurement_method || part?.workout_format || part?.tipo || '').trim().toLowerCase()) || String(part?.tipo || '').trim().toLowerCase() === 'tiempo'
+  const partTimeCap = (part) => partIsTime(part) && Number(part?.time_cap_seconds) > 0 ? Number(part.time_cap_seconds) : null
+  const partLowerIsBetter = (part) => {
+    const winnerRule = String(part?.winner_rule || '').trim().toLowerCase()
+    if (winnerRule === 'lower_wins') return true
+    if (winnerRule === 'higher_wins') return false
+    return ['tiempo', 'posicion'].includes(String(part?.tipo || '').trim().toLowerCase())
+  }
+  const partLabel = (part) => {
+    const value = String(part?.measurement_method || part?.workout_format || part?.tipo || 'marca').trim().toLowerCase()
+    return resultFormatLabels[value] || part?.measurement_method || part?.workout_format || part?.tipo || 'Marca'
+  }
+  const formatPartMarkValue = (part, value) => partIsTime(part) && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
+  const parsePartMarkValue = (part, value) => {
+    if (partIsTime(part)) return parseTimeInput(value)
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const partMarkValue = (row, part) => {
+    const key = partResultKey(part, row)
+    const cap = partTimeCap(part)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return cap ? formatSeconds(cap) : ''
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
+    const existing = existingResultForPart(row, part)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf') && marks[key].dnf === false && isDnfMark(existing?.marca)) return ''
+    return formatPartMarkValue(part, existing?.marca)
+  }
+  const partExtraValue = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
+    const existing = existingResultForPart(row, part)
+    return existing?.extra ?? ''
+  }
+  const setPartResultField = (row, part, field, value) => {
+    const key = partResultKey(part, row)
+    setMarks((prev) => ({ ...prev, [key]: { ...(prev[key] || {}), [field]: value } }))
+  }
+  const isPartCap = (row, part) => {
+    const cap = partTimeCap(part)
+    if (!cap) return false
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
+    const existing = existingResultForPart(row, part)
+    return Number(existing?.marca) === Number(cap) && existing?.extra !== null && existing?.extra !== undefined
+  }
+  const isPartDnf = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
+    return isDnfMark(existingResultForPart(row, part)?.marca)
+  }
+  const setPartDnfResult = (row, part) => {
+    const key = partResultKey(part, row)
+    const cap = partTimeCap(part)
+    if (cap) {
+      const nextActive = !isPartCap(row, part)
+      setMarks((prev) => ({
+        ...prev,
+        [key]: {
+          ...(prev[key] || {}),
+          capDnf: nextActive,
+          dnf: false,
+          marca: nextActive ? formatSeconds(cap) : '',
+          extra: '',
+        },
+      }))
+      return
+    }
+    setPartResultField(row, part, 'dnf', !isPartDnf(row, part))
+  }
+  const validatePartDraft = (row, part) => {
+    const key = partResultKey(part, row)
+    const draft = marks[key] || {}
+    const cap = partTimeCap(part)
+    const capActive = !!draft.capDnf
+    const dnfActive = !!draft.dnf && !capActive
+    const value = partMarkValue(row, part)
+    if (!dnfActive && value === '') return null
+    const parsedMark = dnfActive ? (partLowerIsBetter(part) ? DNF_MARK_HIGH : DNF_MARK_LOW) : capActive ? cap : parsePartMarkValue(part, value)
+    if (!dnfActive && parsedMark === null) throw new Error(partIsTime(part) ? `Tiempo invalido en ${part.score_key || part.nombre}` : `Marca invalida en ${part.score_key || part.nombre}`)
+    if (!dnfActive && cap && parsedMark > cap) throw new Error(`El tiempo de ${part.score_key || part.nombre} no puede superar el cap de ${formatSeconds(cap)}`)
+    const extra = partExtraValue(row, part)
+    if (capActive && extra === '') throw new Error(`Ingresa reps faltantes en ${part.score_key || part.nombre}. Usa 0 si termino justo en el cap.`)
+    const parsedExtra = capActive ? Number(extra) : null
+    if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) throw new Error(`Reps faltantes invalidas en ${part.score_key || part.nombre}`)
+    return {
+      key,
+      existing: existingResultForPart(row, part),
+      payload: {
+        competition_id: competition.id,
+        phase_id: Number(part.id),
+        user_id: row.user_id ? Number(row.user_id) : null,
+        team_id: row.team_id ? Number(row.team_id) : null,
+        marca: parsedMark,
+        extra: parsedExtra,
+        tiebreak: null,
+      },
+    }
+  }
+  const saveMultiPartChanges = async (rowFilter = null) => {
+    if (!resultParts.length) return
+    try {
+      let saved = 0
+      const keysToClear = []
+      const targetRows = rowFilter ? rows.filter(rowFilter) : rows
+      for (const row of targetRows) {
+        for (const part of resultParts) {
+          const key = partResultKey(part, row)
+          if (!Object.prototype.hasOwnProperty.call(marks, key)) continue
+          const item = validatePartDraft(row, part)
+          if (!item) continue
+          if (item.existing) {
+            await api(`/results/${item.existing.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: null }),
+            })
+          } else {
+            await api('/results', { method: 'POST', body: JSON.stringify(item.payload) })
+          }
+          saved += 1
+          keysToClear.push(item.key)
+        }
+      }
+      if (!saved) return notify('No hay cambios por guardar', 'error')
+      notify(`${saved} resultados guardados`)
+      setMarks((prev) => {
+        const next = { ...prev }
+        keysToClear.forEach((key) => { delete next[key] })
+        return next
+      })
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    }
+  }
+  const partCompletionForRow = (row) => {
+    const count = resultParts.filter((part) => existingResultForPart(row, part) || Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row))).length
+    if (count >= resultParts.length) return 'Completo'
+    return 'Pendiente'
+  }
+  const missingPartsForRow = (row) => resultParts
+    .filter((part) => !(existingResultForPart(row, part) || Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row))))
+    .map((part) => part.score_key || part.nombre)
+  const multiPartStats = (() => {
+    const stats = { complete: 0, pending: 0, dirty: 0 }
+    rows.forEach((row) => {
+      const state = partCompletionForRow(row)
+      if (state === 'Completo') stats.complete += 1
+      else stats.pending += 1
+      if (resultParts.some((part) => Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row)))) stats.dirty += 1
+    })
+    return stats
+  })()
   const resultCountForPhase = rows.filter((row) => existingResultFor(row)).length
-  const markLabel = isTimePhase ? 'Tiempo' : selectedPhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
-  const extraLabel = 'Extra'
+  const markLabel = isTimePhase ? 'Tiempo' : activeScorePhase?.tipo === 'posicion' ? 'Posicion' : 'Marca'
+  const extraLabel = showExtraField ? 'Reps faltantes' : 'Extra'
   const resultFormatLabels = {
     for_time: 'Tiempo / For time',
     tiempo: 'Tiempo',
@@ -3578,58 +4133,181 @@ function ResultsPanel({ bundle, reload, notify }) {
     metros: 'Metros',
     other: 'Marca',
   }
-  const phaseFormatValue = String(selectedPhase?.measurement_method || selectedPhase?.workout_format || selectedPhase?.tipo || 'marca').trim().toLowerCase()
-  const phaseFormatLabel = selectedPhase ? (resultFormatLabels[phaseFormatValue] || selectedPhase.measurement_method || selectedPhase.workout_format || selectedPhase.tipo || 'Marca') : 'Sin WOD'
+  const phaseFormatValue = String(activeScorePhase?.measurement_method || activeScorePhase?.workout_format || activeScorePhase?.tipo || 'marca').trim().toLowerCase()
+  const phaseFormatLabel = activeScorePhase ? (resultFormatLabels[phaseFormatValue] || activeScorePhase.measurement_method || activeScorePhase.workout_format || activeScorePhase.tipo || 'Marca') : 'Sin WOD'
   const markRuleLabel = lowerIsBetter ? 'Menor marca gana' : 'Mayor marca gana'
   const tiebreakRuleLabel = isTimePhase ? 'Menor extra gana si el tiempo empata; luego tiebreak' : (tiebreakLowerIsBetter ? 'Menor tiebreak gana' : 'Mayor tiebreak gana')
   const scoringRuleLabel = scoringPreviewLabel(effectiveScoring)
   const resultCardGridColumns = tieBreakActive
     ? 'minmax(120px, 1.1fr) repeat(5, minmax(90px, 1fr))'
     : 'minmax(120px, 1.1fr) repeat(4, minmax(90px, 1fr))'
+  const heatProgressPercent = rows.length ? Math.round((multiPartStats.complete / rows.length) * 100) : 0
+  if (resultParts.length) {
+    return (
+      <Panel title="Resultados" subtitle="Carga los puntajes del WOD por atleta y heat." action={<Button tone="primary" onClick={() => saveMultiPartChanges()}><Save size={16} />Guardar heat</Button>}>
+        <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+          <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
+            <Field label="WOD">
+              <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setMarks({}); setEditingRows({}); setResultSearch(''); }}>
+                <option value="">Seleccionar</option>
+                {phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}
+              </select>
+            </Field>
+            <Field label="Categoria">
+              <select style={inputStyle()} value={activeCategory} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, category: event.target.value, heat_id: '' })); setResultSearch(''); }}>
+                {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+              </select>
+            </Field>
+            <Field label="Heat">
+              <select style={inputStyle()} value={activeHeatId} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, heat_id: event.target.value })); setResultSearch(''); }}>
+                {categoryHeats.length ? categoryHeats.map((heat) => <option key={heat.id} value={heat.id}>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</option>) : <option value="">Sin heats</option>}
+              </select>
+            </Field>
+            <Field label="Buscar atleta">
+              <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre o carril" />
+            </Field>
+            <div className="fr-results-progress" style={{ display: 'grid', gap: 7, alignSelf: 'end', width: 'min(100%, 220px)', justifySelf: 'end' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: colors.text, fontSize: 12, fontWeight: 900 }}>
+                <span>{normalizedResultSearch ? `${visibleRows.length}/${rows.length}` : rows.length} atletas</span>
+                <span>{multiPartStats.complete}/{rows.length || 0} completos</span>
+              </div>
+              <div aria-label={`${heatProgressPercent}% completo`} style={{ height: 7, borderRadius: 999, background: colors.bg, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
+                <div style={{ width: `${heatProgressPercent}%`, height: '100%', background: colors.accent, borderRadius: 999 }} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {resultParts.map((part) => {
+              const cap = partTimeCap(part)
+              return (
+                <Pill key={part.id} tone={colors.accent}>
+                  {part.score_key || ''} · {partLabel(part)}{cap ? ` · Cap ${formatSeconds(cap)}` : ''} · {partLowerIsBetter(part) ? 'menor gana' : 'mayor gana'} · 100%
+                </Pill>
+              )
+            })}
+          </div>
+
+          <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
+            <div style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
+              {visibleRows.length ? visibleRows.map((row) => {
+                const rowDirty = resultParts.some((part) => Object.prototype.hasOwnProperty.call(marks, partResultKey(part, row)))
+                const status = partCompletionForRow(row)
+                const missingParts = missingPartsForRow(row)
+                const statusTone = status === 'Completo' ? colors.accent : colors.warning
+                return (
+                  <div key={resultEntityKey(row)} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${rowDirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: rowDirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
+                    <div className="fr-multipart-result-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center' }}>
+                      <span className="fr-multipart-result-lane" style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
+                      <span className="fr-multipart-result-athlete" style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
+                      <Pill tone={statusTone}>{status === 'Completo' ? 'Completo' : `Pendiente${missingParts.length ? ` · falta ${missingParts.join('/')}` : ''}`}</Pill>
+                      <span className="fr-multipart-result-save"><Button tone={rowDirty ? 'primary' : 'default'} disabled={!rowDirty} onClick={() => saveMultiPartChanges((item) => resultEntityKey(item) === resultEntityKey(row))}><Save size={14} /></Button></span>
+                    </div>
+                    <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(resultParts.length, 2)}, minmax(240px, 1fr))`, gap: 10 }}>
+                      {resultParts.map((part) => {
+                        const key = partResultKey(part, row)
+                        const existing = existingResultForPart(row, part)
+                        const dirty = Object.prototype.hasOwnProperty.call(marks, key)
+                        const isTime = partIsTime(part)
+                        const cap = partTimeCap(part)
+                        const capActive = isPartCap(row, part)
+                        const dnfActive = isPartDnf(row, part) && !capActive
+                        return (
+                          <div key={part.id} style={{ border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: colors.surface, padding: 10, display: 'grid', gap: 9 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <strong>{part.score_key || ''} {part.nombre}</strong>
+                              <Pill tone={colors.accent}>100%</Pill>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: capActive ? 'minmax(0, 1fr) minmax(120px, .7fr) auto' : 'minmax(0, 1fr) auto', gap: 8, alignItems: 'end' }}>
+                              <Field label={isTime ? 'Tiempo' : part?.tipo === 'posicion' ? 'Posicion' : 'Marca'}>
+                                <input type={isTime ? 'text' : 'number'} style={inputStyle()} value={dnfActive ? '' : capActive && cap ? formatSeconds(cap) : partMarkValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnfActive || capActive} placeholder={dnfActive ? 'DNF' : isTime ? (cap ? formatSeconds(cap) : '12:00') : 'Valor'} onChange={(event) => setPartResultField(row, part, 'marca', isTime ? formatTimeEntryInput(event.target.value) : event.target.value)} />
+                              </Field>
+                              {capActive ? (
+                                <Field label="Reps faltantes">
+                                  <input type="number" min="0" step="1" style={inputStyle()} value={partExtraValue(row, part)} onWheel={preventNumberInputWheel} onChange={(event) => setPartResultField(row, part, 'extra', event.target.value)} />
+                                </Field>
+                              ) : null}
+                              <Button onClick={() => setPartDnfResult(row, part)} tone={(cap ? capActive : dnfActive) ? 'danger' : 'default'}>{cap ? 'CAP' : 'DNF'}</Button>
+                            </div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: colors.secondary, fontSize: 12 }}>
+                              <span>Posicion {existing?.posicion ?? '-'}</span>
+                              <span>Puntos {existing?.puntos ?? '-'}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              }) : (
+                <div style={{ padding: 16, color: colors.secondary, fontSize: 13 }}>{normalizedResultSearch ? 'No hay atletas con ese filtro.' : 'Selecciona un WOD con atletas para cargar resultados.'}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Panel>
+    )
+  }
   return (
     <Panel title="Resultados" subtitle="Carga por categoria y heat con guardado por atleta." action={<Pill tone={colors.accent}>{resultCountForPhase} cargados</Pill>}>
       <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
-        <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+        <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
           <Field label="WOD">
-            <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' }))}>
+            <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setActiveScorePartId(''); setMarks({}); setResultSearch(''); }}>
               <option value="">Seleccionar</option>
               {phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}
             </select>
           </Field>
           <Field label="Categoria">
-            <select style={inputStyle()} value={activeCategory} onChange={(event) => setScoreDraft((prev) => ({ ...prev, category: event.target.value, heat_id: '' }))}>
+            <select style={inputStyle()} value={activeCategory} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, category: event.target.value, heat_id: '' })); setResultSearch(''); }}>
               {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
             </select>
           </Field>
           <Field label="Heat">
-            <select style={inputStyle()} value={activeHeatId} onChange={(event) => setScoreDraft((prev) => ({ ...prev, heat_id: event.target.value }))}>
+            <select style={inputStyle()} value={activeHeatId} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, heat_id: event.target.value })); setResultSearch(''); }}>
               {categoryHeats.length ? categoryHeats.map((heat) => <option key={heat.id} value={heat.id}>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</option>) : <option value="">Sin heats</option>}
             </select>
           </Field>
+          <Field label="Buscar atleta">
+            <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre o carril" />
+          </Field>
           <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
-            <Pill tone={colors.primary}>{rows.length} atletas</Pill>
+            <Pill tone={colors.primary}>{normalizedResultSearch ? `${visibleRows.length}/${rows.length}` : rows.length} atletas</Pill>
             <Pill tone={colors.accent}>{resultCountForPhase} resultados</Pill>
           </div>
         </div>
+        {scoringParts.length ? (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {scoringParts.map((part) => {
+              const active = String(part.id) === String(activeResultPhaseId)
+              return (
+                <button key={part.id} type="button" onClick={() => { setActiveScorePartId(String(part.id)); setMarks({}); setEditingRows({}); }} style={{ border: `1px solid ${active ? colors.accent : colors.border}`, background: active ? 'rgba(0,194,168,0.14)' : colors.top, color: colors.text, borderRadius: 8, minHeight: 36, padding: '8px 11px', fontWeight: 900 }}>
+                  {part.score_key || ''} {part.nombre} · 100%
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
         <div className="fr-result-rules" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Pill tone={colors.primary}>Formato {phaseFormatLabel}</Pill>
           {timeCapSeconds ? <Pill tone={colors.primary}>Cap {timeCapLabel}</Pill> : null}
           <Pill tone={colors.accent}>{markRuleLabel}</Pill>
           {tieBreakActive ? <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill> : null}
           <Pill tone={colors.secondary}>{scoringRuleLabel}</Pill>
-          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Extra aparece solo al cap y se guarda como tiempo + reps.' : 'Configura un cap para usar extra al time cap.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
+          <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Tiempo es el valor por defecto. CAP coloca el time cap y habilita reps faltantes.' : 'Configura un cap para usar reps faltantes.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
           <div className="fr-results-list" style={{ display: 'grid', gap: 10, maxHeight: 560, overflowY: 'auto', padding: 12 }}>
-            {rows.length ? rows.map((row) => {
+            {visibleRows.length ? visibleRows.map((row) => {
               const existing = existingResultFor(row)
-              const key = resultKey(scoreDraft.phase_id, row)
+              const key = resultKey(activeResultPhaseId, row)
               const dirty = Object.prototype.hasOwnProperty.call(marks, key)
               const preview = previewRankMap[key]
               const editable = !existing || editingRows[key] || dirty
-              const rowDnf = isDnfValue(row)
+              const capDnf = isCapDnfValue(row)
+              const rowDnf = isDnfValue(row) && !capDnf
               const showTiebreakWarning = persistedTieKeys.has(key)
-              const showExtraInput = editable && showExtraField && !rowDnf && isAtTimeCap(row)
+              const showExtraInput = editable && showExtraField && capDnf
               return (
                 <div className="fr-result-row" key={key} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: dirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
                   <div className="fr-result-card-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto', gap: 10, alignItems: 'center' }}>
@@ -3638,7 +4316,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                     <div className="fr-result-actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                       {editable ? (
                         <>
-                          <Button onClick={() => setResultField(row, 'dnf', !rowDnf)} tone={rowDnf ? 'danger' : 'default'}>DNF</Button>
+                          <Button onClick={() => setDnfResult(row, showExtraField ? capDnf : rowDnf)} tone={(showExtraField ? capDnf : rowDnf) ? 'danger' : 'default'}>{showExtraField ? 'CAP' : 'DNF'}</Button>
                           <Button tone="primary" onClick={() => saveRowResult(row)}><Save size={14} /></Button>
                         </>
                       ) : (
@@ -3651,9 +4329,8 @@ function ResultsPanel({ bundle, reload, notify }) {
                     {editable ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{markLabel}</span>
-                        <span style={{ display: 'grid', gridTemplateColumns: timeCapSeconds ? 'minmax(0, 1fr) auto' : '1fr', gap: 6 }}>
-                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf} />
-                          {timeCapSeconds ? <Button onClick={() => setCapResult(row)} disabled={rowDnf}>CAP</Button> : null}
+                        <span style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
+                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : capDnf ? timeCapLabel : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', isTimePhase ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf || capDnf} />
                         </span>
                       </label>
                     ) : (
@@ -3662,7 +4339,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                     {showExtraInput ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{extraLabel}</span>
-                        <input className="fr-result-extra" type="number" step="1" style={inputStyle()} value={extraValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Reps" />
+                        <input className="fr-result-extra" type="number" step="1" min="0" style={inputStyle()} value={extraValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'extra', event.target.value)} placeholder="Faltantes" />
                       </label>
                     ) : null}
                     {tieBreakActive && editable ? (
@@ -3675,7 +4352,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                             </span>
                           ) : null}
                         </span>
-                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'tiebreak', event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
+                        <input className="fr-result-tiebreak" type={isTiebreakTime ? 'text' : 'number'} step="1" style={inputStyle()} value={rowDnf ? '' : tiebreakValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'tiebreak', isTiebreakTime ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={isTiebreakTime ? '01:23' : 'Opcional'} disabled={rowDnf} />
                       </label>
                     ) : tieBreakActive ? (
                       <span className={`fr-result-readonly${showTiebreakWarning ? ' fr-result-tiebreak-field' : ''}`} data-label={tiebreakLabel} style={{ color: colors.secondary, fontSize: 13 }}>
@@ -3695,7 +4372,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                 </div>
               )
             }) : (
-              <div style={{ padding: 16, color: colors.secondary, fontSize: 13 }}>Selecciona un WOD con atletas para cargar resultados.</div>
+              <div style={{ padding: 16, color: colors.secondary, fontSize: 13 }}>{normalizedResultSearch ? 'No hay atletas con ese filtro.' : 'Selecciona un WOD con atletas para cargar resultados.'}</div>
             )}
           </div>
         </div>
@@ -4252,6 +4929,7 @@ function WizardWorkspace({ selectedId, onBack }) {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState(null)
   const [activeStepIdState, setActiveStepIdState] = useState('identity')
+  const [stepSheetOpen, setStepSheetOpen] = useState(false)
 
   const notify = (text, type = 'success') => {
     setToast({ text, type })
@@ -4287,6 +4965,15 @@ function WizardWorkspace({ selectedId, onBack }) {
     return () => { active = false }
   }, [selectedId])
 
+  useEffect(() => {
+    if (!stepSheetOpen) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [stepSheetOpen])
+
   if (loading && !bundle) {
     return <main style={{ minHeight: '100%', background: colors.bg, color: colors.text, display: 'grid', placeItems: 'center' }}>Cargando centro de mando...</main>
   }
@@ -4306,7 +4993,12 @@ function WizardWorkspace({ selectedId, onBack }) {
   const competition = normalizeCompetition(bundle.competition, bundle)
   const steps = buildSteps(bundle.competition, summary)
   const activeStep = steps.find((step) => step.id === activeStepIdState) || steps[0]
+  const activeStepIndex = Math.max(0, steps.findIndex((step) => step.id === activeStep.id))
   const totalProgress = Math.round(steps.reduce((sum, step) => sum + step.progress, 0) / steps.length)
+  const chooseStep = (stepId) => {
+    setActiveStepIdState(stepId)
+    setStepSheetOpen(false)
+  }
 
   return (
     <main className="fr-command-scope" style={{ minHeight: '100%', background: colors.bg, color: colors.text }}>
@@ -4354,13 +5046,31 @@ function WizardWorkspace({ selectedId, onBack }) {
         </section>
 
         <section className="fr-wizard-layout" style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '292px minmax(0, 1fr)', gap: 14, alignItems: 'start' }}>
+          <button
+            type="button"
+            className="fr-mobile-step-trigger"
+            onClick={() => setStepSheetOpen(true)}
+            aria-label="Cambiar etapa"
+            style={{ display: 'none', border: `1px solid ${colors.border}`, background: colors.surface, color: colors.text, borderRadius: 8, padding: 12, textAlign: 'left' }}
+          >
+            <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <span style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+                <span style={{ color: colors.muted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Etapa {activeStepIndex + 1} de {steps.length}</span>
+                <span style={{ color: colors.text, fontSize: 15, fontWeight: 950, overflowWrap: 'anywhere' }}>{activeStep.label}</span>
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: colors.secondary, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                Cambiar <ChevronDown size={16} />
+              </span>
+            </span>
+          </button>
+
           <aside className="fr-wizard-sidebar" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 12, display: 'grid', gap: 10, position: 'sticky', top: 90 }}>
             <div><div style={{ fontWeight: 900 }}>Flujo de competencia</div><div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Elige una etapa para operar.</div></div>
             {steps.map((step, index) => {
               const Icon = step.icon
               const active = step.id === activeStep.id
               return (
-                <button key={step.id} type="button" onClick={() => setActiveStepIdState(step.id)} style={{ display: 'grid', gridTemplateColumns: '34px 1fr auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
+                <button key={step.id} type="button" onClick={() => chooseStep(step.id)} style={{ display: 'grid', gridTemplateColumns: '34px 1fr auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
                   <span style={{ width: 34, height: 34, borderRadius: 8, display: 'grid', placeItems: 'center', background: active ? colors.primary : colors.surface, color: active ? colors.bg : colors.secondary }}><Icon size={17} /></span>
                   <span style={{ minWidth: 0 }}><span style={{ display: 'block', color: colors.muted, fontSize: 10, fontWeight: 900 }}>Paso {index + 1}</span><span style={{ display: 'block', fontSize: 13, fontWeight: 900 }}>{step.label}</span></span>
                   <WizardStatusDot state={step.state} />
@@ -4393,6 +5103,37 @@ function WizardWorkspace({ selectedId, onBack }) {
           </section>
         </section>
       </div>
+      {stepSheetOpen ? (
+        <div className="fr-step-sheet-overlay" role="presentation" onClick={() => setStepSheetOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 10030, background: 'rgba(0,0,0,0.66)', display: 'flex', alignItems: 'flex-end', padding: 10 }}>
+          <div className="fr-step-sheet" role="dialog" aria-modal="true" aria-label="Cambiar etapa" onClick={(event) => event.stopPropagation()} style={{ width: '100%', border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 12, overflow: 'hidden', boxShadow: '0 -22px 60px rgba(0,0,0,0.45)' }}>
+            <div style={{ padding: 14, borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <div>
+                <div style={{ color: colors.text, fontWeight: 950 }}>Etapas de la competencia</div>
+                <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>Elige una etapa para operar.</div>
+              </div>
+              <button type="button" onClick={() => setStepSheetOpen(false)} aria-label="Cerrar" style={{ width: 38, height: 38, borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.top, color: colors.text, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={17} />
+              </button>
+            </div>
+            <div style={{ display: 'grid', gap: 8, padding: 12, maxHeight: 'min(66dvh, 520px)', overflowY: 'auto' }}>
+              {steps.map((step, index) => {
+                const Icon = step.icon
+                const active = step.id === activeStep.id
+                return (
+                  <button key={step.id} type="button" onClick={() => chooseStep(step.id)} style={{ display: 'grid', gridTemplateColumns: '36px minmax(0, 1fr) auto', gap: 10, alignItems: 'center', width: '100%', textAlign: 'left', borderRadius: 8, border: `1px solid ${active ? 'rgba(255,107,0,0.58)' : colors.border}`, background: active ? 'rgba(255,107,0,0.12)' : colors.top, color: colors.text, padding: 10 }}>
+                    <span style={{ width: 36, height: 36, borderRadius: 8, display: 'grid', placeItems: 'center', background: active ? colors.primary : colors.surface, color: active ? colors.bg : colors.secondary }}><Icon size={17} /></span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', color: colors.muted, fontSize: 10, fontWeight: 900, textTransform: 'uppercase' }}>Paso {index + 1}</span>
+                      <span style={{ display: 'block', fontSize: 14, fontWeight: 950 }}>{step.label}</span>
+                    </span>
+                    <WizardStatusDot state={step.state} />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ResponsiveStyles />
     </main>
   )
@@ -4543,6 +5284,22 @@ function ResponsiveStyles() {
         }
         .fr-form-grid {
           grid-template-columns: 1fr !important;
+          width: 100% !important;
+          min-width: 0 !important;
+        }
+        .fr-form-grid > *,
+        .fr-form-grid label,
+        .fr-form-grid input,
+        .fr-form-grid select,
+        .fr-form-grid textarea {
+          min-width: 0 !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        .fr-form-grid input,
+        .fr-form-grid select,
+        .fr-form-grid textarea {
+          width: 100% !important;
         }
       }
       @media (max-width: 760px) {
@@ -4600,6 +5357,8 @@ function ResponsiveStyles() {
         }
         .fr-scoring-mode-grid,
         .fr-scoring-settings,
+        .fr-scoring-phase-head,
+        .fr-scoring-phase-controls,
         .fr-scoring-phase-row {
           grid-template-columns: 1fr !important;
           width: 100% !important;
@@ -4607,12 +5366,20 @@ function ResponsiveStyles() {
         }
         .fr-scoring-mode-grid > button,
         .fr-scoring-settings > *,
+        .fr-scoring-phase-head > *,
+        .fr-scoring-phase-controls > *,
         .fr-scoring-phase-row > * {
           min-width: 0 !important;
           max-width: 100% !important;
         }
+        .fr-scoring-phase-select {
+          width: 100% !important;
+          min-width: 0 !important;
+        }
         .fr-scoring-mode-grid span,
         .fr-scoring-settings,
+        .fr-scoring-phase-head,
+        .fr-scoring-phase-controls,
         .fr-scoring-phase-row {
           overflow-wrap: break-word;
         }
@@ -4639,6 +5406,24 @@ function ResponsiveStyles() {
           font-size: 11px !important;
           line-height: 1.35 !important;
         }
+        .fr-results-progress {
+          width: 100% !important;
+          justify-self: stretch !important;
+          min-width: 0 !important;
+        }
+        .fr-results-progress > div:first-child {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          align-items: start;
+        }
+        .fr-results-progress > div:first-child > span {
+          min-width: 0;
+          overflow-wrap: anywhere;
+          line-height: 1.25;
+        }
+        .fr-results-progress > div:first-child > span:last-child {
+          text-align: right;
+        }
         .fr-result-row {
           gap: 10px !important;
           align-items: stretch !important;
@@ -4646,6 +5431,41 @@ function ResponsiveStyles() {
         }
         .fr-result-card-head {
           grid-template-columns: minmax(0, 1fr) auto !important;
+        }
+        .fr-multipart-result-head {
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          align-items: start !important;
+        }
+        .fr-multipart-result-athlete {
+          grid-column: 1 / -1;
+          grid-row: 1;
+          font-size: 15px !important;
+          line-height: 1.28 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+          word-break: normal !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        .fr-multipart-result-lane {
+          grid-column: 1;
+          grid-row: 2;
+          width: fit-content;
+          max-width: 100%;
+        }
+        .fr-multipart-result-head > span:not(.fr-multipart-result-athlete):not(.fr-multipart-result-lane):not(.fr-multipart-result-save) {
+          grid-column: 1;
+          grid-row: 3;
+          width: fit-content;
+          max-width: 100%;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+        .fr-multipart-result-save {
+          grid-column: 2;
+          grid-row: 2 / span 2;
+          justify-self: end;
+          align-self: center;
         }
         .fr-result-card-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
@@ -4781,29 +5601,13 @@ function ResponsiveStyles() {
         .fr-mobile-card-table td[data-label="Acciones"] button {
           width: 100%;
         }
+        .fr-mobile-step-trigger {
+          display: block !important;
+          width: 100%;
+          margin-bottom: 10px;
+        }
         .fr-wizard-sidebar {
-          display: flex !important;
-          gap: 8px !important;
-          overflow-x: auto !important;
-          position: sticky !important;
-          top: 0 !important;
-          z-index: 30 !important;
-          padding: 8px !important;
-          scroll-snap-type: x proximity;
-        }
-        .fr-wizard-sidebar > div:first-child,
-        .fr-wizard-sidebar-stats {
           display: none !important;
-        }
-        .fr-wizard-sidebar > button {
-          min-width: 174px;
-          grid-template-columns: 30px minmax(0, 1fr) auto !important;
-          scroll-snap-align: start;
-          padding: 9px !important;
-        }
-        .fr-wizard-sidebar > button > span:first-child {
-          width: 30px !important;
-          height: 30px !important;
         }
         .fr-module-tabs {
           margin-left: -2px;
@@ -4966,6 +5770,9 @@ export default function AdminCompetitionCommandProposal() {
       {toast ? <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 10020, border: `1px solid ${toast.type === 'error' ? colors.error : colors.accent}`, background: colors.surface, borderRadius: 8, padding: '11px 13px' }}>{toast.text}</div> : null}
       {createOpen ? <CreateCompetitionModal onClose={() => setCreateOpen(false)} notify={notify} onCreated={(created) => { setCreateOpen(false); setSelectedId(created.id); setView('wizard') }} /> : null}
       <div className="fr-command-page" style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '22px 16px 34px' }}>
+        <div style={{ marginBottom: 16 }}>
+          <AdminToolsNav />
+        </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button onClick={loadPortfolio}><RefreshCw size={16} />Refrescar</Button>

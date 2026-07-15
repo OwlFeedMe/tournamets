@@ -40,9 +40,14 @@ function phaseTypeFromPhase(phase) {
 }
 
 function parseTimeToSeconds(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
   const raw = (value ?? '').toString().trim()
   if (!raw) return null
-  if (/^\d+$/.test(raw)) return Number(raw)
+  if (/^\d+$/.test(raw)) {
+    const parts = clockPartsFromDigits(raw)
+    if (parts) return (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+    return Number(raw)
+  }
   const parts = raw.split(':').map((item) => item.trim())
   if (parts.length !== 2 && parts.length !== 3) return null
   const nums = parts.map(Number)
@@ -57,6 +62,38 @@ function parseTimeToSeconds(value) {
   }
   if (m > 59 || s > 59) return null
   return (h * 3600) + (m * 60) + s
+}
+
+function clockPartsFromDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '').slice(0, 6)
+  if (digits.length < 3) return null
+  const valid = (hours, minutes, seconds) => (
+    Number.isFinite(hours) && Number.isFinite(minutes) && Number.isFinite(seconds)
+    && hours >= 0 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59
+  )
+  const candidate = (hours, minutes, seconds) => valid(hours, minutes, seconds) ? { hours, minutes, seconds } : null
+  if (digits.length === 3) return candidate(0, Number(digits.slice(0, 1)), Number(digits.slice(1)))
+  if (digits.length === 4) {
+    return candidate(0, Number(digits.slice(0, 2)), Number(digits.slice(2)))
+      || clockPartsFromDigits(digits.slice(0, 3))
+  }
+  if (digits.length === 5) {
+    return (digits.startsWith('0') ? clockPartsFromDigits(digits.slice(1)) : null)
+      || candidate(Number(digits.slice(0, 1)), Number(digits.slice(1, 3)), Number(digits.slice(3)))
+      || clockPartsFromDigits(digits.slice(0, 4))
+  }
+  return candidate(Number(digits.slice(0, 2)), Number(digits.slice(2, 4)), Number(digits.slice(4)))
+    || clockPartsFromDigits(digits.slice(0, 5))
+}
+
+function formatTimeEntryInput(value) {
+  const raw = String(value ?? '')
+  if (!raw.trim()) return ''
+  const digits = raw.replace(/\D/g, '')
+  const parts = clockPartsFromDigits(digits)
+  if (!parts) return digits || raw.replace(/[^\d:]/g, '')
+  const seconds = (parts.hours * 3600) + (parts.minutes * 60) + parts.seconds
+  return formatSecondsToClock(seconds)
 }
 
 function parseMetricByPhase(value, phase) {
@@ -93,7 +130,7 @@ function scoreInputConfig(phase) {
       type: 'text',
       placeholder: 'Ej: 7:33',
       label: 'Tiempo',
-      helper: 'Usa MM:SS, HH:MM:SS o segundos',
+      helper: 'Escribe rapido: 9000 se convierte en 09:00',
     }
   }
   if (phaseType === 'posicion') {
@@ -402,7 +439,7 @@ function ScannerModal({
                     </div>
                     {scoreContext?.phase?.extra_enabled ? (
                       <div style={{ color: '#AAB2C0', fontSize: 12 }}>
-                        Extra: {scoreContext.existing.extra ?? '-'}
+                        Reps faltantes: {scoreContext.existing.extra ?? '-'}
                       </div>
                     ) : null}
                     {scoreContext?.phase?.tie_break_enabled ? (
@@ -433,7 +470,7 @@ function ScannerModal({
                         <input
                           type={scoreInputType || 'text'}
                           value={scoreValue}
-                          onChange={(event) => onScoreValueChange?.(event.target.value)}
+                          onChange={(event) => onScoreValueChange?.((scoreInputType || 'text') === 'text' ? formatTimeEntryInput(event.target.value) : event.target.value)}
                           placeholder={scoreInputPlaceholder || 'Ej: 210'}
                           style={{
                             borderRadius: 12,
@@ -447,12 +484,12 @@ function ScannerModal({
                         {scoreInputHelper ? <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreInputHelper}</div> : null}
                         {scoreContext?.phase?.extra_enabled ? (
                           <>
-                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>Extra</label>
+                            <label style={{ color: '#AAB2C0', fontSize: 12 }}>Reps faltantes</label>
                             <input
                               type="number"
                               value={scoreExtraValue || ''}
                               onChange={(event) => onScoreExtraValueChange?.(event.target.value)}
-                              placeholder="Reps"
+                              placeholder="0"
                               style={{
                                 borderRadius: 12,
                                 border: '1px solid #252A33',
@@ -462,7 +499,7 @@ function ScannerModal({
                                 fontSize: 14,
                               }}
                             />
-                            <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreContext?.phase?.extra_helper || 'Repeticiones al time cap'}</div>
+                            <div style={{ color: '#6B7280', fontSize: 12 }}>{scoreContext?.phase?.extra_helper || 'Usa 0 si termino justo en el cap'}</div>
                           </>
                         ) : null}
                         {scoreContext?.phase?.tie_break_enabled ? (
@@ -471,7 +508,7 @@ function ScannerModal({
                             <input
                               type={tieBreakInputType || 'text'}
                               value={scoreTieBreakValue || ''}
-                              onChange={(event) => onScoreTieBreakValueChange?.(event.target.value)}
+                              onChange={(event) => onScoreTieBreakValueChange?.((tieBreakInputType || 'text') === 'text' ? formatTimeEntryInput(event.target.value) : event.target.value)}
                               placeholder={tieBreakInputPlaceholder || 'Ej: 7:33'}
                               style={{
                                 borderRadius: 12,
@@ -975,7 +1012,7 @@ export default function JudgeHub() {
     const extraValue = String(scoreExtraValue || '').trim()
     const parsedExtra = scoreContext?.phase?.extra_enabled && extraValue ? Number(extraValue) : null
     if (scoreContext?.phase?.extra_enabled && extraValue && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) {
-      setScoreMsg({ type: 'error', text: 'Extra debe ser un numero entero.' })
+      setScoreMsg({ type: 'error', text: 'Reps faltantes debe ser un numero entero.' })
       return
     }
     const tieBreakPhase = {

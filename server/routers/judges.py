@@ -17,6 +17,7 @@ from auth import invalidate_user, require_auth, require_staff
 from services.emailer import send_email
 from services.email_templates import render_judge_invitation
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.result_notifications import notify_result_saved
 from services.scoring import phase_scoring_config
 from competition_rules import normalize_phase_measurement_method
 from database import get_session
@@ -298,7 +299,7 @@ def _tie_break_enabled(phase: CompetitionPhase | None) -> bool:
 
 
 def _extra_reps_enabled(phase: CompetitionPhase | None) -> bool:
-    return _phase_uses_time_input(phase)
+    return _phase_uses_time_input(phase) and int(getattr(phase, "time_cap_seconds", 0) or 0) > 0
 
 
 def _tie_break_phase_proxy(phase: CompetitionPhase | None) -> dict:
@@ -317,6 +318,7 @@ def _phase_score_meta(phase: CompetitionPhase | None) -> dict:
         "extra_enabled": 1 if extra_enabled else 0,
         "extra_label": "Extra" if extra_enabled else None,
         "extra_helper": "Repeticiones al time cap" if extra_enabled else None,
+        "time_cap_seconds": int(getattr(phase, "time_cap_seconds", 0) or 0) if phase else 0,
         "tie_break_enabled": 1 if _tie_break_enabled(phase) else 0,
         "tie_break_method": normalize_phase_measurement_method(getattr(phase, "tie_break_method", None), "tiempo"),
         "tie_break_label": "Tie break",
@@ -436,6 +438,19 @@ def _parse_extra_for_phase(raw: object, phase: CompetitionPhase | None) -> int:
     if value < 0:
         raise HTTPException(400, "Extra no puede ser negativo")
     return value
+
+
+def _validate_time_cap_result(phase: CompetitionPhase | None, mark: int | None, extra: int | None) -> int | None:
+    cap = getattr(phase, "time_cap_seconds", None)
+    if not _phase_uses_time_input(phase) or cap is None or mark is None or _is_dnf_mark(mark):
+        return extra
+    cap_seconds = int(cap)
+    if int(mark) > cap_seconds:
+        cap_label = _format_mark_for_phase(cap_seconds, phase) or str(cap_seconds)
+        raise HTTPException(400, f"El tiempo no puede superar el cap de {cap_label}")
+    if int(mark) != cap_seconds:
+        return None
+    return extra
 
 
 def _result_for_entity(
@@ -986,6 +1001,8 @@ def list_judge_score_phases(
     ).all()
     payload: list[dict] = []
     for phase in rows:
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            continue
         payload.append(
             {
                 "id": int(phase.id),
@@ -1017,7 +1034,10 @@ def list_judge_score_manual_options(
     phase = session.get(CompetitionPhase, phase_id)
     if not phase or int(phase.competition_id) != int(competition_id):
         raise HTTPException(404, "La fase indicada no pertenece a la competencia")
+    if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+        raise HTTPException(400, "Selecciona una parte puntuable del WOD")
     phase_mode = _phase_score_mode(phase)
+    heat_phase_id = int(getattr(phase, "parent_phase_id", None) or phase_id)
 
     normalized_query = str(q or "").strip().lower()
     normalized_category = str(category or "").strip().lower()
@@ -1027,7 +1047,7 @@ def list_judge_score_manual_options(
         select(CompetitionHeat)
         .where(
             CompetitionHeat.competition_id == competition_id,
-            CompetitionHeat.phase_id == phase_id,
+            CompetitionHeat.phase_id == heat_phase_id,
         )
         .order_by(CompetitionHeat.heat_number.asc(), CompetitionHeat.start_at.asc(), CompetitionHeat.id.asc())
     ).all()
@@ -1036,6 +1056,7 @@ def list_judge_score_manual_options(
         select(CompetitionHeatAssignment)
         .where(CompetitionHeatAssignment.heat_id.in_(list(heat_map.keys())) if heat_map else False)
     ).all() if heat_map else []
+    has_phase_heats = bool(heat_map)
 
     if phase_mode == "total":
         teams = session.exec(
@@ -1075,6 +1096,8 @@ def list_judge_score_manual_options(
             team_id_value = int(team.id)
             assignment = assignment_by_team.get(team_id_value)
             heat = heat_map.get(int(assignment.heat_id)) if assignment and assignment.heat_id is not None else None
+            if has_phase_heats and heat is None:
+                continue
             existing = existing_by_team.get(team_id_value)
             team_name = str(team.nombre or "").strip() or f"Equipo {team_id_value}"
             search_blob = " ".join([team_name, *member_names.get(team_id_value, [])]).lower()
@@ -1150,6 +1173,8 @@ def list_judge_score_manual_options(
         participant_id_value = int(participant.id)
         assignment = assignment_by_participant.get(participant_id_value)
         heat = heat_map.get(int(assignment.heat_id)) if assignment and assignment.heat_id is not None else None
+        if has_phase_heats and heat is None:
+            continue
         full_name = f"{(participant.nombre or '').strip()} {(participant.apellido or '').strip()}".strip() or f"Participante {participant_id_value}"
         participant_category = str(enrollment.categoria or participant.categoria or "").strip() or "Sin categoria"
         existing = existing_by_participant.get(participant_id_value)
@@ -1248,6 +1273,7 @@ def judge_score_submit(
     extra_int = None
     if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
         extra_int = _parse_extra_for_phase(raw_extra, phase)
+    extra_int = _validate_time_cap_result(phase, mark_int, extra_int)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
     if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
@@ -1312,6 +1338,9 @@ def judge_score_submit(
             "marca_raw": str(raw_mark).strip(),
         },
     )
+    session.flush()
+    session.refresh(result)
+    notify_result_saved(session, result, updated=False)
     session.commit()
     session.refresh(result)
     out = _score_payload_for_entity(
@@ -1348,6 +1377,7 @@ def judge_score_edit(
     extra_int = None
     if _extra_reps_enabled(phase) and raw_extra is not None and str(raw_extra).strip() != "":
         extra_int = _parse_extra_for_phase(raw_extra, phase)
+    extra_int = _validate_time_cap_result(phase, mark_int, extra_int)
     raw_tiebreak = body.get("tiebreak_raw", body.get("tiebreak"))
     tiebreak_int = None
     if _tie_break_enabled(phase) and raw_tiebreak is not None and str(raw_tiebreak).strip() != "":
@@ -1391,6 +1421,9 @@ def judge_score_edit(
             "marca_raw": str(raw_mark).strip(),
         },
     )
+    session.flush()
+    session.refresh(existing)
+    notify_result_saved(session, existing, updated=True)
     session.commit()
     session.refresh(existing)
     out = _score_payload_for_entity(

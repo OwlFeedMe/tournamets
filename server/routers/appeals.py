@@ -18,6 +18,7 @@ from models import (
 from phase_status import recompute_and_persist_phase_status
 from routers.results import APPEAL_WINDOW_MINUTES, _recompute_phase_positions_and_points
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.result_notifications import notify_result_saved
 
 router = APIRouter(prefix="/api/appeals", tags=["appeals"])
 
@@ -365,5 +366,9 @@ def resolve_appeal(appeal_id: int, body: dict = Body(...), session: Session = De
         author_role=_actor_role(user),
         message=note,
     ))
+    if resolution_type == "score_adjusted":
+        session.flush()
+        session.refresh(result)
+        notify_result_saved(session, result, updated=True)
     session.commit()
     return _appeal_payload(session, appeal, include_messages=True)

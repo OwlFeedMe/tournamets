@@ -26,6 +26,7 @@ from models import (
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.scoring import (
+    normalize_point_step,
     normalize_scoring_system,
     normalize_scoring_table,
     normalize_weight_percent,
@@ -161,6 +162,17 @@ def _normalize_time_cap_seconds(raw: object) -> int | None:
     return max(1, min(value, 24 * 60 * 60))
 
 
+def _requires_time_cap(measurement_method: str | None, workout_format: str | None = None) -> bool:
+    measurement = _normalize_measurement_method(measurement_method, None)
+    workout = _normalize_workout_format(workout_format, measurement)
+    return measurement in {"for_time", "tiempo_hms", "tiempo"} or workout in {"for_time", "tiempo_hms", "tiempo"}
+
+
+def _validate_required_time_cap(measurement_method: str | None, workout_format: str | None, time_cap_seconds: int | None) -> None:
+    if _requires_time_cap(measurement_method, workout_format) and not time_cap_seconds:
+        raise HTTPException(400, "Time cap requerido para WODs for time")
+
+
 def _normalize_scoring_override_enabled(raw: object) -> int:
     if isinstance(raw, bool):
         return 1 if raw else 0
@@ -168,6 +180,22 @@ def _normalize_scoring_override_enabled(raw: object) -> int:
         return 1 if int(raw or 0) else 0
     except Exception:
         return 0
+
+
+def _normalize_flag(raw: object, default: int = 0) -> int:
+    if raw is None:
+        return 1 if default else 0
+    if isinstance(raw, bool):
+        return 1 if raw else 0
+    try:
+        return 1 if int(raw or 0) else 0
+    except Exception:
+        return 1 if default else 0
+
+
+def _normalize_score_key(raw: object) -> str | None:
+    value = str(raw or "").strip().upper()
+    return value[:12] or None
 
 
 def _normalize_phase_status(raw: str | None) -> str:
@@ -482,6 +510,10 @@ def _parse_phase_activities(phase: CompetitionPhase) -> list[dict]:
 
 def _phase_response(phase: CompetitionPhase) -> dict:
     payload = phase.model_dump()
+    payload["parent_phase_id"] = int(getattr(phase, "parent_phase_id", 0) or 0) or None
+    payload["score_key"] = _normalize_score_key(getattr(phase, "score_key", None))
+    payload["is_scoring_unit"] = _normalize_flag(getattr(phase, "is_scoring_unit", 1), default=1)
+    payload["is_result_container"] = _normalize_flag(getattr(phase, "is_result_container", 0), default=0)
     payload["modality"] = _normalize_modality(getattr(phase, "modality", None))
     payload["block_name"] = _normalize_block_name(getattr(phase, "block_name", None))
     payload["measurement_method"] = _normalize_measurement_method(getattr(phase, "measurement_method", None), getattr(phase, "tipo", None))
@@ -493,13 +525,54 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload["scoring_override_enabled"] = _normalize_scoring_override_enabled(getattr(phase, "scoring_override_enabled", 0))
     payload["scoring_system"] = normalize_scoring_system(getattr(phase, "scoring_system", None), fallback="dynamic_points") if payload["scoring_override_enabled"] else getattr(phase, "scoring_system", None)
     payload["scoring_weight_percent"] = normalize_weight_percent(getattr(phase, "scoring_weight_percent", 100))
+    payload["scoring_point_step"] = normalize_point_step(getattr(phase, "scoring_point_step", 1))
     payload["scoring_table"] = normalize_scoring_table(getattr(phase, "scoring_table", None))
     payload["heat_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "heat_transition_seconds", 0))
     payload["category_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "category_transition_seconds", 0))
     payload["is_visible"] = normalize_phase_visibility(getattr(phase, "is_visible", 1))
     payload["activities"] = _parse_phase_activities(phase)
-    payload["phase_format"] = _phase_format_from_count(len(payload["activities"]))
+    payload["phase_format"] = "wod" if payload["is_result_container"] else _phase_format_from_count(len(payload["activities"]))
+    payload["scoring_parts"] = []
     return payload
+
+
+def _phase_payload_from_part(raw: dict, fallback: PhaseCreate, index: int) -> dict:
+    item = raw if isinstance(raw, dict) else {}
+    measurement_method = item.get("measurement_method", fallback.measurement_method)
+    phase_type = _normalize_phase_type(item.get("tipo") or ("tiempo" if measurement_method == "for_time" else fallback.tipo))
+    if phase_type not in PHASE_TIPOS_VALIDOS:
+        phase_type = _normalize_phase_type(fallback.tipo)
+    measurement_method = _normalize_measurement_method(measurement_method, phase_type)
+    phase_type = type_from_measurement_method(measurement_method)
+    winner_rule = _normalize_winner_rule(item.get("winner_rule", fallback.winner_rule), phase_type)
+    if winner_rule not in PHASE_WINNER_RULES_VALIDOS:
+        winner_rule = _default_winner_rule_for_type(phase_type)
+    points_mode = _normalize_points_mode(item.get("points_mode", fallback.points_mode))
+    if points_mode not in PHASE_POINTS_MODES_VALIDOS:
+        points_mode = "manual"
+    workout_format = _normalize_workout_format(item.get("workout_format", fallback.workout_format), measurement_method)
+    time_cap_seconds = _normalize_time_cap_seconds(item.get("time_cap_seconds", fallback.time_cap_seconds))
+    _validate_required_time_cap(measurement_method, workout_format, time_cap_seconds)
+    score_key = _normalize_score_key(item.get("score_key") or chr(ord("A") + index))
+    part_name = str(item.get("nombre") or item.get("name") or "").strip()
+    return {
+        "score_key": score_key,
+        "nombre": part_name or f"{fallback.nombre} {score_key}",
+        "descripcion": str(item.get("descripcion") or item.get("description") or fallback.descripcion or "").strip() or None,
+        "tipo": phase_type,
+        "measurement_method": measurement_method,
+        "workout_format": workout_format,
+        "winner_rule": winner_rule,
+        "points_mode": points_mode,
+        "tie_break_enabled": _normalize_flag(item.get("tie_break_enabled", fallback.tie_break_enabled), default=0),
+        "tie_break_method": _normalize_measurement_method(item.get("tie_break_method", fallback.tie_break_method), "tiempo"),
+        "time_cap_seconds": time_cap_seconds,
+        "scoring_override_enabled": _normalize_scoring_override_enabled(item.get("scoring_override_enabled", fallback.scoring_override_enabled)),
+        "scoring_system": normalize_scoring_system(item.get("scoring_system", fallback.scoring_system), fallback="dynamic_points") if item.get("scoring_system", fallback.scoring_system) else None,
+        "scoring_weight_percent": normalize_weight_percent(item.get("scoring_weight_percent", 100)),
+        "scoring_point_step": normalize_point_step(item.get("scoring_point_step", fallback.scoring_point_step)),
+        "scoring_table": serialize_scoring_table(item.get("scoring_table", fallback.scoring_table)),
+    }
 
 
 @router.get("/api/competitions/{competition_id}/categories")
@@ -734,13 +807,147 @@ def list_phases(
     if block_name is not None:
         normalized_block = _normalize_block_name(block_name)
         items = [ph for ph in items if _normalize_block_name(getattr(ph, "block_name", None)) == normalized_block]
-    return [_phase_response(ph) for ph in items]
+    payloads = [_phase_response(ph) for ph in items]
+    by_parent: dict[int, list[dict]] = {}
+    for payload in payloads:
+        parent_id = payload.get("parent_phase_id")
+        if parent_id:
+            by_parent.setdefault(int(parent_id), []).append(payload)
+    for payload in payloads:
+        children = by_parent.get(int(payload["id"] or 0), [])
+        payload["scoring_parts"] = sorted(
+            children,
+            key=lambda item: (str(item.get("score_key") or ""), int(item.get("orden") or 0), int(item.get("id") or 0)),
+        )
+    return payloads
 
 
 @router.post("/api/competitions/{competition_id}/phases", status_code=201)
 def create_phase(competition_id: int, body: PhaseCreate,
                  session: Session = Depends(get_session), user=Depends(require_staff)):
     competition = require_competition_access(session, competition_id, user)
+    scoring_parts = [item for item in (body.scoring_parts or []) if isinstance(item, dict)]
+    if len(scoring_parts) > 1:
+        phase_status = _normalize_phase_status(body.estado)
+        if phase_status not in PHASE_ESTADOS_VALIDOS:
+            raise HTTPException(400, "Estado de fase invalido. Usa: pendiente, en_progreso o finalizada")
+        team_mode = _normalize_team_mode(body.team_result_mode)
+        if team_mode not in PHASE_TEAM_MODES_VALIDOS:
+            raise HTTPException(400, "Modo de resultado de equipo invalido. Usa: sum_two, total o single_member")
+        start_at = _normalize_competition_dt(body.start_at, competition)
+        end_at = _normalize_competition_dt(body.end_at, competition)
+        if start_at and end_at and start_at > end_at:
+            raise HTTPException(400, "La fecha inicial de la fase no puede ser mayor a la final")
+        parent_activities = _build_default_phase_activity(
+            phase_name=body.nombre,
+            description=body.descripcion,
+            phase_type="cantidad",
+            measurement_method="amrap",
+            winner_rule="higher_wins",
+            points_mode="manual",
+            scoring_rules=body.scoring_rules,
+        )
+        parent = CompetitionPhase(
+            competition_id=competition_id,
+            parent_phase_id=None,
+            score_key=None,
+            is_scoring_unit=0,
+            is_result_container=1,
+            nombre=body.nombre,
+            descripcion=body.descripcion,
+            modality=_normalize_modality(body.modality),
+            block_name=_normalize_block_name(body.block_name),
+            block_order=body.block_order,
+            phase_format="wod",
+            tipo="cantidad",
+            measurement_method="amrap",
+            workout_format="amrap",
+            winner_rule="higher_wins",
+            scoring_rules=body.scoring_rules,
+            activities=json.dumps(parent_activities, ensure_ascii=False),
+            points_mode="manual",
+            allow_multiple_results=0,
+            team_result_mode=team_mode,
+            tie_break_enabled=0,
+            tie_break_method="for_time",
+            time_cap_seconds=None,
+            scoring_override_enabled=0,
+            scoring_system=None,
+            scoring_weight_percent=100,
+            scoring_point_step=normalize_point_step(body.scoring_point_step),
+            scoring_table=None,
+            heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
+            category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
+            estado=phase_status,
+            is_visible=normalize_phase_visibility(body.is_visible),
+            start_at=start_at,
+            end_at=end_at,
+            orden=body.orden,
+        )
+        session.add(parent)
+        session.flush()
+        for index, raw_part in enumerate(scoring_parts):
+            part = _phase_payload_from_part(raw_part, body, index)
+            part_activities, _parsed = _coerce_phase_activities(
+                [{
+                    "nombre": part["nombre"],
+                    "descripcion": part["descripcion"],
+                    "tipo": part["tipo"],
+                    "measurement_method": part["measurement_method"],
+                    "winner_rule": part["winner_rule"],
+                    "points_mode": part["points_mode"],
+                }],
+                phase_name=part["nombre"],
+                description=part["descripcion"],
+                phase_type=part["tipo"],
+                measurement_method=part["measurement_method"],
+                winner_rule=part["winner_rule"],
+                points_mode=part["points_mode"],
+                scoring_rules=body.scoring_rules,
+            )
+            child = CompetitionPhase(
+                competition_id=competition_id,
+                parent_phase_id=int(parent.id),
+                score_key=part["score_key"],
+                is_scoring_unit=1,
+                is_result_container=0,
+                nombre=part["nombre"],
+                descripcion=part["descripcion"],
+                modality=_normalize_modality(body.modality),
+                block_name=_normalize_block_name(body.block_name),
+                block_order=body.block_order,
+                phase_format="activity",
+                tipo=part["tipo"],
+                measurement_method=part["measurement_method"],
+                workout_format=part["workout_format"],
+                winner_rule=part["winner_rule"],
+                scoring_rules=body.scoring_rules,
+                activities=part_activities,
+                points_mode=part["points_mode"],
+                allow_multiple_results=0,
+                team_result_mode=team_mode,
+                tie_break_enabled=part["tie_break_enabled"],
+                tie_break_method=part["tie_break_method"],
+                time_cap_seconds=part["time_cap_seconds"],
+                scoring_override_enabled=part["scoring_override_enabled"],
+                scoring_system=part["scoring_system"],
+                scoring_weight_percent=part["scoring_weight_percent"],
+                scoring_point_step=part["scoring_point_step"],
+                scoring_table=part["scoring_table"],
+                heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
+                category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
+                estado=phase_status,
+                is_visible=normalize_phase_visibility(body.is_visible),
+                start_at=start_at,
+                end_at=end_at,
+                orden=body.orden,
+            )
+            session.add(child)
+        session.commit()
+        session.refresh(parent)
+        invalidate_leaderboard_results_snapshot(competition_id)
+        return _phase_response(parent)
+
     modality = _normalize_modality(body.modality)
     phase_type = _normalize_phase_type(body.tipo)
     if phase_type not in PHASE_TIPOS_VALIDOS:
@@ -777,8 +984,15 @@ def create_phase(competition_id: int, body: PhaseCreate,
     end_at = _normalize_competition_dt(body.end_at, competition)
     if start_at and end_at and start_at > end_at:
         raise HTTPException(400, "La fecha inicial de la fase no puede ser mayor a la final")
+    normalized_workout_format = _normalize_workout_format(body.workout_format, body.measurement_method)
+    normalized_time_cap = _normalize_time_cap_seconds(body.time_cap_seconds)
+    _validate_required_time_cap(primary_activity["measurement_method"], normalized_workout_format, normalized_time_cap)
     phase = CompetitionPhase(
         competition_id=competition_id,
+        parent_phase_id=body.parent_phase_id,
+        score_key=_normalize_score_key(body.score_key),
+        is_scoring_unit=_normalize_flag(body.is_scoring_unit, default=1),
+        is_result_container=_normalize_flag(body.is_result_container, default=0),
         nombre=body.nombre,
         descripcion=body.descripcion,
         modality=modality,
@@ -787,7 +1001,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         phase_format=phase_format,
         tipo=primary_activity["tipo"],
         measurement_method=primary_activity["measurement_method"],
-        workout_format=_normalize_workout_format(body.workout_format, body.measurement_method),
+        workout_format=normalized_workout_format,
         winner_rule=primary_activity["winner_rule"],
         scoring_rules=body.scoring_rules,
         activities=activities,
@@ -796,10 +1010,11 @@ def create_phase(competition_id: int, body: PhaseCreate,
         team_result_mode=team_mode,
         tie_break_enabled=1 if body.tie_break_enabled else 0,
         tie_break_method=_normalize_measurement_method(body.tie_break_method, "tiempo"),
-        time_cap_seconds=_normalize_time_cap_seconds(body.time_cap_seconds),
+        time_cap_seconds=normalized_time_cap,
         scoring_override_enabled=_normalize_scoring_override_enabled(body.scoring_override_enabled),
         scoring_system=normalize_scoring_system(body.scoring_system, fallback="dynamic_points") if body.scoring_system else None,
         scoring_weight_percent=normalize_weight_percent(body.scoring_weight_percent),
+        scoring_point_step=normalize_point_step(body.scoring_point_step),
         scoring_table=serialize_scoring_table(body.scoring_table),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
@@ -828,6 +1043,7 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         "scoring_override_enabled",
         "scoring_system",
         "scoring_weight_percent",
+        "scoring_point_step",
         "scoring_table",
     ))
     if "modality" in data:
@@ -836,6 +1052,17 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["block_name"] = _normalize_block_name(data["block_name"])
     if "block_order" in data:
         data["block_order"] = int(data["block_order"] or 0)
+    if "parent_phase_id" in data and data["parent_phase_id"] is not None:
+        parent = session.get(CompetitionPhase, int(data["parent_phase_id"]))
+        if not parent or int(parent.competition_id) != int(competition_id):
+            raise HTTPException(400, "El WOD padre no pertenece a esta competencia")
+    if "score_key" in data:
+        data["score_key"] = _normalize_score_key(data["score_key"])
+    if "is_scoring_unit" in data:
+        data["is_scoring_unit"] = _normalize_flag(data["is_scoring_unit"], default=1)
+    if "is_result_container" in data:
+        data["is_result_container"] = _normalize_flag(data["is_result_container"], default=0)
+    data.pop("scoring_parts", None)
     if "phase_format" in data:
         data["phase_format"] = _normalize_phase_format(data["phase_format"])
         if data["phase_format"] not in PHASE_FORMATS_VALIDOS:
@@ -874,6 +1101,8 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["scoring_system"] = normalize_scoring_system(data["scoring_system"], fallback="dynamic_points") if data["scoring_system"] else None
     if "scoring_weight_percent" in data:
         data["scoring_weight_percent"] = normalize_weight_percent(data["scoring_weight_percent"])
+    if "scoring_point_step" in data:
+        data["scoring_point_step"] = normalize_point_step(data["scoring_point_step"])
     if "scoring_table" in data:
         data["scoring_table"] = serialize_scoring_table(data["scoring_table"])
     if "heat_transition_seconds" in data:
@@ -914,6 +1143,11 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["winner_rule"] = primary_activity["winner_rule"]
         data["points_mode"] = primary_activity["points_mode"]
         data["phase_format"] = _phase_format_from_count(len(parsed_activities))
+    _validate_required_time_cap(
+        data.get("measurement_method", phase.measurement_method),
+        data.get("workout_format", phase.workout_format),
+        data.get("time_cap_seconds", phase.time_cap_seconds),
+    )
     if "start_at" in data:
         data["start_at"] = _normalize_competition_dt(data["start_at"], competition)
     if "end_at" in data:

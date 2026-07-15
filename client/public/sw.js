@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finalrep-pwa-v3'
+const CACHE_NAME = 'finalrep-pwa-v6'
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const APP_SHELL = [
   '/icons/finalrep-maskable-512.png',
   '/icons/finalrep.svg',
   '/icons/finalrep-maskable.svg',
+  '/icons/finalrep-notification-badge.svg',
 ]
 
 function isApiRequest(url) {
@@ -108,4 +109,48 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(cacheFirst(request))
+})
+
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try {
+    payload = event.data ? event.data.json() : {}
+  } catch {
+    payload = {}
+  }
+
+  const title = payload.title || 'FinalRep'
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/icons/finalrep-maskable-512.png',
+    badge: payload.badge || '/icons/finalrep-notification-badge.svg',
+    tag: payload.tag || `finalrep-notification-${Date.now()}`,
+    renotify: false,
+    data: {
+      url: payload.url || '/notifications',
+      notificationId: payload.notification_id || null,
+    },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const targetUrl = new URL(event.notification?.data?.url || '/notifications', self.location.origin).href
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          client.navigate(targetUrl)
+          return client.focus()
+        }
+      }
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl)
+      }
+      return null
+    }),
+  )
 })

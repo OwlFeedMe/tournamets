@@ -119,7 +119,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
 
         <nav
           aria-label="Navegacion principal"
-          style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, overflowX: 'auto', scrollbarWidth: 'none' }}
         >
           {items.map((item) => {
             const Icon = item.icon
@@ -134,6 +134,7 @@ export function DesktopHeader({ onOpenNotifications, unreadCount = 0 }) {
                   alignItems: 'center',
                   gap: 8,
                   padding: '10px 14px',
+                  flexShrink: 0,
                   borderRadius: 14,
                   border: active ? '1px solid rgba(214, 217, 224, 0.28)' : '1px solid transparent',
                   background: active

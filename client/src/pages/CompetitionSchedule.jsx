@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowRight, Clock3, MapPin, Medal, Users } from 'lucide-react'
+import { ArrowLeft, ArrowRight, ChevronDown, ChevronRight, Clock3, MapPin, Medal, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { SkeletonBlock, SkeletonList, SkeletonMetricGrid } from '../components/layout/Skeleton'
@@ -47,6 +47,11 @@ function formatDateTime(value, timeZone) {
 }
 
 const wodColorPalette = ['#FF6B00', '#00C2A8', '#D4A537', '#8B5CF6', '#38BDF8', '#F59E0B', '#EF4444', '#22C55E']
+const scheduleStateColors = {
+  done: '#6B7280',
+  live: '#00C2A8',
+  upcoming: '#FF6B00',
+}
 
 function wodColorFor(value) {
   const raw = String(value ?? 'wod').trim() || 'wod'
@@ -67,9 +72,203 @@ function formatDateRange(start, end, timeZone) {
   return `${startLabel} - ${endLabel}`
 }
 
+function formatCompactTime(value, timeZone) {
+  if (!value) return null
+  return formatCompetitionDateTime(value, timeZone, {
+    fallback: null,
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatCompactDateTime(value, timeZone) {
+  if (!value) return null
+  return formatCompetitionDateTime(value, timeZone, {
+    fallback: null,
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function dateKey(value, timeZone) {
+  if (!value) return ''
+  return formatCompetitionDateTime(value, timeZone, {
+    fallback: '',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+}
+
+function formatScheduleRange(start, end, timeZone, compact = false) {
+  if (!compact) return formatDateRange(start, end, timeZone)
+  const startLabel = formatCompactDateTime(start, timeZone)
+  const endTime = formatCompactTime(end, timeZone)
+  const endLabel = formatCompactDateTime(end, timeZone)
+  if (!startLabel && !endLabel) return 'Por confirmar'
+  if (!startLabel) return `Hasta ${endLabel}`
+  if (!endLabel) return `Desde ${startLabel}`
+  if (dateKey(start, timeZone) === dateKey(end, timeZone)) return `${startLabel} - ${endTime}`
+  return `${startLabel} - ${endLabel}`
+}
+
 function getPhaseId(value) {
   if (value == null || value === '') return ''
   return String(value)
+}
+
+function toDomId(value) {
+  return String(value || 'section').replace(/[^a-zA-Z0-9_-]+/g, '-')
+}
+
+function heatLabelFor(item) {
+  if (item?.heatNumber != null) return `Heat ${item.heatNumber}`
+  const title = String(item?.title || '').trim()
+  const phaseName = String(item?.phaseName || '').trim()
+  if (phaseName && title.toLowerCase().startsWith(phaseName.toLowerCase())) {
+    return title.slice(phaseName.length).replace(/^\s*[-–—:]\s*/, '').trim() || title
+  }
+  return title
+}
+
+function meaningfulDescription(value) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const generic = ['Bloque publicado', 'Fecha publicada']
+  return generic.some((entry) => entry.toLowerCase() === text.toLowerCase()) ? '' : text
+}
+
+function truncateText(value, maxLength = 92) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (text.length <= maxLength) return text
+  return `${text.slice(0, maxLength - 1).trim()}...`
+}
+
+function parseWorkoutDescription(value) {
+  const text = meaningfulDescription(value)
+  if (!text) return { text: '', parts: [] }
+
+  const markerPattern = /\b(Bloque\s+\d+|Parte\s+[A-Z]|Part\s+[A-Z])\b/gi
+  const matches = Array.from(text.matchAll(markerPattern))
+  if (!matches.length) return { text, parts: [] }
+
+  const parts = matches.map((match, index) => {
+    const label = match[1]
+    const start = match.index + match[0].length
+    const end = matches[index + 1]?.index ?? text.length
+    const body = text.slice(start, end).replace(/^\s*[-–—:]\s*/, '').trim()
+    return { label, body }
+  }).filter((part) => part.body)
+
+  return parts.length ? { text, parts } : { text, parts: [] }
+}
+
+function workoutTeaser(value) {
+  const detail = parseWorkoutDescription(value)
+  if (!detail.text) return ''
+  if (!detail.parts.length) return truncateText(detail.text)
+  const hasParts = detail.parts.some((part) => /^parte\b/i.test(part.label) || /^part\b/i.test(part.label))
+  const unit = hasParts ? (detail.parts.length === 1 ? 'parte' : 'partes') : (detail.parts.length === 1 ? 'bloque' : 'bloques')
+  return `${detail.parts.length} ${unit} · ${truncateText(detail.parts[0].body, 74)}`
+}
+
+function groupItemsByCategory(items = []) {
+  const groups = []
+  const byCategory = new Map()
+
+  items.forEach((item) => {
+    const category = String(item.category || 'Sin categoria').trim() || 'Sin categoria'
+    if (!byCategory.has(category)) {
+      const group = { id: `cat-${toDomId(category)}`, category, items: [] }
+      byCategory.set(category, group)
+      groups.push(group)
+    }
+    byCategory.get(category).items.push(item)
+  })
+
+  return groups
+}
+
+function categoryTimeRange(items = []) {
+  const starts = items.map((item) => item.startAt).filter(Boolean).sort()
+  const ends = items.map((item) => item.endAt).filter(Boolean).sort()
+  return {
+    startAt: starts[0] || null,
+    endAt: ends[ends.length - 1] || null,
+  }
+}
+
+function scheduleItemStatus(startAt, endAt, nowValue = Date.now()) {
+  const start = startAt ? new Date(startAt) : null
+  const end = endAt ? new Date(endAt) : null
+  const startMs = start && !Number.isNaN(start.getTime()) ? start.getTime() : null
+  const endMs = end && !Number.isNaN(end.getTime()) ? end.getTime() : null
+  if (startMs == null) return { key: 'upcoming', label: 'Sin horario', color: scheduleStateColors.upcoming }
+  if (endMs != null && endMs <= nowValue) return { key: 'done', label: 'Finalizado', color: scheduleStateColors.done }
+  if (startMs <= nowValue && (endMs == null || endMs > nowValue)) return { key: 'live', label: 'En curso', color: scheduleStateColors.live }
+  return { key: 'upcoming', label: 'Próximo', color: scheduleStateColors.upcoming }
+}
+
+function scheduleGroupStatus(items = []) {
+  const ranges = items.map((item) => ({ startAt: item.startAt, endAt: item.endAt }))
+  const hasLive = ranges.some((item) => scheduleItemStatus(item.startAt, item.endAt).key === 'live')
+  if (hasLive) return { key: 'live', label: 'En curso', color: scheduleStateColors.live }
+  const hasUpcoming = ranges.some((item) => scheduleItemStatus(item.startAt, item.endAt).key === 'upcoming')
+  if (hasUpcoming) return { key: 'upcoming', label: 'Próximo', color: scheduleStateColors.upcoming }
+  return { key: 'done', label: 'Finalizado', color: scheduleStateColors.done }
+}
+
+function WorkoutDescription({ text, theme }) {
+  const detail = parseWorkoutDescription(text)
+  if (!detail.text) return null
+
+  if (!detail.parts.length) {
+    return (
+      <div style={{
+        border: `1px solid ${hexToRgba(theme.accent, 0.16)}`,
+        background: hexToRgba(theme.background, 0.36),
+        borderRadius: 6,
+        padding: 12,
+        color: theme.textSecondary,
+        fontSize: 13,
+        lineHeight: 1.6,
+        maxWidth: 860,
+      }}>
+        {detail.text}
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 8, maxWidth: 920 }}>
+      {detail.parts.map((part) => (
+        <div
+          key={`${part.label}-${part.body}`}
+          className="fr-schedule-wod-detail-row"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '96px minmax(0, 1fr)',
+            gap: 10,
+            alignItems: 'start',
+            border: `1px solid ${hexToRgba(theme.accent, 0.16)}`,
+            background: hexToRgba(theme.background, 0.36),
+            borderRadius: 6,
+            padding: 12,
+          }}
+        >
+          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+            {part.label}
+          </div>
+          <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.55, overflowWrap: 'anywhere' }}>
+            {part.body}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function normalizeParticipant(item, index) {
@@ -99,6 +298,7 @@ function normalizeScheduleItem(item, index) {
     phaseId,
     phaseName,
     title,
+    category: String(item.categoria || item.category || '').trim(),
     heatNumber: item.heat_number ?? item.heat ?? null,
     lane: item.lane ?? item.lane_number ?? null,
     startAt: item.start_at || item.starts_at || item.start || null,
@@ -204,45 +404,88 @@ async function fetchWithFallback(urls) {
 }
 
 function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
+  const [isOpen, setIsOpen] = useState(false)
   const participants = item.participants || []
   const firstParticipant = participants[0]
-  const wodTone = wodColorFor(item.phaseId || item.phaseName || item.title)
+  const participantCount = participants.length
+  const status = scheduleItemStatus(item.startAt, item.endAt)
+  const statusTone = status.color
+  const contentId = `schedule-heat-${toDomId(item.id)}`
+  const heatLabel = heatLabelFor(item)
+  const titleLabel = heatLabel || item.title
   return (
-    <div className="fr-cut-card" style={{
-      border: `1px solid ${hexToRgba(wodTone, 0.56)}`,
-      borderLeft: `6px solid ${wodTone}`,
-      background: `linear-gradient(135deg, ${hexToRgba(wodTone, 0.13)}, ${hexToRgba(theme.background, 0.62)} 46%)`,
-      padding: 16,
+    <div className="fr-cut-card fr-schedule-item-card" style={{
+      border: `1px solid ${hexToRgba(statusTone, 0.30)}`,
+      borderLeft: `4px solid ${statusTone}`,
+      background: hexToRgba(theme.background, 0.30),
+      padding: 14,
       display: 'grid',
       gap: 10,
+      minWidth: 0,
+      maxWidth: '100%',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+      <button
+        type="button"
+        className="fr-schedule-heat-toggle"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 12,
+          alignItems: 'start',
+          width: '100%',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: theme.text,
+          textAlign: 'left',
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ color: wodTone, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-            {item.kind === 'heat' ? 'Heat' : item.kind === 'block' ? 'Bloque' : 'Salida'}
-            {item.heatNumber != null ? ` ${item.heatNumber}` : ''}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="fr-schedule-overline" style={{ color: statusTone, fontSize: 11, fontWeight: 850 }}>
+              {status.label}
+            </span>
+            <span className="fr-schedule-overline" style={{ color: theme.textSecondary, fontSize: 11, fontWeight: 800 }}>
+              {participantCount ? `${participantCount} ${participantCount === 1 ? 'asignado' : 'asignados'}` : 'Sin asignados'}
+            </span>
           </div>
-          <div style={{ color: theme.text, fontSize: 16, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>
-            {item.title}
-          </div>
-          {item.phaseName ? (
-            <div style={{ color: theme.textSecondary, fontSize: 13, marginTop: 4 }}>{item.phaseName}</div>
+          <div className="fr-schedule-heat-title" style={{ color: theme.text, fontSize: 15, fontWeight: 800, lineHeight: 1.25, marginTop: 4 }}>{titleLabel}</div>
+          {(item.startAt || item.endAt) ? (
+            <div className="fr-schedule-meta-line" style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4 }}>{formatScheduleRange(item.startAt, item.endAt, timeZone, true)}</div>
           ) : null}
         </div>
-        {item.lane != null ? (
-          <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, color: theme.text, fontSize: 12, fontWeight: 800 }}>
-            Lane {item.lane}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 10, minWidth: 0 }}>
+          {item.lane != null ? (
+            <span style={{ alignSelf: 'flex-start', padding: '6px 10px', borderRadius: 999, background: hexToRgba(theme.primary, 0.12), border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, color: theme.text, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
+              Lane {item.lane}
+            </span>
+          ) : null}
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 6,
+              border: `1px solid ${hexToRgba(statusTone, 0.28)}`,
+              background: hexToRgba(theme.background, 0.48),
+              color: statusTone,
+              flexShrink: 0,
+            }}
+          >
+            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           </span>
-        ) : null}
-      </div>
+        </div>
+      </button>
 
+      {isOpen ? (
+        <div id={contentId} style={{ display: 'grid', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'grid', gap: 8 }}>
-        {(item.startAt || item.endAt) ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
-            <Clock3 size={14} color={wodTone} />
-            {formatDateRange(item.startAt, item.endAt, timeZone)}
-          </div>
-        ) : null}
         {item.checkInAt ? (
           <div style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
             Check-in: {formatDateTime(item.checkInAt, timeZone) || item.checkInAt}
@@ -250,7 +493,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
         ) : null}
         {item.locationName || item.locationDetail ? (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
-            <MapPin size={14} color={wodTone} style={{ marginTop: 2, flexShrink: 0 }} />
+            <MapPin size={14} color={statusTone} style={{ marginTop: 2, flexShrink: 0 }} />
             <span>
               {item.locationName || 'Ubicacion por confirmar'}
               {item.locationDetail ? <span style={{ color: theme.textSecondary }}> · {item.locationDetail}</span> : null}
@@ -260,36 +503,39 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       </div>
 
       {participants.length ? (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className="fr-schedule-participants" style={{ display: 'grid', gap: 8, minWidth: 0 }}>
           <div style={{ color: theme.textSecondary, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.8 }}>
             {personal ? 'Tu salida' : 'Asignados'}
           </div>
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 8, minWidth: 0 }}>
             {participants.map((participant) => (
               <div
                 key={participant.id}
+                className="fr-schedule-participant-row"
                 style={{
                   borderRadius: 6,
-                  border: `1px solid ${hexToRgba(wodTone, 0.38)}`,
-                  borderLeft: `4px solid ${wodTone}`,
-                  background: participant.note ? hexToRgba(wodTone, 0.10) : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${hexToRgba(statusTone, 0.24)}`,
+                  borderLeft: `3px solid ${statusTone}`,
+                  background: participant.note ? hexToRgba(statusTone, 0.08) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
+                  display: 'grid',
+                  gridTemplateColumns: participant.lane != null ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
                   gap: 10,
                   alignItems: 'center',
+                  minWidth: 0,
+                  maxWidth: '100%',
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ color: theme.text, fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className="fr-schedule-participant-name" style={{ color: theme.text, fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {participant.name}
                   </div>
                   {participant.category ? (
-                    <div style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2 }}>Cat: {participant.category}</div>
+                    <div style={{ color: theme.textSecondary, fontSize: 12, marginTop: 2, overflowWrap: 'anywhere' }}>Cat: {participant.category}</div>
                   ) : null}
                 </div>
                 {participant.lane != null ? (
-                  <span style={{ color: wodTone, fontSize: 12, fontWeight: 800 }}>Lane {participant.lane}</span>
+                  <span className="fr-schedule-lane" style={{ color: statusTone, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>Lane {participant.lane}</span>
                 ) : null}
               </div>
             ))}
@@ -313,55 +559,218 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       {firstParticipant?.note ? (
         <div style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 1.5 }}>{firstParticipant.note}</div>
       ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ScheduleCategoryGroup({ group, personal = false, theme, timeZone, sectionId }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const itemCount = group.items.length
+  const participantCount = group.items.reduce((total, item) => total + (item.participants?.length || 0), 0)
+  const { startAt, endAt } = categoryTimeRange(group.items)
+  const status = scheduleGroupStatus(group.items)
+  const tone = status.color
+  const contentId = `schedule-category-${toDomId(sectionId)}-${toDomId(group.category)}`
+
+  return (
+    <div className="fr-cut-card fr-schedule-category-card" style={{
+      border: `1px solid ${hexToRgba(tone, 0.34)}`,
+      borderLeft: `4px solid ${tone}`,
+      background: hexToRgba(theme.background, 0.36),
+      padding: 14,
+      display: 'grid',
+      gap: 10,
+      minWidth: 0,
+    }}>
+      <button
+        type="button"
+        className="fr-schedule-category-toggle"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 12,
+          alignItems: 'start',
+          width: '100%',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: theme.text,
+          textAlign: 'left',
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div className="fr-schedule-overline" style={{ color: tone, fontSize: 11, fontWeight: 850, textTransform: 'uppercase', letterSpacing: 0.35 }}>
+            {status.label} · {' '}
+            {itemCount} {itemCount === 1 ? 'heat' : 'heats'} · {participantCount} {participantCount === 1 ? 'asignado' : 'asignados'}
+          </div>
+          <div className="fr-schedule-category-title" style={{ color: theme.text, fontSize: 16, fontWeight: 850, lineHeight: 1.2, marginTop: 4 }}>
+            {group.category}
+          </div>
+          {(startAt || endAt) ? (
+            <div className="fr-schedule-meta-line" style={{ color: theme.textSecondary, fontSize: 12, marginTop: 4 }}>
+              {formatScheduleRange(startAt, endAt, timeZone, true)}
+            </div>
+          ) : null}
+        </div>
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            border: `1px solid ${hexToRgba(tone, 0.28)}`,
+            background: hexToRgba(theme.background, 0.48),
+            color: tone,
+            flexShrink: 0,
+          }}
+        >
+          {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>
+      </button>
+
+      {isOpen ? (
+        <div id={contentId} style={{ display: 'grid', gap: 10, minWidth: 0 }}>
+          {group.items.map((item) => (
+            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
 
 function ScheduleSection({ section, personal = false, theme, timeZone }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const contentId = `schedule-section-${toDomId(section.id)}`
+  const itemCount = section.items?.length || 0
+  const description = meaningfulDescription(section.subtitle)
+  const teaser = workoutTeaser(description)
+  const categoryGroups = groupItemsByCategory(section.items || [])
+
   return (
-    <section className="fr-cut-card" style={{
+    <section className="fr-cut-card fr-schedule-section" style={{
       border: `1px solid ${theme.border}`,
       background: theme.surface,
       padding: 18,
       display: 'grid',
       gap: 14,
+      minWidth: 0,
+      maxWidth: '100%',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
-        <div>
-          <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>
-            {section.kind === 'phase' ? 'Fase' : 'Bloque'}
+      <button
+        type="button"
+        className="fr-schedule-section-toggle"
+        aria-expanded={isOpen}
+        aria-controls={contentId}
+        onClick={() => setIsOpen((current) => !current)}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) auto',
+          gap: 12,
+          alignItems: 'start',
+          width: '100%',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: theme.text,
+          textAlign: 'left',
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="fr-schedule-overline" style={{ color: theme.accent, fontSize: 11, fontWeight: 850, letterSpacing: 0.45, textTransform: 'uppercase' }}>
+              {section.kind === 'phase' ? 'Fase' : 'Bloque'}
+            </span>
+            <span className="fr-schedule-overline" style={{ color: theme.textSecondary, fontSize: 11, fontWeight: 800 }}>
+              {itemCount ? `${itemCount} ${itemCount === 1 ? 'heat' : 'heats'}` : 'Sin heats'}
+            </span>
           </div>
-          <h2 style={{ margin: '6px 0 0', fontSize: 22, lineHeight: 1.1 }}>{section.title}</h2>
-          {section.subtitle ? (
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 14, lineHeight: 1.5 }}>{section.subtitle}</div>
-          ) : null}
-        </div>
-        <div style={{ display: 'grid', gap: 8, justifyItems: 'end' }}>
-          {section.startAt || section.endAt ? (
-            <div style={{ color: theme.text, fontSize: 13, textAlign: 'right' }}>
-              {formatDateRange(section.startAt, section.endAt, timeZone)}
+          <h2 className="fr-schedule-wod-title" style={{ margin: '5px 0 0', fontSize: 20, lineHeight: 1.1 }}>{section.title}</h2>
+          {teaser ? (
+            <div
+              className="fr-schedule-wod-teaser"
+              style={{
+                marginTop: 7,
+                color: theme.textSecondary,
+                fontSize: 13,
+                lineHeight: 1.45,
+                maxWidth: 720,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {teaser}
             </div>
           ) : null}
-          {section.locationName || section.locationDetail ? (
-            <div style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'right' }}>
-              {section.locationName || 'Ubicacion por confirmar'}
-              {section.locationDetail ? <span style={{ color: '#6B7280' }}> · {section.locationDetail}</span> : null}
-            </div>
-          ) : null}
         </div>
-      </div>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 10, minWidth: 0 }}>
+          <div className="fr-schedule-section-meta" style={{ display: 'grid', gap: 8, justifyItems: 'end', minWidth: 0 }}>
+            {section.startAt || section.endAt ? (
+              <div className="fr-schedule-meta-line" style={{ color: theme.textSecondary, fontSize: 12, textAlign: 'right' }}>
+                {formatScheduleRange(section.startAt, section.endAt, timeZone, true)}
+              </div>
+            ) : null}
+            {section.locationName || section.locationDetail ? (
+              <div style={{ color: theme.textSecondary, fontSize: 13, textAlign: 'right' }}>
+                {section.locationName || 'Ubicacion por confirmar'}
+                {section.locationDetail ? <span style={{ color: '#6B7280' }}> · {section.locationDetail}</span> : null}
+              </div>
+            ) : null}
+          </div>
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            width: 30,
+            height: 30,
+              borderRadius: 6,
+              border: `1px solid ${hexToRgba(theme.accent, 0.24)}`,
+              background: hexToRgba(theme.background, 0.52),
+              color: theme.accent,
+              flexShrink: 0,
+            }}
+          >
+            {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          </span>
+        </div>
+      </button>
 
-      {section.items?.length ? (
-        <div style={{ display: 'grid', gap: 12 }}>
-          {section.items.map((item) => (
-            <ScheduleItemCard key={item.id} item={item} personal={personal} theme={theme} timeZone={timeZone} />
-          ))}
-        </div>
-      ) : (
-        <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
-          {personal ? scheduleCopy.personal.empty : scheduleCopy.public.empty}
-        </div>
-      )}
+      {isOpen ? (
+        section.items?.length ? (
+          <div id={contentId} style={{ display: 'grid', gap: 12, minWidth: 0 }}>
+            {description ? (
+              <div className="fr-schedule-wod-description">
+                <WorkoutDescription text={description} theme={theme} />
+              </div>
+            ) : null}
+            {categoryGroups.map((group) => (
+              <ScheduleCategoryGroup
+                key={group.id}
+                group={group}
+                personal={personal}
+                theme={theme}
+                timeZone={timeZone}
+                sectionId={section.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <div id={contentId} style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>
+            {personal ? scheduleCopy.personal.empty : scheduleCopy.public.empty}
+          </div>
+        )
+      ) : null}
     </section>
   )
 }
@@ -493,7 +902,6 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
 
   const title = competition?.nombre || 'Cronograma'
   const lastUpdated = formatDateTime(schedule.updatedAt, timeZone)
-  const sectionCount = sections.length
   const totalHeats = schedule.items.filter(item => item.kind === 'heat').length || Number(stats.heats_total || 0) || 0
   const totalParticipants = Number(stats.participants_total || stats.confirmed_total || 0) || 0
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
@@ -501,8 +909,8 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
   const primaryTextColor = useMemo(() => getReadableTextColor(theme.primary), [theme.primary])
 
   return (
-    <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
-      <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 72px' }}>
+    <div className="fr-schedule-page" style={{ minHeight: '100vh', background: pageBg, color: theme.text, overflowX: 'clip' }}>
+      <div className="fr-schedule-page-inner" style={{ width: '100%', maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: '20px 16px 72px', minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 18 }}>
           <Link
             to={heroLink}
@@ -605,26 +1013,6 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
           ) : null}
         </section>
 
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14, marginBottom: 18 }}>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Vista</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{isPersonal ? 'Personal' : 'Publica'}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
-              {isPersonal ? 'Solo tus salidas y tus cambios.' : 'Todo lo que ya esta publicado.'}
-            </div>
-          </div>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Bloques</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{sectionCount}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Eventos, heats y bloques publicados.</div>
-          </div>
-          <div className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: 18 }}>
-            <div style={{ color: theme.accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Ubicacion</div>
-            <div style={{ marginTop: 8, fontSize: 18, fontWeight: 800 }}>{competition?.lugar || 'Por confirmar'}</div>
-            <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>Si cambia el venue por heat, quedara indicado en cada card.</div>
-          </div>
-        </section>
-
         {loading ? (
           <div className="fr-cut-card" style={{ padding: 24, background: hexToRgba(theme.surface, 0.94), border: `1px solid ${theme.border}` }}>
             <SkeletonBlock width="48%" height={30} radius={8} />
@@ -642,7 +1030,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
             <div style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 1.6 }}>{error}</div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gap: 14 }}>
+          <div style={{ display: 'grid', gap: 14, minWidth: 0 }}>
             {sections.length ? sections.map((section) => (
               <ScheduleSection key={section.id} section={section} personal={hasPersonalAccess} theme={theme} timeZone={timeZone} />
             )) : (

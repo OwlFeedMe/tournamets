@@ -19,6 +19,7 @@ from database import get_session
 from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
 from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
+from services.result_notifications import notify_result_saved
 from services.scoring import (
     compute_result_points,
     normalize_scoring_scope,
@@ -245,6 +246,8 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     if not comp:
         return
     phase = session.get(CompetitionPhase, phase_id)
+    if phase is not None and int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+        return
     lower_is_better = _phase_lower_is_better(phase, comp)
     tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
     tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
@@ -410,7 +413,10 @@ def _enrich(session: Session, result_id: int) -> dict:
                p.categoria     AS categoria,
                c.nombre        AS competencia,
                t.nombre        AS equipo,
-               ph.nombre       AS fase
+               ph.nombre       AS fase,
+               ph.tipo         AS tipo,
+               ph.measurement_method AS measurement_method,
+               ph.time_cap_seconds AS time_cap_seconds
         FROM results r
         LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id
@@ -521,7 +527,10 @@ def list_results(
                p.categoria AS categoria,
                c.nombre   AS competencia,
                t.nombre   AS equipo,
-               ph.nombre  AS fase
+               ph.nombre  AS fase,
+               ph.tipo    AS tipo,
+               ph.measurement_method AS measurement_method,
+               ph.time_cap_seconds AS time_cap_seconds
         FROM results r
         LEFT JOIN participants       p  ON p.id  = r.user_id
         LEFT JOIN teams              t  ON t.id  = r.team_id
@@ -590,6 +599,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         phase = session.get(CompetitionPhase, body.phase_id)
         if not phase or phase.competition_id != body.competition_id:
             raise HTTPException(400, "La fase no pertenece a esta competencia")
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            raise HTTPException(400, "Selecciona una parte puntuable del WOD")
         phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:
@@ -637,6 +648,9 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
     if body.phase_id:
         _recompute_phase_positions_and_points(session, body.competition_id, int(body.phase_id))
         recompute_and_persist_phase_status(session, body.competition_id, int(body.phase_id))
+    session.flush()
+    session.refresh(result)
+    notify_result_saved(session, result, updated=False)
     session.commit()
     session.refresh(result)
     invalidate_leaderboard_results_snapshot(body.competition_id)
@@ -662,6 +676,8 @@ def update_result(result_id: int, body: ResultUpdate,
         phase = session.get(CompetitionPhase, phase_id)
         if not phase or phase.competition_id != r.competition_id:
             raise HTTPException(400, "La fase no pertenece a esta competencia")
+        if int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
+            raise HTTPException(400, "Selecciona una parte puntuable del WOD")
         phase_mode = _normalize_team_result_mode(getattr(phase, "team_result_mode", None))
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:
@@ -711,6 +727,9 @@ def update_result(result_id: int, body: ResultUpdate,
     if prev_phase_id is not None and (phase_id is None or int(phase_id) != prev_phase_id):
         _recompute_phase_positions_and_points(session, r.competition_id, prev_phase_id)
         recompute_and_persist_phase_status(session, r.competition_id, prev_phase_id)
+    session.flush()
+    session.refresh(r)
+    notify_result_saved(session, r, updated=True)
     session.commit()
     invalidate_leaderboard_results_snapshot(r.competition_id)
     return _enrich(session, result_id)

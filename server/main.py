@@ -31,6 +31,7 @@ from routers import (
     gyms,
     appeals,
     follows,
+    notifications,
 )
 
 app = FastAPI(title="FinalRep API", version="1.0.0")
@@ -75,6 +76,7 @@ app.include_router(competitor_invitations.router)
 app.include_router(gyms.router)
 app.include_router(appeals.router)
 app.include_router(follows.router)
+app.include_router(notifications.router)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
@@ -82,6 +84,9 @@ app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 def startup():
     def _bootstrap_db() -> None:
         run_db_migrations()
+        from services.event_start_reminders import start_event_start_reminder_worker
+
+        start_event_start_reminder_worker()
 
     threading.Thread(target=_bootstrap_db, daemon=True).start()
 

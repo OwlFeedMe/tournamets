@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Optional, List
 
-from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, ForeignKey, DateTime, Date, func
+from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, Text, ForeignKey, DateTime, Date, func
 from sqlmodel import SQLModel, Field
 
 from constants import (
@@ -200,9 +200,10 @@ class Competition(SQLModel, table=True):
     timer_mode: str = Field(default="countdown")       # "countdown" | "stopwatch"
     timer_format: str = Field(default="mm:ss")         # "mm:ss" | "mmm:ss" | "hh:mm:ss"
     scoring_mode: str = Field(default=ReglaGanador.HIGHER_WINS)  # highest_wins | lowest_wins
-    scoring_system: str = Field(default="dynamic_points")  # dynamic_points | placement | fixed_table | cumulative
+    scoring_system: str = Field(default="dynamic_points")  # dynamic_points | dynamic_step | placement | fixed_table | auto_table | cumulative
     scoring_scope: str = Field(default="category")  # category | global
     scoring_table: Optional[str] = None  # JSON rank -> points table
+    scoring_point_step: int = Field(default=1)
     scoring_tiebreak: str = Field(default="best_positions")  # best_positions | first_places | final_workout
     cumulative_direction: str = Field(default="higher_wins")  # higher_wins | lower_wins
     rm_unit: str = Field(default=UnidadRM.KG)
@@ -418,6 +419,94 @@ class CompetitionInterestNotification(SQLModel, table=True):
     )
 
 
+class AppNotification(SQLModel, table=True):
+    __tablename__ = "app_notifications"
+    __table_args__ = (
+        Index("ix_app_notifications_user_created", "user_id", "created_at"),
+        Index("ix_app_notifications_user_read", "user_id", "read_at"),
+        Index("ix_app_notifications_type", "notification_type"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    notification_type: str = Field(default="result_created", index=True)
+    title: str
+    body: str
+    action_url: Optional[str] = None
+    data_json: Optional[str] = None
+    read_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
+class PushSubscription(SQLModel, table=True):
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
+        Index("ix_push_subscriptions_user", "user_id"),
+        Index("ix_push_subscriptions_disabled", "disabled_at"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    endpoint: str = Field(sa_column=Column(Text, nullable=False))
+    p256dh: str = Field(sa_column=Column(Text, nullable=False))
+    auth: str = Field(sa_column=Column(Text, nullable=False))
+    user_agent: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    failure_count: int = Field(default=0)
+    disabled_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    last_success_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
+class AthleteFollow(SQLModel, table=True):
+    __tablename__ = "athlete_follows"
+    __table_args__ = (
+        UniqueConstraint("follower_user_id", "competition_id", "athlete_user_id", name="uq_athlete_follows_user_comp_athlete"),
+        Index("ix_athlete_follows_athlete", "competition_id", "athlete_user_id"),
+        Index("ix_athlete_follows_follower", "follower_user_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    follower_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    athlete_user_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    competition_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    athlete_name: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    username: Optional[str] = None
+    category: Optional[str] = None
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+    updated_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now()),
+    )
+
+
 class Team(SQLModel, table=True):
     __tablename__ = "teams"
     __table_args__ = (UniqueConstraint("nombre", "competition_id"),)
@@ -493,6 +582,13 @@ class CompetitionPhase(SQLModel, table=True):
     competition_id: int = Field(
         sa_column=Column(Integer, ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     )
+    parent_phase_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("competition_phases.id", ondelete="CASCADE"), nullable=True, index=True),
+    )
+    score_key: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    is_scoring_unit: int = Field(default=1)
+    is_result_container: int = Field(default=0)
     nombre: str
     descripcion: Optional[str] = None
     modality: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
@@ -514,6 +610,7 @@ class CompetitionPhase(SQLModel, table=True):
     scoring_override_enabled: int = Field(default=0)
     scoring_system: Optional[str] = None
     scoring_weight_percent: int = Field(default=100)
+    scoring_point_step: int = Field(default=1)
     scoring_table: Optional[str] = None
     heat_transition_seconds: int = Field(default=0)
     category_transition_seconds: int = Field(default=0)
@@ -1778,6 +1875,7 @@ class CompetitionCreate(SQLModel):
     scoring_system: str = "dynamic_points"
     scoring_scope: str = "category"
     scoring_table: Optional[str] = None
+    scoring_point_step: int = 1
     scoring_tiebreak: str = "best_positions"
     cumulative_direction: str = "higher_wins"
     rm_unit: str = UnidadRM.KG
@@ -1840,6 +1938,7 @@ class CompetitionUpdate(SQLModel):
     scoring_system: Optional[str] = None
     scoring_scope: Optional[str] = None
     scoring_table: Optional[List[dict]] = None
+    scoring_point_step: Optional[int] = None
     scoring_tiebreak: Optional[str] = None
     cumulative_direction: Optional[str] = None
     rm_unit: Optional[str] = None
@@ -1947,6 +2046,11 @@ class CategoryUpdate(SQLModel):
 class PhaseCreate(SQLModel):
     nombre: str
     descripcion: Optional[str] = None
+    parent_phase_id: Optional[int] = None
+    score_key: Optional[str] = None
+    is_scoring_unit: int = 1
+    is_result_container: int = 0
+    scoring_parts: Optional[List[dict]] = None
     modality: str = Modalidad.INDIVIDUAL
     block_name: Optional[str] = None
     block_order: int = 0
@@ -1966,6 +2070,7 @@ class PhaseCreate(SQLModel):
     scoring_override_enabled: int = 0
     scoring_system: Optional[str] = None
     scoring_weight_percent: int = 100
+    scoring_point_step: int = 1
     scoring_table: Optional[List[dict]] = None
     heat_transition_seconds: int = 0
     category_transition_seconds: int = 0
@@ -1979,6 +2084,11 @@ class PhaseCreate(SQLModel):
 class PhaseUpdate(SQLModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
+    parent_phase_id: Optional[int] = None
+    score_key: Optional[str] = None
+    is_scoring_unit: Optional[int] = None
+    is_result_container: Optional[int] = None
+    scoring_parts: Optional[List[dict]] = None
     modality: Optional[str] = None
     block_name: Optional[str] = None
     block_order: Optional[int] = None
@@ -1998,6 +2108,7 @@ class PhaseUpdate(SQLModel):
     scoring_override_enabled: Optional[int] = None
     scoring_system: Optional[str] = None
     scoring_weight_percent: Optional[int] = None
+    scoring_point_step: Optional[int] = None
     scoring_table: Optional[List[dict]] = None
     heat_transition_seconds: Optional[int] = None
     category_transition_seconds: Optional[int] = None
