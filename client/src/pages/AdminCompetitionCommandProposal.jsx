@@ -407,7 +407,10 @@ function Field({ label, children }) {
 
 function inputStyle() {
   return {
+    boxSizing: 'border-box',
     width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
     minHeight: 40,
     border: `1px solid ${colors.border}`,
     background: colors.top,
@@ -5281,6 +5284,22 @@ function ResponsiveStyles() {
         }
         .fr-form-grid {
           grid-template-columns: 1fr !important;
+          width: 100% !important;
+          min-width: 0 !important;
+        }
+        .fr-form-grid > *,
+        .fr-form-grid label,
+        .fr-form-grid input,
+        .fr-form-grid select,
+        .fr-form-grid textarea {
+          min-width: 0 !important;
+          max-width: 100% !important;
+          box-sizing: border-box !important;
+        }
+        .fr-form-grid input,
+        .fr-form-grid select,
+        .fr-form-grid textarea {
+          width: 100% !important;
         }
       }
       @media (max-width: 760px) {
@@ -5390,6 +5409,20 @@ function ResponsiveStyles() {
         .fr-results-progress {
           width: 100% !important;
           justify-self: stretch !important;
+          min-width: 0 !important;
+        }
+        .fr-results-progress > div:first-child {
+          display: grid !important;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          align-items: start;
+        }
+        .fr-results-progress > div:first-child > span {
+          min-width: 0;
+          overflow-wrap: anywhere;
+          line-height: 1.25;
+        }
+        .fr-results-progress > div:first-child > span:last-child {
+          text-align: right;
         }
         .fr-result-row {
           gap: 10px !important;
