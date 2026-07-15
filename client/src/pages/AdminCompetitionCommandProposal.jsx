@@ -4140,11 +4140,11 @@ function ResultsPanel({ bundle, reload, notify }) {
                 const statusTone = status === 'Completo' ? colors.accent : colors.warning
                 return (
                   <div key={resultEntityKey(row)} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${rowDirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: rowDirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center' }}>
-                      <span style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
-                      <span style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
+                    <div className="fr-multipart-result-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center' }}>
+                      <span className="fr-multipart-result-lane" style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
+                      <span className="fr-multipart-result-athlete" style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
                       <Pill tone={statusTone}>{status === 'Completo' ? 'Completo' : `Pendiente${missingParts.length ? ` · falta ${missingParts.join('/')}` : ''}`}</Pill>
-                      <Button tone={rowDirty ? 'primary' : 'default'} disabled={!rowDirty} onClick={() => saveMultiPartChanges((item) => resultEntityKey(item) === resultEntityKey(row))}><Save size={14} /></Button>
+                      <span className="fr-multipart-result-save"><Button tone={rowDirty ? 'primary' : 'default'} disabled={!rowDirty} onClick={() => saveMultiPartChanges((item) => resultEntityKey(item) === resultEntityKey(row))}><Save size={14} /></Button></span>
                     </div>
                     <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(resultParts.length, 2)}, minmax(240px, 1fr))`, gap: 10 }}>
                       {resultParts.map((part) => {
@@ -5263,6 +5263,41 @@ function ResponsiveStyles() {
         }
         .fr-result-card-head {
           grid-template-columns: minmax(0, 1fr) auto !important;
+        }
+        .fr-multipart-result-head {
+          grid-template-columns: minmax(0, 1fr) auto !important;
+          align-items: start !important;
+        }
+        .fr-multipart-result-athlete {
+          grid-column: 1 / -1;
+          grid-row: 1;
+          font-size: 15px !important;
+          line-height: 1.28 !important;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+          word-break: normal !important;
+          min-width: 0 !important;
+          max-width: 100% !important;
+        }
+        .fr-multipart-result-lane {
+          grid-column: 1;
+          grid-row: 2;
+          width: fit-content;
+          max-width: 100%;
+        }
+        .fr-multipart-result-head > span:not(.fr-multipart-result-athlete):not(.fr-multipart-result-lane):not(.fr-multipart-result-save) {
+          grid-column: 1;
+          grid-row: 3;
+          width: fit-content;
+          max-width: 100%;
+          white-space: normal !important;
+          overflow-wrap: anywhere !important;
+        }
+        .fr-multipart-result-save {
+          grid-column: 2;
+          grid-row: 2 / span 2;
+          justify-self: end;
+          align-self: center;
         }
         .fr-result-card-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
