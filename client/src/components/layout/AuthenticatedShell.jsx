@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bell, ChevronRight, LogOut, Mail, Phone, Upload } from 'lucide-react'
+import { Bell, ChevronRight, LogOut, Mail, Phone, Upload, X } from 'lucide-react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { BottomDock } from './BottomDock'
 import { DesktopHeader } from './DesktopHeader'
@@ -63,6 +63,10 @@ function appNotificationSeenKey(userId) {
   return `finalrep:pwa-notifications-shown:${userId || 'anon'}`
 }
 
+function dismissedNotificationKey(userId) {
+  return `finalrep:notification-sheet-dismissed:${userId || 'anon'}`
+}
+
 function readShownAppNotifications(userId) {
   if (typeof window === 'undefined') return {}
   try {
@@ -75,6 +79,20 @@ function readShownAppNotifications(userId) {
 function writeShownAppNotifications(userId, value) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(appNotificationSeenKey(userId), JSON.stringify(value))
+}
+
+function readDismissedNotifications(userId) {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(window.localStorage.getItem(dismissedNotificationKey(userId)) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function writeDismissedNotifications(userId, value) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(dismissedNotificationKey(userId), JSON.stringify(value))
 }
 
 function canDisplayNativeNotificationNow() {
@@ -152,8 +170,11 @@ function NotificationSheet({
   items = [],
   busyActionId = '',
   onAction = null,
+  onDismiss = null,
   nativePermission = 'unsupported',
   onEnableNativeNotifications = null,
+  showDeviceNotice = true,
+  onDismissDeviceNotice = null,
 }) {
   const fallbackItems = useMemo(() => {
     if (session) {
@@ -252,18 +273,41 @@ function NotificationSheet({
             </button>
           </div>
 
-          {session && nativePermission !== 'unsupported' ? (
+          {session && nativePermission !== 'unsupported' && showDeviceNotice ? (
             <div style={{
+              position: 'relative',
               border: '1px solid rgba(255,107,0,0.22)',
               background: 'rgba(255,107,0,0.08)',
               borderRadius: 14,
-              padding: 12,
+              padding: '12px 46px 12px 12px',
               marginBottom: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 10,
             }}>
+              <button
+                type="button"
+                aria-label="Quitar aviso"
+                onClick={onDismissDeviceNotice}
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  right: 10,
+                  width: 28,
+                  height: 28,
+                  borderRadius: 9,
+                  border: '1px solid rgba(170,178,192,0.20)',
+                  background: 'rgba(13,15,18,0.72)',
+                  color: 'var(--oa-text-secondary)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  padding: 0,
+                  lineHeight: 0,
+                }}
+              >
+                <X size={14} />
+              </button>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: 'var(--oa-text)', fontSize: 13, fontWeight: 850 }}>Avisos en este dispositivo</div>
                 <div style={{ color: 'var(--oa-text-secondary)', fontSize: 12, lineHeight: 1.45, marginTop: 2 }}>
@@ -296,12 +340,37 @@ function NotificationSheet({
               <div
                 key={`${item.title}-${idx}`}
                 style={{
+                  position: 'relative',
                   borderRadius: 18,
                   border: `1px solid ${item.tone === 'danger' ? 'rgba(255,69,58,0.28)' : item.tone === 'success' ? 'rgba(94,234,212,0.28)' : 'var(--oa-border)'}`,
                   background: item.tone === 'danger' ? 'rgba(255,69,58,0.08)' : item.tone === 'success' ? 'rgba(94,234,212,0.08)' : 'rgba(13,15,18,0.5)',
-                  padding: 14,
+                  padding: item.canDismiss ? '14px 46px 14px 14px' : 14,
                 }}
               >
+                {item.canDismiss && item.dismissKey ? (
+                  <button
+                    type="button"
+                    aria-label="Quitar aviso"
+                    onClick={() => onDismiss && onDismiss(item.dismissKey)}
+                    style={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      width: 28,
+                      height: 28,
+                      borderRadius: 9,
+                      border: '1px solid rgba(170,178,192,0.20)',
+                      background: 'rgba(13,15,18,0.72)',
+                      color: 'var(--oa-text-secondary)',
+                      display: 'grid',
+                      placeItems: 'center',
+                      padding: 0,
+                      lineHeight: 0,
+                    }}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
                 <div style={{ color: 'var(--oa-text)', fontWeight: 700 }}>{item.title}</div>
                 <div style={{ color: 'var(--oa-text-secondary)', fontSize: 13, lineHeight: 1.6, marginTop: 6 }}>{item.text}</div>
                 {Array.isArray(item.actions) && item.actions.length ? (
@@ -496,6 +565,7 @@ export function AuthenticatedShell() {
   const [notificationItems, setNotificationItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [notificationActionBusyId, setNotificationActionBusyId] = useState('')
+  const [dismissedNotificationKeys, setDismissedNotificationKeys] = useState(() => readDismissedNotifications('anon'))
   const [pendingQuestionTask, setPendingQuestionTask] = useState(null)
   const [pendingQuestionDraft, setPendingQuestionDraft] = useState({})
   const [pendingQuestionSaving, setPendingQuestionSaving] = useState(false)
@@ -521,6 +591,10 @@ export function AuthenticatedShell() {
   useEffect(() => {
     setNativeNotificationPermission(notificationPermissionState())
   }, [session])
+
+  useEffect(() => {
+    setDismissedNotificationKeys(readDismissedNotifications(userId || 'anon'))
+  }, [userId])
 
   useEffect(() => {
     if (!session || nativeNotificationPermission !== 'granted') return
@@ -655,6 +729,12 @@ export function AuthenticatedShell() {
       if (!active) return
       const dynamicItems = []
       let unread = 0
+      const isDismissed = (key) => !!key && !!dismissedNotificationKeys[key]
+      const pushNotification = (item, unreadIncrement = 0) => {
+        if (item?.dismissKey && isDismissed(item.dismissKey)) return
+        dynamicItems.push(item)
+        unread += unreadIncrement
+      }
 
       const appNotificationsResult = results.find((item) => item.kind === 'appNotifications')
       if (appNotificationsResult) {
@@ -664,14 +744,18 @@ export function AuthenticatedShell() {
         let shownNativeNotificationsChanged = false
         items.forEach((item) => {
           const data = parseNotificationData(item)
-          dynamicItems.push({
+          const dismissKey = `app:${item.id || `${item.type || 'notification'}:${item.created_at || item.title}`}`
+          if (isDismissed(dismissKey)) return
+          pushNotification({
             title: item.title || 'Notificacion',
             text: item.body || '',
             tone: item.read_at ? 'neutral' : 'success',
+            canDismiss: true,
+            dismissKey,
             actions: data.competition_id ? [
               { id: `app-notification-${item.id}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: data.competition_id },
             ] : [],
-          })
+          }, !item.read_at ? 1 : 0)
           if (!item.read_at && item.id && !shownNativeNotifications[String(item.id)] && canDisplayNativeNotificationNow()) {
             shownNativeNotifications[String(item.id)] = 1
             shownNativeNotificationsChanged = true
@@ -681,7 +765,6 @@ export function AuthenticatedShell() {
         if (shownNativeNotificationsChanged) {
           writeShownAppNotifications(userId, shownNativeNotifications)
         }
-        unread += Number(payload.unread_count || 0)
       }
 
       const athleteResult = results.find((item) => item.kind === 'athlete')
@@ -698,24 +781,27 @@ export function AuthenticatedShell() {
           const currentStatus = item.enrollment_estado || ''
           currentMap[String(item.id)] = currentStatus
           if (currentStatus === 'confirmado') {
-            dynamicItems.push({
+            pushNotification({
               title: `Inscripcion confirmada: ${item.nombre}`,
               text: `Tu pago fue aprobado${item.enrollment_categoria ? ` en la categoria ${item.enrollment_categoria}` : ''} y tu cupo ya esta activo.`,
               tone: 'success',
-            })
+              canDismiss: true,
+              dismissKey: `enrollment:${item.id}:confirmado`,
+            }, (
+              previousMap[String(item.id)] &&
+              previousMap[String(item.id)] !== currentStatus
+            ) ? 1 : 0)
           } else if (currentStatus === 'rechazado') {
-            dynamicItems.push({
+            pushNotification({
               title: `Registro rechazado: ${item.nombre}`,
               text: 'Tu registro fue rechazado. Puedes revisar la inscripcion e intentarlo de nuevo si sigue abierto.',
               tone: 'danger',
-            })
-          }
-          if (
-            previousMap[String(item.id)] &&
-            previousMap[String(item.id)] !== currentStatus &&
-            (currentStatus === 'confirmado' || currentStatus === 'rechazado')
-          ) {
-            unread += 1
+              canDismiss: true,
+              dismissKey: `enrollment:${item.id}:rechazado`,
+            }, (
+              previousMap[String(item.id)] &&
+              previousMap[String(item.id)] !== currentStatus
+            ) ? 1 : 0)
           }
         }
         if (userId && !window.localStorage.getItem(storageKey)) {
@@ -727,51 +813,60 @@ export function AuthenticatedShell() {
       if (judgeResult) {
         const pendingInvites = (Array.isArray(judgeResult.data) ? judgeResult.data : []).filter((item) => item.status === 'pending')
         for (const invite of pendingInvites) {
+          if (isDismissed(`judge:${invite.id}`)) continue
           dynamicItems.unshift({
             title: `Invitacion de juez: ${invite.competition_name}`,
             text: 'Te invitaron a operar esta competencia como juez. Puedes aceptar o rechazar ahora.',
             tone: 'neutral',
+            canDismiss: true,
+            dismissKey: `judge:${invite.id}`,
             actions: [
               { id: `accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'accept' },
               { id: `reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'reject' },
             ],
           })
+          unread += 1
         }
-        unread += pendingInvites.length
       }
 
       const announcerResult = results.find((item) => item.kind === 'announcer')
       if (announcerResult) {
         const pendingInvites = (Array.isArray(announcerResult.data) ? announcerResult.data : []).filter((item) => item.status === 'pending')
         for (const invite of pendingInvites) {
+          if (isDismissed(`announcer:${invite.id}`)) continue
           dynamicItems.unshift({
             title: `Invitacion de locutor: ${invite.competition_name}`,
             text: 'Te invitaron a seguir esta competencia desde la cabina en vivo. Puedes aceptar o rechazar ahora.',
             tone: 'neutral',
+            canDismiss: true,
+            dismissKey: `announcer:${invite.id}`,
             actions: [
               { id: `announcer-accept-${invite.id}`, label: 'Aceptar', tone: 'primary', assignmentId: invite.id, actionType: 'announcer-accept' },
               { id: `announcer-reject-${invite.id}`, label: 'Rechazar', tone: 'secondary', assignmentId: invite.id, actionType: 'announcer-reject' },
             ],
           })
+          unread += 1
         }
-        unread += pendingInvites.length
       }
 
       const competitorResult = results.find((item) => item.kind === 'competitor')
       if (competitorResult) {
         const pendingCompetitorInvites = (Array.isArray(competitorResult.data) ? competitorResult.data : []).filter((item) => item.status === 'pending')
         for (const invite of pendingCompetitorInvites) {
+          if (isDismissed(`competitor:${invite.id}`)) continue
           dynamicItems.unshift({
             title: `Invitacion a competencia: ${invite.competition_name}`,
             text: `Te invitaron a competir${invite.categoria ? ` en la categoria ${invite.categoria}` : ''}. Completa tu inscripcion o rechaza la invitacion.`,
             tone: 'neutral',
+            canDismiss: true,
+            dismissKey: `competitor:${invite.id}`,
             actions: [
               { id: `competitor-enroll-${invite.id}`, label: 'Completar inscripción', tone: 'primary', invitationId: invite.id, competitionId: invite.competition_id, actionType: 'competitor-enroll' },
               { id: `competitor-reject-${invite.id}`, label: 'Rechazar', tone: 'danger', invitationId: invite.id, actionType: 'competitor-reject' },
             ],
           })
+          unread += 1
         }
-        unread += pendingCompetitorInvites.length
       }
 
       const spectatorResult = results.find((item) => item.kind === 'spectatorFollows')
@@ -786,10 +881,14 @@ export function AuthenticatedShell() {
           const changes = describeSnapshotChanges(snapshots[key], snapshot)
           writeSpectatorSnapshot(follow.competitionId, follow.athleteId, snapshot)
           changes.forEach((change) => {
+            const dismissKey = `spectator-change:${key}:${change.type}:${change.title}:${change.body}`
+            if (isDismissed(dismissKey)) return
             dynamicItems.unshift({
               title: change.title,
               text: `${follow.competitionName}: ${change.body}`,
               tone: change.type === 'rank_down' ? 'neutral' : 'success',
+              canDismiss: true,
+              dismissKey,
               actions: [
                 { id: `spectator-board-${key}`, label: 'Ver leaderboard', tone: 'primary', actionType: 'go-to-leaderboard', competitionId: follow.competitionId },
                 ...(snapshot.username || follow.username ? [{ id: `spectator-profile-${key}`, label: 'Perfil', tone: 'secondary', actionType: 'go-to-athlete-profile', username: snapshot.username || follow.username }] : []),
@@ -799,10 +898,12 @@ export function AuthenticatedShell() {
           })
         })
         if (follows.length) {
-          dynamicItems.push({
+          pushNotification({
             title: `${follows.length} atleta${follows.length === 1 ? '' : 's'} en seguimiento`,
             text: 'Revisa posiciones, resultados y proximos heats de amigos o competidores que sigues.',
             tone: 'neutral',
+            canDismiss: true,
+            dismissKey: `spectator-summary:${follows.map((item) => `${item.competitionId}:${item.athleteId}`).sort().join('|')}`,
             actions: [
               { id: 'spectator-follow-center', label: 'Ver seguimiento', tone: 'primary', actionType: 'go-to-notifications' },
             ],
@@ -877,6 +978,8 @@ export function AuthenticatedShell() {
           const isClosed = ['accepted', 'rejected', 'score_adjusted', 'closed', 'cancelled'].includes(appeal.status)
           const hasStaffMessage = lastMessage && lastMessage.author_role !== 'athlete'
           if (!isClosed && !hasStaffMessage) return
+          const dismissKey = `appeal:${appeal.id}:${signature}`
+          if (isDismissed(dismissKey)) return
           const title = isClosed ? 'Decision de reclamacion' : 'Mensaje en reclamacion'
           const text = isClosed
             ? `${appeal.phase_name || 'Workout'}: ${appealStatusLabel(appeal.status)}${appeal.resolution_note ? ` - ${appeal.resolution_note}` : ''}`
@@ -885,6 +988,8 @@ export function AuthenticatedShell() {
             title,
             text,
             tone: isClosed && appeal.status === 'rejected' ? 'danger' : isClosed ? 'success' : 'neutral',
+            canDismiss: true,
+            dismissKey,
             actions: [
               { id: `appeal-${appeal.id}`, label: 'Ver reclamacion', tone: 'primary', actionType: 'go-to-appeal', appealId: appeal.id, appealSeenKey: seenKey, appealSignatureKey: String(appeal.id), appealSignature: signature },
             ],
@@ -900,7 +1005,7 @@ export function AuthenticatedShell() {
     return () => {
       active = false
     }
-  }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick, nativeNotificationPermission])
+  }, [isAthlete, userId, role, session, location.pathname, notificationsRefreshTick, nativeNotificationPermission, dismissedNotificationKeys])
 
   useEffect(() => subscribeSpectatorFollows(() => {
     setNotificationsRefreshTick((current) => current + 1)
@@ -909,6 +1014,16 @@ export function AuthenticatedShell() {
   const openNotifications = () => {
     setNotificationsRefreshTick((current) => current + 1)
     setNotificationsOpen(true)
+  }
+
+  const dismissNotificationFromSheet = (dismissKey) => {
+    if (!dismissKey) return
+    setDismissedNotificationKeys((current) => {
+      const next = { ...current, [dismissKey]: 1 }
+      writeDismissedNotifications(userId || 'anon', next)
+      return next
+    })
+    setNotificationItems((current) => current.filter((item) => item.dismissKey !== dismissKey))
   }
 
   const enableNativeNotifications = async () => {
@@ -1242,8 +1357,11 @@ export function AuthenticatedShell() {
         items={notificationItems}
         busyActionId={notificationActionBusyId}
         onAction={handleNotificationAction}
+        onDismiss={dismissNotificationFromSheet}
         nativePermission={nativeNotificationPermission}
         onEnableNativeNotifications={enableNativeNotifications}
+        showDeviceNotice={!dismissedNotificationKeys['device-notifications']}
+        onDismissDeviceNotice={() => dismissNotificationFromSheet('device-notifications')}
       />
       <PendingQuestionsModal
         task={pendingQuestionTask}

@@ -47,6 +47,11 @@ function formatDateTime(value, timeZone) {
 }
 
 const wodColorPalette = ['#FF6B00', '#00C2A8', '#D4A537', '#8B5CF6', '#38BDF8', '#F59E0B', '#EF4444', '#22C55E']
+const scheduleStateColors = {
+  done: '#6B7280',
+  live: '#00C2A8',
+  upcoming: '#FF6B00',
+}
 
 function wodColorFor(value) {
   const raw = String(value ?? 'wod').trim() || 'wod'
@@ -194,6 +199,26 @@ function categoryTimeRange(items = []) {
     startAt: starts[0] || null,
     endAt: ends[ends.length - 1] || null,
   }
+}
+
+function scheduleItemStatus(startAt, endAt, nowValue = Date.now()) {
+  const start = startAt ? new Date(startAt) : null
+  const end = endAt ? new Date(endAt) : null
+  const startMs = start && !Number.isNaN(start.getTime()) ? start.getTime() : null
+  const endMs = end && !Number.isNaN(end.getTime()) ? end.getTime() : null
+  if (startMs == null) return { key: 'upcoming', label: 'Sin horario', color: scheduleStateColors.upcoming }
+  if (endMs != null && endMs <= nowValue) return { key: 'done', label: 'Finalizado', color: scheduleStateColors.done }
+  if (startMs <= nowValue && (endMs == null || endMs > nowValue)) return { key: 'live', label: 'En curso', color: scheduleStateColors.live }
+  return { key: 'upcoming', label: 'Próximo', color: scheduleStateColors.upcoming }
+}
+
+function scheduleGroupStatus(items = []) {
+  const ranges = items.map((item) => ({ startAt: item.startAt, endAt: item.endAt }))
+  const hasLive = ranges.some((item) => scheduleItemStatus(item.startAt, item.endAt).key === 'live')
+  if (hasLive) return { key: 'live', label: 'En curso', color: scheduleStateColors.live }
+  const hasUpcoming = ranges.some((item) => scheduleItemStatus(item.startAt, item.endAt).key === 'upcoming')
+  if (hasUpcoming) return { key: 'upcoming', label: 'Próximo', color: scheduleStateColors.upcoming }
+  return { key: 'done', label: 'Finalizado', color: scheduleStateColors.done }
 }
 
 function WorkoutDescription({ text, theme }) {
@@ -383,14 +408,15 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
   const participants = item.participants || []
   const firstParticipant = participants[0]
   const participantCount = participants.length
-  const wodTone = wodColorFor(item.phaseId || item.phaseName || item.title)
+  const status = scheduleItemStatus(item.startAt, item.endAt)
+  const statusTone = status.color
   const contentId = `schedule-heat-${toDomId(item.id)}`
   const heatLabel = heatLabelFor(item)
   const titleLabel = heatLabel || item.title
   return (
     <div className="fr-cut-card fr-schedule-item-card" style={{
-      border: `1px solid ${hexToRgba(wodTone, 0.32)}`,
-      borderLeft: `4px solid ${wodTone}`,
+      border: `1px solid ${hexToRgba(statusTone, 0.30)}`,
+      borderLeft: `4px solid ${statusTone}`,
       background: hexToRgba(theme.background, 0.30),
       padding: 14,
       display: 'grid',
@@ -419,6 +445,9 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
       >
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="fr-schedule-overline" style={{ color: statusTone, fontSize: 11, fontWeight: 850 }}>
+              {status.label}
+            </span>
             <span className="fr-schedule-overline" style={{ color: theme.textSecondary, fontSize: 11, fontWeight: 800 }}>
               {participantCount ? `${participantCount} ${participantCount === 1 ? 'asignado' : 'asignados'}` : 'Sin asignados'}
             </span>
@@ -443,9 +472,9 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
               width: 28,
               height: 28,
               borderRadius: 6,
-              border: `1px solid ${hexToRgba(wodTone, 0.28)}`,
+              border: `1px solid ${hexToRgba(statusTone, 0.28)}`,
               background: hexToRgba(theme.background, 0.48),
-              color: wodTone,
+              color: statusTone,
               flexShrink: 0,
             }}
           >
@@ -464,7 +493,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
         ) : null}
         {item.locationName || item.locationDetail ? (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: theme.text, fontSize: 14, lineHeight: 1.5 }}>
-            <MapPin size={14} color={wodTone} style={{ marginTop: 2, flexShrink: 0 }} />
+            <MapPin size={14} color={statusTone} style={{ marginTop: 2, flexShrink: 0 }} />
             <span>
               {item.locationName || 'Ubicacion por confirmar'}
               {item.locationDetail ? <span style={{ color: theme.textSecondary }}> · {item.locationDetail}</span> : null}
@@ -485,9 +514,9 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
                 className="fr-schedule-participant-row"
                 style={{
                   borderRadius: 6,
-                  border: `1px solid ${hexToRgba(wodTone, 0.38)}`,
-                  borderLeft: `4px solid ${wodTone}`,
-                  background: participant.note ? hexToRgba(wodTone, 0.10) : 'rgba(255,255,255,0.03)',
+                  border: `1px solid ${hexToRgba(statusTone, 0.24)}`,
+                  borderLeft: `3px solid ${statusTone}`,
+                  background: participant.note ? hexToRgba(statusTone, 0.08) : 'rgba(255,255,255,0.03)',
                   padding: '10px 12px',
                   display: 'grid',
                   gridTemplateColumns: participant.lane != null ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)',
@@ -506,7 +535,7 @@ function ScheduleItemCard({ item, personal = false, theme, timeZone }) {
                   ) : null}
                 </div>
                 {participant.lane != null ? (
-                  <span className="fr-schedule-lane" style={{ color: wodTone, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>Lane {participant.lane}</span>
+                  <span className="fr-schedule-lane" style={{ color: statusTone, fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' }}>Lane {participant.lane}</span>
                 ) : null}
               </div>
             ))}
@@ -541,7 +570,8 @@ function ScheduleCategoryGroup({ group, personal = false, theme, timeZone, secti
   const itemCount = group.items.length
   const participantCount = group.items.reduce((total, item) => total + (item.participants?.length || 0), 0)
   const { startAt, endAt } = categoryTimeRange(group.items)
-  const tone = wodColorFor(`${sectionId}-${group.category}`)
+  const status = scheduleGroupStatus(group.items)
+  const tone = status.color
   const contentId = `schedule-category-${toDomId(sectionId)}-${toDomId(group.category)}`
 
   return (
@@ -575,6 +605,7 @@ function ScheduleCategoryGroup({ group, personal = false, theme, timeZone, secti
       >
         <div style={{ minWidth: 0 }}>
           <div className="fr-schedule-overline" style={{ color: tone, fontSize: 11, fontWeight: 850, textTransform: 'uppercase', letterSpacing: 0.35 }}>
+            {status.label} · {' '}
             {itemCount} {itemCount === 1 ? 'heat' : 'heats'} · {participantCount} {participantCount === 1 ? 'asignado' : 'asignados'}
           </div>
           <div className="fr-schedule-category-title" style={{ color: theme.text, fontSize: 16, fontWeight: 850, lineHeight: 1.2, marginTop: 4 }}>
