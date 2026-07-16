@@ -624,7 +624,11 @@ function Modal({ title, onClose, children }) {
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { document.body.style.overflow = prev }
+    document.body.classList.add('fr-modal-open')
+    return () => {
+      document.body.style.overflow = prev
+      document.body.classList.remove('fr-modal-open')
+    }
   }, [])
   return (
     <div className="fr-command-modal-overlay" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.74)', display: 'grid', placeItems: 'center', padding: 16 }} onClick={onClose}>
@@ -1805,6 +1809,18 @@ function HeatsPanel({ bundle, reload, notify }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [pendingMove, setPendingMove] = useState(null)
   const [scheduleModal, setScheduleModal] = useState(null)
+  const [timingModal, setTimingModal] = useState(false)
+  const [timingPreview, setTimingPreview] = useState(null)
+  const [timingBusy, setTimingBusy] = useState(false)
+  const [timingDraft, setTimingDraft] = useState({
+    phase_id: '',
+    first_heat_start_at: '',
+    heat_duration_minutes: 15,
+    heat_gap_minutes: 5,
+    category_transition_minutes: 0,
+    from_heat_id: '',
+    shift_following_blocks: false,
+  })
   const [deleteWorkout, setDeleteWorkout] = useState(null)
   const [collapsedWorkouts, setCollapsedWorkouts] = useState({})
   const [previewPlan, setPreviewPlan] = useState(null)
@@ -1833,6 +1849,9 @@ function HeatsPanel({ bundle, reload, notify }) {
   useEffect(() => {
     setPreviewPlan(null)
   }, [draft.phase_id, draft.generation_mode, draft.heat_numbering_mode, draft.seed_mode, draft.advance_limit, draft.lane_count, draft.first_heat_start_at, draft.heat_duration_minutes, draft.heat_gap_minutes, draft.category_transition_minutes, draft.location_name])
+  useEffect(() => {
+    setTimingPreview(null)
+  }, [timingDraft.phase_id, timingDraft.first_heat_start_at, timingDraft.heat_duration_minutes, timingDraft.heat_gap_minutes, timingDraft.category_transition_minutes, timingDraft.from_heat_id, timingDraft.shift_following_blocks])
   const openLocationManager = (location = null) => {
     setLocationDraft({
       name: location?.name || '',
@@ -2044,6 +2063,83 @@ function HeatsPanel({ bundle, reload, notify }) {
       seed_order: Number(participant.seed_order || index + 1),
     })),
   })
+  const timingPhaseHeats = heats
+    .filter((heat) => String(heat.phase_id) === String(timingDraft.phase_id))
+    .sort((a, b) => new Date(a.start_at || 0).getTime() - new Date(b.start_at || 0).getTime() || Number(a.heat_number || 0) - Number(b.heat_number || 0))
+  const loadTimingPhase = (phaseId, fromHeatId = '') => {
+    const phase = (bundle.phases || []).find((item) => String(item.id) === String(phaseId))
+    const phaseHeats = heats
+      .filter((heat) => String(heat.phase_id) === String(phaseId))
+      .sort((a, b) => new Date(a.start_at || 0).getTime() - new Date(b.start_at || 0).getTime() || Number(a.heat_number || 0) - Number(b.heat_number || 0))
+    const firstHeat = fromHeatId
+      ? phaseHeats.find((heat) => String(heat.id) === String(fromHeatId))
+      : phaseHeats[0]
+    const heatDurationMinutes = Number(phase?.heat_duration_seconds || 0) > 0
+      ? Math.max(1, Math.round(Number(phase.heat_duration_seconds) / 60))
+      : firstHeat?.start_at && firstHeat?.end_at
+        ? Math.max(1, Math.round((new Date(firstHeat.end_at).getTime() - new Date(firstHeat.start_at).getTime()) / 60000))
+        : 15
+    setTimingDraft((prev) => ({
+      ...prev,
+      phase_id: String(phaseId || ''),
+      from_heat_id: String(fromHeatId || ''),
+      first_heat_start_at: dateTimeInput(firstHeat?.start_at || phase?.start_at),
+      heat_duration_minutes: heatDurationMinutes,
+      heat_gap_minutes: Math.max(0, Math.round(Number(phase?.heat_transition_seconds || firstHeat?.heat_transition_seconds || 0) / 60)),
+      category_transition_minutes: Math.max(0, Math.round(Number(phase?.category_transition_seconds || firstHeat?.category_transition_seconds || 0) / 60)),
+    }))
+    setTimingPreview(null)
+  }
+  const openTimingConfiguration = () => {
+    const preferredPhaseId = schedulePhaseId || heats.find((heat) => heat.phase_id)?.phase_id || ''
+    loadTimingPhase(preferredPhaseId)
+    setTimingModal(true)
+  }
+  const timingPayload = () => ({
+    first_heat_start_at: toUtcOrNull(timingDraft.first_heat_start_at),
+    heat_duration_minutes: Number(timingDraft.heat_duration_minutes || 0),
+    heat_gap_minutes: Number(timingDraft.heat_gap_minutes || 0),
+    category_transition_minutes: Number(timingDraft.category_transition_minutes || 0),
+    from_heat_id: timingDraft.from_heat_id ? Number(timingDraft.from_heat_id) : null,
+    shift_following_blocks: !!timingDraft.shift_following_blocks,
+  })
+  const previewTimingConfiguration = async () => {
+    if (!timingDraft.phase_id) return notify('Selecciona un WOD', 'error')
+    if (!timingDraft.first_heat_start_at) return notify('Define la fecha y hora de inicio', 'error')
+    if (Number(timingDraft.heat_duration_minutes || 0) < 1) return notify('La duracion debe ser de al menos 1 minuto', 'error')
+    setTimingBusy(true)
+    try {
+      const data = await api(`/competitions/${competition.id}/phases/${timingDraft.phase_id}/heats/reschedule/preview`, {
+        method: 'POST',
+        body: JSON.stringify(timingPayload()),
+      })
+      setTimingPreview(data)
+      notify('Previsualizacion lista')
+    } catch (error) {
+      setTimingPreview(null)
+      notify(error.message, 'error')
+    } finally {
+      setTimingBusy(false)
+    }
+  }
+  const applyTimingConfiguration = async () => {
+    if (!timingPreview || timingPreview.conflicts?.length) return
+    setTimingBusy(true)
+    try {
+      const data = await api(`/competitions/${competition.id}/phases/${timingDraft.phase_id}/heats/reschedule`, {
+        method: 'POST',
+        body: JSON.stringify(timingPayload()),
+      })
+      notify(`${data.summary?.affected_heats || 0} heats reprogramados`)
+      setTimingModal(false)
+      setTimingPreview(null)
+      await reload()
+    } catch (error) {
+      notify(error.message, 'error')
+    } finally {
+      setTimingBusy(false)
+    }
+  }
   const openSingleSchedule = (heat) => {
     setScheduleDraft((prev) => ({
       ...prev,
@@ -2373,7 +2469,7 @@ function HeatsPanel({ bundle, reload, notify }) {
     }
   }
   return (
-    <Panel title="Heats y orden de salida" subtitle="Participantes y horarios se ajustan por separado." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Button onClick={() => setCategoryOrderModal(true)}><Settings2 size={16} />Orden categorias</Button><Button onClick={openBulkSchedule}><Clock3 size={16} />Mover horarios</Button><Button tone="primary" onClick={() => setModalOpen(true)} primaryAction><Zap size={16} />Generar heats</Button></div>}>
+    <Panel title="Heats y orden de salida" subtitle="Participantes y horarios se ajustan por separado." action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><Button onClick={() => setCategoryOrderModal(true)}><Settings2 size={16} />Orden categorias</Button><Button onClick={openTimingConfiguration}><Clock3 size={16} />Configurar tiempos</Button><Button onClick={openBulkSchedule}><Clock3 size={16} />Mover horarios</Button><Button tone="primary" onClick={() => setModalOpen(true)} primaryAction><Zap size={16} />Generar heats</Button></div>}>
       {categoryOrderModal ? (
         <Modal title="Orden de categorias para heats" onClose={() => setCategoryOrderModal(false)}>
           <div style={{ display: 'grid', gap: 12 }}>
@@ -2470,7 +2566,9 @@ function HeatsPanel({ bundle, reload, notify }) {
                   ...p,
                   phase_id: e.target.value,
                   first_heat_start_at: p.first_heat_start_at || dateTimeInput(nextPhase?.start_at),
-                  category_transition_minutes: p.category_transition_minutes || Math.round(Number(nextPhase?.category_transition_seconds || 0) / 60),
+                  heat_duration_minutes: Math.max(1, Math.round(Number(nextPhase?.heat_duration_seconds || 900) / 60)),
+                  heat_gap_minutes: Math.max(0, Math.round(Number(nextPhase?.heat_transition_seconds || 0) / 60)),
+                  category_transition_minutes: Math.max(0, Math.round(Number(nextPhase?.category_transition_seconds || 0) / 60)),
                 }))
               }}><option value="">Seleccionar</option>{(bundle.phases || []).filter((phase) => !phase.parent_phase_id).map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
               <Field label="Modo"><select style={inputStyle()} value={draft.generation_mode} onChange={(e) => setDraft((p) => ({ ...p, generation_mode: e.target.value }))}><option value="by_category">Por categoria</option><option value="mixed">Mixto</option></select></Field>
@@ -2761,6 +2859,139 @@ function HeatsPanel({ bundle, reload, notify }) {
           </Modal>
         )
       })() : null}
+      {timingModal ? (
+        <Modal title="Configuracion de tiempos" onClose={() => { setTimingModal(false); setTimingPreview(null) }}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, color: colors.secondary, fontSize: 13, lineHeight: 1.5 }}>
+              Recalcula el cronograma sin cambiar atletas, carriles, categorias ni publicaciones. Revisa la previsualizacion antes de aplicar.
+            </div>
+            <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+              <Field label="WOD">
+                <select
+                  style={inputStyle()}
+                  value={timingDraft.phase_id}
+                  onChange={(event) => loadTimingPhase(event.target.value)}
+                >
+                  <option value="">Seleccionar</option>
+                  {(bundle.phases || [])
+                    .filter((phase) => !phase.parent_phase_id && heats.some((heat) => String(heat.phase_id) === String(phase.id)))
+                    .map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}
+                </select>
+              </Field>
+              <Field label="Reprogramar desde">
+                <select
+                  style={inputStyle()}
+                  value={timingDraft.from_heat_id}
+                  onChange={(event) => loadTimingPhase(timingDraft.phase_id, event.target.value)}
+                  disabled={!timingDraft.phase_id}
+                >
+                  <option value="">Desde el primer heat</option>
+                  {timingPhaseHeats.map((heat) => (
+                    <option key={heat.id} value={heat.id}>
+                      {heat.categoria || 'Todas'} - {heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Inicio del primer heat afectado">
+                <input
+                  type="datetime-local"
+                  style={inputStyle()}
+                  value={timingDraft.first_heat_start_at}
+                  onChange={(event) => setTimingDraft((prev) => ({ ...prev, first_heat_start_at: event.target.value }))}
+                />
+              </Field>
+              <Field label="Duracion programada (min)">
+                <input
+                  type="number"
+                  min="1"
+                  style={inputStyle()}
+                  value={timingDraft.heat_duration_minutes}
+                  onChange={(event) => setTimingDraft((prev) => ({ ...prev, heat_duration_minutes: event.target.value }))}
+                />
+              </Field>
+              <Field label="Tiempo entre heats (min)">
+                <input
+                  type="number"
+                  min="0"
+                  style={inputStyle()}
+                  value={timingDraft.heat_gap_minutes}
+                  onChange={(event) => setTimingDraft((prev) => ({ ...prev, heat_gap_minutes: event.target.value }))}
+                />
+              </Field>
+              <Field label="Tiempo entre categorias (min)">
+                <input
+                  type="number"
+                  min="0"
+                  style={inputStyle()}
+                  value={timingDraft.category_transition_minutes}
+                  onChange={(event) => setTimingDraft((prev) => ({ ...prev, category_transition_minutes: event.target.value }))}
+                />
+              </Field>
+            </div>
+            <label style={{ border: `1px solid ${timingDraft.shift_following_blocks ? colors.accent : colors.border}`, background: timingDraft.shift_following_blocks ? 'rgba(0,194,168,0.08)' : colors.top, borderRadius: 8, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={timingDraft.shift_following_blocks}
+                onChange={(event) => setTimingDraft((prev) => ({ ...prev, shift_following_blocks: event.target.checked }))}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <span style={{ display: 'block', color: colors.text, fontWeight: 900 }}>Ajustar bloques posteriores en la misma ubicacion</span>
+                <span style={{ display: 'block', color: colors.secondary, fontSize: 12, lineHeight: 1.45, marginTop: 3 }}>Si este WOD termina antes o despues, desplaza los heats posteriores para conservar la continuidad.</span>
+              </span>
+            </label>
+            {timingPreview ? (
+              <div style={{ display: 'grid', gap: 10 }}>
+                <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
+                  <MiniStat label="Heats afectados" value={timingPreview.summary?.affected_heats || 0} tone={colors.primary} />
+                  <MiniStat label="Bloques desplazados" value={timingPreview.summary?.shifted_following_heats || 0} tone={colors.accent} />
+                  <MiniStat label="Cambio total" value={`${Number(timingPreview.summary?.delta_minutes || 0) >= 0 ? '+' : ''}${timingPreview.summary?.delta_minutes || 0} min`} tone={Number(timingPreview.summary?.delta_minutes || 0) > 0 ? colors.warning : colors.accent} />
+                  <MiniStat label="Nueva finalizacion" value={formatDateTime(timingPreview.summary?.new_end_at)} tone={colors.text} />
+                </div>
+                {timingPreview.conflicts?.length ? (
+                  <div style={{ border: `1px solid ${colors.error}`, background: 'rgba(239,68,68,0.10)', borderRadius: 8, padding: 12, color: '#FCA5A5', fontSize: 13, lineHeight: 1.5 }}>
+                    Hay {timingPreview.conflicts.length} solape{timingPreview.conflicts.length === 1 ? '' : 's'}. Ajusta los tiempos o activa el desplazamiento de bloques posteriores.
+                    {timingPreview.conflicts.slice(0, 3).map((conflict, index) => (
+                      <div key={`${conflict.location_name}-${index}`} style={{ marginTop: 5 }}>
+                        {conflict.location_name}: {(conflict.labels || []).join(' / ')}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ border: `1px solid ${colors.success}`, background: 'rgba(34,197,94,0.10)', borderRadius: 8, padding: 12, color: '#86EFAC', fontSize: 13 }}>
+                    Cronograma valido, sin solapes en las ubicaciones.
+                  </div>
+                )}
+                <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, overflow: 'hidden' }}>
+                  {(timingPreview.changes || []).slice(0, 12).map((change) => (
+                    <div key={change.heat_id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10, padding: 10, borderBottom: `1px solid ${colors.border}` }}>
+                      <div>
+                        <div style={{ color: colors.text, fontWeight: 900 }}>{change.heat_label}</div>
+                        <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{change.categoria || 'Todas'}{change.shifted_following ? ' - Bloque posterior' : ''}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', fontSize: 12 }}>
+                        <div style={{ color: colors.muted, textDecoration: 'line-through' }}>{formatDateTime(change.old_start_at)}</div>
+                        <div style={{ color: colors.accent, fontWeight: 900, marginTop: 3 }}>{formatDateTime(change.start_at)} - {formatDateTime(change.end_at)}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {(timingPreview.changes || []).length > 12 ? (
+                    <div style={{ padding: 10, color: colors.secondary, fontSize: 12 }}>Y {(timingPreview.changes || []).length - 12} cambios mas.</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+              <Button onClick={() => { setTimingModal(false); setTimingPreview(null) }}>Cancelar</Button>
+              <Button onClick={previewTimingConfiguration} disabled={timingBusy}>{timingBusy ? 'Calculando...' : 'Previsualizar cambios'}</Button>
+              <Button tone="primary" onClick={applyTimingConfiguration} disabled={timingBusy || !timingPreview || !!timingPreview.conflicts?.length}>
+                {timingBusy ? 'Aplicando...' : 'Aplicar nueva programacion'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {scheduleModal ? (
         <Modal title={scheduleModal.mode === 'single' ? 'Editar horario del heat' : 'Mover horarios'} onClose={() => setScheduleModal(null)}>
           {scheduleModal.mode === 'single' ? (

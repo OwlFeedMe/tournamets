@@ -94,8 +94,25 @@ class HeatMoveInput(BaseModel):
     lane_number: Optional[int] = None
 
 
+class HeatRescheduleInput(BaseModel):
+    first_heat_start_at: Optional[datetime] = None
+    heat_duration_minutes: int = 15
+    heat_gap_minutes: int = 5
+    category_transition_minutes: int = 0
+    from_heat_id: Optional[int] = None
+    shift_following_blocks: bool = False
+
+
 def _normalize_dt(value: datetime | None, timezone_name: str = DEFAULT_COMPETITION_TIMEZONE) -> datetime | None:
     return to_utc_from_competition_time(value, timezone_name)
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _normalize_transition_seconds(value: object) -> int:
@@ -605,6 +622,189 @@ def _validate_heat_input(session: Session, competition_id: int, payload: HeatInp
     return phase
 
 
+def _heat_reschedule_plan(
+    session: Session,
+    competition: Competition,
+    phase_id: int,
+    body: HeatRescheduleInput,
+) -> tuple[CompetitionPhase, list[CompetitionHeat], list[dict], list[dict], dict]:
+    phase = session.get(CompetitionPhase, phase_id)
+    if not phase or int(phase.competition_id) != int(competition.id):
+        raise HTTPException(404, "WOD no encontrado")
+    all_heats = session.exec(
+        select(CompetitionHeat).where(CompetitionHeat.competition_id == int(competition.id))
+    ).all()
+    phase_heats = [heat for heat in all_heats if int(heat.phase_id) == int(phase_id)]
+    if not phase_heats:
+        raise HTTPException(400, "Este WOD no tiene heats para reprogramar")
+
+    order_map = _category_order_map(session, int(competition.id), phase.modality)
+    ordered = sorted(
+        phase_heats,
+        key=lambda heat: (
+            _category_sort_key(order_map, heat.categoria),
+            int(heat.heat_number or 0),
+            int(heat.id or 0),
+        ),
+    )
+    start_index = 0
+    if body.from_heat_id:
+        start_index = next(
+            (index for index, heat in enumerate(ordered) if int(heat.id or 0) == int(body.from_heat_id)),
+            -1,
+        )
+        if start_index < 0:
+            raise HTTPException(400, "El heat inicial no pertenece a este WOD")
+    selected = ordered[start_index:]
+    now = datetime.now(timezone.utc)
+    started = [heat for heat in selected if _as_utc(heat.start_at) and _as_utc(heat.start_at) <= now]
+    if started:
+        raise HTTPException(400, f"No se pueden reprogramar {len(started)} heats que ya iniciaron")
+
+    duration_seconds = max(60, int(body.heat_duration_minutes or 15) * 60)
+    if phase.time_cap_seconds and duration_seconds < int(phase.time_cap_seconds):
+        raise HTTPException(400, "La duracion del heat no puede ser menor al time cap del WOD")
+    heat_gap_seconds = max(0, int(body.heat_gap_minutes or 0) * 60)
+    category_gap_seconds = max(0, int(body.category_transition_minutes or 0) * 60)
+    anchor = _as_utc(_normalize_dt(body.first_heat_start_at, competition.timezone))
+    if not anchor:
+        anchor = _as_utc(selected[0].start_at)
+    if not anchor:
+        raise HTTPException(400, "Define la fecha y hora del primer heat")
+
+    changes: list[dict] = []
+    cursor = anchor
+    previous_category: str | None = None
+    for heat in selected:
+        category = _normalize_category_label(heat.categoria).lower()
+        start_at = cursor
+        if previous_category is not None:
+            gap_seconds = category_gap_seconds if category != previous_category else heat_gap_seconds
+            start_at = start_at + timedelta(seconds=gap_seconds)
+        end_at = start_at + timedelta(seconds=duration_seconds)
+        changes.append({
+            "heat": heat,
+            "heat_id": int(heat.id),
+            "phase_id": int(heat.phase_id),
+            "phase_name": phase.nombre,
+            "heat_label": heat.nombre,
+            "categoria": heat.categoria,
+            "location_name": heat.location_name,
+            "old_start_at": heat.start_at,
+            "old_end_at": heat.end_at,
+            "start_at": start_at,
+            "end_at": end_at,
+            "shifted_following": False,
+        })
+        cursor = end_at
+        previous_category = category
+
+    old_end = max(
+        (_as_utc(heat.end_at or heat.start_at) for heat in selected if heat.end_at or heat.start_at),
+        default=None,
+    )
+    new_end = changes[-1]["end_at"]
+    delta = new_end - old_end if old_end else timedelta(0)
+    following_changes: list[dict] = []
+    selected_ids = {int(heat.id) for heat in selected}
+    selected_locations = {
+        str(heat.location_name or "").strip().lower()
+        for heat in selected
+        if str(heat.location_name or "").strip()
+    }
+    if body.shift_following_blocks and delta != timedelta(0) and old_end and selected_locations:
+        for heat in all_heats:
+            location = str(heat.location_name or "").strip().lower()
+            if (
+                int(heat.id or 0) not in selected_ids
+                and int(heat.phase_id) != int(phase_id)
+                and location in selected_locations
+                and _as_utc(heat.start_at)
+                and _as_utc(heat.start_at) >= old_end
+            ):
+                following_start = _as_utc(heat.start_at)
+                following_end = _as_utc(heat.end_at)
+                following_changes.append({
+                    "heat": heat,
+                    "heat_id": int(heat.id),
+                    "phase_id": int(heat.phase_id),
+                    "phase_name": "",
+                    "heat_label": heat.nombre,
+                    "categoria": heat.categoria,
+                    "location_name": heat.location_name,
+                    "old_start_at": heat.start_at,
+                    "old_end_at": heat.end_at,
+                    "start_at": following_start + delta,
+                    "end_at": following_end + delta if following_end else None,
+                    "shifted_following": True,
+                })
+
+    proposed = {item["heat_id"]: item for item in changes + following_changes}
+    ranges: list[dict] = []
+    for heat in all_heats:
+        item = proposed.get(int(heat.id or 0))
+        start_at = item["start_at"] if item else _as_utc(heat.start_at)
+        end_at = item["end_at"] if item else _as_utc(heat.end_at)
+        if start_at and end_at and heat.location_name:
+            ranges.append({
+                "heat_id": int(heat.id),
+                "label": heat.nombre,
+                "location": str(heat.location_name).strip(),
+                "start_at": start_at,
+                "end_at": end_at,
+            })
+    conflicts: list[dict] = []
+    seen_pairs: set[tuple[int, int]] = set()
+    for index, left in enumerate(ranges):
+        for right in ranges[index + 1:]:
+            if left["location"].lower() != right["location"].lower():
+                continue
+            if left["start_at"] < right["end_at"] and left["end_at"] > right["start_at"]:
+                pair = tuple(sorted((left["heat_id"], right["heat_id"])))
+                if pair in seen_pairs or not (pair[0] in proposed or pair[1] in proposed):
+                    continue
+                seen_pairs.add(pair)
+                conflicts.append({
+                    "location_name": left["location"],
+                    "heat_ids": list(pair),
+                    "labels": [left["label"], right["label"]],
+                })
+
+    summary = {
+        "phase_id": int(phase.id),
+        "phase_name": phase.nombre,
+        "affected_heats": len(changes),
+        "shifted_following_heats": len(following_changes),
+        "old_end_at": old_end,
+        "new_end_at": new_end,
+        "delta_minutes": round(delta.total_seconds() / 60) if old_end else 0,
+        "heat_duration_minutes": duration_seconds // 60,
+        "heat_gap_minutes": heat_gap_seconds // 60,
+        "category_transition_minutes": category_gap_seconds // 60,
+    }
+    return phase, selected, changes + following_changes, conflicts, summary
+
+
+def _serialize_reschedule_plan(changes: list[dict], conflicts: list[dict], summary: dict) -> dict:
+    return {
+        "ok": True,
+        "summary": {
+            **summary,
+            "old_end_at": summary["old_end_at"].isoformat() if summary["old_end_at"] else None,
+            "new_end_at": summary["new_end_at"].isoformat() if summary["new_end_at"] else None,
+        },
+        "conflicts": conflicts,
+        "changes": [
+            {
+                key: value.isoformat() if isinstance(value, datetime) else value
+                for key, value in item.items()
+                if key != "heat"
+            }
+            for item in changes
+        ],
+    }
+
+
 def _existing_heat_summary(session: Session, competition_id: int, phase_id: int) -> dict:
     rows = session.exec(
         select(CompetitionHeat).where(
@@ -836,6 +1036,58 @@ def create_heat(
     session.commit()
     session.refresh(heat)
     return {"ok": True, "heat_id": int(heat.id)}
+
+
+@router.post("/{competition_id}/phases/{phase_id}/heats/reschedule/preview")
+def preview_reschedule_heats(
+    competition_id: int,
+    phase_id: int,
+    body: HeatRescheduleInput,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    _phase, _selected, changes, conflicts, summary = _heat_reschedule_plan(
+        session, competition, phase_id, body
+    )
+    return _serialize_reschedule_plan(changes, conflicts, summary)
+
+
+@router.post("/{competition_id}/phases/{phase_id}/heats/reschedule")
+def reschedule_heats(
+    competition_id: int,
+    phase_id: int,
+    body: HeatRescheduleInput,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    competition = require_competition_access(session, competition_id, user)
+    phase, selected, changes, conflicts, summary = _heat_reschedule_plan(
+        session, competition, phase_id, body
+    )
+    if conflicts:
+        raise HTTPException(409, "La nueva programacion genera solapes en la ubicacion")
+
+    duration_seconds = max(60, int(body.heat_duration_minutes or 15) * 60)
+    heat_gap_seconds = max(0, int(body.heat_gap_minutes or 0) * 60)
+    category_gap_seconds = max(0, int(body.category_transition_minutes or 0) * 60)
+    phase.heat_duration_seconds = duration_seconds
+    phase.heat_transition_seconds = heat_gap_seconds
+    phase.category_transition_seconds = category_gap_seconds
+    if selected and not body.from_heat_id:
+        phase.start_at = changes[0]["start_at"]
+    phase.end_at = summary["new_end_at"]
+    session.add(phase)
+    for item in changes:
+        heat = item["heat"]
+        heat.start_at = item["start_at"]
+        heat.end_at = item["end_at"]
+        if not item["shifted_following"]:
+            heat.heat_transition_seconds = heat_gap_seconds
+            heat.category_transition_seconds = category_gap_seconds
+        session.add(heat)
+    session.commit()
+    return _serialize_reschedule_plan(changes, conflicts, summary)
 
 
 @router.put("/{competition_id}/heats/{heat_id}")
@@ -1097,6 +1349,12 @@ def generate_heats(
         heat_transition_seconds = gap * 60
     lane_order = _build_lane_order(lane_count)
     seed_mode = meta["seed_mode"]
+    phase.heat_duration_seconds = duration * 60
+    phase.heat_transition_seconds = heat_transition_seconds
+    phase.category_transition_seconds = category_transition_seconds
+    if first_start:
+        phase.start_at = first_start
+    session.add(phase)
 
     created_ids: list[int] = []
     current_start = first_start
@@ -1160,6 +1418,17 @@ def generate_heats(
             if current_start:
                 current_start = end_at + timedelta(seconds=heat_transition_seconds) if end_at else None
                 previous_category = current_category
+
+    if created_ids:
+        generated_heats = session.exec(
+            select(CompetitionHeat).where(CompetitionHeat.id.in_(created_ids))
+        ).all()
+        phase.end_at = max(
+            (heat.end_at for heat in generated_heats if heat.end_at),
+            default=phase.end_at,
+        )
+        session.add(phase)
+        session.commit()
 
     return {
         "ok": True,
