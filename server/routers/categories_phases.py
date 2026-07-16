@@ -527,6 +527,7 @@ def _phase_response(phase: CompetitionPhase) -> dict:
     payload["scoring_weight_percent"] = normalize_weight_percent(getattr(phase, "scoring_weight_percent", 100))
     payload["scoring_point_step"] = normalize_point_step(getattr(phase, "scoring_point_step", 1))
     payload["scoring_table"] = normalize_scoring_table(getattr(phase, "scoring_table", None))
+    payload["heat_duration_seconds"] = max(60, int(getattr(phase, "heat_duration_seconds", 900) or 900))
     payload["heat_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "heat_transition_seconds", 0))
     payload["category_transition_seconds"] = _normalize_transition_seconds(getattr(phase, "category_transition_seconds", 0))
     payload["is_visible"] = normalize_phase_visibility(getattr(phase, "is_visible", 1))
@@ -895,6 +896,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
             scoring_weight_percent=100,
             scoring_point_step=normalize_point_step(body.scoring_point_step),
             scoring_table=None,
+            heat_duration_seconds=max(60, int(body.heat_duration_seconds or 900)),
             heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
             category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
             estado=phase_status,
@@ -1035,6 +1037,7 @@ def create_phase(competition_id: int, body: PhaseCreate,
         scoring_weight_percent=normalize_weight_percent(body.scoring_weight_percent),
         scoring_point_step=normalize_point_step(body.scoring_point_step),
         scoring_table=serialize_scoring_table(body.scoring_table),
+        heat_duration_seconds=max(60, int(body.heat_duration_seconds or 900)),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
         estado=phase_status,
@@ -1124,6 +1127,8 @@ def update_phase(competition_id: int, phase_id: int, body: PhaseUpdate,
         data["scoring_point_step"] = normalize_point_step(data["scoring_point_step"])
     if "scoring_table" in data:
         data["scoring_table"] = serialize_scoring_table(data["scoring_table"])
+    if "heat_duration_seconds" in data:
+        data["heat_duration_seconds"] = max(60, int(data["heat_duration_seconds"] or 900))
     if "heat_transition_seconds" in data:
         data["heat_transition_seconds"] = _normalize_transition_seconds(data["heat_transition_seconds"])
     if "category_transition_seconds" in data:

@@ -612,6 +612,7 @@ class CompetitionPhase(SQLModel, table=True):
     scoring_weight_percent: int = Field(default=100)
     scoring_point_step: int = Field(default=1)
     scoring_table: Optional[str] = None
+    heat_duration_seconds: int = Field(default=900)
     heat_transition_seconds: int = Field(default=0)
     category_transition_seconds: int = Field(default=0)
     estado: str = Field(default=EstadoFase.PENDIENTE)  # pendiente / en_progreso / finalizada
@@ -2072,6 +2073,7 @@ class PhaseCreate(SQLModel):
     scoring_weight_percent: int = 100
     scoring_point_step: int = 1
     scoring_table: Optional[List[dict]] = None
+    heat_duration_seconds: int = 900
     heat_transition_seconds: int = 0
     category_transition_seconds: int = 0
     estado: str = EstadoFase.PENDIENTE
@@ -2110,6 +2112,7 @@ class PhaseUpdate(SQLModel):
     scoring_weight_percent: Optional[int] = None
     scoring_point_step: Optional[int] = None
     scoring_table: Optional[List[dict]] = None
+    heat_duration_seconds: Optional[int] = None
     heat_transition_seconds: Optional[int] = None
     category_transition_seconds: Optional[int] = None
     estado: Optional[str] = None

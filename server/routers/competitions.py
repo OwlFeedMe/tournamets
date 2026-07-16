@@ -727,7 +727,7 @@ def get_public_competition_detail(
 
     phases = session.execute(
         text("""
-            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, time_cap_seconds, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
+            SELECT id, nombre, descripcion, modality, block_name, block_order, phase_format, tipo, measurement_method, workout_format, winner_rule, scoring_rules, activities, points_mode, allow_multiple_results, team_result_mode, tie_break_enabled, tie_break_method, time_cap_seconds, heat_duration_seconds, heat_transition_seconds, category_transition_seconds, estado, is_visible, start_at, end_at, orden
             FROM competition_phases
             WHERE competition_id = :cid
             ORDER BY block_order, orden, id
@@ -752,6 +752,7 @@ def get_public_competition_detail(
         item["time_cap_seconds"] = int(item.get("time_cap_seconds")) if item.get("time_cap_seconds") is not None else None
         item["heat_transition_seconds"] = int(item.get("heat_transition_seconds") or 0)
         item["category_transition_seconds"] = int(item.get("category_transition_seconds") or 0)
+        item["heat_duration_seconds"] = max(60, int(item.get("heat_duration_seconds") or 900))
         phase_format = str(item.get("phase_format") or "activity").strip().lower()
         if phase_format in {"actividad", "activity"}:
             phase_format = "activity"
@@ -794,6 +795,7 @@ def get_public_competition_detail(
                 "time_cap_seconds": item.get("time_cap_seconds"),
                 "heat_transition_seconds": item.get("heat_transition_seconds"),
                 "category_transition_seconds": item.get("category_transition_seconds"),
+                "heat_duration_seconds": item.get("heat_duration_seconds"),
                 "orden": 0,
             }]
         normalized_phases.append(item)
