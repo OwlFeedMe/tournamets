@@ -177,6 +177,9 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)            AS has_active_appeal
         FROM results r
+        JOIN competition_phases ph
+          ON ph.id = r.phase_id
+         AND ph.competition_id = :cid
         LEFT JOIN result_appeals ra
           ON ra.result_id = r.id
          AND ra.status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')
@@ -223,6 +226,9 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
+        JOIN competition_phases ph
+          ON ph.id = r.phase_id
+         AND ph.competition_id = :cid
         JOIN teams t ON t.id = r.team_id
         LEFT JOIN result_appeals ra
           ON ra.result_id = r.id
@@ -261,6 +267,9 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
+        JOIN competition_phases ph
+          ON ph.id = r.phase_id
+         AND ph.competition_id = :cid
         LEFT JOIN result_appeals ra
           ON ra.result_id = r.id
          AND ra.status IN ('submitted', 'under_review', 'needs_evidence', 'escalated')

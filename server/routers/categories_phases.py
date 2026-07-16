@@ -4,7 +4,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import func, text
+from sqlalchemy import delete, func, text
 from sqlmodel import Session, select
 
 from access import require_competition_access
@@ -22,7 +22,7 @@ from competition_rules import (
 from models import (
     CompetitionCategory, CompetitionParticipant, CompetitionPhase,
     CategoryCreate, CategoryUpdate, PhaseCreate, PhaseUpdate,
-    CompetitionHeat,
+    CompetitionHeat, Result,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.scoring import (
@@ -573,6 +573,25 @@ def _phase_payload_from_part(raw: dict, fallback: PhaseCreate, index: int) -> di
         "scoring_point_step": normalize_point_step(item.get("scoring_point_step", fallback.scoring_point_step)),
         "scoring_table": serialize_scoring_table(item.get("scoring_table", fallback.scoring_table)),
     }
+
+
+def _phase_ids_for_delete(session: Session, competition_id: int, phase_id: int) -> list[int]:
+    pending = [int(phase_id)]
+    phase_ids: list[int] = []
+    seen: set[int] = set()
+    while pending:
+        current_id = pending.pop()
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+        phase_ids.append(current_id)
+        child_ids = session.exec(
+            select(CompetitionPhase.id)
+            .where(CompetitionPhase.competition_id == competition_id)
+            .where(CompetitionPhase.parent_phase_id == current_id)
+        ).all()
+        pending.extend(int(child_id) for child_id in child_ids if child_id is not None)
+    return phase_ids
 
 
 @router.get("/api/competitions/{competition_id}/categories")
@@ -1176,14 +1195,21 @@ def delete_phase(competition_id: int, phase_id: int,
     require_competition_access(session, competition_id, user)
     phase = session.get(CompetitionPhase, phase_id)
     if phase and phase.competition_id == competition_id:
+        phase_ids = _phase_ids_for_delete(session, competition_id, phase_id)
         heats = session.exec(
             select(CompetitionHeat).where(
                 CompetitionHeat.competition_id == competition_id,
-                CompetitionHeat.phase_id == phase_id,
+                CompetitionHeat.phase_id.in_(phase_ids),
             )
         ).all()
         for heat in heats:
             session.delete(heat)
+        session.execute(
+            delete(Result).where(
+                Result.competition_id == competition_id,
+                Result.phase_id.in_(phase_ids),
+            )
+        )
         session.delete(phase)
         session.commit()
         invalidate_leaderboard_results_snapshot(competition_id)
