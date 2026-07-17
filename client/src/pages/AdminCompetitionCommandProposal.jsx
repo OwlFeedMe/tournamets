@@ -5048,6 +5048,15 @@ function AppealsPanel({ bundle, reload, notify }) {
 
 function BroadcastPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
+  const phaseOptions = (bundle.phases || []).filter((phase) => !phase.parent_phase_id)
+  const individualCategoryOptions = (bundle.categories || []).filter((category) => {
+    const modality = String(category.modality || 'individual').toLowerCase()
+    return modality.includes('individual')
+  })
+  const teamCategoryOptions = (bundle.categories || []).filter((category) => {
+    const modality = String(category.modality || '').toLowerCase()
+    return modality.includes('team') || modality.includes('equipo')
+  })
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useDraft(competition, (item) => ({
     tv_show_qr: item?.tv_show_qr ? 1 : 0,
@@ -5055,11 +5064,27 @@ function BroadcastPanel({ bundle, reload, notify }) {
     tv_only_finalized_phases: item?.tv_only_finalized_phases ? 1 : 0,
     tv_rotation_interval_seconds: item?.tv_rotation_interval_seconds || 24,
     tv_data_refresh_interval_seconds: item?.tv_data_refresh_interval_seconds || 5,
+    tv_auto_scroll_enabled: item?.tv_auto_scroll_enabled == null ? 1 : (item.tv_auto_scroll_enabled ? 1 : 0),
+    tv_auto_scroll_speed: item?.tv_auto_scroll_speed || 36,
     tv_mode: item?.tv_mode || 'cyclic',
+    tv_static_view: item?.tv_static_view || 'individual',
+    tv_static_phase_id: item?.tv_static_phase_id || '',
+    tv_static_individual_category: item?.tv_static_individual_category || '',
+    tv_static_team_category_mode: item?.tv_static_team_category_mode || '__by_category__',
   }))
   const save = async () => {
     try {
-      await api(`/competitions/${competition.id}`, { method: 'PUT', body: JSON.stringify({ ...draft, tv_rotation_interval_seconds: Number(draft.tv_rotation_interval_seconds), tv_data_refresh_interval_seconds: Number(draft.tv_data_refresh_interval_seconds) }) })
+      const payload = {
+        ...draft,
+        tv_rotation_interval_seconds: Number(draft.tv_rotation_interval_seconds),
+        tv_data_refresh_interval_seconds: Number(draft.tv_data_refresh_interval_seconds),
+        tv_auto_scroll_enabled: draft.tv_auto_scroll_enabled ? 1 : 0,
+        tv_auto_scroll_speed: Number(draft.tv_auto_scroll_speed),
+        tv_static_phase_id: draft.tv_static_phase_id ? Number(draft.tv_static_phase_id) : null,
+        tv_static_individual_category: draft.tv_static_individual_category || null,
+        tv_static_team_category_mode: draft.tv_static_team_category_mode || '__by_category__',
+      }
+      await api(`/competitions/${competition.id}`, { method: 'PUT', body: JSON.stringify(payload) })
       notify('Pantalla actualizada')
       setModalOpen(false)
       await reload()
@@ -5067,6 +5092,12 @@ function BroadcastPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
+  const selectedTvPhaseName = competition.tv_static_phase_id
+    ? (phaseOptions.find((phase) => String(phase.id) === String(competition.tv_static_phase_id))?.nombre || `WOD ${competition.tv_static_phase_id}`)
+    : (competition.tv_mode === 'static' ? 'General' : 'Todos')
+  const selectedTvCategoryLabel = competition.tv_static_view === 'teams'
+    ? (competition.tv_static_team_category_mode === '__all__' ? 'Todos' : competition.tv_static_team_category_mode === '__by_category__' ? 'Por categoria' : (competition.tv_static_team_category_mode || 'Por categoria'))
+    : (competition.tv_static_individual_category || (competition.tv_mode === 'static' ? 'Primera disponible' : 'Todas'))
   return (
     <Panel title="Pantalla publica" subtitle="Configura salida TV y abre vistas publicas." action={<Button tone="primary" onClick={() => setModalOpen(true)}><Save size={16} />Editar pantalla</Button>}>
       {modalOpen ? (
@@ -5077,10 +5108,19 @@ function BroadcastPanel({ bundle, reload, notify }) {
                 ['tv_show_qr', 'Mostrar QR'],
                 ['tv_include_total_slide', 'Slide total'],
                 ['tv_only_finalized_phases', 'Solo finalizadas'],
+                ['tv_auto_scroll_enabled', 'Auto scroll'],
               ].map(([key, label]) => <Button key={key} tone={draft[key] ? 'primary' : 'secondary'} onClick={() => setDraft(key, draft[key] ? 0 : 1)}>{label}</Button>)}
               <Field label="Rotacion seg"><input type="number" style={inputStyle()} value={draft.tv_rotation_interval_seconds} onChange={(e) => setDraft('tv_rotation_interval_seconds', e.target.value)} /></Field>
               <Field label="Refresh seg"><input type="number" style={inputStyle()} value={draft.tv_data_refresh_interval_seconds} onChange={(e) => setDraft('tv_data_refresh_interval_seconds', e.target.value)} /></Field>
-              <Field label="Modo"><select style={inputStyle()} value={draft.tv_mode} onChange={(e) => setDraft('tv_mode', e.target.value)}><option value="cyclic">Ciclico</option><option value="static">Estatico</option></select></Field>
+              <Field label="Velocidad scroll"><input type="number" min="10" max="120" style={inputStyle()} value={draft.tv_auto_scroll_speed} onChange={(e) => setDraft('tv_auto_scroll_speed', e.target.value)} /></Field>
+              <Field label="Modo"><select style={inputStyle()} value={draft.tv_mode} onChange={(e) => setDraft('tv_mode', e.target.value)}><option value="cyclic">Automatico</option><option value="static">Fijo</option></select></Field>
+              <Field label="Vista"><select style={inputStyle()} value={draft.tv_static_view} onChange={(e) => setDraft('tv_static_view', e.target.value)}><option value="individual">Individual</option><option value="teams">Equipos</option></select></Field>
+              <Field label="WOD"><select style={inputStyle()} value={draft.tv_static_phase_id} onChange={(e) => setDraft('tv_static_phase_id', e.target.value)}><option value="">{draft.tv_mode === 'static' ? 'General' : 'Rotar todos'}</option>{phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+              {draft.tv_static_view === 'individual' ? (
+                <Field label="Categoria"><select style={inputStyle()} value={draft.tv_static_individual_category} onChange={(e) => setDraft('tv_static_individual_category', e.target.value)}><option value="">{draft.tv_mode === 'static' ? 'Primera disponible' : 'Rotar categorias'}</option>{individualCategoryOptions.map((category) => <option key={category.id} value={category.nombre}>{category.nombre}</option>)}</select></Field>
+              ) : (
+                <Field label="Categoria equipos"><select style={inputStyle()} value={draft.tv_static_team_category_mode} onChange={(e) => setDraft('tv_static_team_category_mode', e.target.value)}><option value="__by_category__">Por categoria</option><option value="__all__">Todos</option>{teamCategoryOptions.map((category) => <option key={category.id} value={category.nombre}>{category.nombre}</option>)}</select></Field>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
@@ -5091,9 +5131,17 @@ function BroadcastPanel({ bundle, reload, notify }) {
       ) : null}
       <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
         <MiniStat label="QR" value={competition.tv_show_qr ? 'Si' : 'No'} />
-        <MiniStat label="Modo" value={competition.tv_mode || 'cyclic'} />
+        <MiniStat label="Modo" value={competition.tv_mode === 'static' ? 'Fijo' : 'Automatico'} />
+        <MiniStat label="WOD" value={selectedTvPhaseName} />
+        <MiniStat label="Categoria" value={selectedTvCategoryLabel} />
+      </div>
+      <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
         <MiniStat label="Rotacion" value={`${competition.tv_rotation_interval_seconds || 24}s`} />
         <MiniStat label="Refresh" value={`${competition.tv_data_refresh_interval_seconds || 5}s`} />
+      </div>
+      <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+        <MiniStat label="Auto scroll" value={competition.tv_auto_scroll_enabled == null || competition.tv_auto_scroll_enabled ? 'Si' : 'No'} />
+        <MiniStat label="Velocidad" value={`${competition.tv_auto_scroll_speed || 36}`} />
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Link target="_blank" to={`/leaderboard?competition=${competition.id}`} style={{ textDecoration: 'none' }}><Button><Trophy size={16} />Leaderboard</Button></Link>

@@ -66,22 +66,38 @@ def _fetch_phase_schedule_map(session: Session, competition_id: int) -> dict[int
     }
 
 
-def _schedule_aware_phase_status(status: str | None, start_at) -> str | None:
+def _schedule_aware_phase_status(status: str | None, start_at, end_at=None) -> str | None:
     value = (status or "").strip().lower() or None
     if value == "finalizada":
         return value
-    if not start_at:
+    if not start_at and not end_at:
         return value
+    now = datetime.now(timezone.utc)
+
     start = start_at
-    if isinstance(start, str):
+    if start and isinstance(start, str):
         try:
             start = datetime.fromisoformat(start.replace("Z", "+00:00"))
         except ValueError:
-            return value
-    if getattr(start, "tzinfo", None) is None:
+            start = None
+    if start and getattr(start, "tzinfo", None) is None:
         start = start.replace(tzinfo=timezone.utc)
-    if start > datetime.now(timezone.utc):
+
+    end = end_at
+    if end and isinstance(end, str):
+        try:
+            end = datetime.fromisoformat(end.replace("Z", "+00:00"))
+        except ValueError:
+            end = None
+    if end and getattr(end, "tzinfo", None) is None:
+        end = end.replace(tzinfo=timezone.utc)
+
+    if start and start > now:
         return "pendiente"
+    if end and end <= now:
+        return "finalizada"
+    if start and start <= now:
+        return "en_progreso"
     return value
 
 
@@ -668,6 +684,9 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     tv_rotation_interval_seconds = min(120, max(5, tv_rotation_interval_seconds))
     tv_data_refresh_interval_seconds = int(getattr(comp, "tv_data_refresh_interval_seconds", 5) or 5)
     tv_data_refresh_interval_seconds = min(60, max(2, tv_data_refresh_interval_seconds))
+    tv_auto_scroll_enabled = bool(getattr(comp, "tv_auto_scroll_enabled", 1)) if comp else True
+    tv_auto_scroll_speed = int(getattr(comp, "tv_auto_scroll_speed", 36) or 36) if comp else 36
+    tv_auto_scroll_speed = min(120, max(10, tv_auto_scroll_speed))
     tv_mode = (getattr(comp, "tv_mode", "cyclic") or "cyclic").strip().lower() if comp else "cyclic"
     if tv_mode not in {"cyclic", "static"}:
         tv_mode = "cyclic"
@@ -791,7 +810,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "scoring": phase_scoring_config(comp, phase),
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
             "estado": phase_estado,
-            "status_display": _schedule_aware_phase_status(phase_estado, phase_start_at),
+            "status_display": _schedule_aware_phase_status(phase_estado, phase_start_at, phase_end_at),
             "start_at": phase_start_at,
             "end_at": phase_end_at,
             "descripcion": phase.descripcion,
@@ -911,6 +930,8 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         "tv_only_finalized_phases": 1 if tv_only_finalized_phases else 0,
         "tv_rotation_interval_seconds": tv_rotation_interval_seconds,
         "tv_data_refresh_interval_seconds": tv_data_refresh_interval_seconds,
+        "tv_auto_scroll_enabled": 1 if tv_auto_scroll_enabled else 0,
+        "tv_auto_scroll_speed": tv_auto_scroll_speed,
         "tv_mode": tv_mode,
         "tv_static_view": tv_static_view,
         "tv_static_phase_id": tv_static_phase_id,

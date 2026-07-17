@@ -55,6 +55,8 @@ TV_ROTATION_MIN_SECONDS = 5
 TV_ROTATION_MAX_SECONDS = 120
 TV_REFRESH_MIN_SECONDS = 2
 TV_REFRESH_MAX_SECONDS = 60
+TV_SCROLL_MIN_SPEED = 10
+TV_SCROLL_MAX_SPEED = 120
 TV_MODE_VALIDOS = {"cyclic", "static"}
 TV_VIEW_VALIDOS = {"individual", "teams"}
 TEAM_MEMBERSHIP_RULES_VALIDOS = {"free", "same_category"}
@@ -466,6 +468,13 @@ def _validate_tv_settings(payload: dict):
         if v < TV_REFRESH_MIN_SECONDS or v > TV_REFRESH_MAX_SECONDS:
             raise HTTPException(400, f"tv_data_refresh_interval_seconds invalido. Usa {TV_REFRESH_MIN_SECONDS}-{TV_REFRESH_MAX_SECONDS}")
         payload["tv_data_refresh_interval_seconds"] = v
+    if "tv_auto_scroll_enabled" in payload:
+        payload["tv_auto_scroll_enabled"] = _normalize_toggle(payload.get("tv_auto_scroll_enabled"), fallback=1)
+    if "tv_auto_scroll_speed" in payload:
+        v = int(payload["tv_auto_scroll_speed"])
+        if v < TV_SCROLL_MIN_SPEED or v > TV_SCROLL_MAX_SPEED:
+            raise HTTPException(400, f"tv_auto_scroll_speed invalido. Usa {TV_SCROLL_MIN_SPEED}-{TV_SCROLL_MAX_SPEED}")
+        payload["tv_auto_scroll_speed"] = v
     if "tv_mode" in payload:
         v = (payload["tv_mode"] or "").strip().lower()
         if v not in TV_MODE_VALIDOS:
@@ -476,8 +485,11 @@ def _validate_tv_settings(payload: dict):
         if v not in TV_VIEW_VALIDOS:
             raise HTTPException(400, "tv_static_view invalido. Usa: individual o teams")
         payload["tv_static_view"] = v
-    if "tv_static_phase_id" in payload and payload["tv_static_phase_id"] is not None:
-        payload["tv_static_phase_id"] = int(payload["tv_static_phase_id"])
+    if "tv_static_phase_id" in payload:
+        if payload["tv_static_phase_id"] in (None, ""):
+            payload["tv_static_phase_id"] = None
+        else:
+            payload["tv_static_phase_id"] = int(payload["tv_static_phase_id"])
     if "tv_static_individual_category" in payload and payload["tv_static_individual_category"] is not None:
         payload["tv_static_individual_category"] = str(payload["tv_static_individual_category"]).strip() or None
     if "tv_static_team_category_mode" in payload and payload["tv_static_team_category_mode"] is not None:

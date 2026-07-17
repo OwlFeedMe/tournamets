@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Bell, Check, CheckCircle2, Clock3, Circle, ExternalLink, X } from 'lucide-react'
+import { Bell, Check, CheckCircle2, ChevronDown, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -228,6 +228,17 @@ function phaseStatusSuffix(estado) {
   if (estado === 'finalizada') return ' ✓'
   if (estado === 'en_progreso') return ' ⏳'
   return ''
+}
+
+function phaseStatusLabel(phase) {
+  const value = phaseStatusValue(phase) || 'pendiente'
+  if (value === 'finalizada' || value === 'finalizado') return 'Finalizado'
+  if (value === 'en_progreso' || value === 'en progreso' || value === 'en_curso' || value === 'en curso') return 'En progreso'
+  return 'Pendiente'
+}
+
+function phaseStatusValue(phase) {
+  return (phase?.status_display || phase?.estado || '').toString().trim().toLowerCase()
 }
 // â”€â”€ Skeleton â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SkeletonRow({ cols = 5 }) {
@@ -497,6 +508,18 @@ function athletePhaseResults(data, athleteId) {
     .map((phase) => {
       const row = allIndividualRows(phase.individual).find((item) => String(item.id) === String(athleteId))
       if (!row) return null
+      const scoringParts = phaseScoringParts(phase).map((part, index) => {
+        const partRow = rowForScoringPart(part, athleteId, row.categoria)
+        return {
+          phase: part,
+          label: partDisplayName(part, index),
+          rank: partRow?.rank,
+          points: Number(partRow?.total_puntos || 0),
+          mark: partRow?.mejor_marca,
+          extra: partRow?.extra,
+          attempts: Number(partRow?.total_eventos || 0),
+        }
+      })
       return {
         phase,
         rank: row.rank,
@@ -505,6 +528,7 @@ function athletePhaseResults(data, athleteId) {
         extra: row.extra,
         tiebreak: row.tiebreak,
         attempts: Number(row.total_eventos || 0),
+        scoringParts,
       }
     })
     .filter(Boolean)
@@ -560,7 +584,15 @@ function summaryMetric(label, value, accent = THEME.ink) {
   )
 }
 
+function scoringPartsCountLabel(scoringParts = []) {
+  const count = scoringParts.length
+  if (!count) return ''
+  return `${count} ${count === 1 ? 'parte' : 'partes'}`
+}
+
 function AthleteSummaryModal({ summary, onClose, isMobile, following = false, onToggleFollow }) {
+  const [expandedWorkoutParts, setExpandedWorkoutParts] = useState({})
+
   useEffect(() => {
     if (!summary) return undefined
     const previousOverflow = document.body.style.overflow
@@ -577,6 +609,10 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
     }
   }, [onClose, summary])
 
+  useEffect(() => {
+    setExpandedWorkoutParts({})
+  }, [summary?.athlete?.id])
+
   if (!summary) return null
 
   const athlete = summary.athlete
@@ -584,6 +620,9 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
   const topBorder = summary.rank && summary.rank <= 3
     ? 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)'
     : `linear-gradient(135deg, ${THEME.primary} 0%, ${THEME.accent} 100%)`
+  const toggleWorkoutParts = (phaseId) => {
+    setExpandedWorkoutParts((prev) => ({ ...prev, [phaseId]: !prev[phaseId] }))
+  }
 
   return (
     <div
@@ -667,17 +706,61 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
           <div className="lb-athlete-summary-workouts">
             <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 900 }}>Workouts</div>
             <div style={{ display: 'grid', gap: 8 }}>
-              {summary.phaseResults.length ? summary.phaseResults.map((item) => (
-                <div key={item.phase.id} className="lb-athlete-summary-workout-row" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, display: 'grid', alignItems: 'center' }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="lb-athlete-summary-workout-name" style={{ fontWeight: 800 }}>{item.phase.nombre}</div>
-                    <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{item.phase.estado || 'pendiente'}</div>
+              {summary.phaseResults.length ? summary.phaseResults.map((item) => {
+                const hasScoringParts = item.scoringParts?.length > 0
+                const partsExpanded = !!expandedWorkoutParts[item.phase.id]
+                const hasLoadedPart = item.scoringParts?.some(part => part.mark != null)
+                return (
+                  <div key={item.phase.id} className="lb-athlete-summary-workout-group" style={{ border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, overflow: 'hidden' }}>
+                    <div
+                      className={`lb-athlete-summary-workout-row${hasScoringParts ? ' lb-athlete-summary-workout-row-clickable' : ''}`}
+                      role={hasScoringParts ? 'button' : undefined}
+                      tabIndex={hasScoringParts ? 0 : undefined}
+                      aria-expanded={hasScoringParts ? partsExpanded : undefined}
+                      onClick={hasScoringParts ? () => toggleWorkoutParts(item.phase.id) : undefined}
+                      onKeyDown={hasScoringParts ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          toggleWorkoutParts(item.phase.id)
+                        }
+                      } : undefined}
+                      style={{ display: 'grid', alignItems: 'center' }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div className="lb-athlete-summary-workout-title" style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <div className="lb-athlete-summary-workout-name" style={{ fontWeight: 800 }}>{item.phase.nombre}</div>
+                          {hasScoringParts ? (
+                            <ChevronDown className="lb-athlete-summary-workout-chevron" size={15} style={{ color: partsExpanded ? THEME.primary : THEME.muted, transform: partsExpanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 160ms ease, color 160ms ease', flex: '0 0 auto' }} />
+                          ) : null}
+                        </div>
+                        <div style={{ marginTop: 3, color: THEME.soft, fontSize: 11 }}>{phaseStatusLabel(item.phase)}</div>
+                      </div>
+                      <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
+                      <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>
+                        {hasScoringParts ? (
+                          <span className="lb-athlete-summary-workout-parts-badge" style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.10)', color: '#8FFCEF', borderRadius: 999, fontWeight: 900, whiteSpace: 'nowrap' }}>{scoringPartsCountLabel(item.scoringParts)}</span>
+                        ) : item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}
+                      </div>
+                      <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: phasePointsColor(item.points, item.mark != null || hasLoadedPart), fontWeight: 900 }}>{item.points} pts</div>
+                    </div>
+                    {hasScoringParts && partsExpanded ? (
+                      <div className="lb-athlete-summary-workout-parts" style={{ borderTop: `1px solid ${THEME.border}` }}>
+                        {item.scoringParts.map((part) => (
+                          <div key={part.phase.id} className="lb-athlete-summary-workout-part" style={{ display: 'grid', alignItems: 'center', color: THEME.muted }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="lb-athlete-summary-workout-part-name" style={{ color: THEME.ink, fontWeight: 800 }}>{part.label}</div>
+                              <div style={{ marginTop: 2, color: THEME.soft, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>{phaseMetricLabel(part.phase)}</div>
+                            </div>
+                            <div className="lb-athlete-summary-workout-part-rank" style={{ color: THEME.muted, fontWeight: 800 }}>#{part.rank ?? '-'}</div>
+                            <div className="lb-athlete-summary-workout-part-mark" style={{ fontSize: 12 }}>{part.mark == null ? '-' : metricValueWithExtra(part.mark, part.extra, part.phase)}</div>
+                            <div className="lb-athlete-summary-workout-part-points" style={{ color: phasePointsColor(part.points, part.mark != null), fontWeight: 900 }}>{part.points} pts</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
-                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}</div>
-                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: phasePointsColor(item.points, item.mark != null), fontWeight: 900 }}>{item.points} pts</div>
-                </div>
-              )) : (
+                )
+              }) : (
                 <div style={{ color: THEME.muted, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 14 }}>Sin workouts individuales registrados.</div>
               )}
             </div>
@@ -1192,6 +1275,7 @@ export default function Leaderboard() {
   const timerIntervalRef = useRef(null)
   const phaseTransitionRef = useRef(null)
   const tvScrollContainerRef = useRef(null)
+  const tvScrollContentRef = useRef(null)
 
   // Detect if user is already logged in
   const loggedRole = session?.role || null
@@ -1260,21 +1344,32 @@ export default function Leaderboard() {
   }, [tvMode, data, view, phaseView, teamPhaseView, selectedCategory, teamCategoryMode, tvTick, loading, phaseTransitioning])
 
   useEffect(() => {
-    const el = tvScrollContainerRef.current
-    if (!tvMode || !el) return
+    const viewport = tvScrollContainerRef.current
+    const content = tvScrollContentRef.current
+    const autoScrollEnabled = data?.tv_auto_scroll_enabled == null ? true : !!data?.tv_auto_scroll_enabled
+    if (content) content.style.transform = 'translate3d(0, 0, 0)'
+    if (!tvMode || !autoScrollEnabled || !viewport || !content || !tvScrollableHeight) return
 
-    el.scrollTop = 0
     let rafId = null
     let direction = 1
     let lastTs = 0
     let pausedUntil = performance.now() + 1500
-    const speedPxPer16ms = 0.6
+    const waitForOverflowUntil = performance.now() + 2500
+    const speedPxPer16ms = Math.min(120, Math.max(10, Number(data?.tv_auto_scroll_speed || 36))) / 60
+    let offset = 0
 
     const step = (ts) => {
-      if (!tvMode || !tvScrollContainerRef.current) return
+      if (!tvMode || !tvScrollContainerRef.current || !tvScrollContentRef.current) return
       const node = tvScrollContainerRef.current
-      const maxScroll = Math.max(0, node.scrollHeight - node.clientHeight)
-      if (maxScroll <= 4) return
+      const inner = tvScrollContentRef.current
+      const maxTravel = Math.max(0, inner.scrollHeight - node.clientHeight)
+      if (maxTravel <= 4) {
+        inner.style.transform = 'translate3d(0, 0, 0)'
+        if (ts < waitForOverflowUntil) {
+          rafId = requestAnimationFrame(step)
+        }
+        return
+      }
 
       if (ts < pausedUntil) {
         rafId = requestAnimationFrame(step)
@@ -1283,25 +1378,40 @@ export default function Leaderboard() {
 
       const delta = lastTs ? (ts - lastTs) : 16
       lastTs = ts
-      node.scrollTop += direction * speedPxPer16ms * (delta / 16)
+      offset += direction * speedPxPer16ms * (delta / 16)
 
-      if (node.scrollTop >= maxScroll - 1) {
-        node.scrollTop = maxScroll
+      if (offset >= maxTravel - 1) {
+        offset = maxTravel
         direction = -1
         pausedUntil = ts + 1800
-      } else if (node.scrollTop <= 1) {
-        node.scrollTop = 0
+      } else if (offset <= 1) {
+        offset = 0
         direction = 1
         pausedUntil = ts + 1800
       }
+      inner.style.transform = `translate3d(0, -${offset}px, 0)`
       rafId = requestAnimationFrame(step)
     }
 
     rafId = requestAnimationFrame(step)
     return () => {
       if (rafId) cancelAnimationFrame(rafId)
+      if (content) content.style.transform = 'translate3d(0, 0, 0)'
     }
-  }, [tvMode, tvTick])
+  }, [
+    tvMode,
+    tvTick,
+    tvScrollableHeight,
+    loading,
+    phaseTransitioning,
+    view,
+    phaseView,
+    teamPhaseView,
+    selectedCategory,
+    teamCategoryMode,
+    data?.tv_auto_scroll_enabled,
+    data?.tv_auto_scroll_speed,
+  ])
 
   const fetchLeaderboard = useCallback(async (isFirst = false) => {
     if (!selectedComp) return
@@ -1366,13 +1476,13 @@ export default function Leaderboard() {
   const tvOnlyFinalizedPhases = data?.tv_only_finalized_phases == null ? true : !!data?.tv_only_finalized_phases
   const tvModeType = data?.tv_mode === 'static' ? 'static' : 'cyclic'
   const tvStaticView = data?.tv_static_view === 'teams' ? 'teams' : 'individual'
-  const tvStaticPhase = data?.tv_static_phase_id == null ? 'total' : String(data?.tv_static_phase_id)
+  const tvConfiguredPhase = data?.tv_static_phase_id == null ? '' : String(data?.tv_static_phase_id)
+  const tvStaticPhase = tvConfiguredPhase || 'total'
   const tvStaticIndividualCategory = (data?.tv_static_individual_category || '').trim()
   const tvStaticTeamCategoryMode = data?.tv_static_team_category_mode || '__by_category__'
   const tvRotationIntervalMs = Math.min(120000, Math.max(5000, Number(data?.tv_rotation_interval_seconds || 24) * 1000))
   const pollIntervalMs = Math.min(60000, Math.max(2000, Number(data?.tv_data_refresh_interval_seconds || 5) * 1000))
   const showEventCount = false
-  const finalizedPhases = (data?.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
   const compName = competitions.find(c => String(c.id) === String(selectedComp))?.nombre
   const leaderboardQrUrl = selectedComp ? `/api/competitions/${selectedComp}/leaderboard-qr` : ''
 
@@ -1501,10 +1611,14 @@ export default function Leaderboard() {
       setSelectedCategory('')
       return
     }
+    if (tvMode && !tvStaticIndividualCategory) {
+      if (selectedCategory !== '') setSelectedCategory('')
+      return
+    }
     if (!selectedCategory || !currentCategories.includes(selectedCategory)) {
       setSelectedCategory(currentCategories[0])
     }
-  }, [phaseView, data, selectedCategory, currentCategories])
+  }, [phaseView, data, selectedCategory, currentCategories, tvMode, tvStaticIndividualCategory])
 
   useEffect(() => {
     if (!tvMode) {
@@ -1538,9 +1652,9 @@ export default function Leaderboard() {
           ? (data.individual || {})
           : (data.phases.find(p => String(p.id) === String(safePhase))?.individual || {})
         const cats = orderCategories(indData)
-        const safeCat = (tvStaticIndividualCategory && cats.includes(tvStaticIndividualCategory))
-          ? tvStaticIndividualCategory
-          : (cats[0] || '')
+        const safeCat = tvStaticIndividualCategory
+          ? (cats.includes(tvStaticIndividualCategory) ? tvStaticIndividualCategory : (cats[0] || ''))
+          : ''
         if (selectedCategory !== safeCat) setSelectedCategory(safeCat)
       } else {
         switchTeamPhaseView(safePhase)
@@ -1559,34 +1673,56 @@ export default function Leaderboard() {
       return
     }
 
-    const tvFinalizedPhases = (data.phases || []).filter(ph => ph.estado === 'finalizada' || ph.estado === 'en_progreso')
+    const cycleView = (tvStaticView === 'teams' && hasTeams)
+      ? 'teams'
+      : (showIndividualLeaderboard ? 'individual' : 'teams')
+    if (view !== cycleView) setView(cycleView)
+
+    const tvFinalizedPhases = (data.phases || []).filter(ph => {
+      const status = phaseStatusValue(ph)
+      return status === 'finalizada' || status === 'en_progreso'
+    })
     const tvPhases = tvOnlyFinalizedPhases
       ? (tvFinalizedPhases.length ? tvFinalizedPhases : (data.phases || []))
       : (data.phases || [])
+    const configuredPhaseExists = !!tvConfiguredPhase && (data.phases || []).some(p => String(p.id) === String(tvConfiguredPhase))
     const phaseCycle = [
-      ...(tvIncludeTotalSlide ? ['total'] : []),
-      ...tvPhases.map(p => p.id),
+      ...(configuredPhaseExists ? [] : (tvIncludeTotalSlide ? ['total'] : [])),
+      ...(configuredPhaseExists ? [tvConfiguredPhase] : tvPhases.map(p => p.id)),
     ]
     const slides = []
 
-    if (view === 'individual') {
+    if (cycleView === 'individual') {
       phaseCycle.forEach(phaseKey => {
         const phaseData = phaseKey === 'total'
           ? (data.individual || {})
           : (data.phases.find(p => String(p.id) === String(phaseKey))?.individual || {})
-        orderCategories(phaseData).forEach(cat => {
-          slides.push({ phase: phaseKey, category: cat, mode: 'individual' })
-        })
+        const cats = orderCategories(phaseData)
+        if (!tvStaticIndividualCategory) {
+          if (cats.length) slides.push({ phase: phaseKey, category: '', mode: 'individual' })
+        } else {
+          cats.filter(cat => cat === tvStaticIndividualCategory).forEach(cat => {
+            slides.push({ phase: phaseKey, category: cat, mode: 'individual' })
+          })
+        }
       })
-    } else if (view === 'teams') {
+    } else if (cycleView === 'teams') {
       phaseCycle.forEach(phaseKey => {
         const rows = phaseKey === 'total'
           ? (data.teams || [])
           : (data.phases.find(p => String(p.id) === String(phaseKey))?.teams || [])
         const cats = [...new Set(rows.map(t => t.team_category || 'Sin categoria'))]
-        if (showTeamAllByCategoryOption) slides.push({ phase: phaseKey, teamCategory: '__by_category__', mode: 'teams' })
-        if (showTeamAllGlobalOption) slides.push({ phase: phaseKey, teamCategory: '__all__', mode: 'teams' })
-        cats.forEach(cat => slides.push({ phase: phaseKey, teamCategory: cat, mode: 'teams' }))
+        if (tvStaticTeamCategoryMode === '__by_category__') {
+          if (showTeamAllByCategoryOption) slides.push({ phase: phaseKey, teamCategory: '__by_category__', mode: 'teams' })
+        } else if (tvStaticTeamCategoryMode === '__all__') {
+          if (showTeamAllGlobalOption) slides.push({ phase: phaseKey, teamCategory: '__all__', mode: 'teams' })
+        } else if (cats.includes(tvStaticTeamCategoryMode)) {
+          slides.push({ phase: phaseKey, teamCategory: tvStaticTeamCategoryMode, mode: 'teams' })
+        } else {
+          if (showTeamAllByCategoryOption) slides.push({ phase: phaseKey, teamCategory: '__by_category__', mode: 'teams' })
+          else if (showTeamAllGlobalOption) slides.push({ phase: phaseKey, teamCategory: '__all__', mode: 'teams' })
+          else cats.forEach(cat => slides.push({ phase: phaseKey, teamCategory: cat, mode: 'teams' }))
+        }
       })
     }
 
@@ -1600,7 +1736,7 @@ export default function Leaderboard() {
 
     tvSlidesRef.current = slides
     let idx = -1
-    if (view === 'individual') {
+    if (cycleView === 'individual') {
       idx = slides.findIndex(s => String(s.phase) === String(phaseView) && s.category === selectedCategory && s.mode === 'individual')
     } else {
       idx = slides.findIndex(s => String(s.phase) === String(teamPhaseView) && s.teamCategory === teamCategoryMode && s.mode === 'teams')
@@ -1631,7 +1767,7 @@ export default function Leaderboard() {
         setTvTick(t => t + 1)
       }, tvRotationIntervalMs || DEFAULT_TV_ROTATION_INTERVAL_MS)
     }
-  }, [tvMode, view, data, phaseView, selectedCategory, teamPhaseView, teamCategoryMode, showTeamAllByCategoryOption, showTeamAllGlobalOption, switchPhaseView, switchTeamPhaseView, tvOnlyFinalizedPhases, tvIncludeTotalSlide, tvRotationIntervalMs, tvModeType, tvStaticView, tvStaticPhase, tvStaticIndividualCategory, tvStaticTeamCategoryMode, hasTeams, showIndividualLeaderboard])
+  }, [tvMode, view, data, phaseView, selectedCategory, teamPhaseView, teamCategoryMode, showTeamAllByCategoryOption, showTeamAllGlobalOption, switchPhaseView, switchTeamPhaseView, tvOnlyFinalizedPhases, tvIncludeTotalSlide, tvRotationIntervalMs, tvModeType, tvStaticView, tvStaticPhase, tvConfiguredPhase, tvStaticIndividualCategory, tvStaticTeamCategoryMode, hasTeams, showIndividualLeaderboard])
 
   const toggleTvMode = async () => {
     if (!tvMode) {
@@ -1731,11 +1867,41 @@ export default function Leaderboard() {
           margin-top: 18px;
         }
         .lb-athlete-summary-workout-row {
-          grid-template-columns: minmax(0, 1fr) 90px 110px 90px;
+          grid-template-columns: minmax(0, 1fr) 72px 100px 90px;
           gap: 12px;
           padding: 10px 12px;
         }
+        .lb-athlete-summary-workout-row-clickable {
+          cursor: pointer;
+        }
+        .lb-athlete-summary-workout-row-clickable:hover {
+          background: rgba(255,255,255,0.025);
+        }
+        .lb-athlete-summary-workout-row-clickable:focus-visible {
+          outline: 2px solid rgba(0,194,168,0.55);
+          outline-offset: -2px;
+        }
+        .lb-athlete-summary-workout-parts-badge {
+          padding: 3px 7px;
+          font-size: 10px;
+          line-height: 1;
+          text-transform: uppercase;
+        }
+        .lb-athlete-summary-workout-part {
+          grid-template-columns: minmax(0, 1fr) 90px 110px 90px;
+          gap: 12px;
+          padding: 8px 12px;
+          background: rgba(9,11,14,0.35);
+        }
+        .lb-athlete-summary-workout-part + .lb-athlete-summary-workout-part {
+          border-top: 1px solid rgba(37,42,51,0.72);
+        }
         .lb-athlete-summary-workout-name {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .lb-athlete-summary-workout-part-name {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -1870,6 +2036,11 @@ export default function Leaderboard() {
             gap: 6px 10px;
             padding: 10px;
           }
+          .lb-athlete-summary-workout-part {
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            gap: 6px 10px;
+            padding: 8px 10px;
+          }
           .lb-athlete-summary-workout-rank {
             grid-column: 2;
             grid-row: 1;
@@ -1886,7 +2057,26 @@ export default function Leaderboard() {
             text-align: right;
             white-space: nowrap;
           }
+          .lb-athlete-summary-workout-part-rank {
+            grid-column: 2;
+            grid-row: 1;
+          }
+          .lb-athlete-summary-workout-part-mark {
+            grid-column: 1 / span 2;
+            grid-row: 2;
+          }
+          .lb-athlete-summary-workout-part-points {
+            grid-column: 3;
+            grid-row: 1 / span 2;
+            align-self: center;
+            text-align: right;
+            white-space: nowrap;
+          }
           .lb-athlete-summary-workout-name {
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+          .lb-athlete-summary-workout-part-name {
             white-space: normal;
             overflow-wrap: anywhere;
           }
@@ -1931,6 +2121,9 @@ export default function Leaderboard() {
           .lb-athlete-summary-workout-row {
             grid-template-columns: minmax(0, 1fr) auto;
           }
+          .lb-athlete-summary-workout-part {
+            grid-template-columns: minmax(0, 1fr) auto;
+          }
           .lb-athlete-summary-workout-rank {
             grid-column: 2;
           }
@@ -1938,6 +2131,17 @@ export default function Leaderboard() {
             grid-column: 1 / -1;
           }
           .lb-athlete-summary-workout-points {
+            grid-column: 1 / -1;
+            grid-row: 3;
+            text-align: left;
+          }
+          .lb-athlete-summary-workout-part-rank {
+            grid-column: 2;
+          }
+          .lb-athlete-summary-workout-part-mark {
+            grid-column: 1 / -1;
+          }
+          .lb-athlete-summary-workout-part-points {
             grid-column: 1 / -1;
             grid-row: 3;
             text-align: left;
@@ -2050,7 +2254,7 @@ export default function Leaderboard() {
           const phaseName = activePhaseId === 'total'
             ? 'General'
             : (activePhaseObj?.nombre || '')
-          const phaseStatus = activePhaseObj?.estado || null
+          const phaseStatus = phaseStatusValue(activePhaseObj) || null
           const catLabel = view === 'individual'
             ? (selectedCategory || null)
             : (teamCategoryMode === '__by_category__' ? 'Por categoria'
@@ -2068,7 +2272,7 @@ export default function Leaderboard() {
             : (data.phases?.find(p => String(p.id) === String(nextPhaseId))?.nombre || 'General')
           const nextPhaseStatus = nextPhaseId == null || nextPhaseId === 'total'
             ? null
-            : (data.phases?.find(p => String(p.id) === String(nextPhaseId))?.estado || null)
+            : (phaseStatusValue(data.phases?.find(p => String(p.id) === String(nextPhaseId))) || null)
           const nextCatLabel = nextSlide == null ? null
             : nextSlide.mode === 'individual'
               ? (nextSlide.category || null)
@@ -2183,14 +2387,15 @@ export default function Leaderboard() {
         <div
           ref={tvScrollContainerRef}
           className={tvMode ? 'tv-scrollbox' : ''}
-          style={tvMode && tvScrollableHeight ? { maxHeight: tvScrollableHeight, overflowY: 'auto', paddingRight: 2 } : undefined}
+          style={tvMode && tvScrollableHeight ? { height: tvScrollableHeight, overflow: 'hidden', paddingRight: 2, position: 'relative' } : undefined}
         >
-          {!selectedComp && (
-            <div style={{ textAlign: 'center', color: '#555', padding: 80 }}>
-              <div style={{ fontSize: 22, marginBottom: 12, fontWeight: 700 }}>Leaderboard</div>
-              Selecciona una competencia para ver el leaderboard
-            </div>
-          )}
+          <div ref={tvScrollContentRef} style={tvMode ? { willChange: 'transform' } : undefined}>
+            {!selectedComp && (
+              <div style={{ textAlign: 'center', color: '#555', padding: 80 }}>
+                <div style={{ fontSize: 22, marginBottom: 12, fontWeight: 700 }}>Leaderboard</div>
+                Selecciona una competencia para ver el leaderboard
+              </div>
+            )}
 
           {/* Skeleton while loading or switching phase */}
           {(loading || phaseTransitioning) && selectedComp && (
@@ -2367,7 +2572,8 @@ export default function Leaderboard() {
               )
             })()}
             </>
-          )}
+            )}
+          </div>
         </div>
       </div>
       <AthleteSummaryModal
