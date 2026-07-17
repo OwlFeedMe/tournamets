@@ -165,6 +165,8 @@ class Competition(SQLModel, table=True):
     tv_only_finalized_phases: int = Field(default=1)
     tv_rotation_interval_seconds: int = Field(default=24)
     tv_data_refresh_interval_seconds: int = Field(default=5)
+    tv_auto_scroll_enabled: int = Field(default=1)
+    tv_auto_scroll_speed: int = Field(default=36)
     tv_mode: str = Field(default=ModoTV.CYCLIC)  # cyclic | static
     tv_static_view: str = Field(default=Modalidad.INDIVIDUAL)  # individual | teams
     tv_static_phase_id: Optional[int] = Field(default=None)
@@ -1854,6 +1856,8 @@ class CompetitionCreate(SQLModel):
     tv_only_finalized_phases: int = 1
     tv_rotation_interval_seconds: int = 24
     tv_data_refresh_interval_seconds: int = 5
+    tv_auto_scroll_enabled: int = 1
+    tv_auto_scroll_speed: int = 36
     tv_mode: str = ModoTV.CYCLIC
     tv_static_view: str = Modalidad.INDIVIDUAL
     tv_static_phase_id: Optional[int] = None
@@ -1917,6 +1921,8 @@ class CompetitionUpdate(SQLModel):
     tv_only_finalized_phases: Optional[int] = None
     tv_rotation_interval_seconds: Optional[int] = None
     tv_data_refresh_interval_seconds: Optional[int] = None
+    tv_auto_scroll_enabled: Optional[int] = None
+    tv_auto_scroll_speed: Optional[int] = None
     tv_mode: Optional[str] = None
     tv_static_view: Optional[str] = None
     tv_static_phase_id: Optional[int] = None

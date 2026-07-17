@@ -622,6 +622,121 @@ def _validate_heat_input(session: Session, competition_id: int, payload: HeatInp
     return phase
 
 
+def _heat_schedule_label(value: object) -> str:
+    return str(getattr(value, "nombre", None) or getattr(value, "heat_label", None) or f"Heat {getattr(value, 'heat_number', '')}").strip()
+
+
+def _location_key(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _heat_schedule_range(heat: CompetitionHeat) -> dict | None:
+    start_at = _as_utc(heat.start_at)
+    end_at = _as_utc(heat.end_at)
+    location = str(heat.location_name or "").strip()
+    if not start_at or not end_at or not location:
+        return None
+    return {
+        "heat_id": int(heat.id or 0),
+        "label": _heat_schedule_label(heat),
+        "location": location,
+        "location_key": _location_key(location),
+        "start_at": start_at,
+        "end_at": end_at,
+    }
+
+
+def _proposed_heat_schedule_range(
+    *,
+    heat_id: int | None = None,
+    label: str = "Heat",
+    location_name: str | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> dict | None:
+    start = _as_utc(start_at)
+    end = _as_utc(end_at)
+    location = str(location_name or "").strip()
+    if not start or not end or not location:
+        return None
+    return {
+        "heat_id": int(heat_id or 0),
+        "label": str(label or "Heat").strip() or "Heat",
+        "location": location,
+        "location_key": _location_key(location),
+        "start_at": start,
+        "end_at": end,
+    }
+
+
+def _ranges_overlap(left: dict, right: dict) -> bool:
+    return (
+        left["location_key"] == right["location_key"]
+        and left["start_at"] < right["end_at"]
+        and left["end_at"] > right["start_at"]
+    )
+
+
+def _find_heat_location_conflicts(
+    session: Session,
+    competition_id: int,
+    proposed_ranges: list[dict],
+    *,
+    ignore_heat_ids: set[int] | None = None,
+) -> list[dict]:
+    proposed = [item for item in proposed_ranges if item]
+    if not proposed:
+        return []
+    ignored = ignore_heat_ids or set()
+    existing_heats = session.exec(
+        select(CompetitionHeat).where(CompetitionHeat.competition_id == int(competition_id))
+    ).all()
+    existing_ranges = [
+        item
+        for item in (_heat_schedule_range(heat) for heat in existing_heats)
+        if item and int(item["heat_id"]) not in ignored
+    ]
+    conflicts: list[dict] = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    for index, left in enumerate(proposed):
+        for right in existing_ranges:
+            if _ranges_overlap(left, right):
+                pair = tuple(sorted((f"p:{id(left)}", f"e:{right['heat_id']}")))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                conflicts.append({
+                    "location_name": left["location"],
+                    "labels": [left["label"], right["label"]],
+                    "heat_ids": [left.get("heat_id"), right.get("heat_id")],
+                })
+        for right in proposed[index + 1:]:
+            if _ranges_overlap(left, right):
+                pair = tuple(sorted((f"p:{id(left)}", f"p:{id(right)}")))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                conflicts.append({
+                    "location_name": left["location"],
+                    "labels": [left["label"], right["label"]],
+                    "heat_ids": [left.get("heat_id"), right.get("heat_id")],
+                })
+    return conflicts
+
+
+def _raise_heat_location_conflict(conflicts: list[dict]) -> None:
+    if not conflicts:
+        return
+    first = conflicts[0]
+    labels = first.get("labels") or ["Heat", "otro heat"]
+    location = first.get("location_name") or "la misma ubicacion"
+    raise HTTPException(
+        409,
+        f"No puedes programar heats solapados en {location}: {labels[0]} se cruza con {labels[1]}",
+    )
+
+
 def _heat_reschedule_plan(
     session: Session,
     competition: Competition,
@@ -1011,6 +1126,19 @@ def create_heat(
 ):
     competition = require_competition_access(session, competition_id, user)
     _validate_heat_input(session, competition_id, body, competition.timezone)
+    start_at = _normalize_dt(body.start_at, competition.timezone)
+    end_at = _normalize_dt(body.end_at, competition.timezone)
+    location_name = (body.location_name or "").strip() or None
+    _raise_heat_location_conflict(_find_heat_location_conflicts(
+        session,
+        competition_id,
+        [_proposed_heat_schedule_range(
+            label=body.nombre.strip() or f"Heat {body.heat_number or 1}",
+            location_name=location_name,
+            start_at=start_at,
+            end_at=end_at,
+        )],
+    ))
     heat = CompetitionHeat(
         competition_id=competition_id,
         phase_id=body.phase_id,
@@ -1020,9 +1148,9 @@ def create_heat(
         lane_count=max(0, int(body.lane_count or 0)),
         heat_transition_seconds=_normalize_transition_seconds(body.heat_transition_seconds),
         category_transition_seconds=_normalize_transition_seconds(body.category_transition_seconds),
-        start_at=_normalize_dt(body.start_at, competition.timezone),
-        end_at=_normalize_dt(body.end_at, competition.timezone),
-        location_name=(body.location_name or "").strip() or None,
+        start_at=start_at,
+        end_at=end_at,
+        location_name=location_name,
         location_detail=(body.location_detail or "").strip() or None,
         note=(body.note or "").strip() or None,
         is_published=1 if body.is_published else 0,
@@ -1103,6 +1231,21 @@ def update_heat(
     heat = session.get(CompetitionHeat, heat_id)
     if not heat or int(heat.competition_id) != int(competition_id):
         raise HTTPException(404, "Heat no encontrado")
+    start_at = _normalize_dt(body.start_at, competition.timezone)
+    end_at = _normalize_dt(body.end_at, competition.timezone)
+    location_name = (body.location_name or "").strip() or None
+    _raise_heat_location_conflict(_find_heat_location_conflicts(
+        session,
+        competition_id,
+        [_proposed_heat_schedule_range(
+            heat_id=int(heat.id),
+            label=body.nombre.strip() or f"Heat {body.heat_number or 1}",
+            location_name=location_name,
+            start_at=start_at,
+            end_at=end_at,
+        )],
+        ignore_heat_ids={int(heat.id)},
+    ))
     was_published = int(heat.is_published or 0) == 1
     heat.phase_id = body.phase_id
     heat.categoria = (body.categoria or "").strip() or None
@@ -1111,9 +1254,9 @@ def update_heat(
     heat.lane_count = max(0, int(body.lane_count or 0))
     heat.heat_transition_seconds = _normalize_transition_seconds(body.heat_transition_seconds)
     heat.category_transition_seconds = _normalize_transition_seconds(body.category_transition_seconds)
-    heat.start_at = _normalize_dt(body.start_at, competition.timezone)
-    heat.end_at = _normalize_dt(body.end_at, competition.timezone)
-    heat.location_name = (body.location_name or "").strip() or None
+    heat.start_at = start_at
+    heat.end_at = end_at
+    heat.location_name = location_name
     heat.location_detail = (body.location_detail or "").strip() or None
     heat.note = (body.note or "").strip() or None
     heat.is_published = 1 if body.is_published else 0
@@ -1336,10 +1479,6 @@ def generate_heats(
             CompetitionHeat.categoria == (_normalize_category_label(body.categoria) or None)
         )
     existing_heats = session.exec(existing_query).all()
-    for heat in existing_heats:
-        session.delete(heat)
-    session.commit()
-
     first_start = _normalize_dt(body.first_heat_start_at, competition.timezone) or _normalize_dt(phase.start_at, competition.timezone)
     duration = max(1, int(body.heat_duration_minutes or 15))
     gap = max(0, int(body.heat_gap_minutes or 0))
@@ -1347,6 +1486,55 @@ def generate_heats(
     category_transition_seconds = _normalize_transition_seconds(body.category_transition_seconds)
     if heat_transition_seconds == 0 and gap > 0:
         heat_transition_seconds = gap * 60
+    location_name = (body.location_name or "").strip() or None
+    proposed_ranges: list[dict] = []
+    preview_start = first_start
+    preview_previous_category: str | None = None
+    preview_continuous_numbers = _uses_continuous_heat_numbers(body.heat_numbering_mode)
+    preview_next_heat_number = 1
+    for plan_item in plan_items:
+        entries = plan_item["entries"]
+        chunks = [entries[i:i + lane_count] for i in range(0, len(entries), lane_count)]
+        if meta["seed_mode"] == "leaderboard":
+            chunks = list(reversed(chunks))
+        for heat_index, current_chunk in enumerate(chunks):
+            if not current_chunk:
+                continue
+            display_number = preview_next_heat_number if preview_continuous_numbers else heat_index + 1
+            if preview_continuous_numbers:
+                preview_next_heat_number += 1
+            current_category = str(plan_item["heat_categoria"] or "")
+            start_at = preview_start
+            if (
+                start_at
+                and preview_previous_category is not None
+                and current_category != preview_previous_category
+                and category_transition_seconds > heat_transition_seconds
+            ):
+                start_at = start_at + timedelta(seconds=category_transition_seconds - heat_transition_seconds)
+            end_at = start_at + timedelta(minutes=duration) if start_at else None
+            proposed = _proposed_heat_schedule_range(
+                label=f"Heat {display_number}",
+                location_name=location_name,
+                start_at=start_at,
+                end_at=end_at,
+            )
+            if proposed:
+                proposed_ranges.append(proposed)
+            if preview_start:
+                preview_start = end_at + timedelta(seconds=heat_transition_seconds) if end_at else None
+                preview_previous_category = current_category
+    _raise_heat_location_conflict(_find_heat_location_conflicts(
+        session,
+        competition_id,
+        proposed_ranges,
+        ignore_heat_ids={int(heat.id) for heat in existing_heats if heat.id is not None},
+    ))
+
+    for heat in existing_heats:
+        session.delete(heat)
+    session.commit()
+
     lane_order = _build_lane_order(lane_count)
     seed_mode = meta["seed_mode"]
     phase.heat_duration_seconds = duration * 60
@@ -1393,7 +1581,7 @@ def generate_heats(
                 category_transition_seconds=category_transition_seconds,
                 start_at=start_at,
                 end_at=end_at,
-                location_name=(body.location_name or "").strip() or None,
+                location_name=location_name,
                 location_detail=(body.location_detail or "").strip() or None,
                 note=(body.note or "").strip() or None,
                 is_published=1 if body.is_published else 0,

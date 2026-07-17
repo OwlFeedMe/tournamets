@@ -221,7 +221,7 @@ def _public_results(session: Session, participant_id: int, limit: int = 24) -> l
     rows = session.exec(
         select(Result, Competition, CompetitionPhase)
         .join(Competition, Competition.id == Result.competition_id)
-        .join(CompetitionPhase, CompetitionPhase.id == Result.phase_id, isouter=True)
+        .join(CompetitionPhase, CompetitionPhase.id == Result.phase_id)
         .where(Result.user_id == participant_id)
         .order_by(Result.created_at.desc(), Result.id.desc())
     ).all()

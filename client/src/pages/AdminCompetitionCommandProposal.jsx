@@ -55,6 +55,37 @@ const heatStatusColors = {
   upcoming: colors.primary,
 }
 
+const workoutAccentPalette = [
+  '#FF6B00',
+  '#00C2A8',
+  '#F59E0B',
+  '#38BDF8',
+  '#A78BFA',
+  '#F43F5E',
+  '#84CC16',
+  '#F97316',
+  '#14B8A6',
+  '#EAB308',
+]
+
+function colorForWorkoutId(workoutId, index = 0) {
+  const raw = String(workoutId || '')
+  const numeric = Number(raw)
+  if (Number.isFinite(numeric) && numeric > 0) return workoutAccentPalette[(numeric - 1) % workoutAccentPalette.length]
+  const hash = raw.split('').reduce((sum, char) => sum + char.charCodeAt(0), index)
+  return workoutAccentPalette[Math.abs(hash) % workoutAccentPalette.length]
+}
+
+function buildWorkoutColorMap(phases = []) {
+  return [...phases]
+    .filter((phase) => !phase.parent_phase_id)
+    .sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
+    .reduce((map, phase, index) => {
+      map[String(phase.id)] = workoutAccentPalette[index % workoutAccentPalette.length]
+      return map
+    }, {})
+}
+
 function heatScheduleStatus(heat, nowValue = Date.now()) {
   const start = heat?.start_at ? new Date(heat.start_at) : null
   const end = heat?.end_at ? new Date(heat.end_at) : null
@@ -1680,6 +1711,7 @@ function PhasesPanel({ bundle, reload, notify }) {
   const orderedPhases = [...(bundle.phases || [])]
     .filter((phase) => !phase.parent_phase_id)
     .sort((a, b) => Number(a.orden || 0) - Number(b.orden || 0) || Number(a.id || 0) - Number(b.id || 0))
+  const workoutColorMap = buildWorkoutColorMap(orderedPhases)
   const movePhase = async (phase, direction) => {
     const index = orderedPhases.findIndex((item) => String(item.id) === String(phase.id))
     const targetIndex = index + direction
@@ -1774,13 +1806,13 @@ function PhasesPanel({ bundle, reload, notify }) {
         El orden define la secuencia deportiva del evento: WOD 1, WOD 2, final, etc. Muévelas con las flechas; los horarios reales se ajustan en Heats.
       </div>
       {orderedPhases.map((phase, index) => (
-        <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
+        <div key={phase.id} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto auto auto', gap: 10, alignItems: 'center', border: `1px solid ${(workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index))}66`, borderLeft: `5px solid ${workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index)}`, background: `${workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index)}10`, borderRadius: 8, padding: 10 }}>
           <div style={{ display: 'grid', gap: 5 }}>
             <Button disabled={index === 0} onClick={() => movePhase(phase, -1)}><ChevronUp size={15} /></Button>
             <Button disabled={index === orderedPhases.length - 1} onClick={() => movePhase(phase, 1)}><ChevronDown size={15} /></Button>
           </div>
           <div>
-            <strong>{phase.nombre}</strong>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><strong>{phase.nombre}</strong><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index), boxShadow: `0 0 0 3px ${(workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index))}22` }} /></div>
             <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>
               {phase.modality === 'teams' ? 'Equipos' : 'Individual'} - {(phase.scoring_parts || []).length ? `${phase.scoring_parts.length} puntajes independientes` : `${labelFor(measurementOptions, phase.measurement_method, phase.measurement_method || 'Medicion')} - ${labelFor(workoutFormatOptions, phase.workout_format, phase.workout_format || 'Formato')}${phase.time_cap_seconds ? ` - Cap ${formatSeconds(phase.time_cap_seconds)}` : ''} - ${phase.winner_rule === 'lower_wins' ? 'menor gana' : 'mayor gana'}`} - Estado automatico: {phaseStatusLabel(phase.estado)}
             </div>
@@ -1927,7 +1959,9 @@ function HeatsPanel({ bundle, reload, notify }) {
     }
   }
   const heats = bundle.heats?.items || []
+  const workoutColorMap = buildWorkoutColorMap(bundle.phases || [])
   const heatParticipants = (heat) => (heat.participants || heat.assignments || [])
+  const heatWorkoutColor = (heat) => workoutColorMap[String(heat?.phase_id || 'sin-fase')] || colorForWorkoutId(heat?.phase_id || 'sin-fase')
   const heatLocations = [
     ...customLocations,
     ...heats
@@ -2041,7 +2075,14 @@ function HeatsPanel({ bundle, reload, notify }) {
   const hasLocationConflict = (heat) => findLocationConflicts(heat).length > 0
   const heatDestinations = (heat) => heats
     .filter((item) => String(item.id) !== String(heat.id) && String(item.phase_id) === String(heat.phase_id))
-    .sort((a, b) => String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas')) || Number(a.heat_number || 0) - Number(b.heat_number || 0) || Number(a.id || 0) - Number(b.id || 0))
+    .sort((a, b) => {
+      const aStart = a.start_at ? new Date(a.start_at).getTime() : Number.MAX_SAFE_INTEGER
+      const bStart = b.start_at ? new Date(b.start_at).getTime() : Number.MAX_SAFE_INTEGER
+      return aStart - bStart
+        || Number(a.heat_number || 0) - Number(b.heat_number || 0)
+        || String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas'), 'es', { numeric: true })
+        || Number(a.id || 0) - Number(b.id || 0)
+    })
   const heatPayload = (heat, overrides = {}) => ({
     phase_id: Number(overrides.phase_id ?? heat.phase_id),
     categoria: overrides.categoria !== undefined ? overrides.categoria : heat.categoria,
@@ -2257,7 +2298,7 @@ function HeatsPanel({ bundle, reload, notify }) {
     const workoutId = String(heat.phase_id || 'sin-fase')
     let workout = groups.find((group) => group.id === workoutId)
     if (!workout) {
-      workout = { id: workoutId, name: heat.phase_name || `WOD ${heat.phase_id || ''}`, categories: [], heats: 0, athletes: 0 }
+      workout = { id: workoutId, name: heat.phase_name || `WOD ${heat.phase_id || ''}`, color: workoutColorMap[workoutId] || colorForWorkoutId(workoutId, groups.length), categories: [], heats: 0, athletes: 0 }
       groups.push(workout)
     }
     const category = heat.categoria || 'Todas'
@@ -3145,8 +3186,9 @@ function HeatsPanel({ bundle, reload, notify }) {
                   const locationConflict = hasLocationConflict(heat)
                   const heatStatus = heatScheduleStatus(heat)
                   const heatTone = heatStatus.color
+                  const workoutTone = heatWorkoutColor(heat)
                   return (
-                    <div key={heat.id} className="fr-schedule-card" style={{ border: `1px solid ${locationConflict ? colors.error : heatTone}`, borderLeft: `5px solid ${heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${heatTone}14`, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+                    <div key={heat.id} className="fr-schedule-card" style={{ border: `1px solid ${locationConflict ? colors.error : workoutTone}88`, borderLeft: `5px solid ${workoutTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${workoutTone}14`, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ color: colors.primary, fontSize: 12, fontWeight: 950 }}>{formatHeatScheduleCompact(heat)}</div>
@@ -3156,7 +3198,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <Pill tone={heatTone}>{heatStatus.label}</Pill>
-                        {showingAllSchedule ? <Pill tone={colors.secondary}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
+                        {showingAllSchedule ? <Pill tone={workoutTone}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
                         <Pill tone={colors.accent}>{heat.categoria || 'Todas'}</Pill>
                         <Pill tone={heat.location_name ? colors.primary : colors.warning}>{locationLabel(heat.location_name)}</Pill>
                         {duration ? <Pill tone={colors.primary}>{duration}</Pill> : null}
@@ -3213,6 +3255,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                               const locationConflict = hasLocationConflict(heat)
                               const heatStatus = heatScheduleStatus(heat)
                               const heatTone = heatStatus.color
+                              const workoutTone = heatWorkoutColor(heat)
                               return (
                                 <div
                                   key={heat.id}
@@ -3222,13 +3265,13 @@ function HeatsPanel({ bundle, reload, notify }) {
                                     event.dataTransfer.setData('text/plain', String(heat.id))
                                   }}
                                   onDragEnd={() => setDraggingHeatId('')}
-                                  style={{ border: `1px solid ${locationConflict ? colors.error : heatTone}88`, borderLeft: `5px solid ${heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${heatTone}14`, borderRadius: 8, padding: 9, cursor: 'grab', display: 'grid', gap: 6 }}
+                                  style={{ border: `1px solid ${locationConflict ? colors.error : workoutTone}88`, borderLeft: `5px solid ${workoutTone}`, background: locationConflict ? 'rgba(239,68,68,0.10)' : `${workoutTone}14`, borderRadius: 8, padding: 9, cursor: 'grab', display: 'grid', gap: 6 }}
                                 >
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                                           <strong style={{ color: colors.text, fontSize: 13 }}>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</strong>
                                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                             <Pill tone={heatTone}>{heatStatus.label}</Pill>
-                                            {showingAllSchedule ? <Pill tone={colors.secondary}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
+                                            {showingAllSchedule ? <Pill tone={workoutTone}>{heat.phase_name || `WOD ${heat.phase_id || ''}`}</Pill> : null}
                                             <Pill tone={colors.accent}>{heat.categoria || 'Todas'}</Pill>
                                             {locationConflict ? <Pill tone={colors.error}>Solape</Pill> : null}
                                             <Pill tone={colors.accent}>{participants.length}</Pill>
@@ -3259,7 +3302,8 @@ function HeatsPanel({ bundle, reload, notify }) {
       <div style={{ display: 'grid', gap: 12 }}>
         {heatsByWorkout.map((workout, workoutIndex) => {
           const collapsed = collapsedWorkouts[workout.id] ?? workoutIndex > 0
-          const workoutTone = workout.status?.color || heatStatusColors.upcoming
+          const workoutTone = workout.color || colorForWorkoutId(workout.id, workoutIndex)
+          const workoutStatusTone = workout.status?.color || heatStatusColors.upcoming
           return (
           <section key={workout.id} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', padding: '11px 12px', borderBottom: collapsed ? 0 : `1px solid ${colors.border}`, borderLeft: `5px solid ${workoutTone}`, background: colors.top, flexWrap: 'wrap' }}>
@@ -3269,7 +3313,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                   <div style={{ color: colors.text, fontWeight: 950 }}>{workout.name}</div>
                   <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{workout.categories.length} categorias - {workout.heats} heats - {workout.athletes} atletas asignados</div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 7 }}>
-                    <Pill tone={workoutTone}>{workout.status?.label || 'Proximo'}</Pill>
+                    <Pill tone={workoutStatusTone}>{workout.status?.label || 'Proximo'}</Pill>
                     <Pill tone={workout.timing.firstStartMs === Number.MAX_SAFE_INTEGER ? colors.warning : colors.secondary}>{workout.timing.dayLabel}</Pill>
                     <Pill tone={workout.timing.firstStartMs === Number.MAX_SAFE_INTEGER ? colors.warning : colors.accent}>Inicio {workout.timing.timeLabel}</Pill>
                     {workout.timing.unscheduled ? <Pill tone={colors.warning}>{workout.timing.unscheduled} sin hora</Pill> : null}
@@ -3282,7 +3326,7 @@ function HeatsPanel({ bundle, reload, notify }) {
             </div>
             {!collapsed ? <div style={{ display: 'grid', gap: 0, padding: '2px 10px 10px' }}>
               {workout.categories.map((group) => {
-                const groupTone = group.status?.color || workoutTone
+                const groupTone = group.status?.color || workoutStatusTone
                 return (
                 <section key={`${workout.id}-${group.category}`} style={{ borderBottom: `1px solid ${colors.border}`, background: 'transparent', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', padding: '12px 2px 8px', flexWrap: 'wrap' }}>
@@ -3301,8 +3345,9 @@ function HeatsPanel({ bundle, reload, notify }) {
                       const locationConflict = hasLocationConflict(heat)
                       const heatStatus = heatScheduleStatus(heat)
                       const heatTone = heatStatus.color
+                      const workoutTone = heatWorkoutColor(heat)
                       return (
-                        <div key={heat.id} style={{ borderTop: `1px solid ${colors.border}`, borderLeft: `4px solid ${locationConflict ? colors.error : heatTone}`, background: locationConflict ? 'rgba(239,68,68,0.08)' : 'transparent', padding: '10px 0 10px 10px', display: 'grid', gap: 8 }}>
+                        <div key={heat.id} style={{ borderTop: `1px solid ${colors.border}`, borderLeft: `4px solid ${locationConflict ? colors.error : workoutTone}`, background: locationConflict ? 'rgba(239,68,68,0.08)' : `${workoutTone}0F`, padding: '10px 0 10px 10px', display: 'grid', gap: 8 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center' }}>
                             <div>
                               <strong>{heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`}</strong>
@@ -3322,7 +3367,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                             <summary style={{ cursor: 'pointer', color: colors.secondary, fontSize: 12, fontWeight: 800 }}>Ver atletas</summary>
                             <div style={{ display: 'grid', gap: 6, marginTop: 9, maxHeight: 260, overflowY: 'auto' }}>
                               {participants.length ? participants.map((participant) => (
-                                  <div key={participant.id || `${participant.user_id || participant.team_id}-${participant.lane_number || participant.seed_order}`} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${heatTone}55`, borderLeft: `4px solid ${heatTone}`, borderRadius: 8, background: colors.surface, padding: '7px 9px' }}>
+                                  <div key={participant.id || `${participant.user_id || participant.team_id}-${participant.lane_number || participant.seed_order}`} style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) auto', gap: 8, alignItems: 'center', border: `1px solid ${workoutTone}55`, borderLeft: `4px solid ${workoutTone}`, borderRadius: 8, background: colors.surface, padding: '7px 9px' }}>
                                     <span style={{ color: colors.muted, fontSize: 11, fontWeight: 900 }}>Carril {participant.lane_number || '-'}</span>
                                     <span style={{ color: colors.text, fontSize: 13, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{participant.participant_name || participant.user_name || participant.team_name || 'Atleta'}</span>
                                     <Button onClick={() => openMoveConfirmation(heat, participant)} disabled={!destinations.length}>Mover</Button>
@@ -3550,6 +3595,7 @@ function ScoringPanel({ bundle, reload, notify }) {
   const [saving, setSaving] = useState(false)
   const [showAdvancedOverrides, setShowAdvancedOverrides] = useState(false)
   const [confirmRecalculateOpen, setConfirmRecalculateOpen] = useState(false)
+  const workoutColorMap = buildWorkoutColorMap(bundle.phases || [])
   const updateDraft = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }))
   const visibleScoringModeOptions = scoringModeOptions.some((item) => item.id === draft.scoring_system)
     ? scoringModeOptions
@@ -3693,7 +3739,7 @@ function ScoringPanel({ bundle, reload, notify }) {
           <Button onClick={() => setShowAdvancedOverrides((value) => !value)}>{showAdvancedOverrides ? 'Ocultar' : 'Configurar WODs'}</Button>
         </div>
         {showAdvancedOverrides ? (
-          (bundle.phases || []).length ? (bundle.phases || []).map((phase) => {
+          (bundle.phases || []).length ? (bundle.phases || []).map((phase, index) => {
             const phaseScoring = (scoring.phases || []).find((item) => String(item.id) === String(phase.id)) || phase
             const override = Number(phaseScoring.scoring_override_enabled || phase.scoring_override_enabled || 0) ? 1 : 0
             const phaseSystem = phaseScoring.scoring_system || phase.scoring_system || draft.scoring_system
@@ -3704,7 +3750,7 @@ function ScoringPanel({ bundle, reload, notify }) {
               <div key={phase.id} className="fr-scoring-phase-row" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, display: 'grid', gap: 10 }}>
                 <div className="fr-scoring-phase-head" style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) 180px', gap: 10, alignItems: 'center' }}>
                   <div>
-                    <strong>{phase.nombre}</strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><strong>{phase.nombre}</strong><span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 999, background: workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index), boxShadow: `0 0 0 3px ${(workoutColorMap[String(phase.id)] || colorForWorkoutId(phase.id, index))}22` }} /></div>
                     <div style={{ color: colors.secondary, fontSize: 12, marginTop: 3 }}>{override ? 'Usa una regla propia para este WOD' : 'Usa la regla general del evento'}</div>
                   </div>
                   <select className="fr-scoring-phase-select" style={inputStyle()} value={override ? 'custom' : 'event'} onChange={(event) => updatePhaseScoring(phase, { scoring_override_enabled: event.target.value === 'custom' ? 1 : 0 })}>
@@ -3828,8 +3874,16 @@ function ResultsPanel({ bundle, reload, notify }) {
   const categoryHeats = phaseHeats.filter((heat) => String(heat.categoria || 'Todas') === String(activeCategory || 'Todas'))
   const activeHeatId = categoryHeats.some((heat) => String(heat.id) === String(scoreDraft.heat_id)) ? scoreDraft.heat_id : (categoryHeats[0]?.id ? String(categoryHeats[0].id) : '')
   const selectedHeat = categoryHeats.find((heat) => String(heat.id) === String(activeHeatId))
+  const heatResultRow = (heat, participant) => ({
+    ...participant,
+    heat_id: heat.id,
+    heat_label: heat.heat_label || heat.nombre || `Heat ${heat.heat_number}`,
+    heat_name: heat.nombre,
+    heat_number: heat.heat_number,
+    categoria: heat.categoria || participant.categoria || 'Todas',
+  })
   const scoreRows = selectedHeat
-    ? heatParticipants(selectedHeat).map((participant) => ({ ...participant, heat_label: selectedHeat.heat_label || selectedHeat.nombre || `Heat ${selectedHeat.heat_number}`, categoria: selectedHeat.categoria || participant.categoria || activeCategory || 'Todas' }))
+    ? heatParticipants(selectedHeat).map((participant) => heatResultRow(selectedHeat, { ...participant, categoria: participant.categoria || activeCategory || 'Todas' }))
     : []
   const fallbackRows = scoreDraft.phase_id && !scoreRows.length
     ? allConfirmedRows.filter((participant) => String(participant.categoria || 'Todas') === String(activeCategory || 'Todas'))
@@ -3843,22 +3897,52 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (hasLaneA !== hasLaneB) return hasLaneA ? -1 : 1
     return participantName(a).localeCompare(participantName(b))
   })
-  const normalizedResultSearch = resultSearch.trim().toLowerCase()
+  const sortResultRows = (items) => [...items].sort((a, b) => {
+    const categoryOrder = String(a.categoria || 'Todas').localeCompare(String(b.categoria || 'Todas'))
+    if (categoryOrder) return categoryOrder
+    const heatA = Number(a.heat_number)
+    const heatB = Number(b.heat_number)
+    const hasHeatA = Number.isFinite(heatA)
+    const hasHeatB = Number.isFinite(heatB)
+    if (hasHeatA && hasHeatB && heatA !== heatB) return heatA - heatB
+    if (hasHeatA !== hasHeatB) return hasHeatA ? -1 : 1
+    const laneA = Number(a.lane_number)
+    const laneB = Number(b.lane_number)
+    const hasLaneA = Number.isFinite(laneA) && laneA > 0
+    const hasLaneB = Number.isFinite(laneB) && laneB > 0
+    if (hasLaneA && hasLaneB && laneA !== laneB) return laneA - laneB
+    if (hasLaneA !== hasLaneB) return hasLaneA ? -1 : 1
+    return participantName(a).localeCompare(participantName(b))
+  })
+  const uniqueResultRows = (items) => items.reduce((list, item) => {
+    const key = resultEntityKey(item)
+    if (!key.includes('undefined') && !list.some((existing) => resultEntityKey(existing) === key)) list.push(item)
+    return list
+  }, [])
+  const phaseResultRows = sortResultRows(uniqueResultRows(
+    phaseHeats.length
+      ? phaseHeats.flatMap((heat) => heatParticipants(heat).map((participant) => heatResultRow(heat, participant)))
+      : allConfirmedRows,
+  ))
+  const normalizeResultSearch = (value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+  const normalizedResultSearch = normalizeResultSearch(resultSearch)
+  const resultSearchMatches = (row) => [
+    participantName(row),
+    row.heat_label,
+    row.heat_name,
+    row.categoria,
+    row.lane_number ? `carril ${row.lane_number}` : '',
+    row.lane_number ? String(row.lane_number) : '',
+    row.team_name,
+    row.user_name,
+    row.participant_name,
+  ].some((value) => normalizeResultSearch(value).includes(normalizedResultSearch))
   const visibleRows = normalizedResultSearch
-    ? rows.filter((row) => [
-        participantName(row),
-        row.heat_label,
-        row.heat_name,
-        selectedHeat?.heat_label,
-        selectedHeat?.nombre,
-        row.categoria,
-        activeCategory,
-        row.lane_number ? `carril ${row.lane_number}` : '',
-        row.lane_number ? String(row.lane_number) : '',
-        row.team_name,
-        row.user_name,
-        row.participant_name,
-      ].some((value) => String(value || '').toLowerCase().includes(normalizedResultSearch)))
+    ? phaseResultRows.filter(resultSearchMatches)
     : rows
   const setResultField = (item, field, value) => {
     const key = resultKey(activeResultPhaseId, item)
@@ -4302,7 +4386,7 @@ function ResultsPanel({ bundle, reload, notify }) {
     try {
       let saved = 0
       const keysToClear = []
-      const targetRows = rowFilter ? rows.filter(rowFilter) : rows
+      const targetRows = rowFilter ? phaseResultRows.filter(rowFilter) : rows
       for (const row of targetRows) {
         for (const part of resultParts) {
           const key = partResultKey(part, row)
@@ -4395,11 +4479,11 @@ function ResultsPanel({ bundle, reload, notify }) {
               </select>
             </Field>
             <Field label="Buscar atleta">
-              <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre o carril" />
+              <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre, carril, heat o categoria" />
             </Field>
             <div className="fr-results-progress" style={{ display: 'grid', gap: 7, alignSelf: 'end', width: 'min(100%, 220px)', justifySelf: 'end' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: colors.text, fontSize: 12, fontWeight: 900 }}>
-                <span>{normalizedResultSearch ? `${visibleRows.length}/${rows.length}` : rows.length} atletas</span>
+                <span>{normalizedResultSearch ? `${visibleRows.length}/${phaseResultRows.length}` : rows.length} atletas</span>
                 <span>{multiPartStats.complete}/{rows.length || 0} completos</span>
               </div>
               <div aria-label={`${heatProgressPercent}% completo`} style={{ height: 7, borderRadius: 999, background: colors.bg, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
@@ -4430,7 +4514,10 @@ function ResultsPanel({ bundle, reload, notify }) {
                   <div key={resultEntityKey(row)} style={{ display: 'grid', gap: 12, padding: 12, border: `1px solid ${rowDirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: rowDirty ? 'rgba(255,107,0,0.08)' : colors.top }}>
                     <div className="fr-multipart-result-head" style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center' }}>
                       <span className="fr-multipart-result-lane" style={{ color: colors.primary, fontSize: 12, fontWeight: 900, padding: '6px 9px', borderRadius: 999, background: 'rgba(255,107,0,0.10)', border: '1px solid rgba(255,107,0,0.28)', whiteSpace: 'nowrap' }}>Carril {row.lane_number || '-'}</span>
-                      <span className="fr-multipart-result-athlete" style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>{participantName(row)}</span>
+                      <span className="fr-multipart-result-athlete" style={{ color: colors.text, fontSize: 15, lineHeight: 1.25, fontWeight: 900, minWidth: 0, overflowWrap: 'anywhere' }}>
+                        {participantName(row)}
+                        {normalizedResultSearch ? <small style={{ display: 'block', color: colors.secondary, fontSize: 11, fontWeight: 800, marginTop: 3 }}>{row.categoria || 'Todas'} · {row.heat_label || row.heat_name || 'Sin heat'}</small> : null}
+                      </span>
                       <Pill tone={statusTone}>{status === 'Completo' ? 'Completo' : `Pendiente${missingParts.length ? ` · falta ${missingParts.join('/')}` : ''}`}</Pill>
                       <span className="fr-multipart-result-save"><Button tone={rowDirty ? 'primary' : 'default'} disabled={!rowDirty} onClick={() => saveMultiPartChanges((item) => resultEntityKey(item) === resultEntityKey(row))}><Save size={14} /></Button></span>
                     </div>
@@ -4500,10 +4587,10 @@ function ResultsPanel({ bundle, reload, notify }) {
             </select>
           </Field>
           <Field label="Buscar atleta">
-            <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre o carril" />
+            <input style={inputStyle()} value={resultSearch} onChange={(event) => setResultSearch(event.target.value)} placeholder="Nombre, carril, heat o categoria" />
           </Field>
           <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
-            <Pill tone={colors.primary}>{normalizedResultSearch ? `${visibleRows.length}/${rows.length}` : rows.length} atletas</Pill>
+            <Pill tone={colors.primary}>{normalizedResultSearch ? `${visibleRows.length}/${phaseResultRows.length}` : rows.length} atletas</Pill>
             <Pill tone={colors.accent}>{resultCountForPhase} resultados</Pill>
           </div>
         </div>
@@ -4556,7 +4643,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                     </div>
                   </div>
                   <div className="fr-result-card-grid" style={{ display: 'grid', gridTemplateColumns: resultCardGridColumns, gap: 10, alignItems: 'stretch' }}>
-                    <span className="fr-result-heat fr-result-card-field" data-label="Heat" style={{ color: colors.secondary, fontSize: 13, overflowWrap: 'anywhere' }}>{row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat'}</span>
+                    <span className="fr-result-heat fr-result-card-field" data-label="Heat" style={{ color: colors.secondary, fontSize: 13, overflowWrap: 'anywhere' }}>{normalizedResultSearch ? `${row.categoria || 'Todas'} · ${row.heat_label || row.heat_name || 'Sin heat'}` : (row.heat_label || selectedHeat?.heat_label || selectedHeat?.nombre || 'Sin heat')}</span>
                     {editable ? (
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{markLabel}</span>
@@ -4961,6 +5048,15 @@ function AppealsPanel({ bundle, reload, notify }) {
 
 function BroadcastPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
+  const phaseOptions = (bundle.phases || []).filter((phase) => !phase.parent_phase_id)
+  const individualCategoryOptions = (bundle.categories || []).filter((category) => {
+    const modality = String(category.modality || 'individual').toLowerCase()
+    return modality.includes('individual')
+  })
+  const teamCategoryOptions = (bundle.categories || []).filter((category) => {
+    const modality = String(category.modality || '').toLowerCase()
+    return modality.includes('team') || modality.includes('equipo')
+  })
   const [modalOpen, setModalOpen] = useState(false)
   const [draft, setDraft] = useDraft(competition, (item) => ({
     tv_show_qr: item?.tv_show_qr ? 1 : 0,
@@ -4968,11 +5064,27 @@ function BroadcastPanel({ bundle, reload, notify }) {
     tv_only_finalized_phases: item?.tv_only_finalized_phases ? 1 : 0,
     tv_rotation_interval_seconds: item?.tv_rotation_interval_seconds || 24,
     tv_data_refresh_interval_seconds: item?.tv_data_refresh_interval_seconds || 5,
+    tv_auto_scroll_enabled: item?.tv_auto_scroll_enabled == null ? 1 : (item.tv_auto_scroll_enabled ? 1 : 0),
+    tv_auto_scroll_speed: item?.tv_auto_scroll_speed || 36,
     tv_mode: item?.tv_mode || 'cyclic',
+    tv_static_view: item?.tv_static_view || 'individual',
+    tv_static_phase_id: item?.tv_static_phase_id || '',
+    tv_static_individual_category: item?.tv_static_individual_category || '',
+    tv_static_team_category_mode: item?.tv_static_team_category_mode || '__by_category__',
   }))
   const save = async () => {
     try {
-      await api(`/competitions/${competition.id}`, { method: 'PUT', body: JSON.stringify({ ...draft, tv_rotation_interval_seconds: Number(draft.tv_rotation_interval_seconds), tv_data_refresh_interval_seconds: Number(draft.tv_data_refresh_interval_seconds) }) })
+      const payload = {
+        ...draft,
+        tv_rotation_interval_seconds: Number(draft.tv_rotation_interval_seconds),
+        tv_data_refresh_interval_seconds: Number(draft.tv_data_refresh_interval_seconds),
+        tv_auto_scroll_enabled: draft.tv_auto_scroll_enabled ? 1 : 0,
+        tv_auto_scroll_speed: Number(draft.tv_auto_scroll_speed),
+        tv_static_phase_id: draft.tv_static_phase_id ? Number(draft.tv_static_phase_id) : null,
+        tv_static_individual_category: draft.tv_static_individual_category || null,
+        tv_static_team_category_mode: draft.tv_static_team_category_mode || '__by_category__',
+      }
+      await api(`/competitions/${competition.id}`, { method: 'PUT', body: JSON.stringify(payload) })
       notify('Pantalla actualizada')
       setModalOpen(false)
       await reload()
@@ -4980,6 +5092,12 @@ function BroadcastPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
+  const selectedTvPhaseName = competition.tv_static_phase_id
+    ? (phaseOptions.find((phase) => String(phase.id) === String(competition.tv_static_phase_id))?.nombre || `WOD ${competition.tv_static_phase_id}`)
+    : (competition.tv_mode === 'static' ? 'General' : 'Todos')
+  const selectedTvCategoryLabel = competition.tv_static_view === 'teams'
+    ? (competition.tv_static_team_category_mode === '__all__' ? 'Todos' : competition.tv_static_team_category_mode === '__by_category__' ? 'Por categoria' : (competition.tv_static_team_category_mode || 'Por categoria'))
+    : (competition.tv_static_individual_category || (competition.tv_mode === 'static' ? 'Primera disponible' : 'Todas'))
   return (
     <Panel title="Pantalla publica" subtitle="Configura salida TV y abre vistas publicas." action={<Button tone="primary" onClick={() => setModalOpen(true)}><Save size={16} />Editar pantalla</Button>}>
       {modalOpen ? (
@@ -4990,10 +5108,19 @@ function BroadcastPanel({ bundle, reload, notify }) {
                 ['tv_show_qr', 'Mostrar QR'],
                 ['tv_include_total_slide', 'Slide total'],
                 ['tv_only_finalized_phases', 'Solo finalizadas'],
+                ['tv_auto_scroll_enabled', 'Auto scroll'],
               ].map(([key, label]) => <Button key={key} tone={draft[key] ? 'primary' : 'secondary'} onClick={() => setDraft(key, draft[key] ? 0 : 1)}>{label}</Button>)}
               <Field label="Rotacion seg"><input type="number" style={inputStyle()} value={draft.tv_rotation_interval_seconds} onChange={(e) => setDraft('tv_rotation_interval_seconds', e.target.value)} /></Field>
               <Field label="Refresh seg"><input type="number" style={inputStyle()} value={draft.tv_data_refresh_interval_seconds} onChange={(e) => setDraft('tv_data_refresh_interval_seconds', e.target.value)} /></Field>
-              <Field label="Modo"><select style={inputStyle()} value={draft.tv_mode} onChange={(e) => setDraft('tv_mode', e.target.value)}><option value="cyclic">Ciclico</option><option value="static">Estatico</option></select></Field>
+              <Field label="Velocidad scroll"><input type="number" min="10" max="120" style={inputStyle()} value={draft.tv_auto_scroll_speed} onChange={(e) => setDraft('tv_auto_scroll_speed', e.target.value)} /></Field>
+              <Field label="Modo"><select style={inputStyle()} value={draft.tv_mode} onChange={(e) => setDraft('tv_mode', e.target.value)}><option value="cyclic">Automatico</option><option value="static">Fijo</option></select></Field>
+              <Field label="Vista"><select style={inputStyle()} value={draft.tv_static_view} onChange={(e) => setDraft('tv_static_view', e.target.value)}><option value="individual">Individual</option><option value="teams">Equipos</option></select></Field>
+              <Field label="WOD"><select style={inputStyle()} value={draft.tv_static_phase_id} onChange={(e) => setDraft('tv_static_phase_id', e.target.value)}><option value="">{draft.tv_mode === 'static' ? 'General' : 'Rotar todos'}</option>{phaseOptions.map((phase) => <option key={phase.id} value={phase.id}>{phase.nombre}</option>)}</select></Field>
+              {draft.tv_static_view === 'individual' ? (
+                <Field label="Categoria"><select style={inputStyle()} value={draft.tv_static_individual_category} onChange={(e) => setDraft('tv_static_individual_category', e.target.value)}><option value="">{draft.tv_mode === 'static' ? 'Primera disponible' : 'Rotar categorias'}</option>{individualCategoryOptions.map((category) => <option key={category.id} value={category.nombre}>{category.nombre}</option>)}</select></Field>
+              ) : (
+                <Field label="Categoria equipos"><select style={inputStyle()} value={draft.tv_static_team_category_mode} onChange={(e) => setDraft('tv_static_team_category_mode', e.target.value)}><option value="__by_category__">Por categoria</option><option value="__all__">Todos</option>{teamCategoryOptions.map((category) => <option key={category.id} value={category.nombre}>{category.nombre}</option>)}</select></Field>
+              )}
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
@@ -5004,9 +5131,17 @@ function BroadcastPanel({ bundle, reload, notify }) {
       ) : null}
       <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
         <MiniStat label="QR" value={competition.tv_show_qr ? 'Si' : 'No'} />
-        <MiniStat label="Modo" value={competition.tv_mode || 'cyclic'} />
+        <MiniStat label="Modo" value={competition.tv_mode === 'static' ? 'Fijo' : 'Automatico'} />
+        <MiniStat label="WOD" value={selectedTvPhaseName} />
+        <MiniStat label="Categoria" value={selectedTvCategoryLabel} />
+      </div>
+      <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
         <MiniStat label="Rotacion" value={`${competition.tv_rotation_interval_seconds || 24}s`} />
         <MiniStat label="Refresh" value={`${competition.tv_data_refresh_interval_seconds || 5}s`} />
+      </div>
+      <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+        <MiniStat label="Auto scroll" value={competition.tv_auto_scroll_enabled == null || competition.tv_auto_scroll_enabled ? 'Si' : 'No'} />
+        <MiniStat label="Velocidad" value={`${competition.tv_auto_scroll_speed || 36}`} />
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Link target="_blank" to={`/leaderboard?competition=${competition.id}`} style={{ textDecoration: 'none' }}><Button><Trophy size={16} />Leaderboard</Button></Link>
@@ -5422,6 +5557,9 @@ function ResponsiveStyles() {
         text-transform: uppercase;
         margin-bottom: 5px;
       }
+      .fr-result-mobile-label::after {
+        content: ":";
+      }
       .fr-result-input-wrap,
       .fr-result-readonly,
       .fr-result-card-field {
@@ -5436,7 +5574,7 @@ function ResponsiveStyles() {
       }
       .fr-result-readonly::before,
       .fr-result-card-field::before {
-        content: attr(data-label);
+        content: attr(data-label) ":";
         display: block;
         color: ${colors.muted};
         font-size: 10px;
@@ -5745,7 +5883,7 @@ function ResponsiveStyles() {
           text-transform: uppercase;
         }
         .fr-result-readonly::before {
-          content: attr(data-label);
+          content: attr(data-label) ":";
         }
         .fr-result-mark,
         .fr-result-extra,

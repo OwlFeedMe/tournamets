@@ -798,3 +798,27 @@ def delete_results_by_competition(
     session.commit()
     invalidate_leaderboard_results_snapshot(competition_id)
     return {"deleted": int(deleted)}
+
+
+@router.post("/competition/{competition_id}/reset-points")
+def reset_points_by_competition(
+    competition_id: int,
+    session: Session = Depends(get_session),
+    user=Depends(require_staff),
+):
+    require_competition_access(session, competition_id, user)
+
+    updated = session.execute(
+        text("""
+            UPDATE results
+            SET puntos = 0,
+                posicion = NULL
+            WHERE competition_id = :cid
+        """),
+        {"cid": competition_id},
+    ).rowcount or 0
+
+    recompute_and_persist_phase_status(session, competition_id)
+    session.commit()
+    invalidate_leaderboard_results_snapshot(competition_id)
+    return {"updated": int(updated)}

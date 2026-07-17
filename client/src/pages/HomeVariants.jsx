@@ -591,6 +591,40 @@ function scoreMarkLabel(item) {
   return mark
 }
 
+function scoreStatusLabel(item) {
+  const status = item?.status
+  const value = String(status || '').trim().toLowerCase()
+  const startMs = item?.startAt ? Date.parse(item.startAt) : null
+  if (value !== 'finalizada' && Number.isFinite(startMs) && startMs > Date.now()) return 'Pendiente'
+  if (value === 'pendiente') return 'Pendiente'
+  if (value === 'en_progreso') return 'En progreso'
+  if (value === 'finalizada') return 'Finalizado'
+  return status || ''
+}
+
+function ScoreMarks({ item }) {
+  const scoringParts = Array.isArray(item.scoringParts) ? item.scoringParts : []
+  const statusLabel = scoreStatusLabel(item)
+  if (scoringParts.length) {
+    return (
+      <div style={{ display: 'grid', gap: 2 }}>
+        {scoringParts.map((part) => (
+          <div key={`${item.key}-${part.label}`} style={{ color: premium.textSoft, fontSize: 12 }}>
+            <strong style={{ color: premium.text, fontWeight: 900 }}>Marca {part.label}:</strong> {scoreMarkLabel(part)}
+          </div>
+        ))}
+        {statusLabel ? <div style={{ color: premium.textSoft, fontSize: 12 }}>{statusLabel}</div> : null}
+      </div>
+    )
+  }
+  return (
+    <div style={{ color: premium.textSoft, fontSize: 12, display: 'grid', gap: 2 }}>
+      <div><strong style={{ color: premium.text, fontWeight: 900 }}>Marca:</strong> {scoreMarkLabel(item)}</div>
+      {statusLabel ? <div>{statusLabel}</div> : null}
+    </div>
+  )
+}
+
 function ScorePanel({ leaderboard, results }) {
   const phaseRows = leaderboard?.phases?.length ? leaderboard.phases : []
   const rows = phaseRows.length
@@ -602,9 +636,12 @@ function ScorePanel({ leaderboard, results }) {
       mark: item.mark,
       extra: item.extra,
       status: item.status,
+      startAt: item.startAt,
+      endAt: item.endAt,
       tipo: item.tipo,
       measurementMethod: item.measurementMethod,
       timeCapSeconds: item.timeCapSeconds,
+      scoringParts: item.scoringParts || [],
     }))
     : results.slice(0, 4).map((item) => ({
       key: item.id,
@@ -614,9 +651,12 @@ function ScorePanel({ leaderboard, results }) {
       mark: item.mark,
       extra: item.extra,
       status: '',
+      startAt: item.startAt,
+      endAt: item.endAt,
       tipo: item.tipo,
       measurementMethod: item.measurementMethod,
       timeCapSeconds: item.timeCapSeconds,
+      scoringParts: [],
     }))
 
   return (
@@ -634,8 +674,8 @@ function ScorePanel({ leaderboard, results }) {
             <div key={item.key} style={{ borderRadius: 6, border: `1px solid ${premium.border}`, background: 'rgba(13,15,18,0.54)', padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 12, alignItems: 'center' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: premium.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                <div style={{ marginTop: 4, color: premium.textSoft, fontSize: 12 }}>
-                  Marca {scoreMarkLabel(item)} {item.status ? `· ${item.status}` : ''}
+                <div style={{ marginTop: 4 }}>
+                  <ScoreMarks item={item} />
                 </div>
               </div>
               <div style={{ color: premium.text, textAlign: 'right', fontSize: 13, fontWeight: 800 }}>

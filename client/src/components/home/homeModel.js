@@ -291,6 +291,31 @@ function flattenIndividualLeaderboard(individual = {}) {
   ))
 }
 
+function scoringPartLabel(part, index) {
+  const key = String(part?.score_key || '').trim()
+  return key || String.fromCharCode(65 + index)
+}
+
+function scoringPartResult(part, userId, category, index) {
+  const rows = flattenIndividualLeaderboard(part?.individual)
+  const row = rows.find((item) => (
+    Number(item.id) === Number(userId)
+    && (!category || item.category === category || item.categoria === category)
+  )) || rows.find((item) => Number(item.id) === Number(userId))
+  if (!row) return null
+  return {
+    label: scoringPartLabel(part, index),
+    name: part?.nombre || `Parte ${scoringPartLabel(part, index)}`,
+    mark: row.mejor_marca ?? null,
+    extra: row.extra ?? null,
+    points: row.total_puntos ?? 0,
+    rank: row.rank ?? null,
+    tipo: part?.tipo || null,
+    measurementMethod: part?.measurement_method || null,
+    timeCapSeconds: part?.time_cap_seconds ?? null,
+  }
+}
+
 export function extractUserLeaderboardSummary(payload, userId) {
   if (!payload || userId == null) return null
   const targetId = Number(userId)
@@ -304,6 +329,11 @@ export function extractUserLeaderboardSummary(payload, userId) {
     .map((phase) => {
       const individualRow = flattenIndividualLeaderboard(phase.individual).find((row) => Number(row.id) === targetId)
       if (individualRow) {
+        const scoringParts = Array.isArray(phase.scoring_parts)
+          ? phase.scoring_parts
+              .map((part, index) => scoringPartResult(part, targetId, individualRow.category || individualRow.categoria, index))
+              .filter(Boolean)
+          : []
         return {
           phaseId: phase.id,
           phaseName: phase.nombre || 'Workout',
@@ -312,11 +342,14 @@ export function extractUserLeaderboardSummary(payload, userId) {
           mark: individualRow.mejor_marca ?? null,
           extra: individualRow.extra ?? null,
           events: individualRow.total_eventos ?? 0,
-          status: phase.estado || null,
+          status: phase.status_display || phase.estado || null,
+          startAt: phase.start_at || null,
+          endAt: phase.end_at || null,
           category: individualRow.category || individualRow.categoria || null,
           tipo: phase.tipo || null,
           measurementMethod: phase.measurement_method || null,
           timeCapSeconds: phase.time_cap_seconds ?? null,
+          scoringParts,
         }
       }
 
@@ -333,12 +366,15 @@ export function extractUserLeaderboardSummary(payload, userId) {
         mark: teamRow.mejor_marca ?? member.mejor_marca ?? null,
         extra: teamRow.extra ?? member.extra ?? null,
         events: teamRow.total_eventos ?? member.intentos ?? 0,
-        status: phase.estado || null,
+        status: phase.status_display || phase.estado || null,
+        startAt: phase.start_at || null,
+        endAt: phase.end_at || null,
         category: teamRow.team_category || member.categoria || null,
         teamName: teamRow.nombre || null,
         tipo: phase.tipo || null,
         measurementMethod: phase.measurement_method || null,
         timeCapSeconds: phase.time_cap_seconds ?? null,
+        scoringParts: [],
       }
     })
     .filter(Boolean)
