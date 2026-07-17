@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime, timezone
 import json
 
 from fastapi import APIRouter, Depends
@@ -43,6 +44,45 @@ def _parse_phase_activities(raw: str | None) -> list[dict]:
             "tipo": type_from_measurement_method(measurement_method),
         })
     return normalized
+
+
+def _fetch_phase_schedule_map(session: Session, competition_id: int) -> dict[int, dict]:
+    rows = session.execute(text("""
+        SELECT
+          phase_id,
+          MIN(start_at) AS start_at,
+          MAX(end_at) AS end_at
+        FROM competition_heats
+        WHERE competition_id = :cid
+          AND start_at IS NOT NULL
+        GROUP BY phase_id
+    """), {"cid": competition_id}).mappings().all()
+    return {
+        int(row["phase_id"]): {
+            "start_at": row["start_at"],
+            "end_at": row["end_at"],
+        }
+        for row in rows
+    }
+
+
+def _schedule_aware_phase_status(status: str | None, start_at) -> str | None:
+    value = (status or "").strip().lower() or None
+    if value == "finalizada":
+        return value
+    if not start_at:
+        return value
+    start = start_at
+    if isinstance(start, str):
+        try:
+            start = datetime.fromisoformat(start.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    if getattr(start, "tzinfo", None) is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if start > datetime.now(timezone.utc):
+        return "pendiente"
+    return value
 
 
 def _phase_lower_is_better(phase: CompetitionPhase | None) -> bool:
@@ -674,6 +714,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         else:
             phases.append(phase)
     phase_status_map = compute_phase_status_map(session, competition_id)
+    phase_schedule_map = _fetch_phase_schedule_map(session, competition_id)
 
     if team_enabled:
         teams = session.exec(select(Team).where(Team.competition_id == competition_id).order_by(Team.id)).all()
@@ -698,6 +739,10 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         team_member_totals_by_team_pid = {}
 
     def build_phase_payload(phase: CompetitionPhase, *, as_part: bool = False) -> dict:
+        phase_schedule = phase_schedule_map.get(int(phase.id), {})
+        phase_start_at = phase.start_at or phase_schedule.get("start_at")
+        phase_end_at = phase.end_at or phase_schedule.get("end_at")
+        phase_estado = phase_status_map.get(int(phase.id), phase.estado)
         phase_lower_is_better = _phase_lower_is_better(phase)
         phase_tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
         phase_rows = _build_ind_rows(
@@ -745,7 +790,10 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             "time_cap_seconds": int(getattr(phase, "time_cap_seconds")) if getattr(phase, "time_cap_seconds", None) is not None else None,
             "scoring": phase_scoring_config(comp, phase),
             "activities": _parse_phase_activities(getattr(phase, "activities", None)),
-            "estado": phase_status_map.get(int(phase.id), phase.estado),
+            "estado": phase_estado,
+            "status_display": _schedule_aware_phase_status(phase_estado, phase_start_at),
+            "start_at": phase_start_at,
+            "end_at": phase_end_at,
             "descripcion": phase.descripcion,
             "allow_multiple_results": phase.allow_multiple_results,
             "team_result_mode": phase_mode,

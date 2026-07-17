@@ -5,7 +5,7 @@ from cache import Cache, Keys
 LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS = int(
     os.getenv("LEADERBOARD_RESULTS_SNAPSHOT_TTL_SECONDS", "900")
 )
-LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION = "v5"
+LEADERBOARD_RESULTS_SNAPSHOT_SCHEMA_VERSION = "v7"
 
 
 def leaderboard_results_snapshot_key(competition_id: int) -> str:

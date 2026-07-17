@@ -43,6 +43,14 @@ class ScheduleHeatGenerationContractTests(unittest.TestCase):
         self.assertIn("CategoryOrderUpdate", backend)
         self.assertIn("/categories/order", frontend)
 
+    def test_backend_blocks_overlapping_heats_in_same_location(self):
+        source = SCHEDULE_ROUTER_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("_find_heat_location_conflicts", source)
+        self.assertIn("_raise_heat_location_conflict", source)
+        self.assertIn("No puedes programar heats solapados", source)
+        self.assertIn("ignore_heat_ids", source)
+
 
 if __name__ == "__main__":
     unittest.main()

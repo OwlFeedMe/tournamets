@@ -81,6 +81,59 @@ function phaseMetricLabel(phaseInfo) {
   return 'Marca'
 }
 
+function phaseScoringParts(phaseInfo) {
+  return Array.isArray(phaseInfo?.scoring_parts)
+    ? phaseInfo.scoring_parts.filter(part => part && part.id)
+    : []
+}
+
+function partDisplayName(part, index) {
+  const key = (part?.score_key || '').toString().trim()
+  if (key) return `Parte ${key}`
+  return `Parte ${String.fromCharCode(65 + index)}`
+}
+
+function rowForScoringPart(part, athleteId, category) {
+  const individual = part?.individual || {}
+  const categoryRows = category && Array.isArray(individual[category]) ? individual[category] : []
+  const direct = categoryRows.find(row => String(row.id) === String(athleteId))
+  if (direct) return direct
+  return Object.values(individual).flat().find(row => String(row.id) === String(athleteId)) || null
+}
+
+function hasLoadedMark(row) {
+  return row?.mejor_marca != null
+}
+
+function hasLoadedIndividualPhaseResult(row, scoringParts = [], category = '') {
+  if (scoringParts.length) {
+    return scoringParts.some(part => hasLoadedMark(rowForScoringPart(part, row?.id, category)))
+  }
+  return hasLoadedMark(row)
+}
+
+function hasLoadedTeamPhaseResult(team) {
+  if (hasLoadedMark(team)) return true
+  return Array.isArray(team?.members) && team.members.some(member => hasLoadedMark(member))
+}
+
+function phasePointsColor(points, hasLoadedResult, positiveColor = THEME.primary) {
+  if (Number(points || 0) > 0) return positiveColor
+  return hasLoadedResult ? THEME.primary : THEME.soft
+}
+
+function PartMetricValue({ part, row, compact = false }) {
+  if (!row || row.mejor_marca == null) return <span style={{ color: THEME.soft }}>-</span>
+  return (
+    <span>
+      <span style={{ color: THEME.ink, fontWeight: compact ? 800 : 700 }}>
+        {metricValueWithExtra(row.mejor_marca, row.extra, part)}
+      </span>
+      {row.extra != null && !shouldMergeExtraWithMetric(row.mejor_marca, row.extra, part) ? <ExtraLine value={row.extra} compact={compact} /> : null}
+    </span>
+  )
+}
+
 function formatSecondsToHMS(totalSeconds) {
   const n = Number(totalSeconds)
   if (!Number.isFinite(n)) return '-'
@@ -622,7 +675,7 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
                   </div>
                   <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-rank" style={{ color: THEME.ink, fontWeight: 900 }}>#{item.rank ?? '-'}</div>
                   <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>{item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}</div>
-                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: item.points > 0 ? THEME.primary : THEME.soft, fontWeight: 900 }}>{item.points} pts</div>
+                  <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: phasePointsColor(item.points, item.mark != null), fontWeight: 900 }}>{item.points} pts</div>
                 </div>
               )) : (
                 <div style={{ color: THEME.muted, border: `1px solid ${THEME.border}`, background: '#0F1318', borderRadius: 8, padding: 14 }}>Sin workouts individuales registrados.</div>
@@ -670,6 +723,8 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
     <>
       {CATEGORY_ORDER.filter(c => data[c]).concat(Object.keys(data).filter(c => !CATEGORY_ORDER.includes(c))).map(cat => {
         if (!data[cat]) return null
+        const scoringParts = phaseScoringParts(phaseInfo)
+        const hasScoringParts = scoringParts.length > 0
         const markCounts = data[cat].reduce((acc, item) => {
           if (item.mejor_marca == null) return acc
           const key = String(item.mejor_marca)
@@ -701,6 +756,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                   const isNew = prev == null
                   const totalEntry = totalEntryFor(totalScoreMap, p.id)
                   const isPhaseView = !!totalScoreMap
+                  const hasLoadedResult = hasLoadedIndividualPhaseResult(p, scoringParts, cat)
                   return (
                     <div
                       key={p.id}
@@ -731,7 +787,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                       <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                         <div style={mobileScoreChipStyle(isPhaseView)}>
                           <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: p.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{p.total_puntos}</div>
+                          <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: phasePointsColor(p.total_puntos, hasLoadedResult, '#00C2A8') }}>{p.total_puntos}</div>
                         </div>
                         {isPhaseView && (
                           <div style={mobileScoreChipStyle(false)}>
@@ -743,7 +799,14 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
 
                       {/* Meta row */}
                       <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap' }}>
-                        {phaseInfo && p.mejor_marca != null && (
+                        {hasScoringParts ? scoringParts.map((part, index) => {
+                          const partRow = rowForScoringPart(part, p.id, cat)
+                          return (
+                            <span key={part.id} style={{ color: THEME.ink, fontWeight: 500 }}>
+                              {partDisplayName(part, index)}: <PartMetricValue part={part} row={partRow} compact />
+                            </span>
+                          )
+                        }) : phaseInfo && p.mejor_marca != null && (
                           <span style={{ color: THEME.ink, fontWeight: 500 }}>
                             {phaseMetricLabel(phaseInfo)}: <b>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</b>
                             {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} compact /> : null}
@@ -761,7 +824,14 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                   <tr>
                     <th style={{ width: 50 }}>Pos Evento</th>
                     <th>Nombre</th>
-                    {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
+                    {hasScoringParts ? scoringParts.map((part, index) => (
+                      <th key={part.id} style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'grid', gap: 2 }}>
+                          <span>{partDisplayName(part, index)}</span>
+                          <span style={{ color: THEME.soft, fontSize: 10, fontWeight: 800 }}>{phaseMetricLabel(part)}</span>
+                        </div>
+                      </th>
+                    )) : phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
                     <th style={{ textAlign: 'center' }}>Puntos</th>
                     {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
                     {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
@@ -773,6 +843,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                     const delta = prev != null ? prev - p.rank : null
                     const isNew = prev == null
                     const totalEntry = totalEntryFor(totalScoreMap, p.id)
+                    const hasLoadedResult = hasLoadedIndividualPhaseResult(p, scoringParts, cat)
                     return (
                       <tr
                         key={p.id}
@@ -797,14 +868,21 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
                             <MoveSlot delta={delta} tvMode={tvMode} />
                           </div>
                         </td>
-                        {phaseInfo && (
+                        {hasScoringParts ? scoringParts.map((part) => {
+                          const partRow = rowForScoringPart(part, p.id, cat)
+                          return (
+                            <td key={part.id} style={{ textAlign: 'center', color: THEME.muted }}>
+                              <PartMetricValue part={part} row={partRow} />
+                            </td>
+                          )
+                        }) : phaseInfo && (
                           <td style={{ textAlign: 'center', color: THEME.muted }}>
                             <div style={{ color: THEME.ink, fontWeight: 700 }}>{metricValueWithExtra(p.mejor_marca, p.extra, phaseInfo)}</div>
                             {shouldShowExtra(p) && !shouldMergeExtraWithMetric(p.mejor_marca, p.extra, phaseInfo) ? <ExtraLine value={p.extra} /> : null}
                             {shouldShowTiebreak(p) ? <TieBreakLine value={p.tiebreak} phaseInfo={phaseInfo} /> : null}
                           </td>
                         )}
-                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: p.total_puntos > 0 ? THEME.primary : THEME.soft }}>
+                        <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: phasePointsColor(p.total_puntos, hasLoadedResult) }}>
                           {p.total_puntos}
                         </td>
                         {totalScoreMap && (
@@ -857,6 +935,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           const members = t.members || []
           const totalEntry = totalEntryFor(totalScoreMap, t.id)
           const isPhaseView = !!totalScoreMap
+          const hasLoadedResult = hasLoadedTeamPhaseResult(t)
           return (
             <div key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''} style={mobileRankCardStyle}>
               {/* Header: rank + team name + movement */}
@@ -871,7 +950,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
               <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                 <div style={mobileScoreChipStyle(isPhaseView)}>
                   <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
-                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: t.total_puntos > 0 ? '#00C2A8' : THEME.soft }}>{t.total_puntos}</div>
+                  <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: phasePointsColor(t.total_puntos, hasLoadedResult, '#00C2A8') }}>{t.total_puntos}</div>
                   {phaseInfo && t.mejor_marca != null && (
                     <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
                   )}
@@ -929,6 +1008,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           const teamName = (t.nombre || '').trim() || `Equipo ${t.id}`
           const members = t.members || []
           const totalEntry = totalEntryFor(totalScoreMap, t.id)
+          const hasLoadedResult = hasLoadedTeamPhaseResult(t)
           return (
             <tr key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''}>
               <td style={{ textAlign: 'center' }}><RankCell rank={visibleRank} tvMode={tvMode} /></td>
@@ -962,7 +1042,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                 </div>
               </td>
               {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
-              <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: t.total_puntos > 0 ? THEME.primary : THEME.soft }}>
+              <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: phasePointsColor(t.total_puntos, hasLoadedResult) }}>
                 {t.total_puntos}
               </td>
               {totalScoreMap && (

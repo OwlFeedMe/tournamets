@@ -201,6 +201,67 @@ function categoryTimeRange(items = []) {
   }
 }
 
+function timestampFromValue(value) {
+  if (!value) return null
+  const timestamp = new Date(value).getTime()
+  return Number.isFinite(timestamp) ? timestamp : null
+}
+
+function scheduleItemsRange(items = []) {
+  return items.reduce((range, item) => {
+    const startMs = timestampFromValue(item.startAt)
+    const endMs = timestampFromValue(item.endAt)
+    if (startMs != null && (range.startMs == null || startMs < range.startMs)) {
+      range.startMs = startMs
+      range.startAt = item.startAt
+    }
+    if (endMs != null && (range.endMs == null || endMs > range.endMs)) {
+      range.endMs = endMs
+      range.endAt = item.endAt
+    }
+    return range
+  }, { startAt: null, startMs: null, endAt: null, endMs: null })
+}
+
+function sortScheduleItems(items = []) {
+  return [...items].sort((a, b) => {
+    const aStart = timestampFromValue(a.startAt) ?? Number.MAX_SAFE_INTEGER
+    const bStart = timestampFromValue(b.startAt) ?? Number.MAX_SAFE_INTEGER
+    if (aStart !== bStart) return aStart - bStart
+    const aHeat = Number(a.heatNumber || 0)
+    const bHeat = Number(b.heatNumber || 0)
+    if (aHeat !== bHeat) return aHeat - bHeat
+    return String(a.title || '').localeCompare(String(b.title || ''), 'es', { numeric: true })
+  })
+}
+
+function sectionSortTimestamp(section) {
+  return timestampFromValue(section.startAt) ?? Number.MAX_SAFE_INTEGER
+}
+
+function sortScheduleSections(sections = []) {
+  return sections
+    .map((section, index) => {
+      const items = sortScheduleItems(section.items || [])
+      const range = scheduleItemsRange(items)
+      return {
+        ...section,
+        items,
+        startAt: range.startAt || section.startAt || null,
+        endAt: range.endAt || section.endAt || null,
+        _sortIndex: index,
+      }
+    })
+    .sort((a, b) => {
+      const timeDiff = sectionSortTimestamp(a) - sectionSortTimestamp(b)
+      if (timeDiff) return timeDiff
+      const titleDiff = String(a.title || '').localeCompare(String(b.title || ''), 'es', { numeric: true })
+      if (titleDiff) return titleDiff
+      return a._sortIndex - b._sortIndex
+    })
+    .map(({ _sortIndex, ...section }) => section)
+}
+
 function scheduleItemStatus(startAt, endAt, nowValue = Date.now()) {
   const start = startAt ? new Date(startAt) : null
   const end = endAt ? new Date(endAt) : null
@@ -382,7 +443,7 @@ function buildFallbackSections(competitionPayload) {
     })
   })
 
-  return sections
+  return sortScheduleSections(sections)
 }
 
 function tryParseError(error) {
@@ -872,7 +933,6 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         grouped.get(key).items.push(item)
       })
 
-      const groupedSections = Array.from(grouped.values()).sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')))
       const looseSections = loose.length ? [{
         id: 'sin-fase',
         phaseId: '',
@@ -887,7 +947,7 @@ export default function CompetitionSchedulePage({ scope = 'public' }) {
         note: '',
         items: loose,
       }] : []
-      return [...groupedSections, ...looseSections]
+      return sortScheduleSections([...grouped.values(), ...looseSections])
     }
     return buildFallbackSections(schedule)
   }, [schedule])
