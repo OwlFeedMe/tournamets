@@ -198,6 +198,25 @@ function TieBreakLine({ value, phaseInfo, compact = false }) {
   )
 }
 
+function SummaryTieBreakLine({ value, phaseInfo }) {
+  if (value == null) return null
+  return (
+    <div
+      title="Desempate usado para ordenar atletas con la misma marca"
+      style={{
+        marginTop: 3,
+        color: THEME.accent,
+        fontSize: 10,
+        fontWeight: 800,
+        lineHeight: 1.15,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      Tiebreak: {tieBreakValue(value, phaseInfo)}
+    </div>
+  )
+}
+
 function ExtraLine({ value, compact = false }) {
   if (value == null) return null
   return (
@@ -517,6 +536,7 @@ function athletePhaseResults(data, athleteId) {
           points: Number(partRow?.total_puntos || 0),
           mark: partRow?.mejor_marca,
           extra: partRow?.extra,
+          tiebreak: partRow?.tiebreak,
           attempts: Number(partRow?.total_eventos || 0),
         }
       })
@@ -739,7 +759,12 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
                       <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-mark" style={{ color: THEME.muted, fontSize: 13 }}>
                         {hasScoringParts ? (
                           <span className="lb-athlete-summary-workout-parts-badge" style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.10)', color: '#8FFCEF', borderRadius: 999, fontWeight: 900, whiteSpace: 'nowrap' }}>{scoringPartsCountLabel(item.scoringParts)}</span>
-                        ) : item.mark == null ? '-' : metricValueWithExtra(item.mark, item.extra, item.phase)}
+                        ) : item.mark == null ? '-' : (
+                          <>
+                            <div>{metricValueWithExtra(item.mark, item.extra, item.phase)}</div>
+                            <SummaryTieBreakLine value={item.tiebreak} phaseInfo={item.phase} />
+                          </>
+                        )}
                       </div>
                       <div className="lb-athlete-summary-workout-stat lb-athlete-summary-workout-points" style={{ color: phasePointsColor(item.points, item.mark != null || hasLoadedPart), fontWeight: 900 }}>{item.points} pts</div>
                     </div>
@@ -752,7 +777,14 @@ function AthleteSummaryModal({ summary, onClose, isMobile, following = false, on
                               <div style={{ marginTop: 2, color: THEME.soft, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>{phaseMetricLabel(part.phase)}</div>
                             </div>
                             <div className="lb-athlete-summary-workout-part-rank" style={{ color: THEME.muted, fontWeight: 800 }}>#{part.rank ?? '-'}</div>
-                            <div className="lb-athlete-summary-workout-part-mark" style={{ fontSize: 12 }}>{part.mark == null ? '-' : metricValueWithExtra(part.mark, part.extra, part.phase)}</div>
+                            <div className="lb-athlete-summary-workout-part-mark" style={{ fontSize: 12 }}>
+                              {part.mark == null ? '-' : (
+                                <>
+                                  <div>{metricValueWithExtra(part.mark, part.extra, part.phase)}</div>
+                                  <SummaryTieBreakLine value={part.tiebreak} phaseInfo={part.phase} />
+                                </>
+                              )}
+                            </div>
                             <div className="lb-athlete-summary-workout-part-points" style={{ color: phasePointsColor(part.points, part.mark != null), fontWeight: 900 }}>{part.points} pts</div>
                           </div>
                         ))}

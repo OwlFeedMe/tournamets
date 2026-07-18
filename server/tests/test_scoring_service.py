@@ -95,6 +95,17 @@ class ScoringServiceTest(unittest.TestCase):
         self.assertEqual([auto_table_points(position, 25) for position in (1, 2, 5, 6, 25)], [100, 95, 80, 76, 0])
         self.assertEqual(auto_table_points(1, 1), 100)
 
+    def test_phase_weight_is_ignored_when_override_is_disabled(self):
+        comp = competition(scoring_system="auto_table")
+        ph = phase(scoring_override_enabled=0, scoring_weight_percent=200)
+
+        config = phase_scoring_config(comp, ph)
+        points = compute_result_points(position=1, total_ranked=10, mark=150, competition=comp, phase=ph)
+
+        self.assertEqual(config["system"], "auto_table")
+        self.assertEqual(config["weight_percent"], 100)
+        self.assertEqual(points, 100)
+
     def test_cumulative_uses_mark_and_direction(self):
         comp = competition(scoring_system="cumulative", cumulative_direction="lower_wins")
 
