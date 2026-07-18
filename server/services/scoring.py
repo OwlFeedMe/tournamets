@@ -154,6 +154,7 @@ def phase_scoring_config(competition: Any, phase: Any = None) -> dict:
     phase_override = bool(int(getattr(phase, "scoring_override_enabled", 0) or 0)) if phase is not None else False
     phase_system = normalize_scoring_system(getattr(phase, "scoring_system", None), fallback=comp_system) if phase_override else comp_system
     raw_table = getattr(phase, "scoring_table", None) if phase_override and getattr(phase, "scoring_table", None) else getattr(competition, "scoring_table", None)
+    raw_weight = getattr(phase, "scoring_weight_percent", 100) if phase_override and phase is not None else 100
     table = normalize_scoring_table(raw_table)
     if phase_system == SCORING_SYSTEM_FIXED_TABLE and not table:
         table = DEFAULT_FIXED_TABLE
@@ -162,7 +163,7 @@ def phase_scoring_config(competition: Any, phase: Any = None) -> dict:
         "scope": normalize_scoring_scope(getattr(competition, "scoring_scope", None)),
         "tiebreak": normalize_scoring_tiebreak(getattr(competition, "scoring_tiebreak", None)),
         "cumulative_direction": normalize_scoring_direction(getattr(competition, "cumulative_direction", None)),
-        "weight_percent": normalize_weight_percent(getattr(phase, "scoring_weight_percent", 100) if phase is not None else 100),
+        "weight_percent": normalize_weight_percent(raw_weight),
         "point_step": normalize_point_step(getattr(phase, "scoring_point_step", None) if phase_override and getattr(phase, "scoring_point_step", None) is not None else getattr(competition, "scoring_point_step", None)),
         "table": table,
         "override_enabled": 1 if phase_override else 0,

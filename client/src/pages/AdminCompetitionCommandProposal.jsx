@@ -4294,9 +4294,26 @@ function ResultsPanel({ bundle, reload, notify }) {
     const value = String(part?.measurement_method || part?.workout_format || part?.tipo || 'marca').trim().toLowerCase()
     return resultFormatLabels[value] || part?.measurement_method || part?.workout_format || part?.tipo || 'Marca'
   }
+  const partTieBreakActive = (part) => !!Number(part?.tie_break_enabled || activeScorePhase?.tie_break_enabled || 0)
+  const partTieBreakMethod = (part) => String(part?.tie_break_method || activeScorePhase?.tie_break_method || 'for_time').trim().toLowerCase()
+  const partTieBreakIsTime = (part) => ['for_time', 'tiempo_hms', 'tiempo'].includes(partTieBreakMethod(part))
+  const partTieBreakLabel = (part) => {
+    const method = partTieBreakMethod(part)
+    if (['for_time', 'tiempo_hms', 'tiempo'].includes(method)) return 'Tiebreak tiempo'
+    if (method === 'rm') return 'Tiebreak peso'
+    if (method === 'metros') return 'Tiebreak metros'
+    return 'Tiebreak reps'
+  }
   const formatPartMarkValue = (part, value) => partIsTime(part) && !isDnfMark(value) ? formatSeconds(value) : (value ?? '')
   const parsePartMarkValue = (part, value) => {
     if (partIsTime(part)) return parseTimeInput(value)
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  const formatPartTiebreakValue = (part, value) => partTieBreakIsTime(part) ? formatSeconds(value) : (value ?? '')
+  const parsePartTiebreakValue = (part, value) => {
+    if (value === '' || value === null || value === undefined) return null
+    if (partTieBreakIsTime(part)) return parseTimeInput(value)
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : null
   }
@@ -4314,6 +4331,12 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'extra')) return marks[key].extra
     const existing = existingResultForPart(row, part)
     return existing?.extra ?? ''
+  }
+  const partTiebreakValue = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'tiebreak')) return marks[key].tiebreak
+    const existing = existingResultForPart(row, part)
+    return formatPartTiebreakValue(part, existing?.tiebreak)
   }
   const setPartResultField = (row, part, field, value) => {
     const key = partResultKey(part, row)
@@ -4367,6 +4390,10 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (capActive && extra === '') throw new Error(`Ingresa reps faltantes en ${part.score_key || part.nombre}. Usa 0 si termino justo en el cap.`)
     const parsedExtra = capActive ? Number(extra) : null
     if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) throw new Error(`Reps faltantes invalidas en ${part.score_key || part.nombre}`)
+    const partTieActive = partTieBreakActive(part)
+    const tiebreak = partTieActive && !dnfActive ? partTiebreakValue(row, part) : ''
+    const parsedTiebreak = !partTieActive || dnfActive || tiebreak === '' ? null : parsePartTiebreakValue(part, tiebreak)
+    if (partTieActive && !dnfActive && tiebreak !== '' && parsedTiebreak === null) throw new Error(partTieBreakIsTime(part) ? `Tiebreak invalido en ${part.score_key || part.nombre}. Usa MM:SS o HH:MM:SS` : `Tiebreak invalido en ${part.score_key || part.nombre}`)
     return {
       key,
       existing: existingResultForPart(row, part),
@@ -4377,7 +4404,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         team_id: row.team_id ? Number(row.team_id) : null,
         marca: parsedMark,
         extra: parsedExtra,
-        tiebreak: null,
+        tiebreak: partTieActive ? parsedTiebreak : null,
       },
     }
   }
@@ -4396,7 +4423,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           if (item.existing) {
             await api(`/results/${item.existing.id}`, {
               method: 'PUT',
-              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: null }),
+              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: item.payload.tiebreak }),
             })
           } else {
             await api('/results', { method: 'POST', body: JSON.stringify(item.payload) })
@@ -4497,7 +4524,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               const cap = partTimeCap(part)
               return (
                 <Pill key={part.id} tone={colors.accent}>
-                  {part.score_key || ''} · {partLabel(part)}{cap ? ` · Cap ${formatSeconds(cap)}` : ''} · {partLowerIsBetter(part) ? 'menor gana' : 'mayor gana'} · 100%
+                  {part.score_key || ''} · {partLabel(part)}{cap ? ` · Cap ${formatSeconds(cap)}` : ''} · {partLowerIsBetter(part) ? 'menor gana' : 'mayor gana'}{partTieBreakActive(part) ? ` · ${partTieBreakLabel(part)}` : ''} · 100%
                 </Pill>
               )
             })}
@@ -4530,6 +4557,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                         const cap = partTimeCap(part)
                         const capActive = isPartCap(row, part)
                         const dnfActive = isPartDnf(row, part) && !capActive
+                        const partTieActive = partTieBreakActive(part)
                         return (
                           <div key={part.id} style={{ border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: colors.surface, padding: 10, display: 'grid', gap: 9 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -4547,6 +4575,11 @@ function ResultsPanel({ bundle, reload, notify }) {
                               ) : null}
                               <Button onClick={() => setPartDnfResult(row, part)} tone={(cap ? capActive : dnfActive) ? 'danger' : 'default'}>{cap ? 'CAP' : 'DNF'}</Button>
                             </div>
+                            {partTieActive ? (
+                              <Field label={partTieBreakLabel(part)}>
+                                <input type={partTieBreakIsTime(part) ? 'text' : 'number'} step="1" style={inputStyle()} value={dnfActive ? '' : partTiebreakValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnfActive} placeholder={partTieBreakIsTime(part) ? '01:23' : 'Opcional'} onChange={(event) => setPartResultField(row, part, 'tiebreak', partTieBreakIsTime(part) ? formatTimeEntryInput(event.target.value) : event.target.value)} />
+                              </Field>
+                            ) : null}
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: colors.secondary, fontSize: 12 }}>
                               <span>Posicion {existing?.posicion ?? '-'}</span>
                               <span>Puntos {existing?.puntos ?? '-'}</span>

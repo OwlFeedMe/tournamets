@@ -89,6 +89,20 @@ def _phase_tiebreak_lower_is_better(phase: CompetitionPhase | None) -> bool:
     return method in {"for_time", "tiempo_hms", "tiempo", "posicion"}
 
 
+def _phase_tiebreak_config(session: Session, phase: CompetitionPhase | None) -> tuple[bool, bool]:
+    if phase is None:
+        return False, True
+    if bool(int(getattr(phase, "tie_break_enabled", 0) or 0)):
+        return True, _phase_tiebreak_lower_is_better(phase)
+    parent_id = int(getattr(phase, "parent_phase_id", 0) or 0)
+    if not parent_id:
+        return False, _phase_tiebreak_lower_is_better(phase)
+    parent = session.get(CompetitionPhase, parent_id)
+    if parent and bool(int(getattr(parent, "tie_break_enabled", 0) or 0)):
+        return True, _phase_tiebreak_lower_is_better(parent)
+    return False, _phase_tiebreak_lower_is_better(phase)
+
+
 def _phase_is_time(phase: CompetitionPhase | None) -> bool:
     if phase is None:
         return False
@@ -249,8 +263,7 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     if phase is not None and int(getattr(phase, "is_scoring_unit", 1) or 0) == 0:
         return
     lower_is_better = _phase_lower_is_better(phase, comp)
-    tiebreak_enabled = bool(int(getattr(phase, "tie_break_enabled", 0) or 0))
-    tiebreak_lower_is_better = _phase_tiebreak_lower_is_better(phase)
+    tiebreak_enabled, tiebreak_lower_is_better = _phase_tiebreak_config(session, phase)
 
     rows = session.exec(
         select(Result)
