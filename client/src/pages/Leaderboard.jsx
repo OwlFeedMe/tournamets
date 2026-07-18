@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { Bell, Check, CheckCircle2, ChevronDown, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -1275,6 +1275,7 @@ function CountdownClock({ timerData, tvMode, serverOffsetMs = 0 }) {
 // ── Main Leaderboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function Leaderboard() {
   const { competitionId } = useParams()
+  const [searchParams] = useSearchParams()
   const { session, displayName } = useAuth()
   const lockedCompetitionId = competitionId ? String(competitionId) : ''
   const [competitions, setCompetitions] = useState([])
@@ -1308,6 +1309,7 @@ export default function Leaderboard() {
   const phaseTransitionRef = useRef(null)
   const tvScrollContainerRef = useRef(null)
   const tvScrollContentRef = useRef(null)
+  const appliedDeepLinkRef = useRef('')
 
   // Detect if user is already logged in
   const loggedRole = session?.role || null
@@ -1548,6 +1550,44 @@ export default function Leaderboard() {
   useEffect(() => {
     setSelectedAthleteSummary(null)
   }, [selectedComp, tvMode])
+
+  useEffect(() => {
+    if (!data || tvMode || !selectedComp) return
+
+    const phaseParam = searchParams.get('phase')
+    const athleteParam = searchParams.get('athlete')
+    const teamParam = searchParams.get('team')
+    if (!phaseParam && !athleteParam && !teamParam) return
+
+    const deepLinkKey = `${selectedComp}|${searchParams.toString()}`
+    if (appliedDeepLinkRef.current === deepLinkKey) return
+    appliedDeepLinkRef.current = deepLinkKey
+
+    const linkedPhase = (data.phases || []).find((phase) => String(phase.id) === String(phaseParam)) || null
+
+    if (teamParam) {
+      const targetRows = linkedPhase?.teams || data.teams || []
+      const team = targetRows.find((row) => String(row.id) === String(teamParam))
+        || (data.teams || []).find((row) => String(row.id) === String(teamParam))
+      if (!team) return
+      setView('teams')
+      setTeamPhaseView(linkedPhase ? linkedPhase.id : 'total')
+      setTeamCategoryMode(team.team_category || 'Sin categoria')
+      return
+    }
+
+    if (athleteParam) {
+      const targetIndividual = linkedPhase?.individual || data.individual || {}
+      const athlete = allIndividualRows(targetIndividual).find((row) => String(row.id) === String(athleteParam))
+        || findTotalRowForAthlete(data, athleteParam)
+      if (!athlete) return
+      setView('individual')
+      setPhaseView(linkedPhase ? linkedPhase.id : 'total')
+      setSelectedCategory(athlete.categoria || 'Sin categoria')
+      const summary = buildAthleteSummary(athlete, data)
+      if (summary) setSelectedAthleteSummary(summary)
+    }
+  }, [data, searchParams, selectedComp, tvMode])
 
   // Only poll timer when TV mode actually needs it.
   useEffect(() => {
