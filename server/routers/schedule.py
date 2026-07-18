@@ -771,10 +771,6 @@ def _heat_reschedule_plan(
         if start_index < 0:
             raise HTTPException(400, "El heat inicial no pertenece a este WOD")
     selected = ordered[start_index:]
-    now = datetime.now(timezone.utc)
-    started = [heat for heat in selected if _as_utc(heat.start_at) and _as_utc(heat.start_at) <= now]
-    if started:
-        raise HTTPException(400, f"No se pueden reprogramar {len(started)} heats que ya iniciaron")
 
     duration_seconds = max(60, int(body.heat_duration_minutes or 15) * 60)
     if phase.time_cap_seconds and duration_seconds < int(phase.time_cap_seconds):
