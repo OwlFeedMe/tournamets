@@ -140,6 +140,49 @@ function appealStatusLabel(status) {
   return labels[status] || status || 'Sin estado'
 }
 
+function formatResultSeconds(totalSeconds) {
+  const n = Number(totalSeconds)
+  if (!Number.isFinite(n)) return ''
+  const secs = Math.max(0, Math.floor(n))
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  if (h > 0) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+function resultMetricLabel(result) {
+  const method = normalizeMeasurementMethod(result?.measurement_method, result?.tipo)
+  if (method === 'for_time') return 'Tiempo'
+  if (method === 'metros') return 'Metros'
+  if (method === 'rm' || method === 'kilogramos' || method === 'gramos' || method === 'libras') return 'Peso'
+  if (method === 'posicion') return 'Posicion'
+  return 'Marca'
+}
+
+function formatResultMark(result) {
+  const value = result?.marca
+  if (value == null || value === '') return ''
+  const method = normalizeMeasurementMethod(result?.measurement_method, result?.tipo)
+  if (method === 'for_time') return formatResultSeconds(value)
+  if (method === 'metros') return `${value} m`
+  if (method === 'rm' || method === 'kilogramos') return `${value} kg`
+  if (method === 'gramos') return `${value} g`
+  if (method === 'libras') return `${value} lb`
+  if (method === 'amrap' || method === 'emom' || method === 'repeticiones') return `${value} reps`
+  if (method === 'posicion') return `#${value}`
+  return String(value)
+}
+
+function resultAppealSummary(result) {
+  const parts = []
+  const mark = formatResultMark(result)
+  if (mark) parts.push(`${resultMetricLabel(result)}: ${mark}`)
+  if (result?.posicion) parts.push(`#${result.posicion}`)
+  if (result?.puntos != null) parts.push(`${result.puntos} pts`)
+  return parts.length ? parts.join(' · ') : 'Sin resultado'
+}
+
 const PUBLIC_PROFILE_TOGGLES = [
   ['public_profile_indexable', 'Indexacion', 'Permite que tu URL aparezca en busquedas externas.'],
   ['public_show_city', 'Ciudad', 'Muestra tu ciudad y pais en la ficha publica.'],
@@ -653,26 +696,36 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
                   const deadline = appealDeadline?.(r)
                   const appealExpired = !!deadline && Date.now() > deadline.getTime() && !r.active_appeal_id
                   const deadlineLabel = deadline ? deadline.toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : null
+                  const resultSummary = resultAppealSummary(r)
                   return (
                   <div key={r.id} style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 8, border: `1px solid ${modalColors.border}`, background: modalColors.surface }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 800, fontSize: 13, color: modalColors.text }}>{r.fase || 'Sin fase'}</div>
                       {r.equipo && <div style={{ fontSize: 11, color: modalColors.secondary, marginTop: 2 }}>Equipo: {r.equipo}</div>}
                       {resultAppeal ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenAppealThread?.(r, resultAppeal)}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: `1px solid ${['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.28)' : 'rgba(0,194,168,0.28)'}`, background: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.10)' : 'rgba(0,194,168,0.12)', color: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? modalColors.secondary : modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
-                        >
-                          <MessageSquare size={12} /> Ver reclamacion · {appealStatusLabel(resultAppeal.status)}
-                        </button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => onOpenAppealThread?.(r, resultAppeal)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 999, border: `1px solid ${['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.28)' : 'rgba(0,194,168,0.28)'}`, background: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? 'rgba(170,178,192,0.10)' : 'rgba(0,194,168,0.12)', color: ['rejected', 'score_adjusted', 'accepted', 'closed', 'cancelled'].includes(resultAppeal.status) ? modalColors.secondary : modalColors.accent, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                          >
+                            <MessageSquare size={12} /> Ver reclamacion · {appealStatusLabel(resultAppeal.status)}
+                          </button>
+                          <span style={{ color: modalColors.secondary, fontSize: 11, fontWeight: 750 }}>{resultSummary}</span>
+                        </div>
                       ) : canAppealResult?.(r) ? (
-                        <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ marginTop: 8, border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
-                          Apelar resultado
-                        </button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                          <button type="button" className="btn-secondary btn-sm" onClick={() => onAppealResult?.(r)} style={{ border: `1px solid rgba(255,107,0,0.34)`, background: 'rgba(255,107,0,0.12)', color: modalColors.text }}>
+                            Apelar resultado
+                          </button>
+                          <span style={{ color: modalColors.secondary, fontSize: 11, fontWeight: 750 }}>{resultSummary}</span>
+                        </div>
                       ) : appealExpired ? (
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 8, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', color: '#F59E0B', fontSize: 11, fontWeight: 800 }}>
-                          <Clock3 size={12} /> Plazo vencido desde {deadlineLabel}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 8px', borderRadius: 999, border: '1px solid rgba(245,158,11,0.30)', background: 'rgba(245,158,11,0.10)', color: '#F59E0B', fontSize: 11, fontWeight: 800 }}>
+                            <Clock3 size={12} /> Plazo vencido desde {deadlineLabel}
+                          </span>
+                          <span style={{ color: modalColors.secondary, fontSize: 11, fontWeight: 750 }}>{resultSummary}</span>
                         </div>
                       ) : null}
                     </div>
@@ -1566,7 +1619,7 @@ export default function ParticipantProfile() {
             </div>
             <form onSubmit={submitAppeal} style={{ overflowY: 'auto', padding: 18, display: 'grid', gap: 12 }}>
               <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: 12, color: '#D7DEE8', fontSize: 13 }}>
-                Resultado actual: <b style={{ color: '#F5F7FA' }}>{appealTarget.posicion ? `#${appealTarget.posicion}` : appealTarget.puntos}</b>
+                Resultado actual: <b style={{ color: '#F5F7FA' }}>{resultAppealSummary(appealTarget)}</b>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Resultado solicitado</label>
