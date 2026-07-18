@@ -51,6 +51,14 @@ class ScheduleHeatGenerationContractTests(unittest.TestCase):
         self.assertIn("No puedes programar heats solapados", source)
         self.assertIn("ignore_heat_ids", source)
 
+    def test_backend_reflows_following_heats_after_manual_delete(self):
+        source = SCHEDULE_ROUTER_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("_reflow_phase_heats_after_delete", source)
+        self.assertIn("_transition_seconds_between", source)
+        self.assertIn("_phase_schedule_bounds", source)
+        self.assertIn("_reflow_phase_heats_after_delete(session, competition_id, phase, heat)", source)
+
 
 if __name__ == "__main__":
     unittest.main()

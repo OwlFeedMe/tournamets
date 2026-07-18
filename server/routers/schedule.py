@@ -737,6 +737,122 @@ def _raise_heat_location_conflict(conflicts: list[dict]) -> None:
     )
 
 
+def _phase_schedule_bounds(heats: list[CompetitionHeat]) -> tuple[datetime | None, datetime | None]:
+    starts = [_as_utc(heat.start_at) for heat in heats if _as_utc(heat.start_at)]
+    ends = [_as_utc(heat.end_at) for heat in heats if _as_utc(heat.end_at)]
+    return (min(starts) if starts else None, max(ends) if ends else None)
+
+
+def _heat_duration_seconds(heat: CompetitionHeat, phase: CompetitionPhase) -> int:
+    start_at = _as_utc(heat.start_at)
+    end_at = _as_utc(heat.end_at)
+    if start_at and end_at and end_at > start_at:
+        return max(60, int((end_at - start_at).total_seconds()))
+    return max(60, int(getattr(phase, "heat_duration_seconds", 900) or 900))
+
+
+def _transition_seconds_between(previous_heat: CompetitionHeat | None, next_heat: CompetitionHeat, phase: CompetitionPhase) -> int:
+    if previous_heat is None:
+        return 0
+    heat_gap = _normalize_transition_seconds(
+        getattr(previous_heat, "heat_transition_seconds", None) or getattr(phase, "heat_transition_seconds", 0)
+    )
+    category_gap = _normalize_transition_seconds(
+        getattr(previous_heat, "category_transition_seconds", None) or getattr(phase, "category_transition_seconds", 0)
+    )
+    previous_category = _normalize_category_label(previous_heat.categoria).lower()
+    next_category = _normalize_category_label(next_heat.categoria).lower()
+    if previous_category != next_category and category_gap > heat_gap:
+        return category_gap
+    return heat_gap
+
+
+def _reflow_phase_heats_after_delete(
+    session: Session,
+    competition_id: int,
+    phase: CompetitionPhase,
+    deleted_heat: CompetitionHeat,
+) -> int:
+    deleted_start = _as_utc(deleted_heat.start_at)
+    phase_heats = session.exec(
+        select(CompetitionHeat)
+        .where(
+            CompetitionHeat.competition_id == int(competition_id),
+            CompetitionHeat.phase_id == int(deleted_heat.phase_id),
+            CompetitionHeat.id != int(deleted_heat.id),
+        )
+        .order_by(CompetitionHeat.start_at, CompetitionHeat.heat_number, CompetitionHeat.id)
+    ).all()
+    if not phase_heats:
+        phase.start_at = None
+        phase.end_at = None
+        session.add(phase)
+        return 0
+    if not deleted_start:
+        phase.start_at, phase.end_at = _phase_schedule_bounds(phase_heats)
+        session.add(phase)
+        return 0
+
+    def is_after_deleted(heat: CompetitionHeat) -> bool:
+        start_at = _as_utc(heat.start_at)
+        if not start_at:
+            return False
+        if start_at > deleted_start:
+            return True
+        if start_at == deleted_start:
+            return int(heat.heat_number or 0) > int(deleted_heat.heat_number or 0) or int(heat.id or 0) > int(deleted_heat.id or 0)
+        return False
+
+    following = [heat for heat in phase_heats if is_after_deleted(heat)]
+    if not following:
+        phase.start_at, phase.end_at = _phase_schedule_bounds(phase_heats)
+        session.add(phase)
+        return 0
+
+    cursor = deleted_start
+    previous_heat: CompetitionHeat | None = None
+    changes: list[dict] = []
+    for heat in following:
+        cursor = cursor + timedelta(seconds=_transition_seconds_between(previous_heat, heat, phase))
+        duration_seconds = _heat_duration_seconds(heat, phase)
+        next_start = cursor
+        next_end = next_start + timedelta(seconds=duration_seconds)
+        changes.append({
+            "heat": heat,
+            "start_at": next_start,
+            "end_at": next_end,
+        })
+        cursor = next_end
+        previous_heat = heat
+
+    proposed_ranges = [
+        _proposed_heat_schedule_range(
+            heat_id=int(item["heat"].id),
+            label=_heat_schedule_label(item["heat"]),
+            location_name=item["heat"].location_name,
+            start_at=item["start_at"],
+            end_at=item["end_at"],
+        )
+        for item in changes
+    ]
+    _raise_heat_location_conflict(_find_heat_location_conflicts(
+        session,
+        competition_id,
+        [item for item in proposed_ranges if item],
+        ignore_heat_ids={int(deleted_heat.id), *[int(item["heat"].id) for item in changes]},
+    ))
+
+    for item in changes:
+        heat = item["heat"]
+        heat.start_at = item["start_at"]
+        heat.end_at = item["end_at"]
+        session.add(heat)
+
+    phase.start_at, phase.end_at = _phase_schedule_bounds(phase_heats)
+    session.add(phase)
+    return len(changes)
+
+
 def _heat_reschedule_plan(
     session: Session,
     competition: Competition,
@@ -771,10 +887,6 @@ def _heat_reschedule_plan(
         if start_index < 0:
             raise HTTPException(400, "El heat inicial no pertenece a este WOD")
     selected = ordered[start_index:]
-    now = datetime.now(timezone.utc)
-    started = [heat for heat in selected if _as_utc(heat.start_at) and _as_utc(heat.start_at) <= now]
-    if started:
-        raise HTTPException(400, f"No se pueden reprogramar {len(started)} heats que ya iniciaron")
 
     duration_seconds = max(60, int(body.heat_duration_minutes or 15) * 60)
     if phase.time_cap_seconds and duration_seconds < int(phase.time_cap_seconds):
@@ -1284,6 +1396,9 @@ def delete_heat(
     heat = session.get(CompetitionHeat, heat_id)
     if not heat or int(heat.competition_id) != int(competition_id):
         raise HTTPException(404, "Heat no encontrado")
+    phase = session.get(CompetitionPhase, heat.phase_id)
+    if phase and int(phase.competition_id) == int(competition_id):
+        _reflow_phase_heats_after_delete(session, competition_id, phase, heat)
     session.delete(heat)
     session.commit()
 
