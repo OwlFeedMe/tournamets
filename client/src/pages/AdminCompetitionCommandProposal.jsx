@@ -1427,7 +1427,7 @@ function RegistrationPanel({ bundle, reload, notify }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <ModuleTabs items={modules} active={section} onChange={setSection} />
       {section === 'status' && (
-      <Panel title="Estado de registro" subtitle="Publicacion e inscripciones." action={<Button tone="primary" primaryAction onClick={() => toggle({ enrollment_open: competition.enrollment_open ? 0 : 1 }, competition.enrollment_open ? 'Inscripciones cerradas' : 'Inscripciones abiertas')} disabled={!competition.activa}>{competition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}</Button>}>
+      <Panel title="Estado de registro" subtitle="Publicacion e inscripciones." action={<Button tone="primary" primaryAction onClick={() => toggle({ enrollment_open: competition.enrollment_open ? 0 : 1 }, competition.enrollment_open ? 'Inscripciones cerradas' : 'Inscripciones abiertas')}>{competition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}</Button>}>
         <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
           <MiniStat label="Publicada" value={competition.activa ? 'Si' : 'No'} tone={competition.activa ? colors.success : colors.warning} />
           <MiniStat label="Inscripciones" value={competition.enrollment_open ? 'Abiertas' : 'Cerradas'} tone={competition.enrollment_open ? colors.accent : colors.muted} />
@@ -1440,6 +1440,11 @@ function RegistrationPanel({ bundle, reload, notify }) {
           <Button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/competitions/${competition.slug || competition.id}`)}>Copiar link publico</Button>
           <Link to={`/competitions/${competition.slug || competition.id}`} target="_blank" style={{ textDecoration: 'none' }}><Button><Eye size={16} />Vista publica</Button></Link>
         </div>
+        {!competition.activa && competition.enrollment_open ? (
+          <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, color: colors.secondary, fontSize: 12 }}>
+            La competencia no esta publicada; solo podran entrar quienes tengan un enlace directo valido.
+          </div>
+        ) : null}
       </Panel>
       )}
       {section === 'categories' && <CategoryEditor bundle={bundle} reload={reload} notify={notify} />}
@@ -3394,18 +3399,34 @@ function HeatsPanel({ bundle, reload, notify }) {
 
 function TeamsPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
-  const [draft, setDraft] = useState({ nombre: '', member_ids: [], team_category_id: '' })
+  const [draft, setDraft] = useState({ nombre: '', member_ids: [], team_category_id: '', create_join_link: 1 })
   const [modalOpen, setModalOpen] = useState(false)
+  const confirmedParticipants = useMemo(
+    () => (bundle.participants || []).filter((p) => p.estado === 'confirmado'),
+    [bundle.participants],
+  )
+  const teamCategories = useMemo(
+    () => (bundle.categories || []).filter((cat) => String(cat.modality).includes('team')),
+    [bundle.categories],
+  )
+  const teamSize = Math.max(1, Number(competition.team_size || 2))
+  const selectedCount = draft.member_ids.length
+  const openSlots = Math.max(0, teamSize - selectedCount)
+  const canCreate = !draft.create_join_link || !!draft.team_category_id
   const toggleMember = (id) => setDraft((prev) => {
     const exists = prev.member_ids.includes(id)
-    const next = exists ? prev.member_ids.filter((item) => item !== id) : [...prev.member_ids, id].slice(0, competition.team_size || 2)
+    const next = exists ? prev.member_ids.filter((item) => item !== id) : [...prev.member_ids, id].slice(0, teamSize)
     return { ...prev, member_ids: next }
   })
   const create = async () => {
+    if (!canCreate) {
+      notify('Selecciona una categoria de equipo para generar el enlace', 'error')
+      return
+    }
     try {
-      await api('/teams', { method: 'POST', body: JSON.stringify({ nombre: draft.nombre, competition_id: competition.id, member_ids: draft.member_ids, team_category_id: draft.team_category_id ? Number(draft.team_category_id) : null }) })
+      await api('/teams', { method: 'POST', body: JSON.stringify({ nombre: draft.nombre, competition_id: competition.id, member_ids: draft.member_ids, team_category_id: draft.team_category_id ? Number(draft.team_category_id) : null, allow_incomplete: draft.create_join_link ? 1 : 0, create_join_link: draft.create_join_link ? 1 : 0 }) })
       notify('Equipo creado')
-      setDraft({ nombre: '', member_ids: [], team_category_id: '' })
+      setDraft({ nombre: '', member_ids: [], team_category_id: '', create_join_link: 1 })
       setModalOpen(false)
       await reload()
     } catch (error) {

@@ -320,6 +320,8 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             COUNT(r.id)::int                AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
+            MIN(r.extra)                    AS min_extra,
+            MAX(r.extra)                    AS max_extra,
             MIN(r.posicion)                 AS best_position,
             (COUNT(ra.id) > 0)              AS has_active_appeal
         FROM results r
@@ -340,6 +342,8 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             "count": int(r["cnt"] or 0),
             "min": int(r["min_mark"]) if r["min_mark"] is not None else None,
             "max": int(r["max_mark"]) if r["max_mark"] is not None else None,
+            "min_extra": int(r["min_extra"]) if r["min_extra"] is not None else None,
+            "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
         }

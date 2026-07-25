@@ -550,6 +550,31 @@ class TeamInvitation(SQLModel, table=True):
     )
 
 
+class TeamJoinLink(SQLModel, table=True):
+    __tablename__ = "team_join_links"
+    __table_args__ = (
+        UniqueConstraint("token", name="uq_team_join_links_token"),
+        Index("ix_team_join_links_team", "team_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    team_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    )
+    token: str = Field(index=True)
+    max_uses: int = Field(default=1)
+    used_count: int = Field(default=0)
+    active: int = Field(default=1)
+    created_by_user_id: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, ForeignKey("participants.id", ondelete="SET NULL"), nullable=True),
+    )
+    created_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), server_default=func.now()),
+    )
+
+
 class TeamMember(SQLModel, table=True):
     __tablename__ = "team_members"
 
@@ -868,6 +893,7 @@ class CompetitionPaymentIntent(SQLModel, table=True):
         sa_column=Column(Integer, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     categoria: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    team_join_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
     enrollment_answers: Optional[str] = None
     payment_provider: str = Field(default="bold")
     payment_reference: str = Field(index=True, unique=True)
@@ -1962,6 +1988,8 @@ class TeamCreate(SQLModel):
     captain_id: Optional[int] = None
     user_id: Optional[int] = None
     team_category_id: Optional[int] = None
+    allow_incomplete: int = 0
+    create_join_link: int = 0
 
 
 class TeamUpdate(SQLModel):
@@ -2239,6 +2267,7 @@ class EnrollmentAnswerItem(SQLModel):
 
 class SelfEnrollRequest(SQLModel):
     categoria: Optional[str] = None
+    team_join_token: Optional[str] = None
     answers: Optional[List[EnrollmentAnswerItem]] = None
     payment_receipt_url: Optional[str] = None
     terms_accepted: int = 0

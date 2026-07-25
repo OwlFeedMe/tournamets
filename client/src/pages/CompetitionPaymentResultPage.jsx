@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, CheckCircle2, Clock3, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock3, Copy, XCircle } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
@@ -66,6 +66,8 @@ export default function CompetitionPaymentResultPage() {
   const [searchParams] = useSearchParams()
   const [competition, setCompetition] = useState(null)
   const [syncState, setSyncState] = useState({ loading: true, status: 'pending', enrollmentState: null, reference: '', tx: '', error: '' })
+  const [teamJoinLink, setTeamJoinLink] = useState(null)
+  const [copyMsg, setCopyMsg] = useState('')
 
   const boldOrderId = searchParams.get('bold-order-id') || ''
   const boldTxStatus = searchParams.get('bold-tx-status') || ''
@@ -108,6 +110,7 @@ export default function CompetitionPaymentResultPage() {
           tx: data?.payment_transaction_id || '',
           error: '',
         })
+        setTeamJoinLink(data?.team_join_link?.url ? data.team_join_link : null)
       } catch (err) {
         if (!active) return
         setSyncState({
@@ -127,6 +130,15 @@ export default function CompetitionPaymentResultPage() {
   const effectiveStatus = useMemo(() => normalizeStatus(syncState.status), [syncState.status])
   const copy = statusCopy(effectiveStatus, syncState.enrollmentState)
   const StatusIcon = copy.icon
+  const copyTeamJoinLink = async () => {
+    if (!teamJoinLink?.url) return
+    try {
+      await navigator.clipboard.writeText(teamJoinLink.url)
+      setCopyMsg('Enlace copiado.')
+    } catch {
+      setCopyMsg('No se pudo copiar el enlace.')
+    }
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: '#F5F7FA' }}>
@@ -168,6 +180,22 @@ export default function CompetitionPaymentResultPage() {
           {syncState.error ? (
             <div className="fr-cut-card" style={{ border: '1px solid rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
               {syncState.error}
+            </div>
+          ) : null}
+
+          {teamJoinLink?.url ? (
+            <div className="fr-cut-card" style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', padding: 14, display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 800 }}>Enlace para integrantes</div>
+                <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>Usos restantes: {teamJoinLink.remaining_uses}. Comparte este enlace para completar tu equipo.</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ flex: 1, minWidth: 220, wordBreak: 'break-all', border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#090B0E', color: '#D7DEE8', fontSize: 12 }}>{teamJoinLink.url}</div>
+                <button type="button" className="btn-secondary" onClick={copyTeamJoinLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Copy size={14} /> Copiar
+                </button>
+              </div>
+              {copyMsg ? <div style={{ color: '#AAB2C0', fontSize: 12 }}>{copyMsg}</div> : null}
             </div>
           ) : null}
 
