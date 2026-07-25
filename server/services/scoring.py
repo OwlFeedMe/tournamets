@@ -210,10 +210,12 @@ def compute_result_points(
     competition: Any,
     phase: Any = None,
 ) -> int:
-    if mark in DNF_MARKS:
-        return 0
     config = phase_scoring_config(competition, phase)
     system = config["system"]
+    # A DNF must remain a penalty in placement scoring. Returning zero here
+    # would incorrectly make it the best possible result when lower totals win.
+    if mark in DNF_MARKS and system != SCORING_SYSTEM_PLACEMENT:
+        return 0
     if system == SCORING_SYSTEM_PLACEMENT:
         base = int(position)
     elif system == SCORING_SYSTEM_FIXED_TABLE:
@@ -227,6 +229,20 @@ def compute_result_points(
     else:
         base = max(0, int(total_ranked) - int(position) + 1)
     return int(round(base * int(config["weight_percent"]) / 100))
+
+
+def compute_missing_result_points(
+    *,
+    field_size: int,
+    competition: Any,
+    phase: Any = None,
+) -> int:
+    """Return the last-place-plus-one penalty for an explicit DNS."""
+    config = phase_scoring_config(competition, phase)
+    if config["system"] != SCORING_SYSTEM_PLACEMENT:
+        return 0
+    penalty_position = max(0, int(field_size)) + 1
+    return int(round(penalty_position * int(config["weight_percent"]) / 100))
 
 
 def scoring_summary_payload(competition: Any, phases: list[Any] | None = None, results_count: int = 0) -> dict:

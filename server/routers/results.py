@@ -21,6 +21,7 @@ from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.result_notifications import notify_result_saved
 from services.scoring import (
+    compute_missing_result_points,
     compute_result_points,
     normalize_scoring_scope,
 )
@@ -315,8 +316,13 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
             category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
             entities_by_category.setdefault(category, []).append((team_id, team_mark, team_extra, team_tiebreak, items))
 
+        field_size_by_category: dict[str, int] = {}
+        for team_id in grouped:
+            category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
+            field_size_by_category[category] = field_size_by_category.get(category, 0) + 1
+
         ranked_team_ids = set()
-        for category_entities in entities_by_category.values():
+        for category, category_entities in entities_by_category.items():
             total = len(category_entities)
             for position, positioned_items in _ranked_position_groups(
                 category_entities,
@@ -343,9 +349,16 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
         for team_id, items in grouped.items():
             if team_id in ranked_team_ids:
                 continue
+            category = team_category.get(team_id, "Sin categoria") if rank_by_category else "__global__"
+            is_dns = any((getattr(r, "result_status", "") or "").strip().lower() == "dns" for r in items)
+            penalty = compute_missing_result_points(
+                field_size=field_size_by_category.get(category, len(grouped)),
+                competition=comp,
+                phase=phase,
+            ) if is_dns else 0
             for r in items:
                 r.posicion = None
-                r.puntos = 0
+                r.puntos = penalty
                 session.add(r)
 
         # Keep legacy non-team rows harmless in this mode.
@@ -359,19 +372,25 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
     with_metric = [r for r in rows if r.marca is not None]
     without_metric = [r for r in rows if r.marca is None]
     if rank_by_category:
-        participant_ids = {int(r.user_id) for r in with_metric if r.user_id is not None}
-        team_ids = {int(r.team_id) for r in with_metric if r.team_id is not None and r.user_id is None}
+        participant_ids = {int(r.user_id) for r in rows if r.user_id is not None}
+        team_ids = {int(r.team_id) for r in rows if r.team_id is not None and r.user_id is None}
         participant_category = _participant_categories_map(session, competition_id, participant_ids)
         team_category = _team_categories_map(session, competition_id, team_ids)
 
         grouped_rows: dict[str, list[Result]] = {}
-        for r in with_metric:
+        row_category: dict[int, str] = {}
+        field_size_by_category: dict[str, int] = {}
+        for r in rows:
             if r.user_id is not None:
                 category = participant_category.get(int(r.user_id), "Sin categoria")
             elif r.team_id is not None:
                 category = team_category.get(int(r.team_id), "Sin categoria")
             else:
                 category = "Sin categoria"
+            row_category[id(r)] = category
+            field_size_by_category[category] = field_size_by_category.get(category, 0) + 1
+        for r in with_metric:
+            category = row_category[id(r)]
             grouped_rows.setdefault(category, []).append(r)
 
         for category_rows in grouped_rows.values():
@@ -417,8 +436,18 @@ def _recompute_phase_positions_and_points(session: Session, competition_id: int,
                 r.puntos = int(pts)
                 session.add(r)
     for r in without_metric:
+        is_dns = (getattr(r, "result_status", "") or "").strip().lower() == "dns"
+        if rank_by_category:
+            category = row_category[id(r)]
+            field_size = field_size_by_category.get(category, 0)
+        else:
+            field_size = len(rows)
         r.posicion = None
-        r.puntos = 0
+        r.puntos = compute_missing_result_points(
+            field_size=field_size,
+            competition=comp,
+            phase=phase,
+        ) if is_dns else 0
         session.add(r)
 
 

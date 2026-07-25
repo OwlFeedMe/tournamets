@@ -10,6 +10,7 @@ if str(SERVER_PATH) not in sys.path:
 
 from services.scoring import (
     auto_table_points,
+    compute_missing_result_points,
     compute_result_points,
     competition_total_lower_is_better,
     normalize_point_step,
@@ -128,6 +129,27 @@ class ScoringServiceTest(unittest.TestCase):
         comp = competition(scoring_system="cumulative")
 
         points = compute_result_points(position=10, total_ranked=10, mark=2147483647, competition=comp)
+
+        self.assertEqual(points, 0)
+
+    def test_dnf_keeps_last_place_penalty_when_lower_total_wins(self):
+        comp = competition(scoring_system="placement")
+
+        points = compute_result_points(position=10, total_ranked=10, mark=2147483647, competition=comp)
+
+        self.assertEqual(points, 10)
+
+    def test_dns_gets_last_place_plus_one_in_placement_scoring(self):
+        comp = competition(scoring_system="placement")
+
+        points = compute_missing_result_points(field_size=10, competition=comp)
+
+        self.assertEqual(points, 11)
+
+    def test_dns_stays_zero_in_higher_points_scoring(self):
+        comp = competition(scoring_system="dynamic_points")
+
+        points = compute_missing_result_points(field_size=10, competition=comp)
 
         self.assertEqual(points, 0)
 
