@@ -296,6 +296,71 @@ def _leaderboard_seed_map(session: Session, competition_id: int, phase: Competit
     return out
 
 
+def _is_team_phase(phase: CompetitionPhase) -> bool:
+    return str(getattr(phase, "modality", "") or "").strip().lower() in {"teams", "team", "equipo", "equipos"}
+
+
+def _team_leaderboard_seed_map(session: Session, competition_id: int, phase: CompetitionPhase, categoria: str | None) -> dict[int, dict]:
+    previous_phases = session.exec(
+        select(CompetitionPhase)
+        .where(CompetitionPhase.competition_id == competition_id, CompetitionPhase.modality == phase.modality)
+    ).all()
+    previous_ids = [
+        int(item.id)
+        for item in previous_phases
+        if item.id is not None and _phase_sort_key(item) < _phase_sort_key(phase)
+    ]
+    if not previous_ids:
+        return {}
+
+    result_rows = session.exec(
+        select(Result).where(
+            Result.competition_id == competition_id,
+            Result.team_id.is_not(None),
+            Result.phase_id.in_(previous_ids),
+        )
+    ).all()
+    if not result_rows:
+        return {}
+
+    team_ids = {int(row.team_id) for row in result_rows if row.team_id is not None}
+    team_map = {
+        int(item.id): item
+        for item in session.exec(select(Team).where(Team.id.in_(team_ids))).all()
+        if item.id is not None
+    }
+    category_ids = {int(team.team_category_id) for team in team_map.values() if team.team_category_id}
+    category_map = {
+        int(item.id): item
+        for item in session.exec(select(CompetitionCategory).where(CompetitionCategory.id.in_(category_ids))).all()
+        if item.id is not None
+    } if category_ids else {}
+
+    out: dict[int, dict] = {}
+    target_category = (categoria or "").strip().lower()
+    for row in result_rows:
+        team_id = int(row.team_id)
+        team = team_map.get(team_id)
+        category = category_map.get(int(team.team_category_id)) if team and team.team_category_id else None
+        cat = str(category.nombre if category else "").strip()
+        if target_category and cat.lower() != target_category:
+            continue
+        current = out.setdefault(
+            team_id,
+            {
+                "total_points": 0,
+                "best_position": 999999,
+                "enrolled_at": team.created_at if team else row.created_at,
+            },
+        )
+        current["total_points"] += int(row.puntos or 0)
+        current["best_position"] = min(current["best_position"], int(row.posicion or 999999))
+        enrolled_at = team.created_at if team else row.created_at
+        if current["enrolled_at"] is None or (enrolled_at is not None and enrolled_at < current["enrolled_at"]):
+            current["enrolled_at"] = enrolled_at
+    return out
+
+
 def _eligible_participants(session: Session, competition_id: int, categoria: str | None) -> list[dict]:
     rows = session.execute(
         text(
@@ -332,7 +397,70 @@ def _eligible_participants(session: Session, competition_id: int, categoria: str
     return items
 
 
+def _eligible_teams(session: Session, competition_id: int, categoria: str | None) -> list[dict]:
+    teams = session.exec(
+        select(Team)
+        .where(Team.competition_id == competition_id)
+        .order_by(Team.created_at, Team.id)
+    ).all()
+    if not teams:
+        return []
+
+    category_ids = {int(team.team_category_id) for team in teams if team.team_category_id}
+    category_map = {
+        int(item.id): item
+        for item in session.exec(select(CompetitionCategory).where(CompetitionCategory.id.in_(category_ids))).all()
+        if item.id is not None
+    } if category_ids else {}
+    target_category = (categoria or "").strip().lower()
+    items = []
+    for team in teams:
+        category = category_map.get(int(team.team_category_id)) if team.team_category_id else None
+        row_category = str(category.nombre if category else "").strip()
+        if target_category and row_category.lower() != target_category:
+            continue
+        items.append(
+            {
+                "team_id": int(team.id),
+                "name": team.nombre,
+                "categoria": row_category,
+                "inscrito_at": team.created_at,
+            }
+        )
+    return items
+
+
 def _seed_entries_for_phase(session: Session, competition_id: int, phase: CompetitionPhase, categoria: str | None, seed_mode: str | None = None) -> list[dict]:
+    if _is_team_phase(phase):
+        items = _eligible_teams(session, competition_id, categoria)
+        resolved_seed_mode = _resolve_seed_mode(session, competition_id, phase, seed_mode)
+        if resolved_seed_mode == "registration":
+            return items
+
+        seed_map = _team_leaderboard_seed_map(session, competition_id, phase, categoria)
+        enriched = [
+            {
+                **item,
+                "seed_points": seed_map.get(item["team_id"], {}).get("total_points"),
+                "seed_position": (
+                    seed_map.get(item["team_id"], {}).get("best_position")
+                    if seed_map.get(item["team_id"], {}).get("best_position") != 999999
+                    else None
+                ),
+            }
+            for item in items
+        ]
+        return sorted(
+            enriched,
+            key=lambda item: (
+                0 if item["team_id"] in seed_map else 1,
+                -(seed_map.get(item["team_id"], {}).get("total_points", -999999)),
+                seed_map.get(item["team_id"], {}).get("best_position", 999999),
+                seed_map.get(item["team_id"], {}).get("enrolled_at") or item["inscrito_at"] or datetime.max.replace(tzinfo=timezone.utc),
+                item["team_id"],
+            ),
+        )
+
     items = _eligible_participants(session, competition_id, categoria)
     resolved_seed_mode = _resolve_seed_mode(session, competition_id, phase, seed_mode)
     if resolved_seed_mode == "registration":
@@ -1075,7 +1203,7 @@ def _build_generation_plan(
     seed_mode = "leaderboard" if advance_limit else _resolve_seed_mode(session, competition_id, phase, body.seed_mode)
     all_entries = _seed_entries_for_phase(session, competition_id, phase, None, seed_mode)
     if not all_entries:
-        raise HTTPException(400, "No hay participantes confirmados para generar heats")
+        raise HTTPException(400, "No hay equipos creados para generar heats" if _is_team_phase(phase) else "No hay participantes confirmados para generar heats")
     order_map = _category_order_map(session, competition_id, phase.modality)
 
     if mode == "by_category":
@@ -1103,7 +1231,7 @@ def _build_generation_plan(
         })
 
     if not plan_items:
-        raise HTTPException(400, "No hay participantes confirmados para generar heats")
+        raise HTTPException(400, "No hay equipos creados para generar heats" if _is_team_phase(phase) else "No hay participantes confirmados para generar heats")
 
     return phase, mode, plan_items, {
         "lane_count": lane_count,
@@ -1166,7 +1294,8 @@ def _build_heat_generation_preview(
                 "location_detail": (body.location_detail or "").strip() or None,
                 "participants": [
                     {
-                        "user_id": int(entry["user_id"]),
+                        "user_id": int(entry["user_id"]) if entry.get("user_id") is not None else None,
+                        "team_id": int(entry["team_id"]) if entry.get("team_id") is not None else None,
                         "name": entry.get("name") or "Atleta",
                         "categoria": entry.get("categoria"),
                         "lane_number": lane_order[seed_index] if seed_index < len(lane_order) else seed_index + 1,
@@ -1711,7 +1840,8 @@ def generate_heats(
                 lane_number = lane_order[seed_index] if seed_index < len(lane_order) else seed_index + 1
                 assignments.append(
                     HeatAssignmentInput(
-                        user_id=int(entry["user_id"]),
+                        user_id=int(entry["user_id"]) if entry.get("user_id") is not None else None,
+                        team_id=int(entry["team_id"]) if entry.get("team_id") is not None else None,
                         lane_number=lane_number,
                         seed_order=seed_index + 1,
                     )
