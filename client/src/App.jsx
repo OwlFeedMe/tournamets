@@ -97,6 +97,7 @@ export default function App() {
               <Route path="/competitions/:competitionId/inscritos" element={<CompetitionPublicRosterPage />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
+              <Route path="/competitions/:competitionId/register/team/:teamToken" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />
               <Route path="/competitions/:competitionId/tickets" element={<CompetitionTicketsPage />} />
               <Route path="/competitions/:competitionId/tickets/payment-result" element={<CompetitionTicketsPaymentResultPage />} />

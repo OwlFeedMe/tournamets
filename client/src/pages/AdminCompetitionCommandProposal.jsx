@@ -987,12 +987,12 @@ function IdentityPanel({ bundle, reload, notify }) {
       </Panel>
 
       <Panel title="Imagenes" subtitle="El backend soporta imagen de perfil y banner. Si ya existen, se ven aqui.">
-        <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+        <div className="fr-form-grid fr-image-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
           {[
             ['profile', 'Imagen perfil', profileUrl, 'Cuadrada para tarjetas y encabezados.'],
             ['banner', 'Banner', bannerUrl, 'Imagen ancha para landing y portada.'],
           ].map(([type, label, url, help]) => (
-            <div key={type} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10 }}>
+            <div className="fr-image-card" key={type} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10, minWidth: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 900 }}>{label}</div>
@@ -1001,9 +1001,9 @@ function IdentityPanel({ bundle, reload, notify }) {
                 <Pill tone={url ? colors.success : colors.warning}>{url ? 'Cargada' : 'Pendiente'}</Pill>
               </div>
               {url ? (
-                <img src={url} alt={label} style={{ width: '100%', aspectRatio: type === 'profile' ? '1 / 1' : '16 / 7', objectFit: 'cover', borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg }} />
+                <img className="fr-image-preview" src={url} alt={label} style={{ width: '100%', maxWidth: '100%', aspectRatio: type === 'profile' ? '1 / 1' : '16 / 7', objectFit: 'cover', borderRadius: 8, border: `1px solid ${colors.border}`, background: colors.bg, display: 'block' }} />
               ) : (
-                <div style={{ width: '100%', aspectRatio: type === 'profile' ? '1 / 1' : '16 / 7', borderRadius: 8, border: `1px dashed ${colors.border}`, display: 'grid', placeItems: 'center', color: colors.muted, background: colors.bg }}>
+                <div className="fr-image-preview" style={{ width: '100%', maxWidth: '100%', aspectRatio: type === 'profile' ? '1 / 1' : '16 / 7', borderRadius: 8, border: `1px dashed ${colors.border}`, display: 'grid', placeItems: 'center', color: colors.muted, background: colors.bg }}>
                   Sin imagen
                 </div>
               )}
@@ -1427,7 +1427,7 @@ function RegistrationPanel({ bundle, reload, notify }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <ModuleTabs items={modules} active={section} onChange={setSection} />
       {section === 'status' && (
-      <Panel title="Estado de registro" subtitle="Publicacion e inscripciones." action={<Button tone="primary" primaryAction onClick={() => toggle({ enrollment_open: competition.enrollment_open ? 0 : 1 }, competition.enrollment_open ? 'Inscripciones cerradas' : 'Inscripciones abiertas')} disabled={!competition.activa}>{competition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}</Button>}>
+      <Panel title="Estado de registro" subtitle="Publicacion e inscripciones." action={<Button tone="primary" primaryAction onClick={() => toggle({ enrollment_open: competition.enrollment_open ? 0 : 1 }, competition.enrollment_open ? 'Inscripciones cerradas' : 'Inscripciones abiertas')}>{competition.enrollment_open ? 'Cerrar inscripciones' : 'Abrir inscripciones'}</Button>}>
         <div className="fr-stat-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10 }}>
           <MiniStat label="Publicada" value={competition.activa ? 'Si' : 'No'} tone={competition.activa ? colors.success : colors.warning} />
           <MiniStat label="Inscripciones" value={competition.enrollment_open ? 'Abiertas' : 'Cerradas'} tone={competition.enrollment_open ? colors.accent : colors.muted} />
@@ -1440,6 +1440,11 @@ function RegistrationPanel({ bundle, reload, notify }) {
           <Button onClick={() => navigator.clipboard?.writeText(`${window.location.origin}/competitions/${competition.slug || competition.id}`)}>Copiar link publico</Button>
           <Link to={`/competitions/${competition.slug || competition.id}`} target="_blank" style={{ textDecoration: 'none' }}><Button><Eye size={16} />Vista publica</Button></Link>
         </div>
+        {!competition.activa && competition.enrollment_open ? (
+          <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, color: colors.secondary, fontSize: 12 }}>
+            La competencia no esta publicada; solo podran entrar quienes tengan un enlace directo valido.
+          </div>
+        ) : null}
       </Panel>
       )}
       {section === 'categories' && <CategoryEditor bundle={bundle} reload={reload} notify={notify} />}
@@ -3394,18 +3399,34 @@ function HeatsPanel({ bundle, reload, notify }) {
 
 function TeamsPanel({ bundle, reload, notify }) {
   const competition = bundle.competition
-  const [draft, setDraft] = useState({ nombre: '', member_ids: [], team_category_id: '' })
+  const [draft, setDraft] = useState({ nombre: '', member_ids: [], team_category_id: '', create_join_link: 1 })
   const [modalOpen, setModalOpen] = useState(false)
+  const confirmedParticipants = useMemo(
+    () => (bundle.participants || []).filter((p) => p.estado === 'confirmado'),
+    [bundle.participants],
+  )
+  const teamCategories = useMemo(
+    () => (bundle.categories || []).filter((cat) => String(cat.modality).includes('team')),
+    [bundle.categories],
+  )
+  const teamSize = Math.max(1, Number(competition.team_size || 2))
+  const selectedCount = draft.member_ids.length
+  const openSlots = Math.max(0, teamSize - selectedCount)
+  const canCreate = !draft.create_join_link || !!draft.team_category_id
   const toggleMember = (id) => setDraft((prev) => {
     const exists = prev.member_ids.includes(id)
-    const next = exists ? prev.member_ids.filter((item) => item !== id) : [...prev.member_ids, id].slice(0, competition.team_size || 2)
+    const next = exists ? prev.member_ids.filter((item) => item !== id) : [...prev.member_ids, id].slice(0, teamSize)
     return { ...prev, member_ids: next }
   })
   const create = async () => {
+    if (!canCreate) {
+      notify('Selecciona una categoria de equipo para generar el enlace', 'error')
+      return
+    }
     try {
-      await api('/teams', { method: 'POST', body: JSON.stringify({ nombre: draft.nombre, competition_id: competition.id, member_ids: draft.member_ids, team_category_id: draft.team_category_id ? Number(draft.team_category_id) : null }) })
+      await api('/teams', { method: 'POST', body: JSON.stringify({ nombre: draft.nombre, competition_id: competition.id, member_ids: draft.member_ids, team_category_id: draft.team_category_id ? Number(draft.team_category_id) : null, allow_incomplete: draft.create_join_link ? 1 : 0, create_join_link: draft.create_join_link ? 1 : 0 }) })
       notify('Equipo creado')
-      setDraft({ nombre: '', member_ids: [], team_category_id: '' })
+      setDraft({ nombre: '', member_ids: [], team_category_id: '', create_join_link: 1 })
       setModalOpen(false)
       await reload()
     } catch (error) {
@@ -3421,32 +3442,94 @@ function TeamsPanel({ bundle, reload, notify }) {
       notify(error.message, 'error')
     }
   }
+  const copyLink = async (team) => {
+    const url = team?.team_join_link?.url
+    if (!url) return notify('Este equipo no tiene enlace activo', 'error')
+    try {
+      await navigator.clipboard.writeText(url)
+      notify('Enlace copiado')
+    } catch {
+      notify('No se pudo copiar el enlace', 'error')
+    }
+  }
   return (
-    <Panel title="Equipos" subtitle="Crea equipos con atletas inscritos." action={<Button tone="primary" onClick={() => setModalOpen(true)} disabled={!competition.team_enabled}>Crear equipo</Button>}>
+    <Panel title="Equipos" subtitle="Crea equipos completos o abiertos con enlace de inscripcion." action={<Button tone="primary" onClick={() => setModalOpen(true)} disabled={!competition.team_enabled && !teamCategories.length}>Crear equipo</Button>}>
       {modalOpen ? (
         <Modal title="Crear equipo" onClose={() => setModalOpen(false)}>
-          <div style={{ display: 'grid', gap: 12 }}>
-            <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(220px, 0.8fr)', gap: 12 }}>
               <Field label="Nombre equipo"><input style={inputStyle()} value={draft.nombre} onChange={(e) => setDraft((p) => ({ ...p, nombre: e.target.value }))} /></Field>
-              <Field label="Categoria equipo"><select style={inputStyle()} value={draft.team_category_id} onChange={(e) => setDraft((p) => ({ ...p, team_category_id: e.target.value }))}><option value="">Auto</option>{(bundle.categories || []).filter((cat) => String(cat.modality).includes('team')).map((cat) => <option key={cat.id} value={cat.id}>{cat.nombre}</option>)}</select></Field>
+              <Field label="Categoria equipo"><select style={inputStyle()} value={draft.team_category_id} onChange={(e) => setDraft((p) => ({ ...p, team_category_id: e.target.value }))}><option value="">{draft.create_join_link ? 'Selecciona categoria' : 'Auto'}</option>{teamCategories.map((cat) => <option key={cat.id} value={cat.id}>{cat.nombre}</option>)}</select></Field>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', maxHeight: 260, overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8, padding: 10, background: colors.top }}>
-              {(bundle.participants || []).filter((p) => p.estado === 'confirmado').slice(0, 80).map((p) => (
-                <button key={p.user_id || p.id} type="button" onClick={() => toggleMember(p.user_id || p.id)} style={{ border: `1px solid ${draft.member_ids.includes(p.user_id || p.id) ? colors.accent : colors.border}`, background: draft.member_ids.includes(p.user_id || p.id) ? 'rgba(0,194,168,0.12)' : colors.surface, color: colors.text, borderRadius: 999, padding: '7px 10px', fontSize: 12 }}>
-                  {p.nombre} {p.apellido}
-                </button>
-              ))}
+            <button
+              type="button"
+              onClick={() => teamCategories.length && setDraft((p) => ({ ...p, create_join_link: p.create_join_link ? 0 : 1 }))}
+              disabled={!teamCategories.length}
+              style={{
+                border: `1px solid ${draft.create_join_link ? 'rgba(0,194,168,0.55)' : colors.border}`,
+                background: draft.create_join_link ? 'rgba(0,194,168,0.10)' : colors.top,
+                color: colors.text,
+                borderRadius: 8,
+                padding: 12,
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: 12,
+                alignItems: 'center',
+                textAlign: 'left',
+                cursor: teamCategories.length ? 'pointer' : 'not-allowed',
+                opacity: teamCategories.length ? 1 : 0.58,
+              }}
+            >
+              <span style={{ display: 'grid', gap: 4 }}>
+                <span style={{ fontWeight: 900 }}>Equipo abierto con enlace</span>
+                <span style={{ color: colors.secondary, fontSize: 12, lineHeight: 1.35 }}>
+                  Crea el equipo ahora y comparte una URL para completar los {openSlots} cupos restantes.
+                </span>
+              </span>
+              <span style={{ width: 42, height: 24, borderRadius: 999, background: draft.create_join_link ? colors.accent : colors.border, padding: 3, display: 'flex', justifyContent: draft.create_join_link ? 'flex-end' : 'flex-start', transition: '120ms ease' }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: colors.text, display: 'block' }} />
+              </span>
+            </button>
+            {!teamCategories.length ? <div style={{ color: colors.warning, fontSize: 12 }}>Primero crea una categoria con modalidad Equipos.</div> : null}
+            <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, overflow: 'hidden' }}>
+              <div style={{ padding: '10px 12px', borderBottom: `1px solid ${colors.border}`, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontWeight: 900 }}>Atletas confirmados</div>
+                  <div style={{ color: colors.secondary, fontSize: 12 }}>Seleccionados {selectedCount}/{teamSize}</div>
+                </div>
+                {draft.create_join_link ? <Pill tone={colors.accent}>{openSlots} cupos por enlace</Pill> : <Pill tone={colors.warning}>Equipo completo requerido</Pill>}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', minHeight: 72, maxHeight: 220, overflowY: 'auto', padding: 12 }}>
+                {confirmedParticipants.length ? confirmedParticipants.slice(0, 80).map((p) => {
+                  const id = p.user_id || p.id
+                  const selected = draft.member_ids.includes(id)
+                  return (
+                    <button key={id} type="button" onClick={() => toggleMember(id)} style={{ border: `1px solid ${selected ? colors.accent : colors.border}`, background: selected ? 'rgba(0,194,168,0.14)' : colors.surface, color: colors.text, borderRadius: 999, padding: '8px 11px', fontSize: 12, fontWeight: selected ? 800 : 600 }}>
+                      {p.nombre} {p.apellido}
+                    </button>
+                  )
+                }) : (
+                  <div style={{ width: '100%', minHeight: 48, display: 'grid', placeItems: 'center', color: colors.muted, fontSize: 13, textAlign: 'center' }}>
+                    No hay atletas confirmados para agregar manualmente.
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
               <Button onClick={() => setModalOpen(false)}>Cancelar</Button>
-              <Button tone="primary" onClick={create}>Crear equipo</Button>
+              <Button tone="primary" onClick={create} disabled={!canCreate}>Crear equipo</Button>
             </div>
           </div>
         </Modal>
       ) : null}
       {(bundle.teams || []).map((team) => (
-        <div key={team.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
-          <div><strong>{team.nombre}</strong><div style={{ color: colors.secondary, fontSize: 12 }}>{(team.members || []).map((m) => `${m.nombre} ${m.apellido}`).join(', ') || 'Sin miembros'}</div></div>
+        <div key={team.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
+          <div>
+            <strong>{team.nombre}</strong>
+            <div style={{ color: colors.secondary, fontSize: 12 }}>{(team.members || []).map((m) => `${m.nombre} ${m.apellido}`).join(', ') || 'Sin miembros'}</div>
+            {team.team_join_link?.url ? <div style={{ color: colors.muted, fontSize: 11, wordBreak: 'break-all', marginTop: 4 }}>Enlace: {team.team_join_link.remaining_uses} usos restantes</div> : null}
+          </div>
+          <Button onClick={() => copyLink(team)} disabled={!team.team_join_link?.url}>Copiar enlace</Button>
           <Button tone="danger" onClick={() => remove(team)}>Eliminar</Button>
         </div>
       ))}
@@ -5721,6 +5804,20 @@ function ResponsiveStyles() {
           max-height: calc(100dvh - 128px) !important;
           border-radius: 12px !important;
         }
+      .fr-image-grid,
+      .fr-image-card,
+      .fr-image-preview {
+        min-width: 0;
+        max-width: 100%;
+      }
+      .fr-image-card > button {
+        width: 100%;
+      }
+      @media (max-width: 1280px) {
+        .fr-image-grid {
+          grid-template-columns: 1fr !important;
+        }
+      }
         .fr-command-modal-header {
           padding: 10px 12px !important;
           align-items: flex-start !important;

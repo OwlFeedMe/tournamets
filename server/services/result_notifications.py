@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from urllib.parse import urlencode
 
 from sqlmodel import Session, select
 
@@ -19,6 +20,25 @@ def _base_url() -> str:
 
 def _action_url(competition_id: int) -> str:
     return f"{_base_url()}/leaderboard/{competition_id}"
+
+
+def _result_action_url(
+    competition_id: int,
+    *,
+    phase_id: int | None = None,
+    athlete_id: int | None = None,
+    team_id: int | None = None,
+) -> str:
+    params = {}
+    if phase_id is not None:
+        params["phase"] = int(phase_id)
+    if athlete_id is not None:
+        params["athlete"] = int(athlete_id)
+    if team_id is not None:
+        params["team"] = int(team_id)
+    query = urlencode(params)
+    url = _action_url(competition_id)
+    return f"{url}?{query}" if query else url
 
 
 def _phase_uses_time_input(phase: CompetitionPhase | None) -> bool:
@@ -118,14 +138,19 @@ def notify_result_saved(session: Session, result: Result, *, updated: bool) -> N
         if not email:
             continue
         try:
+            email_action_url = _result_action_url(
+                int(result.competition_id),
+                phase_id=int(result.phase_id) if result.phase_id is not None else None,
+                athlete_id=int(recipient.id),
+                team_id=int(result.team_id) if result.team_id is not None else None,
+            )
             subject, text_body, html_body = render_result_notification(
                 nombre=(recipient.nombre or "Atleta"),
                 competition_name=competition_name,
                 phase_name=phase_name,
                 mark_label=mark_label,
-                position=result.posicion,
                 points=result.puntos,
-                action_url=url,
+                action_url=email_action_url,
                 updated=updated,
             )
             send_email(

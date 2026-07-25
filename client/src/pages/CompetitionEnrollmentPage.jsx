@@ -405,15 +405,17 @@ function TermsContent({ text, onReachedEnd }) {
 }
 
 export default function CompetitionEnrollmentPage() {
-  const { competitionId } = useParams()
+  const { competitionId, teamToken } = useParams()
   const navigate = useNavigate()
   const { session, role, userId, isAthlete } = useAuth()
   const [payload, setPayload] = useState(null)
+  const [teamJoinInfo, setTeamJoinInfo] = useState(null)
   const [categories, setCategories] = useState([])
   const [enrollmentState, setEnrollmentState] = useState(null)
   const [paymentStatus, setPaymentStatus] = useState(null)
   const [paymentReference, setPaymentReference] = useState('')
   const [paymentTransactionId, setPaymentTransactionId] = useState('')
+  const [captainTeamLink, setCaptainTeamLink] = useState(null)
   const [boldButtonConfig, setBoldButtonConfig] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState('')
   const [expandedCategoryId, setExpandedCategoryId] = useState(null)
@@ -471,24 +473,36 @@ export default function CompetitionEnrollmentPage() {
     setLoading(true)
     setMsg(null)
     Promise.all([
-      api.get(`/competitions/${competitionId}/public`),
-      api.get(`/competitions/${competitionId}/categories?modality=individual`).catch(() => ({ data: [] })),
+      api.get(`/competitions/${competitionId}/public${teamToken ? `?team_join_token=${encodeURIComponent(teamToken)}` : ''}`),
+      teamToken ? api.get(`/team-join-links/${teamToken}`).catch((err) => ({ data: null, error: err })) : Promise.resolve({ data: null }),
     isAthlete && userId
       ? api.get(`/users/${userId}/competitions`).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] }),
       isAthlete ? api.get('/users/me').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
-    ]).then(([publicRes, categoriesRes, mineRes, profileRes]) => {
+    ]).then(([publicRes, teamJoinRes, mineRes, profileRes]) => {
       if (!active) return
       const publicPayload = publicRes.data || null
-      const categoryItems = Array.isArray(categoriesRes.data) ? categoriesRes.data : []
+      if (teamJoinRes.error) {
+        setMsg({ type: 'error', text: teamJoinRes.error.response?.data?.detail || 'El enlace de equipo no esta disponible.' })
+      }
+      const joinInfo = teamJoinRes.data || null
+      const allCategories = Array.isArray(publicPayload?.categories) ? publicPayload.categories : []
+      const competitionData = publicPayload?.competition || {}
+      const categoryItems = joinInfo?.category
+        ? allCategories.filter((category) => String(category.id) === String(joinInfo.category.id) || category.nombre === joinInfo.category.nombre)
+        : allCategories.filter((category) => {
+            const modality = String(category.modality || 'individual').trim().toLowerCase()
+            return modality === 'individual' || (modality === 'teams' && competitionData.team_enabled)
+          })
       const mine = Array.isArray(mineRes.data) ? mineRes.data : []
       const mineRecord = mine.find(item => String(item.id) === String(competitionId))
       const profile = profileRes.data || null
       const missingFields = isAthlete ? getMissingParticipantProfileFields(profile) : []
       setPayload(publicPayload)
+      setTeamJoinInfo(joinInfo)
       setCategories(categoryItems)
       const firstOpenCategory = categoryItems.find(categoryIsOpen)
-      const selectedFromMine = mineRecord?.enrollment_categoria || ''
+      const selectedFromMine = joinInfo?.category?.nombre || mineRecord?.enrollment_categoria || ''
       const selectedFromList = categoryItems.find(category => category.nombre === selectedFromMine)
       const nextSelectedCategory = selectedFromList
         ? selectedFromMine
@@ -499,6 +513,7 @@ export default function CompetitionEnrollmentPage() {
       setPaymentStatus(mineRecord?.payment_status || null)
       setPaymentReference(mineRecord?.payment_reference || '')
       setPaymentTransactionId(mineRecord?.payment_transaction_id || '')
+      setCaptainTeamLink(null)
       setProfileData(profile)
       setProfileDraft(normalizeProfileDraft(profile))
       setProfileMissingFields(missingFields)
@@ -511,7 +526,7 @@ export default function CompetitionEnrollmentPage() {
       setLoading(false)
     })
     return () => { active = false }
-  }, [competitionId, isAthlete, userId, role])
+  }, [competitionId, teamToken, isAthlete, userId, role])
 
   const competition = payload?.competition || null
   const questions = useMemo(() => parseEnrollmentQuestions(competition?.enrollment_questions), [competition])
@@ -519,6 +534,7 @@ export default function CompetitionEnrollmentPage() {
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   const selectedCategoryData = useMemo(() => categories.find(category => category.nombre === selectedCategory) || null, [categories, selectedCategory])
   const selectedCategoryUnavailable = !!selectedCategoryData && !categoryIsOpen(selectedCategoryData)
+  const teamJoinUnavailable = !!teamToken && teamJoinInfo?.active === false
   const termsText = (competition?.enrollment_terms_text || '').trim()
   const appTermsText = APP_TERMS_TEXT
   const countryNameByCode = useMemo(() => Object.fromEntries(countries.map((country) => [country.code, country.name])), [countries])
@@ -546,7 +562,7 @@ export default function CompetitionEnrollmentPage() {
   const userCanSubmit = !!session && isAthlete
   const enrollmentClosed = !competition?.enrollment_open
   const paymentInProgress = enrollmentState === 'pago_pendiente' || enrollmentState === 'pago_en_verificacion'
-  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || selectedCategoryUnavailable || !userCanSubmit
+  const submissionBlocked = enrollmentState === 'confirmado' || enrollmentState === 'pendiente' || paymentInProgress || enrollmentClosed || selectedCategoryUnavailable || teamJoinUnavailable || !userCanSubmit
   const outstandingProfileMissingFields = useMemo(() => profileMissingFields.filter((fieldKey) => {
     if (fieldKey === 'perfil') return true
     if (fieldKey === 'ciudad_pais') return !cityCountryComplete
@@ -700,6 +716,7 @@ export default function CompetitionEnrollmentPage() {
   const validateStep = (step) => {
     if (step === 1 && categories.length > 0 && !selectedCategory) return 'Selecciona una categoria para continuar.'
     if (step === 1 && selectedCategoryUnavailable) return 'Esta categoria no recibe mas inscripciones.'
+    if (step === 1 && teamJoinUnavailable) return 'Este enlace de equipo ya no tiene cupos disponibles.'
     if (step === 2) {
       const profileError = validateMissingProfileFields()
       if (profileError) return profileError
@@ -722,6 +739,7 @@ export default function CompetitionEnrollmentPage() {
 
   const buildEnrollmentPayload = () => ({
     categoria: selectedCategory || null,
+    team_join_token: teamToken || null,
     answers: questions.map(question => ({
       question_id: question.id,
       question_label: question.label,
@@ -758,6 +776,7 @@ export default function CompetitionEnrollmentPage() {
       setPaymentStatus(nextPaymentStatus)
       setPaymentReference(data?.payment_reference || '')
       setPaymentTransactionId(data?.payment_transaction_id || '')
+      if (data?.team_join_link?.url) setCaptainTeamLink(data.team_join_link)
       if (nextState === 'pendiente' || nextState === 'confirmado') {
         setMsg({ type: 'success', text: 'Pago aprobado. Tu inscripcion ya quedo confirmada.' })
       } else if (!silent) {
@@ -845,6 +864,16 @@ export default function CompetitionEnrollmentPage() {
     }
   }
 
+  const copyCaptainTeamLink = async () => {
+    if (!captainTeamLink?.url) return
+    try {
+      await navigator.clipboard.writeText(captainTeamLink.url)
+      setMsg({ type: 'success', text: 'Enlace de equipo copiado.' })
+    } catch {
+      setMsg({ type: 'error', text: 'No se pudo copiar el enlace de equipo.' })
+    }
+  }
+
   const openRegistrationExternally = async () => {
     await copyRegistrationUrl()
     window.open(registrationUrl, '_blank', 'noopener,noreferrer')
@@ -860,8 +889,9 @@ export default function CompetitionEnrollmentPage() {
     setCheckoutLoading(true)
     setMsg(null)
     try {
-      await api.post(`/competitions/${competition.id}/free-enroll`, buildEnrollmentPayload())
+      const { data } = await api.post(`/competitions/${competition.id}/free-enroll`, buildEnrollmentPayload())
       setEnrollmentState('confirmado')
+      if (data?.team_join_link?.url) setCaptainTeamLink(data.team_join_link)
       setMsg({ type: 'success', text: 'Tu inscripcion gratuita ha sido confirmada.' })
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo confirmar la inscripcion gratuita.' })
@@ -885,6 +915,7 @@ export default function CompetitionEnrollmentPage() {
       setPaymentStatus(data?.payment_status || 'approved')
       setPaymentReference(data?.payment_reference || '')
       setPaymentTransactionId(data?.payment_transaction_id || '')
+      if (data?.team_join_link?.url) setCaptainTeamLink(data.team_join_link)
       setMsg({ type: 'success', text: 'Pago de prueba aprobado. Tu inscripcion quedo confirmada en stage.' })
     } catch (err) {
       setMsg({ type: 'error', text: err.response?.data?.detail || 'No se pudo confirmar el pago de prueba.' })
@@ -1017,6 +1048,16 @@ export default function CompetitionEnrollmentPage() {
             <StepCard number="1" title="Elegir categoria" hint="Revisa cada descripcion y selecciona la categoria que mejor corresponda a tu inscripcion.">
               {categories.length ? (
                 <div style={{ display: 'grid', gap: 14 }}>
+                  {teamToken ? (
+                    <div style={{ borderRadius: 16, border: `1px solid ${teamJoinInfo?.active === false ? 'rgba(239,68,68,0.28)' : 'rgba(0,194,168,0.32)'}`, background: teamJoinInfo?.active === false ? 'rgba(239,68,68,0.08)' : 'rgba(0,194,168,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, display: 'grid', gap: 4 }}>
+                      <strong>{teamJoinInfo?.team?.nombre || 'Equipo'}</strong>
+                      <span style={{ color: '#AAB2C0', lineHeight: 1.5 }}>
+                        {teamJoinInfo?.active === false
+                          ? 'Este enlace ya no tiene cupos disponibles.'
+                          : `Estas entrando como integrante. Cupos restantes: ${teamJoinInfo?.remaining_uses ?? 0}.`}
+                      </span>
+                    </div>
+                  ) : null}
                   {!categories.some(categoryIsOpen) ? (
                     <div style={{ borderRadius: 16, border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                       No hay categorias disponibles para inscripcion en este momento.
@@ -1048,7 +1089,7 @@ export default function CompetitionEnrollmentPage() {
                     const categoryPricing = calculateEnrollmentPricing(Math.max(0, categoryBasePrice - categoryDiscountAmount), platformFeeRate, minPlatformFee)
                     return (
                       <div key={category.id} style={{ borderRadius: 18, border: `1px solid ${isSelected ? 'rgba(94,234,212,0.55)' : '#252A33'}`, background: isSelected ? 'linear-gradient(180deg, rgba(94,234,212,0.08), rgba(13,15,18,0.72))' : 'rgba(13,15,18,0.62)', overflow: 'hidden', opacity: isOpen ? 1 : 0.72 }}>
-                        <button type="button" disabled={!isOpen} onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: isOpen ? 'pointer' : 'not-allowed', display: 'grid', gap: 8 }}>
+                        <button type="button" disabled={!isOpen || !!teamToken} onClick={() => { setSelectedCategory(category.nombre); setExpandedCategoryId(prev => (prev === category.id ? null : category.id)) }} style={{ width: '100%', background: 'transparent', border: 'none', color: 'inherit', padding: '16px', textAlign: 'left', cursor: isOpen && !teamToken ? 'pointer' : 'not-allowed', display: 'grid', gap: 8 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
                             <div>
                               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1409,7 +1450,7 @@ export default function CompetitionEnrollmentPage() {
                   <div style={{ borderRadius: 16, border: '1px solid rgba(214,217,224,0.28)', background: 'rgba(214,217,224,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14 }}>
                     Debes iniciar sesion como participante para completar la inscripcion.
                   </div>
-                  <button type="button" className="btn-primary" onClick={() => navigate('/login')}>Iniciar sesion</button>
+                  <button type="button" className="btn-primary" onClick={() => navigate(`/login?next=${encodeURIComponent(window.location.pathname)}`)}>Iniciar sesion</button>
                 </div>
               ) : !isAthlete ? (
                 <div style={{ display: 'grid', gap: 10 }}>
@@ -1438,6 +1479,24 @@ export default function CompetitionEnrollmentPage() {
                       }}
                     >
                       {enrollmentStateLabel(enrollmentState, paymentStatus)}
+                    </div>
+                  ) : null}
+                  {captainTeamLink?.url ? (
+                    <div style={{ borderRadius: 16, border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.08)', padding: 14, color: '#F5F7FA', fontSize: 14, display: 'grid', gap: 10 }}>
+                      <div>
+                        <strong>Enlace para integrantes</strong>
+                        <div style={{ color: '#AAB2C0', fontSize: 12, marginTop: 4 }}>
+                          Usos restantes: {captainTeamLink.remaining_uses}. Comparte este enlace para completar tu equipo.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ flex: 1, minWidth: 220, wordBreak: 'break-all', border: '1px solid #252A33', borderRadius: 10, padding: '9px 10px', background: '#090B0E', color: '#D7DEE8', fontSize: 12 }}>
+                          {captainTeamLink.url}
+                        </div>
+                        <button type="button" className="btn-secondary" onClick={copyCaptainTeamLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Copy size={14} /> Copiar
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   {enrollmentClosed ? <div style={{ borderRadius: 16, border: '1px solid rgba(126,135,150,0.24)', background: 'rgba(126,135,150,0.08)', padding: 14, color: '#D7DEE8', fontSize: 14 }}>Las inscripciones estan cerradas en este momento.</div> : null}

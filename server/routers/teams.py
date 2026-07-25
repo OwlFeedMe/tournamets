@@ -1,5 +1,7 @@
 from collections import defaultdict
 from typing import Optional
+import os
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +13,7 @@ from database import MAX_TEAM_SIZE, get_session
 from models import (
     Competition, CompetitionCategory, CompetitionParticipant,
     Participant, Team, TeamCreate, TeamMember, TeamUpdate,
-    TeamInvitation, TeamInviteRequest, TeamRenameRequest,
+    TeamInvitation, TeamInviteRequest, TeamJoinLink, TeamRenameRequest,
 )
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 
@@ -19,6 +21,57 @@ router = APIRouter(prefix="/api/teams", tags=["teams"])
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _base_app_url() -> str:
+    base = (os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
+    return base if base.endswith("/") else f"{base}/"
+
+
+def _team_join_url(competition_id: int, token: str) -> str:
+    return f"{_base_app_url()}competitions/{competition_id}/register/team/{token}"
+
+
+def _team_join_link_payload(link: TeamJoinLink | None, competition_id: int | None = None) -> dict | None:
+    if not link:
+        return None
+    remaining = max(0, int(link.max_uses or 0) - int(link.used_count or 0))
+    payload = {
+        "token": link.token,
+        "max_uses": int(link.max_uses or 0),
+        "used_count": int(link.used_count or 0),
+        "remaining_uses": remaining,
+        "active": bool(int(link.active or 0)),
+    }
+    if competition_id is not None:
+        payload["url"] = _team_join_url(competition_id, link.token)
+    return payload
+
+
+def _latest_team_join_link(session: Session, team_id: int) -> TeamJoinLink | None:
+    return session.exec(
+        select(TeamJoinLink)
+        .where(TeamJoinLink.team_id == team_id)
+        .order_by(TeamJoinLink.active.desc(), TeamJoinLink.id.desc())
+    ).first()
+
+
+def _ensure_team_join_link(session: Session, team: Team, max_uses: int, created_by_user_id: int | None = None) -> TeamJoinLink:
+    link = _latest_team_join_link(session, int(team.id))
+    if link and int(link.active or 0):
+        link.max_uses = max(0, int(max_uses or 0))
+        session.add(link)
+        return link
+    link = TeamJoinLink(
+        team_id=int(team.id),
+        token=secrets.token_urlsafe(24),
+        max_uses=max(0, int(max_uses or 0)),
+        used_count=0,
+        active=1,
+        created_by_user_id=created_by_user_id,
+    )
+    session.add(link)
+    session.flush()
+    return link
 
 def _build_team_category_from_members(
     team: Team,
@@ -77,6 +130,7 @@ def _with_members(session: Session, team: Team) -> dict:
         "team_category": _build_team_category_from_members(team, members, explicit),
         "team_category_id": team.team_category_id,
         "captain_user_id": team.captain_id,
+        "team_join_link": _team_join_link_payload(_latest_team_join_link(session, int(team.id)), int(team.competition_id)),
         "members": members,
     }
 
@@ -132,6 +186,7 @@ def _serialize_teams_bulk(session: Session, teams: list[Team]) -> list[dict]:
             "team_category": _build_team_category_from_members(t, members, explicit),
             "team_category_id": t.team_category_id,
             "captain_user_id": t.captain_id,
+            "team_join_link": _team_join_link_payload(_latest_team_join_link(session, int(t.id)), int(t.competition_id)),
             "members": members,
         })
     return result
@@ -177,6 +232,18 @@ def _team_category(session: Session, team_category_id: int | None) -> Competitio
     return session.get(CompetitionCategory, team_category_id)
 
 
+def _competition_has_team_mode(session: Session, competition: Competition) -> bool:
+    if getattr(competition, "team_enabled", 0):
+        return True
+    team_category = session.exec(
+        select(CompetitionCategory.id).where(
+            CompetitionCategory.competition_id == competition.id,
+            CompetitionCategory.modality.in_(["teams", "team", "equipo", "equipos"]),
+        )
+    ).first()
+    return team_category is not None
+
+
 def _member_category_label(session: Session, competition_id: int, user_id: int) -> str:
     enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     if enrollment and (enrollment.categoria or "").strip():
@@ -202,7 +269,7 @@ def _validate_team_membership(
     competition = session.get(Competition, competition_id)
     if not competition:
         raise HTTPException(404, "Competencia no encontrada")
-    if not getattr(competition, "team_enabled", 0):
+    if not _competition_has_team_mode(session, competition):
         raise HTTPException(400, "La competencia no tiene modalidad por equipos activa")
     if len(set(member_ids)) != len(member_ids):
         raise HTTPException(400, "El equipo no puede repetir participantes")
@@ -241,6 +308,56 @@ def _validate_team_membership(
                 Team.competition_id == competition_id,
                 Team.id != (current_team_id or 0),
             )
+        ).first()
+        if existing:
+            raise HTTPException(409, f"El participante {pid} ya esta en el equipo '{existing.nombre}'")
+
+
+def _validate_incomplete_team_membership(
+    session: Session,
+    *,
+    competition_id: int,
+    member_ids: list[int],
+    team_category_id: int | None = None,
+) -> None:
+    competition = session.get(Competition, competition_id)
+    if not competition:
+        raise HTTPException(404, "Competencia no encontrada")
+    if not _competition_has_team_mode(session, competition):
+        raise HTTPException(400, "La competencia no tiene modalidad por equipos activa")
+    if len(set(member_ids)) != len(member_ids):
+        raise HTTPException(400, "El equipo no puede repetir participantes")
+    team_size = _competition_team_size(session, competition_id, fallback=len(member_ids) or 2)
+    if len(member_ids) > team_size:
+        raise HTTPException(400, f"El equipo no puede superar {team_size} miembros")
+
+    category = _team_category(session, team_category_id)
+    if team_category_id is not None and not category:
+        raise HTTPException(404, "Categoria de equipo no encontrada")
+    if category and category.competition_id != competition_id:
+        raise HTTPException(400, "La categoria del equipo no pertenece a esta competencia")
+    if category and (category.modality or "").strip().lower() not in {"teams", "team", "equipo", "equipos"}:
+        raise HTTPException(400, "La categoria del equipo debe pertenecer a la modalidad por equipos")
+
+    rule = _competition_team_membership_rule(session, competition_id)
+    categories = _team_member_categories(session, competition_id, member_ids)
+    unique_categories = {cat for cat in categories if cat}
+    if rule == "same_category":
+        if len(unique_categories) > 1:
+            raise HTTPException(400, "Todos los integrantes del equipo deben pertenecer a la misma categoria")
+        if category and unique_categories and next(iter(unique_categories)) != (category.nombre or "").strip():
+            raise HTTPException(400, "La categoria del equipo no coincide con la categoria de los integrantes")
+
+    for pid in member_ids:
+        if not session.get(Participant, pid):
+            raise HTTPException(404, f"Participante {pid} no encontrado")
+        enrollment = session.get(CompetitionParticipant, (competition_id, pid))
+        if not enrollment or enrollment.estado != "confirmado":
+            raise HTTPException(400, f"El participante {pid} no esta confirmado en esta competencia")
+        existing = session.exec(
+            select(Team)
+            .join(TeamMember, TeamMember.team_id == Team.id)
+            .where(TeamMember.user_id == pid, Team.competition_id == competition_id)
         ).first()
         if existing:
             raise HTTPException(409, f"El participante {pid} ya esta en el equipo '{existing.nombre}'")
@@ -406,14 +523,28 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), user=
     require_competition_access(session, body.competition_id, user)
     member_ids = _resolve_member_ids(body.member_ids, body.user_ids)
     captain_id = _resolve_captain_id(body.captain_id, body.user_id)
+    allow_incomplete = bool(int(getattr(body, "allow_incomplete", 0) or 0))
+    create_join_link = bool(int(getattr(body, "create_join_link", 0) or 0))
     if captain_id and captain_id not in member_ids:
         raise HTTPException(400, "El capitan debe ser uno de los integrantes del equipo")
-    _validate_team_membership(
-        session,
-        competition_id=body.competition_id,
-        member_ids=member_ids,
-        team_category_id=body.team_category_id,
-    )
+    team_size = _competition_team_size(session, body.competition_id, fallback=len(member_ids) or 2)
+    if allow_incomplete and len(member_ids) < team_size:
+        if body.team_category_id is None:
+            raise HTTPException(400, "Selecciona una categoria de equipo para generar el enlace")
+        _validate_incomplete_team_membership(
+            session,
+            competition_id=body.competition_id,
+            member_ids=member_ids,
+            team_category_id=body.team_category_id,
+        )
+        create_join_link = True
+    else:
+        _validate_team_membership(
+            session,
+            competition_id=body.competition_id,
+            member_ids=member_ids,
+            team_category_id=body.team_category_id,
+        )
 
     requested_name = _clean_name(body.nombre)
     team = Team(
@@ -440,6 +571,13 @@ def create_team(body: TeamCreate, session: Session = Depends(get_session), user=
 
     for pid in member_ids:
         session.add(TeamMember(team_id=team.id, user_id=pid))
+    if create_join_link:
+        _ensure_team_join_link(
+            session,
+            team,
+            max(0, team_size - len(member_ids)),
+            created_by_user_id=get_effective_user_id(user),
+        )
 
     session.commit()
     session.refresh(team)

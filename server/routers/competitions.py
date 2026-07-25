@@ -17,7 +17,7 @@ from sqlalchemy import text, func
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import get_current_user_id, get_current_user_optional, has_organizer_access, require_staff
+from auth import get_current_user_id, get_current_user_optional, has_admin_access, has_organizer_access, require_staff
 from competition_rules import filter_visible_phases, normalize_phase_measurement_method, normalize_phase_visibility, normalize_rm_unit, type_from_measurement_method
 from database import MAX_TEAM_SIZE, get_session
 from models import (
@@ -30,6 +30,7 @@ from models import (
     Participant,
     Result,
     Team,
+    TeamJoinLink,
     TeamMember,
 )
 from phase_status import compute_phase_status_map
@@ -664,6 +665,37 @@ def _require_public_competition_access(session: Session, competition_id: str, us
     return competition
 
 
+def _team_join_token_allows_public_access(session: Session, competition: Competition, token: str | None) -> bool:
+    token_value = str(token or "").strip()
+    if not token_value:
+        return False
+    link = session.exec(
+        select(TeamJoinLink)
+        .join(Team, Team.id == TeamJoinLink.team_id)
+        .where(
+            TeamJoinLink.token == token_value,
+            TeamJoinLink.active == 1,
+            TeamJoinLink.used_count < TeamJoinLink.max_uses,
+            Team.competition_id == competition.id,
+        )
+    ).first()
+    return link is not None
+
+
+def _require_public_or_team_link_competition_access(
+    session: Session,
+    competition_id: str,
+    user,
+    team_join_token: str | None = None,
+) -> Competition:
+    competition = _resolve_competition(session, competition_id)
+    if _competition_public_preview_allowed(session, competition, user):
+        return competition
+    if _team_join_token_allows_public_access(session, competition, team_join_token):
+        return competition
+    raise HTTPException(404, "Competencia no encontrada")
+
+
 def _group_rows_by_modality(rows: list[dict]) -> dict[str, list[dict]]:
     grouped = {"individual": [], "teams": []}
     for row in rows:
@@ -721,10 +753,11 @@ def get_competition(
 @router.get("/{competition_id}/public")
 def get_public_competition_detail(
     competition_id: str,
+    team_join_token: str | None = None,
     session: Session = Depends(get_session),
     user=Depends(get_current_user_optional),
 ):
-    competition = _require_public_competition_access(session, competition_id, user)
+    competition = _require_public_or_team_link_competition_access(session, competition_id, user, team_join_token)
     competition_id_int = competition.id
 
     categories = session.execute(
@@ -1060,7 +1093,7 @@ def update_competition(competition_id: int, body: CompetitionUpdate,
     _normalize_competition_scoring(data)
     if "scoring_mode" in data and data["scoring_mode"] not in COMP_SCORING_VALIDOS:
         raise HTTPException(400, "scoring_mode invalido. Usa: highest_wins o lowest_wins")
-    if user.get("role") != "admin":
+    if not has_admin_access(user):
         data.pop("organizer_user_id", None)
         data.pop("allow_free_categories", None)
     merged = c.model_dump()

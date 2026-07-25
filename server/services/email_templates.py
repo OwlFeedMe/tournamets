@@ -387,28 +387,25 @@ def render_result_notification(
     competition_name: str,
     phase_name: str,
     mark_label: str,
-    position: int | None = None,
     points: int | None = None,
     action_url: str | None = None,
     updated: bool = False,
 ) -> tuple[str, str, str]:
     action = "actualizado" if updated else "cargado"
     subject = f"Resultado {action} - {competition_name}"
-    position_line = f"Posicion: {position}\n" if position is not None else ""
     points_line = f"Puntos: {points}\n" if points is not None else ""
-    link_line = f"\nVer leaderboard: {action_url}\n" if action_url else ""
+    link_line = f"\nVer mi resultado y posición: {action_url}\n" if action_url else ""
     text = (
         f"Hola {nombre},\n\n"
         f"Tu resultado fue {action} en \"{competition_name}\".\n\n"
         f"Workout: {phase_name}\n"
         f"Marca: {mark_label}\n"
-        f"{position_line}"
         f"{points_line}"
+        "\nVe a FinalRep para consultar tu resultado y posición actual.\n"
         f"{link_line}\n"
         "Equipo FinalRep"
     )
-    button = f'<p><a class="btn" href="{action_url}">Ver leaderboard</a></p>' if action_url else ""
-    position_html = f'<p class="detail"><span>Posicion:</span> {position}</p>' if position is not None else ""
+    button = f'<p><a class="btn" href="{action_url}">Ver mi resultado y posición</a></p>' if action_url else ""
     points_html = f'<p class="detail"><span>Puntos:</span> {points}</p>' if points is not None else ""
     html = _html(f"Resultado {action}", f"""\
       <p>Hola <strong>{nombre}</strong>,</p>
@@ -417,9 +414,9 @@ def render_result_notification(
       <p class="detail"><span>Competencia:</span> <strong>{competition_name}</strong></p>
       <p class="detail"><span>Workout:</span> {phase_name}</p>
       <p class="detail"><span>Marca:</span> <strong>{mark_label}</strong></p>
-      {position_html}
       {points_html}
       <hr class="divider">
+      <p>Ve a <strong>FinalRep</strong> para consultar tu resultado y posición actual.</p>
       {button}
       <p class="muted">Si ves un dato incorrecto, revisa el resultado desde tu perfil o contacta al organizador.</p>
     """)

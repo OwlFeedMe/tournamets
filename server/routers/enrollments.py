@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import logging
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,7 +31,7 @@ from models import (
     Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
     EnrollCategoriaUpdate, EnrollmentReplaceRequest, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
-    CompetitionHeat, CompetitionHeatAssignment, Gym, GymMembership, Result, Team, TeamMember,
+    CompetitionHeat, CompetitionHeatAssignment, Gym, GymMembership, Result, Team, TeamJoinLink, TeamMember,
 )
 from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
@@ -55,6 +56,7 @@ BOLD_PLATFORM_FEE_RATE_DEFAULT = 0.05
 PAYMENT_PENDING_STATE = "pago_pendiente"
 PENDING_VERIFICATION_STATE = "pago_en_verificacion"
 SYSTEM_CHECKIN_PHASE_CODE = "check_in"
+TEAM_MODALITY_VALUES = {"teams", "team", "equipo", "equipos"}
 
 
 def _bold_payments_disabled() -> bool:
@@ -131,6 +133,255 @@ def _process_enrollment_image(file: UploadFile, user_id: int) -> str:
 
 def _with_user_id(payload: dict, user_id: int) -> dict:
     return {**payload, "user_id": user_id}
+
+
+def _is_team_category(category: CompetitionCategory | None) -> bool:
+    return str(getattr(category, "modality", "") or "").strip().lower() in TEAM_MODALITY_VALUES
+
+
+def _base_app_url() -> str:
+    base = (os.getenv("LEADERBOARD_BASE_URL") or "http://localhost:5173/").strip()
+    return base if base.endswith("/") else f"{base}/"
+
+
+def _team_join_url(competition_id: int, token: str) -> str:
+    return f"{_base_app_url()}competitions/{competition_id}/register/team/{token}"
+
+
+def _team_join_link_payload(link: TeamJoinLink | None, competition_id: int | None = None) -> dict | None:
+    if not link:
+        return None
+    remaining = max(0, int(link.max_uses or 0) - int(link.used_count or 0))
+    payload = {
+        "token": link.token,
+        "max_uses": int(link.max_uses or 0),
+        "used_count": int(link.used_count or 0),
+        "remaining_uses": remaining,
+        "active": bool(int(link.active or 0)),
+    }
+    if competition_id is not None:
+        payload["url"] = _team_join_url(competition_id, link.token)
+    return payload
+
+
+def _existing_team_for_member(session: Session, competition_id: int, user_id: int) -> Team | None:
+    return session.exec(
+        select(Team)
+        .join(TeamMember, TeamMember.team_id == Team.id)
+        .where(Team.competition_id == competition_id)
+        .where(TeamMember.user_id == user_id)
+    ).first()
+
+
+def _unique_team_name(session: Session, competition_id: int, base_name: str) -> str:
+    base = " ".join(str(base_name or "Equipo").split()) or "Equipo"
+    candidate = base[:80]
+    suffix = 2
+    while session.exec(
+        select(Team).where(Team.competition_id == competition_id).where(Team.nombre == candidate)
+    ).first():
+        extra = f" {suffix}"
+        candidate = f"{base[:80 - len(extra)]}{extra}"
+        suffix += 1
+    return candidate
+
+
+def _ensure_captain_team_for_enrollment(
+    session: Session,
+    *,
+    competition_id: int,
+    user_id: int,
+    category: CompetitionCategory | None,
+) -> dict | None:
+    if not _is_team_category(category):
+        return None
+    competition = session.get(Competition, competition_id)
+    if not competition or not getattr(competition, "team_enabled", 0):
+        raise HTTPException(400, "La competencia no tiene inscripcion por equipos activa")
+    team_size = max(1, min(10, int(getattr(competition, "team_size", 2) or 2)))
+    if team_size < 2:
+        raise HTTPException(400, "El tamano del equipo debe ser minimo 2 para usar enlace de integrantes")
+
+    existing_team = _existing_team_for_member(session, competition_id, user_id)
+    if existing_team:
+        if int(existing_team.captain_id or 0) != int(user_id):
+            raise HTTPException(409, "Ya perteneces a un equipo en esta competencia")
+        team = existing_team
+    else:
+        participant = session.get(Participant, user_id)
+        captain_name = str(getattr(participant, "nombre", "") or "").strip()
+        team = Team(
+            nombre=_unique_team_name(session, competition_id, f"Equipo {captain_name}".strip()),
+            competition_id=competition_id,
+            team_category_id=category.id,
+            captain_id=user_id,
+        )
+        session.add(team)
+        session.flush()
+        session.add(TeamMember(team_id=int(team.id), user_id=user_id))
+        session.flush()
+
+    link = session.exec(
+        select(TeamJoinLink)
+        .where(TeamJoinLink.team_id == team.id)
+        .where(TeamJoinLink.active == 1)
+        .order_by(TeamJoinLink.id.desc())
+    ).first()
+    if link:
+        link.max_uses = max(0, team_size - 1)
+        session.add(link)
+    else:
+        link = TeamJoinLink(
+            team_id=int(team.id),
+            token=secrets.token_urlsafe(24),
+            max_uses=max(0, team_size - 1),
+            used_count=0,
+            active=1,
+            created_by_user_id=user_id,
+        )
+        session.add(link)
+        session.flush()
+    return {"team": team, "join_link": link}
+
+
+def _resolve_team_join_link(session: Session, token: str) -> tuple[TeamJoinLink, Team, Competition, CompetitionCategory | None]:
+    token_value = str(token or "").strip()
+    if not token_value:
+        raise HTTPException(400, "Enlace de equipo invalido")
+    link = session.exec(select(TeamJoinLink).where(TeamJoinLink.token == token_value)).first()
+    if not link:
+        raise HTTPException(404, "Enlace de equipo no encontrado")
+    team = session.get(Team, link.team_id)
+    if not team:
+        raise HTTPException(404, "Equipo no encontrado")
+    competition = session.get(Competition, team.competition_id)
+    if not competition:
+        raise HTTPException(404, "Competencia no encontrada")
+    category = session.get(CompetitionCategory, team.team_category_id) if team.team_category_id else None
+    return link, team, competition, category
+
+
+def _ensure_team_join_link_available(session: Session, token: str, user_id: int | None = None) -> tuple[TeamJoinLink, Team, Competition, CompetitionCategory | None]:
+    link, team, competition, category = _resolve_team_join_link(session, token)
+    if not int(link.active or 0):
+        raise HTTPException(409, "El enlace de este equipo ya no tiene cupos disponibles")
+    max_uses = max(0, int(link.max_uses or 0))
+    used_count = max(0, int(link.used_count or 0))
+    if used_count >= max_uses:
+        raise HTTPException(409, "El enlace de este equipo ya no tiene cupos disponibles")
+    team_size = max(1, min(10, int(getattr(competition, "team_size", 2) or 2)))
+    current_size = len(session.exec(select(TeamMember).where(TeamMember.team_id == team.id)).all())
+    if current_size >= team_size:
+        raise HTTPException(409, f"El equipo ya tiene el maximo de {team_size} integrantes")
+    if user_id is not None:
+        if int(team.captain_id or 0) == int(user_id):
+            raise HTTPException(400, "Ya eres el capitan de este equipo")
+        existing_team = _existing_team_for_member(session, int(team.competition_id), int(user_id))
+        if existing_team:
+            raise HTTPException(409, f"Ya perteneces al equipo '{existing_team.nombre}'")
+    return link, team, competition, category
+
+
+def _attach_confirmed_user_to_team_link(session: Session, token: str | None, user_id: int, competition_id: int) -> dict | None:
+    token_value = str(token or "").strip()
+    if not token_value:
+        return None
+    link, team, competition, _category = _ensure_team_join_link_available(session, token_value, user_id=user_id)
+    if int(competition.id) != int(competition_id):
+        raise HTTPException(400, "El enlace no pertenece a esta competencia")
+    session.add(TeamMember(team_id=int(team.id), user_id=int(user_id)))
+    if team.captain_id is None:
+        team.captain_id = int(user_id)
+        session.add(team)
+    link.used_count = int(link.used_count or 0) + 1
+    if int(link.used_count or 0) >= int(link.max_uses or 0):
+        link.active = 0
+    session.add(link)
+    invalidate_leaderboard_results_snapshot(competition_id)
+    return {"team": team, "join_link": link}
+
+
+def _post_confirm_team_payload(
+    session: Session,
+    *,
+    competition_id: int,
+    user_id: int,
+    category: CompetitionCategory | None,
+    team_join_token: str | None = None,
+) -> dict:
+    result = _attach_confirmed_user_to_team_link(session, team_join_token, user_id, competition_id)
+    if not result:
+        result = _ensure_captain_team_for_enrollment(
+            session,
+            competition_id=competition_id,
+            user_id=user_id,
+            category=category,
+        )
+    if not result:
+        return {}
+    team = result["team"]
+    link = result["join_link"]
+    payload = {
+        "team": {
+            "id": int(team.id),
+            "nombre": team.nombre,
+            "captain_user_id": int(team.captain_id) if team.captain_id is not None else None,
+        },
+    }
+    if int(team.captain_id or 0) == int(user_id):
+        payload["team_join_link"] = _team_join_link_payload(link, competition_id)
+    return payload
+
+
+def _confirmed_team_payload_for_user(session: Session, competition_id: int, user_id: int) -> dict:
+    team = _existing_team_for_member(session, competition_id, user_id)
+    if not team:
+        return {}
+    payload = {
+        "team": {
+            "id": int(team.id),
+            "nombre": team.nombre,
+            "captain_user_id": int(team.captain_id) if team.captain_id is not None else None,
+        },
+    }
+    if int(team.captain_id or 0) == int(user_id):
+        link = session.exec(
+            select(TeamJoinLink)
+            .where(TeamJoinLink.team_id == team.id)
+            .order_by(TeamJoinLink.active.desc(), TeamJoinLink.id.desc())
+        ).first()
+        payload["team_join_link"] = _team_join_link_payload(link, competition_id)
+    return payload
+
+
+def _category_for_enrollment(
+    session: Session,
+    competition_id: int,
+    category_name: str,
+    *,
+    team_join_token: str | None = None,
+    user_id: int | None = None,
+) -> CompetitionCategory:
+    token_value = str(team_join_token or "").strip()
+    if token_value:
+        link, team, competition, category = _ensure_team_join_link_available(session, token_value, user_id=user_id)
+        if int(competition.id) != int(competition_id):
+            raise HTTPException(400, "El enlace no pertenece a esta competencia")
+        if not category:
+            raise HTTPException(400, "El equipo no tiene categoria asignada")
+        return category
+
+    normalized_name = str(category_name or "").strip()
+    if not normalized_name:
+        raise HTTPException(400, "Selecciona una categoria para continuar")
+    category = session.exec(
+        select(CompetitionCategory)
+        .where(CompetitionCategory.competition_id == competition_id)
+        .where(CompetitionCategory.nombre == normalized_name)
+    ).first()
+    if not category:
+        raise HTTPException(404, "Categoria no encontrada")
+    return category
 
 
 def _get_checkin_usage_by_participant(session: Session, competition_id: int) -> dict[int, datetime]:
@@ -616,6 +867,18 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
             enrollment.payment_processed_at = now
             if enrollment.estado in {PAYMENT_PENDING_STATE, "pendiente"}:
                 enrollment.estado = "confirmado"
+            category = session.exec(
+                select(CompetitionCategory)
+                .where(CompetitionCategory.competition_id == enrollment.competition_id)
+                .where(CompetitionCategory.nombre == (enrollment.categoria or ""))
+            ).first()
+            _post_confirm_team_payload(
+                session,
+                competition_id=enrollment.competition_id,
+                user_id=enrollment.user_id,
+                category=category,
+                team_join_token=getattr(enrollment, "team_join_token", None),
+            )
         session.add(enrollment)
         if payment_status == "approved":
             invalidate_leaderboard_results_snapshot(enrollment.competition_id)
@@ -656,6 +919,11 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
         intent.payment_platform_net = _platform_net_amount(intent.payment_platform_fee, total_amount, proc_rate, proc_fixed)
     if payment_status == "approved":
         intent.payment_processed_at = now
+        category = session.exec(
+            select(CompetitionCategory)
+            .where(CompetitionCategory.competition_id == intent.competition_id)
+            .where(CompetitionCategory.nombre == (intent.categoria or ""))
+        ).first()
         existing = session.get(CompetitionParticipant, (intent.competition_id, intent.user_id))
         if existing:
             existing.categoria = intent.categoria
@@ -700,6 +968,13 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
                 payment_processed_at=now,
                 payment_updated_at=now,
             ))
+        _post_confirm_team_payload(
+            session,
+            competition_id=intent.competition_id,
+            user_id=intent.user_id,
+            category=category,
+            team_join_token=getattr(intent, "team_join_token", None),
+        )
         invalidate_leaderboard_results_snapshot(intent.competition_id)
         # Marcar el uso del descuento como confirmado
         if intent.discount_id:
@@ -832,6 +1107,39 @@ def _sync_bold_notification_by_reference(reference: str) -> dict | None:
     if not isinstance(notifications, list) or not notifications:
         return None
     return notifications[0] if isinstance(notifications[0], dict) else None
+
+
+@router.get("/api/team-join-links/{token}")
+def get_team_join_link(token: str, session: Session = Depends(get_session)):
+    link, team, competition, category = _resolve_team_join_link(session, token)
+    team_size = max(1, min(10, int(getattr(competition, "team_size", 2) or 2)))
+    current_size = len(session.exec(select(TeamMember).where(TeamMember.team_id == team.id)).all())
+    remaining = max(0, min(
+        int(link.max_uses or 0) - int(link.used_count or 0),
+        team_size - current_size,
+    ))
+    return {
+        "ok": True,
+        "competition": {
+            "id": int(competition.id),
+            "nombre": competition.nombre,
+            "team_size": team_size,
+            "enrollment_open": bool(int(getattr(competition, "enrollment_open", 0) or 0)),
+        },
+        "team": {
+            "id": int(team.id),
+            "nombre": team.nombre,
+            "captain_user_id": int(team.captain_id) if team.captain_id is not None else None,
+        },
+        "category": {
+            "id": int(category.id),
+            "nombre": category.nombre,
+            "modality": category.modality,
+            "enrollment_price": int(category.enrollment_price or 0),
+        } if category else None,
+        "remaining_uses": remaining,
+        "active": bool(int(link.active or 0)) and remaining > 0,
+    }
 
 
 @router.post("/api/enrollment-answers/upload")
@@ -1304,17 +1612,14 @@ def free_enroll(
     if not getattr(comp, "allow_free_categories", 0):
         raise HTTPException(403, "Las inscripciones gratuitas no estan habilitadas para esta competencia. Contacta al administrador.")
 
-    category_name = str(body.categoria or "").strip()
-    if not category_name:
-        raise HTTPException(400, "Selecciona una categoria para continuar")
-
-    category = session.exec(
-        select(CompetitionCategory)
-        .where(CompetitionCategory.competition_id == competition_id)
-        .where(CompetitionCategory.nombre == category_name)
-    ).first()
-    if not category:
-        raise HTTPException(404, "Categoria no encontrada")
+    category = _category_for_enrollment(
+        session,
+        competition_id,
+        str(body.categoria or "").strip(),
+        team_join_token=body.team_join_token,
+        user_id=user_id,
+    )
+    category_name = str(category.nombre or "").strip()
     ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     applied_discount = None
@@ -1393,12 +1698,20 @@ def free_enroll(
             payment_updated_at=now,
         ))
 
+    team_payload = _post_confirm_team_payload(
+        session,
+        competition_id=competition_id,
+        user_id=user_id,
+        category=category,
+        team_join_token=body.team_join_token,
+    )
+
     if applied_discount:
         _confirm_discount_usage(session, applied_discount.id, user_id)
 
     session.commit()
     invalidate_leaderboard_results_snapshot(competition_id)
-    return {"ok": True, "estado": "confirmado", "user_id": user_id}
+    return {"ok": True, "estado": "confirmado", "user_id": user_id, **team_payload}
 
 
 @router.post("/api/competitions/{competition_id}/stage-test-payment", status_code=201)
@@ -1418,17 +1731,14 @@ def stage_test_payment_enroll(
         raise HTTPException(404, "Competencia no encontrada")
     _ensure_competition_open(comp)
 
-    category_name = str(body.categoria or "").strip()
-    if not category_name:
-        raise HTTPException(400, "Selecciona una categoria para continuar")
-
-    category = session.exec(
-        select(CompetitionCategory)
-        .where(CompetitionCategory.competition_id == competition_id)
-        .where(CompetitionCategory.nombre == category_name)
-    ).first()
-    if not category:
-        raise HTTPException(404, "Categoria no encontrada")
+    category = _category_for_enrollment(
+        session,
+        competition_id,
+        str(body.categoria or "").strip(),
+        team_join_token=body.team_join_token,
+        user_id=user_id,
+    )
+    category_name = str(category.nombre or "").strip()
     ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     existing = session.get(CompetitionParticipant, (competition_id, user_id))
@@ -1527,6 +1837,14 @@ def stage_test_payment_enroll(
             .values(uses_count=CompetitionDiscount.uses_count + 1)
         )
 
+    team_payload = _post_confirm_team_payload(
+        session,
+        competition_id=competition_id,
+        user_id=user_id,
+        category=category,
+        team_join_token=body.team_join_token,
+    )
+
     session.commit()
     invalidate_leaderboard_results_snapshot(competition_id)
     return {
@@ -1537,6 +1855,7 @@ def stage_test_payment_enroll(
         "payment_reference": reference,
         "payment_transaction_id": transaction_id,
         "user_id": user_id,
+        **team_payload,
     }
 
 
@@ -1564,16 +1883,14 @@ def self_enroll(
     if existing.estado in ("confirmado", "pendiente"):
         raise HTTPException(409, f"Ya tienes una inscripcion con estado: {existing.estado}")
 
-    category_name = str(body.categoria or existing.categoria or "").strip()
-    if not category_name:
-        raise HTTPException(400, "Selecciona una categoria para continuar")
-    category = session.exec(
-        select(CompetitionCategory)
-        .where(CompetitionCategory.competition_id == competition_id)
-        .where(CompetitionCategory.nombre == category_name)
-    ).first()
-    if not category:
-        raise HTTPException(404, "Categoria no encontrada")
+    category = _category_for_enrollment(
+        session,
+        competition_id,
+        str(body.categoria or existing.categoria or "").strip(),
+        team_join_token=body.team_join_token,
+        user_id=user_id,
+    )
+    category_name = str(category.nombre or "").strip()
     ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     questions = _parse_enrollment_questions(comp.enrollment_questions)
@@ -1595,9 +1912,16 @@ def self_enroll(
     existing.payment_processed_at = existing.payment_processed_at or datetime.now(timezone.utc)
     existing.payment_updated_at = datetime.now(timezone.utc)
     session.add(existing)
+    team_payload = _post_confirm_team_payload(
+        session,
+        competition_id=competition_id,
+        user_id=user_id,
+        category=category,
+        team_join_token=body.team_join_token,
+    )
     session.commit()
     invalidate_leaderboard_results_snapshot(competition_id)
-    return {"ok": True, "estado": "confirmado", "user_id": user_id}
+    return {"ok": True, "estado": "confirmado", "user_id": user_id, **team_payload}
 
 @router.post("/api/competitions/{competition_id}/bold-checkout")
 def create_bold_checkout(
@@ -1616,17 +1940,14 @@ def create_bold_checkout(
         raise HTTPException(404, "Competencia no encontrada")
     _ensure_competition_open(comp)
 
-    category_name = str(body.categoria or "").strip()
-    if not category_name:
-        raise HTTPException(400, "Selecciona una categoria para continuar")
-
-    category = session.exec(
-        select(CompetitionCategory)
-        .where(CompetitionCategory.competition_id == competition_id)
-        .where(CompetitionCategory.nombre == category_name)
-    ).first()
-    if not category:
-        raise HTTPException(404, "Categoria no encontrada")
+    category = _category_for_enrollment(
+        session,
+        competition_id,
+        str(body.categoria or "").strip(),
+        team_join_token=body.team_join_token,
+        user_id=user_id,
+    )
+    category_name = str(category.nombre or "").strip()
     ensure_category_registration_available(session, competition_id, category, user_id=user_id)
 
     questions = _parse_enrollment_questions(comp.enrollment_questions)
@@ -1701,6 +2022,7 @@ def create_bold_checkout(
         competition_id=competition_id,
         user_id=user_id,
         categoria=category_name,
+        team_join_token=str(body.team_join_token or "").strip() or None,
         enrollment_answers=serialized_answers,
         payment_provider="bold",
         payment_reference=order_id,
@@ -1828,6 +2150,8 @@ def activate_bold_intent(
     if not category:
         raise HTTPException(404, "Categoria no encontrada")
     ensure_category_registration_available(session, competition_id, category, user_id=user_id)
+    if getattr(intent, "team_join_token", None):
+        _ensure_team_join_link_available(session, intent.team_join_token, user_id=user_id)
 
     intent.payment_status = "created"
     intent.payment_updated_at = datetime.now(timezone.utc)
@@ -1872,6 +2196,7 @@ def sync_payment_status(
         else None
     )
     if str(local_payment_status or "").strip().lower() in {"approved", "rejected", "failed", "voided"}:
+        team_payload = _confirmed_team_payload_for_user(session, competition_id, user_id) if enrollment and enrollment.estado == "confirmado" else {}
         return _with_user_id({
             "ok": True,
             "result": {
@@ -1886,6 +2211,7 @@ def sync_payment_status(
             "payment_status": local_payment_status,
             "payment_reference": enrollment.payment_reference if enrollment else reference,
             "payment_transaction_id": local_transaction_id,
+            **team_payload,
         }, user_id)
 
     notification = _sync_bold_notification_by_reference(reference)
@@ -1901,6 +2227,7 @@ def sync_payment_status(
             "payment_status": enrollment.payment_status if enrollment else (intent.payment_status if intent else None),
             "transaction_id": enrollment.payment_transaction_id if enrollment else (intent.payment_transaction_id if intent else None),
         }
+    team_payload = _confirmed_team_payload_for_user(session, competition_id, user_id) if enrollment and enrollment.estado == "confirmado" else {}
     return _with_user_id({
         "ok": True,
         "result": result,
@@ -1908,6 +2235,7 @@ def sync_payment_status(
         "payment_status": enrollment.payment_status if enrollment else (intent.payment_status if intent else None),
         "payment_reference": enrollment.payment_reference if enrollment else reference,
         "payment_transaction_id": enrollment.payment_transaction_id if enrollment else (intent.payment_transaction_id if intent else None),
+        **team_payload,
     }, user_id)
 
 

@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { Bell, Check, CheckCircle2, ChevronDown, Clock3, Circle, ExternalLink, X } from 'lucide-react'
+import { Fragment, useState, useEffect, useRef, useCallback } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Bell, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Circle, ExternalLink, X } from 'lucide-react'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -99,6 +99,14 @@ function rowForScoringPart(part, athleteId, category) {
   const direct = categoryRows.find(row => String(row.id) === String(athleteId))
   if (direct) return direct
   return Object.values(individual).flat().find(row => String(row.id) === String(athleteId)) || null
+}
+
+function teamRowForScoringPart(part, teamId, category) {
+  const rows = Array.isArray(part?.teams) ? part.teams : []
+  const scopedRows = category ? rows.filter(row => (row.team_category || 'Sin categoria') === category) : rows
+  return scopedRows.find(row => String(row.id) === String(teamId))
+    || rows.find(row => String(row.id) === String(teamId))
+    || null
 }
 
 function hasLoadedMark(row) {
@@ -1028,6 +1036,7 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
 // â”€â”€ Team leaderboard table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseInfo, tvMode = false, countryCodeByName = {} }) {
   const prevMap = useRef({})
+  const [expandedTeams, setExpandedTeams] = useState({})
 
   useEffect(() => {
     if (prevData) {
@@ -1038,6 +1047,45 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
   }, [prevData])
 
   if (!data.length) return <p style={{ color: THEME.muted, textAlign: 'center', padding: 40 }}>No hay equipos registrados en esta competencia</p>
+  const scoringParts = phaseScoringParts(phaseInfo)
+  const hasScoringParts = scoringParts.length > 0
+  const toggleTeam = (teamId) => setExpandedTeams(prev => ({ ...prev, [teamId]: !prev[teamId] }))
+  const memberInitials = (member) => `${String(member?.nombre || '').trim().charAt(0)}${String(member?.apellido || '').trim().charAt(0)}`.toUpperCase() || 'AT'
+  const memberSummary = (members) => {
+    if (!members.length) return 'Sin integrantes'
+    const first = members[0]
+    const firstName = `${first.nombre || ''} ${first.apellido || ''}`.trim()
+    return members.length === 1 ? firstName : `${members.length} integrantes · ${firstName} +${members.length - 1}`
+  }
+  const memberPreview = (members) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <span style={{ border: `1px solid rgba(0,194,168,0.34)`, background: 'rgba(0,194,168,0.10)', color: THEME.ink, borderRadius: 999, padding: '5px 8px', fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap', flexShrink: 0 }}>
+        {members.length || 0} integrantes
+      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0, overflow: 'hidden' }}>
+        {members.slice(0, 3).map((m, i) => (
+          <span key={m.id || i} title={`${m.nombre || ''} ${m.apellido || ''}`.trim()} style={{
+            border: `1px solid ${THEME.border}`,
+            background: 'rgba(245,247,250,0.05)',
+            color: THEME.muted,
+            borderRadius: 999,
+            padding: '4px 7px',
+            fontSize: 11,
+            fontWeight: 800,
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}>
+            {memberInitials(m)}
+          </span>
+        ))}
+        {members.length > 3 ? (
+          <span style={{ color: THEME.soft, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>+{members.length - 3}</span>
+        ) : null}
+      </div>
+      <span style={{ color: THEME.muted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberSummary(members)}</span>
+    </div>
+  )
 
   if (isMobile) {
     return (
@@ -1050,7 +1098,10 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           const members = t.members || []
           const totalEntry = totalEntryFor(totalScoreMap, t.id)
           const isPhaseView = !!totalScoreMap
-          const hasLoadedResult = hasLoadedTeamPhaseResult(t)
+          const hasLoadedResult = hasScoringParts
+            ? scoringParts.some(part => hasLoadedMark(teamRowForScoringPart(part, t.id, t.team_category || 'Sin categoria')))
+            : hasLoadedTeamPhaseResult(t)
+          const expanded = !!expandedTeams[t.id]
           return (
             <div key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''} style={mobileRankCardStyle}>
               {/* Header: rank + team name + movement */}
@@ -1066,7 +1117,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                 <div style={mobileScoreChipStyle(isPhaseView)}>
                   <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
                   <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: phasePointsColor(t.total_puntos, hasLoadedResult, '#00C2A8') }}>{t.total_puntos}</div>
-                  {phaseInfo && t.mejor_marca != null && (
+                  {!hasScoringParts && phaseInfo && t.mejor_marca != null && (
                     <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
                   )}
                 </div>
@@ -1077,23 +1128,46 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                   </div>
                 )}
               </div>
+              {hasScoringParts ? (
+                <div style={{ display: 'flex', gap: 10, color: THEME.muted, fontSize: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {scoringParts.map((part, index) => {
+                    const partRow = teamRowForScoringPart(part, t.id, t.team_category || 'Sin categoria')
+                    return (
+                      <span key={part.id} style={{ color: THEME.ink, fontWeight: 500 }}>
+                        {partDisplayName(part, index)}: <PartMetricValue part={part} row={partRow} compact />
+                      </span>
+                    )
+                  })}
+                </div>
+              ) : null}
 
               {/* Members */}
-              <div style={{ borderTop: '1px solid rgba(214,217,224,0.12)', paddingTop: 6, display: 'grid', gap: 3 }}>
-                {members.map(m => {
-                  const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
-                  const color = didTest ? THEME.ink : THEME.muted
-                  const weight = didTest ? 600 : 400
-                  return (
-                    <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
-                      {m.has_active_appeal ? <ReviewBadge /> : null}
-                      {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
-                        <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)}</span>
-                      )}
-                    </div>
-                  )
-                })}
+              <div style={{ borderTop: '1px solid rgba(214,217,224,0.12)', paddingTop: 8, display: 'grid', gap: 8 }}>
+                <button type="button" onClick={() => toggleTeam(t.id)} style={{ border: 'none', background: 'transparent', color: THEME.ink, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}>
+                  {memberPreview(members)}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: THEME.accent, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                    {expanded ? 'Ocultar' : 'Ver'}
+                    {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </span>
+                </button>
+                {expanded ? (
+                  <div style={{ display: 'grid', gap: 5, paddingTop: 2 }}>
+                    {members.map(m => {
+                      const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
+                      const color = didTest ? THEME.ink : THEME.muted
+                      const weight = didTest ? 600 : 400
+                      return (
+                        <div key={m.id} style={{ fontSize: 12, color, fontWeight: weight, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
+                          {m.has_active_appeal ? <ReviewBadge /> : null}
+                          {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null && (
+                            <span style={{ color: THEME.muted, fontSize: 11 }}>{metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)}</span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : null}
               </div>
             </div>
           )
@@ -1109,7 +1183,14 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           <th style={{ width: 50 }}>Pos Evento</th>
           <th>Equipo</th>
           <th>Integrantes</th>
-          {phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
+          {hasScoringParts ? scoringParts.map((part, index) => (
+            <th key={part.id} style={{ textAlign: 'center' }}>
+              <div style={{ display: 'grid', gap: 2 }}>
+                <span>{partDisplayName(part, index)}</span>
+                <span style={{ color: THEME.soft, fontSize: 10, fontWeight: 800 }}>{phaseMetricLabel(part)}</span>
+              </div>
+            </th>
+          )) : phaseInfo && <th style={{ textAlign: 'center' }}>{phaseMetricLabel(phaseInfo)}</th>}
           <th style={{ textAlign: 'center' }}>Puntos</th>
           {totalScoreMap && <th style={{ textAlign: 'center', color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>Total</th>}
           {totalScoreMap && <th style={{ width: 80, textAlign: 'center', color: THEME.muted }}>Pos Gral</th>}
@@ -1123,56 +1204,102 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           const teamName = (t.nombre || '').trim() || `Equipo ${t.id}`
           const members = t.members || []
           const totalEntry = totalEntryFor(totalScoreMap, t.id)
-          const hasLoadedResult = hasLoadedTeamPhaseResult(t)
+          const hasLoadedResult = hasScoringParts
+            ? scoringParts.some(part => hasLoadedMark(teamRowForScoringPart(part, t.id, t.team_category || 'Sin categoria')))
+            : hasLoadedTeamPhaseResult(t)
+          const expanded = !!expandedTeams[t.id]
           return (
-            <tr key={t.id} className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''}>
-              <td style={{ textAlign: 'center' }}><RankCell rank={visibleRank} tvMode={tvMode} /></td>
-              <td>
-                <div style={{ fontWeight: visibleRank <= 3 ? 700 : 400 }}>
-                  {teamName}
-                  {t.has_active_appeal ? <span style={{ marginLeft: 8 }}><ReviewBadge /></span> : null}
-                  <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
-                </div>
-              </td>
-              <td>
-                <div style={{ display: 'grid', gap: 2 }}>
-                  {members.map(m => {
-                    const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
-                    const color = didTest ? THEME.ink : THEME.muted
-                    const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 700 : 400
-                    return (
-                      <div key={m.id} style={{ fontSize: tvMode ? 17 : 12, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <AthleteIdentity athlete={m} compact tvMode={tvMode} countryCodeByName={countryCodeByName} />
-                        {m.has_active_appeal ? <ReviewBadge /> : null}
-                        {phaseMode !== 'total' && (
-                          <span style={{ marginLeft: 6, color: THEME.muted }}>
-                            {phaseInfo
-                              ? `(${phaseMetricLabel(phaseInfo)}: ${metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)})`
-                              : ''}
-                          </span>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              </td>
-              {phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
-              <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: phasePointsColor(t.total_puntos, hasLoadedResult) }}>
-                {t.total_puntos}
-              </td>
-              {totalScoreMap && (
-                <td style={{ textAlign: 'center', fontWeight: 600, fontSize: tvMode ? 22 : 14, color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>
-                  {totalEntry ? (
-                    <span>{totalEntry.puntos ?? '-'}</span>
-                  ) : '-'}
+            <Fragment key={t.id}>
+              <tr className={delta > 0 ? 'row-up' : delta < 0 ? 'row-down' : ''}>
+                <td style={{ textAlign: 'center' }}><RankCell rank={visibleRank} tvMode={tvMode} /></td>
+                <td>
+                  <div style={{ fontWeight: visibleRank <= 3 ? 700 : 400 }}>
+                    {teamName}
+                    {t.has_active_appeal ? <span style={{ marginLeft: 8 }}><ReviewBadge /></span> : null}
+                    <span style={{ marginLeft: 8 }}><MoveSlot delta={delta} tvMode={tvMode} /></span>
+                  </div>
                 </td>
-              )}
-              {totalScoreMap && (
-                <td style={{ textAlign: 'center', color: THEME.muted, fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
-                  {totalEntry?.rank ?? '-'}
+                <td>
+                  {tvMode ? (
+                    <div style={{ display: 'grid', gap: 2 }}>
+                      {members.map(m => {
+                        const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
+                        const color = didTest ? THEME.ink : THEME.muted
+                        const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 700 : 400
+                        return (
+                          <div key={m.id} style={{ fontSize: 17, color, fontWeight: weight, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <AthleteIdentity athlete={m} compact tvMode={tvMode} countryCodeByName={countryCodeByName} />
+                            {m.has_active_appeal ? <ReviewBadge /> : null}
+                            {phaseMode !== 'total' && (
+                              <span style={{ marginLeft: 6, color: THEME.muted }}>
+                                {phaseInfo
+                                  ? `(${phaseMetricLabel(phaseInfo)}: ${metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)})`
+                                  : ''}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => toggleTeam(t.id)} style={{ width: '100%', border: 'none', background: 'transparent', color: THEME.ink, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, textAlign: 'left' }}>
+                      {memberPreview(members)}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: THEME.accent, fontSize: 12, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                        {expanded ? 'Ocultar' : 'Ver integrantes'}
+                        {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                      </span>
+                    </button>
+                  )}
                 </td>
-              )}
-            </tr>
+                {hasScoringParts ? scoringParts.map((part) => {
+                  const partRow = teamRowForScoringPart(part, t.id, t.team_category || 'Sin categoria')
+                  return (
+                    <td key={part.id} style={{ textAlign: 'center', color: THEME.muted }}>
+                      <PartMetricValue part={part} row={partRow} />
+                    </td>
+                  )
+                }) : phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
+                <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: phasePointsColor(t.total_puntos, hasLoadedResult) }}>
+                  {t.total_puntos}
+                </td>
+                {totalScoreMap && (
+                  <td style={{ textAlign: 'center', fontWeight: 600, fontSize: tvMode ? 22 : 14, color: THEME.muted, borderLeft: `1px solid ${THEME.border}` }}>
+                    {totalEntry ? (
+                      <span>{totalEntry.puntos ?? '-'}</span>
+                    ) : '-'}
+                  </td>
+                )}
+                {totalScoreMap && (
+                  <td style={{ textAlign: 'center', color: THEME.muted, fontWeight: 600, fontSize: tvMode ? 20 : undefined }}>
+                    {totalEntry?.rank ?? '-'}
+                  </td>
+                )}
+              </tr>
+              {!tvMode && expanded ? (
+                <tr key={`${t.id}-members`} style={{ background: 'rgba(9,11,14,0.42)' }}>
+                  <td />
+                  <td colSpan={2 + (hasScoringParts ? scoringParts.length : (phaseInfo ? 1 : 0)) + (totalScoreMap ? 2 : 0)} style={{ paddingTop: 10, paddingBottom: 14 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
+                      {members.map(m => {
+                        const didTest = Number(m.puntos_propios || 0) > 0 || m.mejor_marca != null
+                        const weight = (phaseMode === 'single_member' && didTest) || (phaseMode === 'sum_two' && didTest) ? 800 : 600
+                        return (
+                          <div key={m.id} style={{ border: `1px solid ${THEME.border}`, borderRadius: 8, background: THEME.surface, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <AthleteIdentity athlete={m} compact countryCodeByName={countryCodeByName} />
+                            {m.has_active_appeal ? <ReviewBadge /> : null}
+                            {phaseMode !== 'total' && phaseInfo && m.mejor_marca != null ? (
+                              <span style={{ marginLeft: 'auto', color: didTest ? THEME.ink : THEME.muted, fontSize: 12, fontWeight: weight, whiteSpace: 'nowrap' }}>
+                                {metricValueWithExtra(m.mejor_marca, m.extra, phaseInfo)}
+                              </span>
+                            ) : null}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           )
         })}
       </tbody>
@@ -1275,6 +1402,7 @@ function CountdownClock({ timerData, tvMode, serverOffsetMs = 0 }) {
 // ── Main Leaderboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function Leaderboard() {
   const { competitionId } = useParams()
+  const [searchParams] = useSearchParams()
   const { session, displayName } = useAuth()
   const lockedCompetitionId = competitionId ? String(competitionId) : ''
   const [competitions, setCompetitions] = useState([])
@@ -1308,6 +1436,7 @@ export default function Leaderboard() {
   const phaseTransitionRef = useRef(null)
   const tvScrollContainerRef = useRef(null)
   const tvScrollContentRef = useRef(null)
+  const appliedDeepLinkRef = useRef('')
 
   // Detect if user is already logged in
   const loggedRole = session?.role || null
@@ -1549,6 +1678,44 @@ export default function Leaderboard() {
     setSelectedAthleteSummary(null)
   }, [selectedComp, tvMode])
 
+  useEffect(() => {
+    if (!data || tvMode || !selectedComp) return
+
+    const phaseParam = searchParams.get('phase')
+    const athleteParam = searchParams.get('athlete')
+    const teamParam = searchParams.get('team')
+    if (!phaseParam && !athleteParam && !teamParam) return
+
+    const deepLinkKey = `${selectedComp}|${searchParams.toString()}`
+    if (appliedDeepLinkRef.current === deepLinkKey) return
+    appliedDeepLinkRef.current = deepLinkKey
+
+    const linkedPhase = (data.phases || []).find((phase) => String(phase.id) === String(phaseParam)) || null
+
+    if (teamParam) {
+      const targetRows = linkedPhase?.teams || data.teams || []
+      const team = targetRows.find((row) => String(row.id) === String(teamParam))
+        || (data.teams || []).find((row) => String(row.id) === String(teamParam))
+      if (!team) return
+      setView('teams')
+      setTeamPhaseView(linkedPhase ? linkedPhase.id : 'total')
+      setTeamCategoryMode(team.team_category || 'Sin categoria')
+      return
+    }
+
+    if (athleteParam) {
+      const targetIndividual = linkedPhase?.individual || data.individual || {}
+      const athlete = allIndividualRows(targetIndividual).find((row) => String(row.id) === String(athleteParam))
+        || findTotalRowForAthlete(data, athleteParam)
+      if (!athlete) return
+      setView('individual')
+      setPhaseView(linkedPhase ? linkedPhase.id : 'total')
+      setSelectedCategory(athlete.categoria || 'Sin categoria')
+      const summary = buildAthleteSummary(athlete, data)
+      if (summary) setSelectedAthleteSummary(summary)
+    }
+  }, [data, searchParams, selectedComp, tvMode])
+
   // Only poll timer when TV mode actually needs it.
   useEffect(() => {
     clearInterval(timerIntervalRef.current)
@@ -1593,24 +1760,29 @@ export default function Leaderboard() {
     return () => clearInterval(intervalRef.current)
   }, [selectedComp, pollIntervalMs, fetchLeaderboard])
 
+  const teamPhaseOptions = (data?.phases || []).map((phase) => ({ value: String(phase.id), label: phase.nombre, phase }))
+  const prevTeamPhaseOptions = (prevData?.phases || []).map((phase) => ({ value: String(phase.id), phase }))
+  const selectedTeamPhaseOption = teamPhaseOptions.find((item) => item.value === String(teamPhaseView)) || null
+  const selectedPrevTeamPhaseOption = prevTeamPhaseOptions.find((item) => item.value === String(teamPhaseView)) || null
+
   const currentIndividualData = phaseView === 'total'
     ? (data?.individual || {})
     : (data?.phases?.find(p => String(p.id) === String(phaseView))?.individual || {})
   const currentTeamData = teamPhaseView === 'total'
     ? (data?.teams || [])
-    : (data?.phases?.find(p => String(p.id) === String(teamPhaseView))?.teams || [])
+    : (selectedTeamPhaseOption?.phase?.teams || [])
   const prevTeamData = teamPhaseView === 'total'
     ? (prevData?.teams || [])
-    : (prevData?.phases?.find(p => String(p.id) === String(teamPhaseView))?.teams || [])
+    : (selectedPrevTeamPhaseOption?.phase?.teams || [])
   const currentTeamPhaseMode = teamPhaseView === 'total'
     ? 'sum_two'
-    : ((data?.phases?.find(p => String(p.id) === String(teamPhaseView))?.team_result_mode) || 'sum_two')
+    : ((selectedTeamPhaseOption?.phase?.team_result_mode) || 'sum_two')
   const currentIndividualPhase = phaseView === 'total'
     ? null
     : (data?.phases?.find(p => String(p.id) === String(phaseView)) || null)
   const currentTeamPhase = teamPhaseView === 'total'
     ? null
-    : (data?.phases?.find(p => String(p.id) === String(teamPhaseView)) || null)
+    : (selectedTeamPhaseOption?.phase || null)
   const currentCategories = orderCategories(currentIndividualData)
   const teamCategories = [...new Set((currentTeamData || []).map(t => t.team_category || 'Sin categoria'))]
 
@@ -2489,9 +2661,9 @@ export default function Leaderboard() {
                     <label>Evento equipos</label>
                     <select value={teamPhaseView} onChange={e => switchTeamPhaseView(e.target.value)}>
                       <option value="total">Total</option>
-                      {data.phases.map(ph => (
-                        <option key={`lb-mobile-team-phase-${ph.id}`} value={ph.id}>
-                          {ph.nombre}{phaseStatusSuffix(ph.estado)}
+                      {teamPhaseOptions.map(item => (
+                        <option key={`lb-mobile-team-phase-${item.value}`} value={item.value}>
+                          {item.label}{item.isPart ? '' : phaseStatusSuffix(item.phase?.estado)}
                         </option>
                       ))}
                     </select>
@@ -2505,17 +2677,17 @@ export default function Leaderboard() {
                     >
                       Total
                     </button>
-                    {data.phases.map(ph => (
+                    {teamPhaseOptions.map(item => (
                       <button
-                        key={`team-phase-${ph.id}`}
-                        className={`tab ${teamPhaseView === ph.id ? 'active' : ''}`}
-                        onClick={() => switchTeamPhaseView(ph.id)}
-                        style={{ padding: '5px 14px', fontSize: 13 }}
-                        title={`Estado: ${ph.estado || 'pendiente'}`}
+                        key={`team-phase-${item.value}`}
+                        className={`tab ${String(teamPhaseView) === item.value ? 'active' : ''}`}
+                        onClick={() => switchTeamPhaseView(item.value)}
+                        style={{ padding: item.isPart ? '5px 11px' : '5px 14px', fontSize: 13, opacity: item.isPart ? 0.92 : 1 }}
+                        title={`Estado: ${item.phase?.estado || item.parent?.estado || 'pendiente'}`}
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          {phaseStatusIcon(ph.estado, 14)}
-                          <span>{ph.nombre}</span>
+                          {phaseStatusIcon(item.phase?.estado || item.parent?.estado, 14)}
+                          <span>{item.isPart ? item.label : item.phase?.nombre}</span>
                         </span>
                       </button>
                     ))}

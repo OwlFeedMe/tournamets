@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Dumbbell, Eye, EyeOff, Search, ShieldCheck, X, CheckCircle } from 'lucide-react'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
@@ -712,12 +712,18 @@ function ForgotPasswordModal({ open, onClose }) {
 
 export default function Login() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { persistSession } = useAuth()
   const [form, setForm] = useState({ email: '', password: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [registerOpen, setRegisterOpen] = useState(false)
   const [forgotOpen, setForgotOpen] = useState(false)
+
+  const nextPath = (() => {
+    const value = searchParams.get('next') || ''
+    return value.startsWith('/') && !value.startsWith('//') ? value : ''
+  })()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -729,7 +735,7 @@ export default function Login() {
         password: form.password,
       })
       persistSession(data)
-      navigate(getHomePath(data.role), { replace: true })
+      navigate(nextPath || getHomePath(data.role), { replace: true })
     } catch (err) {
       setError(getApiErrorMessage(err, 'No pudimos iniciar sesion con esas credenciales'))
     } finally {
@@ -739,7 +745,7 @@ export default function Login() {
 
   const handleRegistered = (data) => {
     persistSession(data)
-    navigate(getHomePath(data.role), { replace: true })
+    navigate(nextPath || getHomePath(data.role), { replace: true })
   }
 
   return (
