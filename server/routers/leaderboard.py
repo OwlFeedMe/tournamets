@@ -627,7 +627,12 @@ def _build_team_rows_for_phase(
         else:
             total_puntos += direct_points
             total_eventos += direct_events
-            total_extra = None
+            combined_mark = _combine_mark(total_marca, direct_mark, mark_lower_is_better)
+            use_direct_metric = direct_mark is not None and (
+                total_marca is None or combined_mark == direct_mark
+            )
+            total_marca = combined_mark
+            total_extra = direct_extra if use_direct_metric else None
         rows.append({
             "id": t.id,
             "nombre": (t.nombre or "").strip() or f"Equipo {t.id}",

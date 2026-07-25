@@ -1,7 +1,8 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
-from routers.leaderboard import _aggregate_parent_team_rows
+from routers.leaderboard import _aggregate_parent_team_rows, _build_team_rows_for_phase
 
 
 LEADERBOARD_SOURCE = Path(__file__).resolve().parents[1] / "routers" / "leaderboard.py"
@@ -65,6 +66,64 @@ class TeamScoringPartsLeaderboardContractTests(unittest.TestCase):
         self.assertEqual(by_id[1]["rank"], 2)
         self.assertEqual(by_id[2]["total_puntos"], 2)
         self.assertEqual(by_id[2]["rank"], 1)
+
+    def test_direct_team_result_keeps_metric_in_single_member_part(self):
+        rows = _build_team_rows_for_phase(
+            teams=[SimpleNamespace(id=1, nombre="Loyal Team", team_category_id=None)],
+            competition_id=7,
+            phase_id=24,
+            mode="single_member",
+            mark_lower_is_better=False,
+            points_lower_is_better=True,
+            team_members_by_team={},
+            ind_points_per_phase={},
+            team_member_points_per_phase={},
+            team_direct_per_phase={
+                (24, 1): {
+                    "sum": 3,
+                    "count": 1,
+                    "min": 12,
+                    "max": 12,
+                    "min_extra": None,
+                    "max_extra": None,
+                    "has_active_appeal": False,
+                },
+            },
+            categories_map={},
+        )
+
+        self.assertEqual(rows[0]["total_puntos"], 3)
+        self.assertEqual(rows[0]["total_eventos"], 1)
+        self.assertEqual(rows[0]["mejor_marca"], 12)
+        self.assertIsNone(rows[0]["extra"])
+
+    def test_direct_team_time_result_keeps_cap_extra(self):
+        rows = _build_team_rows_for_phase(
+            teams=[SimpleNamespace(id=1, nombre="Loyal Team", team_category_id=None)],
+            competition_id=7,
+            phase_id=25,
+            mode="single_member",
+            mark_lower_is_better=True,
+            points_lower_is_better=True,
+            team_members_by_team={},
+            ind_points_per_phase={},
+            team_member_points_per_phase={},
+            team_direct_per_phase={
+                (25, 1): {
+                    "sum": 2,
+                    "count": 1,
+                    "min": 600,
+                    "max": 600,
+                    "min_extra": 93,
+                    "max_extra": 93,
+                    "has_active_appeal": False,
+                },
+            },
+            categories_map={},
+        )
+
+        self.assertEqual(rows[0]["mejor_marca"], 600)
+        self.assertEqual(rows[0]["extra"], 93)
 
 
 if __name__ == "__main__":
