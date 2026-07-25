@@ -670,6 +670,68 @@ def _build_team_rows_for_phase(
     return rows
 
 
+def _aggregate_parent_team_rows(
+    parent_rows: list[dict],
+    child_payloads: list[dict],
+    *,
+    rank_by_category: bool,
+    lower_is_better: bool,
+    tiebreak: str,
+) -> list[dict]:
+    rows = []
+    child_rows_by_team = {
+        int(row["id"]): [
+            child_row
+            for child in child_payloads
+            for child_row in child.get("teams", [])
+            if int(child_row["id"]) == int(row["id"])
+        ]
+        for row in parent_rows
+    }
+    for parent_row in parent_rows:
+        row = dict(parent_row)
+        child_rows = child_rows_by_team.get(int(row["id"]), [])
+        row["total_puntos"] = sum(int(child.get("total_puntos") or 0) for child in child_rows)
+        row["total_eventos"] = sum(int(child.get("total_eventos") or 0) for child in child_rows)
+        row["total_position_tiebreak"] = [
+            int(child["rank"])
+            for child in child_rows
+            if int(child.get("total_eventos") or 0) > 0 and child.get("rank") is not None
+        ]
+        row["mejor_marca"] = None
+        row["extra"] = None
+        row["has_active_appeal"] = bool(
+            row.get("has_active_appeal")
+            or any(child.get("has_active_appeal") for child in child_rows)
+        )
+        rows.append(row)
+
+    if rank_by_category:
+        by_cat: dict[str, list[dict]] = defaultdict(list)
+        for row in rows:
+            by_cat[row.get("team_category") or "Sin categoria"].append(row)
+        ranked_rows = []
+        for category in sorted(by_cat):
+            category_rows = _sort_total_rows(
+                by_cat[category],
+                lower_is_better=lower_is_better,
+                tiebreak=tiebreak,
+            )
+            for rank, row in enumerate(category_rows, 1):
+                row["rank"] = rank
+            ranked_rows.extend(category_rows)
+        return ranked_rows
+
+    ranked_rows = _sort_total_rows(
+        rows,
+        lower_is_better=lower_is_better,
+        tiebreak=tiebreak,
+    )
+    for rank, row in enumerate(ranked_rows, 1):
+        row["rank"] = rank
+    return ranked_rows
+
+
 def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -> dict:
     comp = session.get(Competition, competition_id)
     comp_lower_is_better = competition_total_lower_is_better(comp)
@@ -725,7 +787,6 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
     all_phases = session.exec(
         select(CompetitionPhase)
         .where(CompetitionPhase.competition_id == competition_id)
-        .where(CompetitionPhase.is_visible == 1)
         .order_by(CompetitionPhase.orden, CompetitionPhase.id)
     ).all()
     children_by_parent: dict[int, list[CompetitionPhase]] = defaultdict(list)
@@ -734,7 +795,7 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
         parent_id = int(getattr(phase, "parent_phase_id", 0) or 0)
         if parent_id:
             children_by_parent[parent_id].append(phase)
-        else:
+        elif int(getattr(phase, "is_visible", 1) or 0) == 1:
             phases.append(phase)
     phase_status_map = compute_phase_status_map(session, competition_id)
     phase_schedule_map = _fetch_phase_schedule_map(session, competition_id)
@@ -867,6 +928,13 @@ def _build_leaderboard_results_snapshot(competition_id: int, session: Session) -
             child_payloads = [build_phase_payload(child, as_part=True) for child in children]
             payload["scoring_parts"] = child_payloads
             payload["individual"] = aggregate_parent_individual(phase, [int(child.id) for child in children if child.id is not None])
+            payload["teams"] = _aggregate_parent_team_rows(
+                payload["teams"],
+                child_payloads,
+                rank_by_category=rank_by_category,
+                lower_is_better=comp_lower_is_better,
+                tiebreak=comp_tiebreak,
+            )
             payload["has_scoring_parts"] = True
         phases_data.append(payload)
 
