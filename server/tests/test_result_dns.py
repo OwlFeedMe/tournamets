@@ -1,14 +1,31 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 
 from models import ResultCreate, ResultUpdate
 from routers.leaderboard import _aggregate_parent_team_rows, _build_team_rows_for_phase
-from routers.results import _normalize_result_entry_status
+from routers.results import _normalize_result_entry_status, _team_categories_map
 
 
 class ResultDnsTests(unittest.TestCase):
+    def test_team_scoring_uses_explicit_category_without_members(self):
+        session = MagicMock()
+        session.exec.side_effect = [
+            SimpleNamespace(all=lambda: [
+                SimpleNamespace(id=4, competition_id=7, team_category_id=2),
+            ]),
+            SimpleNamespace(all=lambda: [
+                SimpleNamespace(id=2, competition_id=7, nombre="Intermedio"),
+            ]),
+            SimpleNamespace(all=lambda: []),
+        ]
+
+        categories = _team_categories_map(session, 7, {4})
+
+        self.assertEqual(categories, {4: "Intermedio"})
+
     def test_result_schemas_accept_dns(self):
         create = ResultCreate(competition_id=7, team_id=12, phase_id=26, result_status="dns")
         update = ResultUpdate(result_status="dns")

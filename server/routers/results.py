@@ -16,7 +16,17 @@ from auth import (
     require_staff,
 )
 from database import get_session
-from models import Result, ResultCreate, ResultUpdate, Competition, CompetitionParticipant, CompetitionPhase, Team, TeamMember
+from models import (
+    Competition,
+    CompetitionCategory,
+    CompetitionParticipant,
+    CompetitionPhase,
+    Result,
+    ResultCreate,
+    ResultUpdate,
+    Team,
+    TeamMember,
+)
 from phase_status import recompute_and_persist_phase_status
 from services.leaderboard_cache import invalidate_leaderboard_results_snapshot
 from services.result_notifications import notify_result_saved
@@ -240,6 +250,34 @@ def _participant_categories_map(session: Session, competition_id: int, participa
 def _team_categories_map(session: Session, competition_id: int, team_ids: set[int]) -> dict[int, str]:
     if not team_ids:
         return {}
+    teams = session.exec(
+        select(Team).where(
+            Team.competition_id == competition_id,
+            Team.id.in_(team_ids),
+        )
+    ).all()
+    explicit_category_ids = {
+        int(team.team_category_id)
+        for team in teams
+        if team.team_category_id is not None
+    }
+    categories = session.exec(
+        select(CompetitionCategory).where(
+            CompetitionCategory.competition_id == competition_id,
+            CompetitionCategory.id.in_(explicit_category_ids),
+        )
+    ).all() if explicit_category_ids else []
+    category_names = {
+        int(category.id): _normalize_category(category.nombre)
+        for category in categories
+    }
+    explicit_by_team = {
+        int(team.id): category_names[int(team.team_category_id)]
+        for team in teams
+        if team.team_category_id is not None
+        and int(team.team_category_id) in category_names
+    }
+
     members = session.exec(
         select(TeamMember).where(TeamMember.team_id.in_(team_ids))
     ).all()
@@ -254,6 +292,9 @@ def _team_categories_map(session: Session, competition_id: int, team_ids: set[in
 
     out: dict[int, str] = {}
     for tid in team_ids:
+        if int(tid) in explicit_by_team:
+            out[int(tid)] = explicit_by_team[int(tid)]
+            continue
         cats = team_categories.get(int(tid), set())
         if len(cats) == 1:
             out[int(tid)] = next(iter(cats))
