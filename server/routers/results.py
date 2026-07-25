@@ -35,6 +35,7 @@ PHASE_TIPO_ALIAS = {
 }
 PHASE_POINTS_MODES_VALIDOS = {"manual", "position_direct", "position_rules"}
 PHASE_WINNER_RULES_VALIDOS = {"higher_wins", "lower_wins"}
+RESULT_ENTRY_STATUSES = {"valid", "dns"}
 
 
 def appeal_deadline_from_now() -> datetime:
@@ -66,6 +67,13 @@ def _normalize_winner_rule(raw: str | None) -> str:
     if value in PHASE_WINNER_RULES_VALIDOS:
         return value
     return ""
+
+
+def _normalize_result_entry_status(raw: str | None) -> str:
+    value = (raw or "valid").strip().lower()
+    if value not in RESULT_ENTRY_STATUSES:
+        raise HTTPException(400, "Estado de resultado invalido. Usa: valid o dns")
+    return value
 
 
 def _default_winner_rule_for_type(phase_type: str) -> str:
@@ -566,6 +574,8 @@ def list_results(
 @router.post("", status_code=201)
 def create_result(body: ResultCreate, session: Session = Depends(get_session), user=Depends(require_auth)):
     scoped_end_user = _should_scope_to_authenticated_participant(user)
+    result_status = _normalize_result_entry_status(body.result_status)
+    is_dns = result_status == "dns"
     target_user_id = body.user_id
     if not target_user_id and not body.team_id:
         raise HTTPException(400, "Se requiere user_id o team_id")
@@ -574,8 +584,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
 
     resolved_team_id = body.team_id
     computed_points: int | None = None
-    computed_position: int | None = body.posicion
-    computed_mark: int | None = body.marca if body.marca is not None else body.puntos
+    computed_position: int | None = None if is_dns else body.posicion
+    computed_mark: int | None = None if is_dns else (body.marca if body.marca is not None else body.puntos)
 
     if body.team_id:
         team = session.get(Team, body.team_id)
@@ -595,6 +605,8 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
             raise HTTPException(400, "El usuario no pertenece al equipo indicado")
 
     if scoped_end_user:
+        if is_dns:
+            raise HTTPException(403, "Solo el staff puede marcar un resultado como DNS")
         current_participant_id = get_effective_user_id(user)
         if body.team_id:
             raise HTTPException(403, "Los usuarios no pueden cargar resultados de equipo")
@@ -618,13 +630,14 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:
             raise HTTPException(400, "Tipo de fase invalido")
-        if phase_type == "posicion" and computed_position is not None:
+        if not is_dns and phase_type == "posicion" and computed_position is not None:
             computed_mark = int(computed_position)
 
         # simplified global flow: position + points are auto from mark
-        if computed_mark is None:
+        if not is_dns and computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
-        body.extra = _validate_time_cap_result(phase, computed_mark, body.extra)
+        if not is_dns:
+            body.extra = _validate_time_cap_result(phase, computed_mark, body.extra)
 
         if phase_mode == "total" and resolved_team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -649,11 +662,15 @@ def create_result(body: ResultCreate, session: Session = Depends(get_session), u
         payload["user_id"] = None
     payload["team_id"] = resolved_team_id
     payload["marca"] = computed_mark
+    payload["extra"] = None if is_dns else body.extra
+    payload["tiebreak"] = None if is_dns else body.tiebreak
+    payload["puntos"] = 0 if is_dns else int(payload.get("puntos") or 0)
+    payload["posicion"] = None if is_dns else payload.get("posicion")
     if computed_points is not None:
         payload["puntos"] = int(computed_points)
     if computed_position is not None:
         payload["posicion"] = int(computed_position)
-    payload["result_status"] = "valid"
+    payload["result_status"] = result_status
     payload["appeal_deadline_at"] = appeal_deadline_from_now()
     result = Result.model_validate(payload)
     session.add(result)
@@ -678,11 +695,15 @@ def update_result(result_id: int, body: ResultUpdate,
         raise HTTPException(404, "Resultado no encontrado")
     require_competition_access(session, int(r.competition_id), user)
     prev_phase_id = int(r.phase_id) if r.phase_id is not None else None
+    result_status = _normalize_result_entry_status(
+        body.result_status if body.result_status is not None else r.result_status
+    )
+    is_dns = result_status == "dns"
 
     computed_points: int | None = None
-    computed_position: int | None = body.posicion if body.posicion is not None else r.posicion
-    computed_mark: int | None = body.marca if body.marca is not None else (body.puntos if body.puntos is not None else r.marca)
-    computed_extra: int | None = body.extra if body.extra is not None else r.extra
+    computed_position: int | None = None if is_dns else (body.posicion if body.posicion is not None else r.posicion)
+    computed_mark: int | None = None if is_dns else (body.marca if body.marca is not None else (body.puntos if body.puntos is not None else r.marca))
+    computed_extra: int | None = None if is_dns else (body.extra if body.extra is not None else r.extra)
     phase_id = body.phase_id if body.phase_id is not None else r.phase_id
     phase_mode = ""
     if phase_id:
@@ -695,13 +716,14 @@ def update_result(result_id: int, body: ResultUpdate,
         phase_type = _normalize_phase_type(phase.tipo)
         if phase_type not in PHASE_TIPOS_VALIDOS:
             raise HTTPException(400, "Tipo de fase invalido")
-        if phase_type == "posicion" and computed_position is not None:
+        if not is_dns and phase_type == "posicion" and computed_position is not None:
             computed_mark = int(computed_position)
 
         # simplified global flow: position + points are auto from mark
-        if computed_mark is None:
+        if not is_dns and computed_mark is None:
             raise HTTPException(400, "Esta fase requiere un valor (marca) para calcular posicion y puntos")
-        computed_extra = _validate_time_cap_result(phase, computed_mark, computed_extra)
+        if not is_dns:
+            computed_extra = _validate_time_cap_result(phase, computed_mark, computed_extra)
 
         if phase_mode == "total" and r.team_id is None:
             raise HTTPException(400, "Esta fase requiere un resultado por equipo")
@@ -727,6 +749,11 @@ def update_result(result_id: int, body: ResultUpdate,
         r.user_id = None
     r.marca = computed_mark
     r.extra = computed_extra
+    r.tiebreak = None if is_dns else r.tiebreak
+    r.result_status = result_status
+    if is_dns:
+        r.puntos = 0
+        r.posicion = None
     if computed_points is not None:
         r.puntos = int(computed_points)
     if computed_position is not None:

@@ -110,7 +110,7 @@ function teamRowForScoringPart(part, teamId, category) {
 }
 
 function hasLoadedMark(row) {
-  return row?.mejor_marca != null
+  return !!row?.is_dns || row?.mejor_marca != null
 }
 
 function hasLoadedIndividualPhaseResult(row, scoringParts = [], category = '') {
@@ -131,6 +131,7 @@ function phasePointsColor(points, hasLoadedResult, positiveColor = THEME.primary
 }
 
 function PartMetricValue({ part, row, compact = false }) {
+  if (row?.is_dns) return <span style={{ color: THEME.primary, fontWeight: 900 }}>DNS</span>
   if (!row || row.mejor_marca == null) return <span style={{ color: THEME.soft }}>-</span>
   return (
     <span>
@@ -1120,8 +1121,8 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                 <div style={mobileScoreChipStyle(isPhaseView)}>
                   <div style={{ fontSize: 10, color: THEME.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Puntos</div>
                   <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1, color: phasePointsColor(t.total_puntos, hasLoadedResult, '#00C2A8') }}>{t.total_puntos}</div>
-                  {!hasScoringParts && phaseInfo && t.mejor_marca != null && (
-                    <div style={{ fontSize: 11, color: THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
+                  {!hasScoringParts && phaseInfo && (t.is_dns || t.mejor_marca != null) && (
+                    <div style={{ fontSize: 11, color: t.is_dns ? THEME.primary : THEME.muted, marginTop: 3 }}>{phaseMetricLabel(phaseInfo)}: {t.is_dns ? 'DNS' : metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</div>
                   )}
                 </div>
                 {isPhaseView && (
@@ -1261,7 +1262,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
                       <PartMetricValue part={part} row={partRow} />
                     </td>
                   )
-                }) : phaseInfo && <td style={{ textAlign: 'center', color: THEME.muted }}>{metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
+                }) : phaseInfo && <td style={{ textAlign: 'center', color: t.is_dns ? THEME.primary : THEME.muted, fontWeight: t.is_dns ? 900 : undefined }}>{t.is_dns ? 'DNS' : metricValueWithExtra(t.mejor_marca, t.extra, phaseInfo)}</td>}
                 <td style={{ textAlign: 'center', fontWeight: 700, fontSize: tvMode ? 26 : 16, color: phasePointsColor(t.total_puntos, hasLoadedResult) }}>
                   {t.total_puntos}
                 </td>

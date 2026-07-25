@@ -2022,6 +2022,7 @@ class ResultCreate(SQLModel):
     tiebreak: Optional[int] = None
     puntos: int = 0
     posicion: Optional[int] = None
+    result_status: str = "valid"
 
 
 class ResultUpdate(SQLModel):
@@ -2031,6 +2032,7 @@ class ResultUpdate(SQLModel):
     tiebreak: Optional[int] = None
     puntos: Optional[int] = None
     posicion: Optional[int] = None
+    result_status: Optional[str] = None
 
 
 # ── Enrollment schemas ─────────────────────────────────────────────────────────

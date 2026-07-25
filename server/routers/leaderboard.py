@@ -223,7 +223,7 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             r.phase_id,
             r.user_id,
             COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
-            COUNT(r.id)::int                AS cnt,
+            (COUNT(r.id) FILTER (WHERE r.result_status <> 'dns'))::int AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
             MIN(r.extra)                    AS min_extra,
@@ -231,7 +231,8 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             MIN(r.tiebreak)                 AS min_tiebreak,
             MAX(r.tiebreak)                 AS max_tiebreak,
             MIN(r.posicion)                 AS best_position,
-            (COUNT(ra.id) > 0)            AS has_active_appeal
+            (COUNT(ra.id) > 0)              AS has_active_appeal,
+            BOOL_OR(r.result_status = 'dns') AS is_dns
         FROM results r
         JOIN competition_phases ph
           ON ph.id = r.phase_id
@@ -256,6 +257,7 @@ def _fetch_ind_points_per_phase(session: Session, competition_id: int) -> dict:
             "max_tiebreak": int(r["max_tiebreak"]) if r["max_tiebreak"] is not None else None,
             "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
+            "is_dns": bool(r["is_dns"]),
         }
         for r in rows
     }
@@ -274,13 +276,14 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             r.team_id,
             r.user_id,
             COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
-            COUNT(r.id)::int                AS cnt,
+            (COUNT(r.id) FILTER (WHERE r.result_status <> 'dns'))::int AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
             MIN(r.extra)                    AS min_extra,
             MAX(r.extra)                    AS max_extra,
             MIN(r.posicion)                 AS best_position,
-            (COUNT(ra.id) > 0)              AS has_active_appeal
+            (COUNT(ra.id) > 0)              AS has_active_appeal,
+            BOOL_OR(r.result_status = 'dns') AS is_dns
         FROM results r
         JOIN competition_phases ph
           ON ph.id = r.phase_id
@@ -305,6 +308,7 @@ def _fetch_team_member_points_per_phase(session: Session, competition_id: int) -
             "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
+            "is_dns": bool(r["is_dns"]),
         }
         for r in rows
     }
@@ -317,13 +321,14 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             r.phase_id,
             r.team_id,
             COALESCE(SUM(r.puntos), 0)::int AS sum_pts,
-            COUNT(r.id)::int                AS cnt,
+            (COUNT(r.id) FILTER (WHERE r.result_status <> 'dns'))::int AS cnt,
             MIN(r.marca)                    AS min_mark,
             MAX(r.marca)                    AS max_mark,
             MIN(r.extra)                    AS min_extra,
             MAX(r.extra)                    AS max_extra,
             MIN(r.posicion)                 AS best_position,
-            (COUNT(ra.id) > 0)              AS has_active_appeal
+            (COUNT(ra.id) > 0)              AS has_active_appeal,
+            BOOL_OR(r.result_status = 'dns') AS is_dns
         FROM results r
         JOIN competition_phases ph
           ON ph.id = r.phase_id
@@ -346,6 +351,7 @@ def _fetch_team_direct_points_per_phase(session: Session, competition_id: int) -
             "max_extra": int(r["max_extra"]) if r["max_extra"] is not None else None,
             "best_position": int(r["best_position"]) if r["best_position"] is not None else None,
             "has_active_appeal": bool(r["has_active_appeal"]),
+            "is_dns": bool(r["is_dns"]),
         }
         for r in rows
     }
@@ -442,6 +448,7 @@ def _build_ind_rows(
                 total = int(data["sum"])
                 events = int(data["count"])
                 has_active_appeal = bool(data.get("has_active_appeal"))
+                is_dns = bool(data.get("is_dns")) and events == 0
             else:
                 mark = None
                 extra = None
@@ -449,6 +456,7 @@ def _build_ind_rows(
                 total = 0
                 events = 0
                 has_active_appeal = False
+                is_dns = False
             rows.append({
                 "id": p["id"],
                 "nombre": p["nombre"],
@@ -465,6 +473,7 @@ def _build_ind_rows(
                 "extra": extra,
                 "tiebreak": tiebreak,
                 "has_active_appeal": has_active_appeal,
+                "is_dns": is_dns,
             })
     return rows
 
@@ -485,6 +494,7 @@ def _team_members_for_phase(
         sum_pts = (ind_data["sum"] if ind_data else 0) + (tm_data["sum"] if tm_data else 0)
         cnt = (ind_data["count"] if ind_data else 0) + (tm_data["count"] if tm_data else 0)
         has_active_appeal = bool((ind_data or {}).get("has_active_appeal") or (tm_data or {}).get("has_active_appeal"))
+        is_dns = bool((ind_data or {}).get("is_dns") or (tm_data or {}).get("is_dns")) and cnt == 0
         ind_mark = (ind_data["min"] if lower_is_better else ind_data["max"]) if ind_data else None
         tm_mark = (tm_data["min"] if lower_is_better else tm_data["max"]) if tm_data else None
         ind_extra = (ind_data["min_extra"] if lower_is_better else ind_data["max_extra"]) if ind_data else None
@@ -506,6 +516,7 @@ def _team_members_for_phase(
             "mejor_marca": mark,
             "extra": extra,
             "has_active_appeal": has_active_appeal,
+            "is_dns": is_dns,
         })
     return out
 
@@ -633,6 +644,9 @@ def _build_team_rows_for_phase(
             )
             total_marca = combined_mark
             total_extra = direct_extra if use_direct_metric else None
+        is_dns = total_eventos == 0 and bool(
+            (direct or {}).get("is_dns") or any(member.get("is_dns") for member in members)
+        )
         rows.append({
             "id": t.id,
             "nombre": (t.nombre or "").strip() or f"Equipo {t.id}",
@@ -642,6 +656,7 @@ def _build_team_rows_for_phase(
             "mejor_marca": total_marca,
             "extra": total_extra,
             "has_active_appeal": has_active_appeal,
+            "is_dns": is_dns,
             "members": members,
         })
     if rank_by_category:
@@ -709,6 +724,7 @@ def _aggregate_parent_team_rows(
             row.get("has_active_appeal")
             or any(child.get("has_active_appeal") for child in child_rows)
         )
+        row["is_dns"] = bool(child_rows) and all(child.get("is_dns") for child in child_rows)
         rows.append(row)
 
     if rank_by_category:

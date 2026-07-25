@@ -4037,6 +4037,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const isDnfMark = (value) => Number(value) === DNF_MARK_HIGH || Number(value) === DNF_MARK_LOW
   const markValue = (item) => {
     const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return ''
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return timeCapLabel
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     const existing = existingResultFor(item)
@@ -4045,9 +4046,15 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const isDnfValue = (item) => {
     const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(existingResultFor(item)?.marca)
+  }
+  const isDnsValue = (item) => {
+    const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns')) return !!marks[key].dns
+    return String(existingResultFor(item)?.result_status || '').toLowerCase() === 'dns'
   }
   const tiebreakValue = (item) => {
     const key = resultKey(activeResultPhaseId, item)
@@ -4078,6 +4085,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const isCapDnfValue = (item) => {
     if (!showExtraField) return false
     const key = resultKey(activeResultPhaseId, item)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
     const existing = existingResultFor(item)
     return Number(existing?.marca) === Number(timeCapSeconds) && existing?.extra !== null && existing?.extra !== undefined
@@ -4107,6 +4115,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   const tiebreakLabel = isTiebreakTime ? 'Tiebreak tiempo' : tiebreakMethod === 'rm' ? 'Tiebreak peso' : tiebreakMethod === 'metros' ? 'Tiebreak metros' : 'Tiebreak reps'
   const displayMarkWithExtra = (item) => {
+    if (isDnsValue(item)) return 'DNS'
     if (isDnfValue(item)) return 'DNF'
     const mark = markValue(item)
     const extra = extraValue(item)
@@ -4122,13 +4131,38 @@ function ResultsPanel({ bundle, reload, notify }) {
           ...(prev[key] || {}),
           capDnf: nextActive,
           dnf: false,
+          dns: false,
           marca: nextActive ? timeCapLabel : '',
           extra: '',
         },
       }))
       return
     }
-    setResultField(item, 'dnf', !currentDnf)
+    const key = resultKey(activeResultPhaseId, item)
+    setMarks((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        dnf: !currentDnf,
+        dns: false,
+      },
+    }))
+  }
+  const setDnsResult = (item) => {
+    const key = resultKey(activeResultPhaseId, item)
+    const nextActive = !isDnsValue(item)
+    setMarks((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        dns: nextActive,
+        dnf: false,
+        capDnf: false,
+        marca: '',
+        extra: '',
+        tiebreak: '',
+      },
+    }))
   }
   const previewPool = [...phaseHeats.flatMap((heat) => heatParticipants(heat).map((participant) => ({ ...participant, categoria: heat.categoria || participant.categoria || 'Todas' }))), ...allConfirmedRows]
     .reduce((items, item) => {
@@ -4150,9 +4184,10 @@ function ResultsPanel({ bundle, reload, notify }) {
       const existing = existingResultFor(item)
       const draft = marks[key] || {}
       const draftCapDnf = !!draft.capDnf
-      const draftDnf = !!draft.dnf && !draftCapDnf
+      const draftDns = !!draft.dns
+      const draftDnf = !!draft.dnf && !draftCapDnf && !draftDns
       const rawMarca = draftCapDnf ? timeCapLabel : Object.prototype.hasOwnProperty.call(draft, 'marca') ? draft.marca : formatMarkValue(existing?.marca)
-      const marca = draftDnf ? dnfMark() : parseMarkValue(rawMarca)
+      const marca = draftDns ? null : draftDnf ? dnfMark() : parseMarkValue(rawMarca)
       const extra = draftDnf ? null : Object.prototype.hasOwnProperty.call(draft, 'extra') ? draft.extra : existing?.extra
       const tiebreak = tieBreakActive && !draftDnf ? Object.prototype.hasOwnProperty.call(draft, 'tiebreak') ? parseTiebreakValue(draft.tiebreak) : existing?.tiebreak : null
       return {
@@ -4261,26 +4296,27 @@ function ResultsPanel({ bundle, reload, notify }) {
     try {
       let saved = 0
       for (const row of changed) {
+        const rowDraft = marks[resultKey(activeResultPhaseId, row)] || {}
+        const rowDns = !!rowDraft.dns
         const value = markValue(row)
-        if (value === '') continue
+        if (!rowDns && value === '') continue
         const extra = extraValue(row)
         const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
         const existing = existingResultFor(row)
-        const rowDraft = marks[resultKey(activeResultPhaseId, row)] || {}
         const rowCapDnf = !!rowDraft.capDnf
-        const rowDnf = !!rowDraft.dnf && !rowCapDnf
-        const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
-        if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
-        if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
-        const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
-        if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-        if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
-        const parsedExtra = rowCapDnf ? Number(extra) : null
+        const rowDnf = !!rowDraft.dnf && !rowCapDnf && !rowDns
+        const parsedMark = rowDns ? null : rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
+        if (!rowDns && !rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
+        if (!rowDns && !rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
+        const parsedTiebreak = rowDns || !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
+        if (!rowDns && tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
+        if (!rowDns && rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+        const parsedExtra = !rowDns && rowCapDnf ? Number(extra) : null
         if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
         if (existing) {
           await api(`/results/${existing.id}`, {
             method: 'PUT',
-            body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null }),
+            body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null, result_status: rowDns ? 'dns' : 'valid' }),
           })
         } else {
           await api('/results', {
@@ -4293,6 +4329,7 @@ function ResultsPanel({ bundle, reload, notify }) {
               marca: parsedMark,
               extra: parsedExtra,
               tiebreak: tieBreakActive ? parsedTiebreak : null,
+              result_status: rowDns ? 'dns' : 'valid',
             }),
           })
         }
@@ -4309,26 +4346,27 @@ function ResultsPanel({ bundle, reload, notify }) {
     if (!activeResultPhaseId) return notify('Selecciona un WOD', 'error')
     const key = resultKey(activeResultPhaseId, row)
     const rowDraft = marks[key] || {}
+    const rowDns = !!rowDraft.dns
     const rowCapDnf = !!rowDraft.capDnf
-    const rowDnf = !!rowDraft.dnf && !rowCapDnf
+    const rowDnf = !!rowDraft.dnf && !rowCapDnf && !rowDns
     const value = markValue(row)
-    if (!rowDnf && value === '') return notify('Ingresa una marca o marca DNF', 'error')
+    if (!rowDns && !rowDnf && value === '') return notify('Ingresa una marca, DNF o DNS', 'error')
     const extra = extraValue(row)
     const tiebreak = tieBreakActive ? tiebreakValue(row) : ''
     const existing = existingResultFor(row)
-    const parsedMark = rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
-    if (!rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
-    if (!rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
-    const parsedTiebreak = !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
-    if (tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
-    if (rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
-    const parsedExtra = rowCapDnf ? Number(extra) : null
+    const parsedMark = rowDns ? null : rowDnf ? dnfMark() : rowCapDnf ? timeCapSeconds : parseMarkValue(value)
+    if (!rowDns && !rowDnf && parsedMark === null) return notify(isTimePhase ? 'Tiempo invalido. Usa MM:SS o HH:MM:SS' : 'Marca invalida', 'error')
+    if (!rowDns && !rowDnf && timeCapSeconds && parsedMark > timeCapSeconds) return notify(`El tiempo no puede superar el cap de ${timeCapLabel}`, 'error')
+    const parsedTiebreak = rowDns || !tieBreakActive || rowDnf || tiebreak === '' ? null : parseTiebreakValue(tiebreak)
+    if (!rowDns && tieBreakActive && !rowDnf && tiebreak !== '' && parsedTiebreak === null) return notify(isTiebreakTime ? 'Tiebreak invalido. Usa MM:SS o HH:MM:SS' : 'Tiebreak invalido', 'error')
+    if (!rowDns && rowCapDnf && extra === '') return notify('Ingresa reps faltantes. Usa 0 si termino justo en el cap.', 'error')
+    const parsedExtra = !rowDns && rowCapDnf ? Number(extra) : null
     if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) return notify('Reps faltantes invalido', 'error')
     try {
       if (existing) {
         await api(`/results/${existing.id}`, {
           method: 'PUT',
-          body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null }),
+          body: JSON.stringify({ marca: parsedMark, extra: parsedExtra, tiebreak: tieBreakActive ? parsedTiebreak : null, result_status: rowDns ? 'dns' : 'valid' }),
         })
       } else {
         await api('/results', {
@@ -4341,6 +4379,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             marca: parsedMark,
             extra: parsedExtra,
             tiebreak: tieBreakActive ? parsedTiebreak : null,
+            result_status: rowDns ? 'dns' : 'valid',
           }),
         })
       }
@@ -4403,6 +4442,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   const partMarkValue = (row, part) => {
     const key = partResultKey(part, row)
     const cap = partTimeCap(part)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return ''
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return cap ? formatSeconds(cap) : ''
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'marca')) return marks[key].marca
     const existing = existingResultForPart(row, part)
@@ -4429,15 +4469,22 @@ function ResultsPanel({ bundle, reload, notify }) {
     const cap = partTimeCap(part)
     if (!cap) return false
     const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf')) return !!marks[key].capDnf
     const existing = existingResultForPart(row, part)
     return Number(existing?.marca) === Number(cap) && existing?.extra !== null && existing?.extra !== undefined
   }
   const isPartDnf = (row, part) => {
     const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns') && marks[key].dns === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'capDnf') && marks[key].capDnf === true) return false
     if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dnf')) return !!marks[key].dnf
     return isDnfMark(existingResultForPart(row, part)?.marca)
+  }
+  const isPartDns = (row, part) => {
+    const key = partResultKey(part, row)
+    if (Object.prototype.hasOwnProperty.call(marks[key] || {}, 'dns')) return !!marks[key].dns
+    return String(existingResultForPart(row, part)?.result_status || '').toLowerCase() === 'dns'
   }
   const setPartDnfResult = (row, part) => {
     const key = partResultKey(part, row)
@@ -4450,33 +4497,58 @@ function ResultsPanel({ bundle, reload, notify }) {
           ...(prev[key] || {}),
           capDnf: nextActive,
           dnf: false,
+          dns: false,
           marca: nextActive ? formatSeconds(cap) : '',
           extra: '',
         },
       }))
       return
     }
-    setPartResultField(row, part, 'dnf', !isPartDnf(row, part))
+    setMarks((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        dnf: !isPartDnf(row, part),
+        dns: false,
+      },
+    }))
+  }
+  const setPartDnsResult = (row, part) => {
+    const key = partResultKey(part, row)
+    const nextActive = !isPartDns(row, part)
+    setMarks((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] || {}),
+        dns: nextActive,
+        dnf: false,
+        capDnf: false,
+        marca: '',
+        extra: '',
+        tiebreak: '',
+      },
+    }))
   }
   const validatePartDraft = (row, part) => {
     const key = partResultKey(part, row)
     const draft = marks[key] || {}
     const cap = partTimeCap(part)
+    const dnsActive = !!draft.dns
     const capActive = !!draft.capDnf
-    const dnfActive = !!draft.dnf && !capActive
+    const dnfActive = !!draft.dnf && !capActive && !dnsActive
     const value = partMarkValue(row, part)
-    if (!dnfActive && value === '') return null
-    const parsedMark = dnfActive ? (partLowerIsBetter(part) ? DNF_MARK_HIGH : DNF_MARK_LOW) : capActive ? cap : parsePartMarkValue(part, value)
-    if (!dnfActive && parsedMark === null) throw new Error(partIsTime(part) ? `Tiempo invalido en ${part.score_key || part.nombre}` : `Marca invalida en ${part.score_key || part.nombre}`)
-    if (!dnfActive && cap && parsedMark > cap) throw new Error(`El tiempo de ${part.score_key || part.nombre} no puede superar el cap de ${formatSeconds(cap)}`)
+    if (!dnsActive && !dnfActive && value === '') return null
+    const parsedMark = dnsActive ? null : dnfActive ? (partLowerIsBetter(part) ? DNF_MARK_HIGH : DNF_MARK_LOW) : capActive ? cap : parsePartMarkValue(part, value)
+    if (!dnsActive && !dnfActive && parsedMark === null) throw new Error(partIsTime(part) ? `Tiempo invalido en ${part.score_key || part.nombre}` : `Marca invalida en ${part.score_key || part.nombre}`)
+    if (!dnsActive && !dnfActive && cap && parsedMark > cap) throw new Error(`El tiempo de ${part.score_key || part.nombre} no puede superar el cap de ${formatSeconds(cap)}`)
     const extra = partExtraValue(row, part)
-    if (capActive && extra === '') throw new Error(`Ingresa reps faltantes en ${part.score_key || part.nombre}. Usa 0 si termino justo en el cap.`)
-    const parsedExtra = capActive ? Number(extra) : null
+    if (!dnsActive && capActive && extra === '') throw new Error(`Ingresa reps faltantes en ${part.score_key || part.nombre}. Usa 0 si termino justo en el cap.`)
+    const parsedExtra = !dnsActive && capActive ? Number(extra) : null
     if (parsedExtra !== null && (!Number.isInteger(parsedExtra) || parsedExtra < 0)) throw new Error(`Reps faltantes invalidas en ${part.score_key || part.nombre}`)
     const partTieActive = partTieBreakActive(part)
-    const tiebreak = partTieActive && !dnfActive ? partTiebreakValue(row, part) : ''
-    const parsedTiebreak = !partTieActive || dnfActive || tiebreak === '' ? null : parsePartTiebreakValue(part, tiebreak)
-    if (partTieActive && !dnfActive && tiebreak !== '' && parsedTiebreak === null) throw new Error(partTieBreakIsTime(part) ? `Tiebreak invalido en ${part.score_key || part.nombre}. Usa MM:SS o HH:MM:SS` : `Tiebreak invalido en ${part.score_key || part.nombre}`)
+    const tiebreak = partTieActive && !dnfActive && !dnsActive ? partTiebreakValue(row, part) : ''
+    const parsedTiebreak = dnsActive || !partTieActive || dnfActive || tiebreak === '' ? null : parsePartTiebreakValue(part, tiebreak)
+    if (!dnsActive && partTieActive && !dnfActive && tiebreak !== '' && parsedTiebreak === null) throw new Error(partTieBreakIsTime(part) ? `Tiebreak invalido en ${part.score_key || part.nombre}. Usa MM:SS o HH:MM:SS` : `Tiebreak invalido en ${part.score_key || part.nombre}`)
     return {
       key,
       existing: existingResultForPart(row, part),
@@ -4488,6 +4560,7 @@ function ResultsPanel({ bundle, reload, notify }) {
         marca: parsedMark,
         extra: parsedExtra,
         tiebreak: partTieActive ? parsedTiebreak : null,
+        result_status: dnsActive ? 'dns' : 'valid',
       },
     }
   }
@@ -4506,7 +4579,7 @@ function ResultsPanel({ bundle, reload, notify }) {
           if (item.existing) {
             await api(`/results/${item.existing.id}`, {
               method: 'PUT',
-              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: item.payload.tiebreak }),
+              body: JSON.stringify({ marca: item.payload.marca, extra: item.payload.extra, tiebreak: item.payload.tiebreak, result_status: item.payload.result_status }),
             })
           } else {
             await api('/results', { method: 'POST', body: JSON.stringify(item.payload) })
@@ -4639,7 +4712,8 @@ function ResultsPanel({ bundle, reload, notify }) {
                         const isTime = partIsTime(part)
                         const cap = partTimeCap(part)
                         const capActive = isPartCap(row, part)
-                        const dnfActive = isPartDnf(row, part) && !capActive
+                        const dnsActive = isPartDns(row, part)
+                        const dnfActive = isPartDnf(row, part) && !capActive && !dnsActive
                         const partTieActive = partTieBreakActive(part)
                         return (
                           <div key={part.id} style={{ border: `1px solid ${dirty ? 'rgba(255,107,0,0.55)' : colors.border}`, borderRadius: 8, background: colors.surface, padding: 10, display: 'grid', gap: 9 }}>
@@ -4647,9 +4721,9 @@ function ResultsPanel({ bundle, reload, notify }) {
                               <strong>{part.score_key || ''} {part.nombre}</strong>
                               <Pill tone={colors.accent}>100%</Pill>
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: capActive ? 'minmax(0, 1fr) minmax(120px, .7fr) auto' : 'minmax(0, 1fr) auto', gap: 8, alignItems: 'end' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: capActive ? 'minmax(0, 1fr) minmax(120px, .7fr) auto auto' : 'minmax(0, 1fr) auto auto', gap: 8, alignItems: 'end' }}>
                               <Field label={isTime ? 'Tiempo' : part?.tipo === 'posicion' ? 'Posicion' : 'Marca'}>
-                                <input type={isTime ? 'text' : 'number'} style={inputStyle()} value={dnfActive ? '' : capActive && cap ? formatSeconds(cap) : partMarkValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnfActive || capActive} placeholder={dnfActive ? 'DNF' : isTime ? (cap ? formatSeconds(cap) : '12:00') : 'Valor'} onChange={(event) => setPartResultField(row, part, 'marca', isTime ? formatTimeEntryInput(event.target.value) : event.target.value)} />
+                                <input type={isTime ? 'text' : 'number'} style={inputStyle()} value={dnsActive || dnfActive ? '' : capActive && cap ? formatSeconds(cap) : partMarkValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnsActive || dnfActive || capActive} placeholder={dnsActive ? 'DNS' : dnfActive ? 'DNF' : isTime ? (cap ? formatSeconds(cap) : '12:00') : 'Valor'} onChange={(event) => setPartResultField(row, part, 'marca', isTime ? formatTimeEntryInput(event.target.value) : event.target.value)} />
                               </Field>
                               {capActive ? (
                                 <Field label="Reps faltantes">
@@ -4657,10 +4731,11 @@ function ResultsPanel({ bundle, reload, notify }) {
                                 </Field>
                               ) : null}
                               <Button onClick={() => setPartDnfResult(row, part)} tone={(cap ? capActive : dnfActive) ? 'danger' : 'default'}>{cap ? 'CAP' : 'DNF'}</Button>
+                              <Button onClick={() => setPartDnsResult(row, part)} tone={dnsActive ? 'danger' : 'default'}>DNS</Button>
                             </div>
                             {partTieActive ? (
                               <Field label={partTieBreakLabel(part)}>
-                                <input type={partTieBreakIsTime(part) ? 'text' : 'number'} step="1" style={inputStyle()} value={dnfActive ? '' : partTiebreakValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnfActive} placeholder={partTieBreakIsTime(part) ? '01:23' : 'Opcional'} onChange={(event) => setPartResultField(row, part, 'tiebreak', partTieBreakIsTime(part) ? formatTimeEntryInput(event.target.value) : event.target.value)} />
+                                <input type={partTieBreakIsTime(part) ? 'text' : 'number'} step="1" style={inputStyle()} value={dnsActive || dnfActive ? '' : partTiebreakValue(row, part)} onWheel={preventNumberInputWheel} disabled={dnsActive || dnfActive} placeholder={dnsActive ? 'DNS' : partTieBreakIsTime(part) ? '01:23' : 'Opcional'} onChange={(event) => setPartResultField(row, part, 'tiebreak', partTieBreakIsTime(part) ? formatTimeEntryInput(event.target.value) : event.target.value)} />
                               </Field>
                             ) : null}
                             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', color: colors.secondary, fontSize: 12 }}>
@@ -4739,7 +4814,8 @@ function ResultsPanel({ bundle, reload, notify }) {
               const preview = previewRankMap[key]
               const editable = !existing || editingRows[key] || dirty
               const capDnf = isCapDnfValue(row)
-              const rowDnf = isDnfValue(row) && !capDnf
+              const rowDns = isDnsValue(row)
+              const rowDnf = isDnfValue(row) && !capDnf && !rowDns
               const showTiebreakWarning = persistedTieKeys.has(key)
               const showExtraInput = editable && showExtraField && capDnf
               return (
@@ -4751,6 +4827,7 @@ function ResultsPanel({ bundle, reload, notify }) {
                       {editable ? (
                         <>
                           <Button onClick={() => setDnfResult(row, showExtraField ? capDnf : rowDnf)} tone={(showExtraField ? capDnf : rowDnf) ? 'danger' : 'default'}>{showExtraField ? 'CAP' : 'DNF'}</Button>
+                          <Button onClick={() => setDnsResult(row)} tone={rowDns ? 'danger' : 'default'}>DNS</Button>
                           <Button tone="primary" onClick={() => saveRowResult(row)}><Save size={14} /></Button>
                         </>
                       ) : (
@@ -4764,11 +4841,11 @@ function ResultsPanel({ bundle, reload, notify }) {
                       <label className="fr-result-input-wrap">
                         <span className="fr-result-mobile-label">{markLabel}</span>
                         <span style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
-                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDnf ? '' : capDnf ? timeCapLabel : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', isTimePhase ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDnf || capDnf} />
+                          <input className="fr-result-mark" type={isTimePhase ? 'text' : 'number'} style={inputStyle()} value={rowDns || rowDnf ? '' : capDnf ? timeCapLabel : markValue(row)} onWheel={preventNumberInputWheel} onChange={(event) => setResultField(row, 'marca', isTimePhase ? formatTimeEntryInput(event.target.value) : event.target.value)} placeholder={rowDns ? 'DNS' : rowDnf ? 'DNF' : isTimePhase ? (timeCapLabel || '12:00') : 'Valor'} disabled={rowDns || rowDnf || capDnf} />
                         </span>
                       </label>
                     ) : (
-                      <span className="fr-result-readonly" data-label={markLabel} style={{ color: rowDnf ? colors.error : colors.text, fontSize: 13, fontWeight: 850 }}>{displayMarkWithExtra(row)}</span>
+                      <span className="fr-result-readonly" data-label={markLabel} style={{ color: rowDns || rowDnf ? colors.error : colors.text, fontSize: 13, fontWeight: 850 }}>{displayMarkWithExtra(row)}</span>
                     )}
                     {showExtraInput ? (
                       <label className="fr-result-input-wrap">
