@@ -21,6 +21,8 @@ import {
   mapCompetitionViewModel,
   normalizeUserResults,
   selectPrimaryUserCompetition,
+  selectFinishedCompetitions,
+  selectLastParticipatedCompetition,
   extractUserLeaderboardSummary,
   formatCompetitionWindow,
   resolveCompetitionAsset,
@@ -718,6 +720,229 @@ function CompactEventList({ items, primaryId }) {
   )
 }
 
+function FinishedCompetitionCard({ competition, participated }) {
+  const banner = resolveCompetitionAsset(competition, 'banner')
+  const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
+
+  return (
+    <article
+      className="fr-cut-card"
+      style={{
+        border: `1px solid ${premium.border}`,
+        background: premium.surface,
+        overflow: 'hidden',
+        display: 'grid',
+        gridTemplateRows: 'auto 1fr',
+        minWidth: 0,
+      }}
+    >
+      <Link
+        to={`/competitions/${competition.id}`}
+        aria-label={`Ver competencia finalizada ${competition.nombre}`}
+        style={{
+          position: 'relative',
+          display: 'block',
+          aspectRatio: '16 / 7',
+          background: banner
+            ? `linear-gradient(180deg, rgba(13,15,18,0.12), rgba(13,15,18,0.68)), url("${banner}") center/cover no-repeat`
+            : 'linear-gradient(135deg, rgba(255,107,0,0.22), rgba(23,27,33,0.96) 58%, rgba(0,194,168,0.14))',
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 14, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+          <span style={{ border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.78)', color: premium.textSoft, borderRadius: 999, padding: '7px 10px', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            Finalizada
+          </span>
+          {participated ? (
+            <span style={{ border: '1px solid rgba(0,194,168,0.38)', background: 'rgba(0,194,168,0.14)', color: '#55E6D2', borderRadius: 999, padding: '7px 10px', fontSize: 11, fontWeight: 900 }}>
+              Participaste
+            </span>
+          ) : null}
+        </div>
+      </Link>
+
+      <div style={{ padding: 16, display: 'grid', gap: 14, alignContent: 'space-between' }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 style={{ margin: 0, color: premium.text, fontSize: 20, lineHeight: 1.12, overflowWrap: 'anywhere' }}>
+            {competition.nombre}
+          </h3>
+          <div style={{ marginTop: 8, display: 'grid', gap: 6, color: premium.textSoft, fontSize: 12 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <CalendarDays size={14} color="#00C2A8" />
+              {dateLabel}
+            </span>
+            {competition.lugar ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <MapPin size={14} color="#FF6B00" />
+                {competition.lugar}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 9, flexWrap: 'wrap' }}>
+          <Link to={`/leaderboard/${competition.id}`} style={primaryActionStyle()}>
+            Ver resultados
+            <ArrowRight size={15} />
+          </Link>
+          <Link to={`/competitions/${competition.id}`} style={secondaryActionStyle()}>
+            Ver competencia
+          </Link>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function FinishedCompetitionsPanel({ competitions, participatedIds, isMobile, excludeId = null }) {
+  const rows = (Array.isArray(competitions) ? competitions : [])
+    .filter((competition) => String(competition.id) !== String(excludeId))
+  if (!rows.length) return null
+
+  return (
+    <section style={{ display: 'grid', gap: 14 }}>
+      <div>
+        <h2 style={{ margin: 0, color: premium.text, fontSize: 26 }}>Competencias finalizadas</h2>
+        <p style={{ margin: '7px 0 0', color: premium.textSoft, fontSize: 14, lineHeight: 1.55 }}>
+          Consulta resultados, rankings y detalles de eventos anteriores.
+        </p>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+        {rows.map((competition) => (
+          <FinishedCompetitionCard
+            key={competition.id}
+            competition={competition}
+            participated={participatedIds.has(String(competition.id))}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function LastCompetitionPanel({ competition, leaderboard, detailsLoading, isMobile }) {
+  if (!competition) return null
+  const banner = resolveCompetitionAsset(competition, 'banner')
+  const dateLabel = formatCompetitionWindow(competition, { fallback: 'Fecha por confirmar' })
+
+  return (
+    <section
+      className="fr-cut-card"
+      style={{
+        border: `1px solid ${premium.border}`,
+        background: banner
+          ? `linear-gradient(90deg, rgba(13,15,18,0.96), rgba(13,15,18,0.78)), url("${banner}") center/cover no-repeat`
+          : 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.98) 52%, rgba(0,194,168,0.10))',
+        padding: isMobile ? 18 : 22,
+        display: 'grid',
+        gap: 18,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 900, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+            Tu última competencia
+          </div>
+          <h2 style={{ margin: '8px 0 0', color: premium.text, fontSize: isMobile ? 30 : 42, lineHeight: 1, overflowWrap: 'anywhere' }}>
+            {competition.nombre}
+          </h2>
+          <div style={{ marginTop: 12, display: 'flex', gap: 14, flexWrap: 'wrap', color: premium.textSoft, fontSize: 13 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <CalendarDays size={14} color="#00C2A8" />
+              {dateLabel}
+            </span>
+            {competition.enrollment_categoria ? <span>Categoría {competition.enrollment_categoria}</span> : null}
+          </div>
+        </div>
+        <span style={{ border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.74)', color: premium.textSoft, borderRadius: 999, padding: '8px 11px', fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>
+          Finalizada
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+        {detailsLoading ? (
+          <>
+            <SkeletonBlock height={76} radius={8} />
+            <SkeletonBlock height={76} radius={8} />
+            <SkeletonBlock height={76} radius={8} />
+          </>
+        ) : (
+          <>
+            <PersonalMetric label="Posición final" value={leaderboard?.rank ? `#${leaderboard.rank}` : '--'} tone="#FF6B00" />
+            <PersonalMetric label="Puntos" value={leaderboard?.points ?? 0} tone="#00C2A8" />
+            <PersonalMetric label="Pruebas" value={leaderboard?.events ?? 0} tone="#F5F7FA" />
+          </>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <Link to={`/leaderboard/${competition.id}`} style={primaryActionStyle()}>
+          Ver mis resultados
+          <ArrowRight size={16} />
+        </Link>
+        <Link to={`/competitions/${competition.id}`} style={secondaryActionStyle()}>
+          Ver competencia
+        </Link>
+      </div>
+    </section>
+  )
+}
+
+function OffSeasonHome({
+  isMobile,
+  lastCompetition,
+  finishedCompetitions,
+  participatedIds,
+  leaderboard,
+  detailsLoading,
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 20 }}>
+      <section
+        className="fr-cut-card"
+        style={{
+          border: '1px solid rgba(255,107,0,0.34)',
+          background: 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(23,27,33,0.98) 56%, rgba(0,194,168,0.08))',
+          padding: isMobile ? 20 : 26,
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
+          gap: 18,
+          alignItems: 'end',
+        }}
+      >
+        <div>
+          <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 900, letterSpacing: 1.1, textTransform: 'uppercase' }}>
+            Estado actual
+          </div>
+          <h1 style={{ margin: '10px 0', color: premium.text, fontSize: isMobile ? 36 : 56, lineHeight: 0.98 }}>
+            No hay competencias abiertas
+          </h1>
+          <p style={{ margin: 0, color: premium.textSoft, maxWidth: 680, lineHeight: 1.6 }}>
+            La próxima competencia aparecerá aquí cuando esté disponible.
+          </p>
+        </div>
+        <Link to="/notifications" style={secondaryActionStyle()}>
+          <Bell size={16} color="#00C2A8" />
+          Ver notificaciones
+        </Link>
+      </section>
+
+      <LastCompetitionPanel
+        competition={lastCompetition}
+        leaderboard={leaderboard}
+        detailsLoading={detailsLoading}
+        isMobile={isMobile}
+      />
+
+      <FinishedCompetitionsPanel
+        competitions={finishedCompetitions}
+        participatedIds={participatedIds}
+        isMobile={isMobile}
+        excludeId={lastCompetition?.id}
+      />
+    </div>
+  )
+}
+
 function isActiveEnrollmentState(value) {
   return ['confirmado', 'pendiente', 'pago_pendiente', 'pago_en_verificacion'].includes(String(value || '').trim().toLowerCase())
 }
@@ -790,6 +1015,7 @@ function PersonalHome({
   myComps,
   publicCompetitions,
   primaryCompetition,
+  lastParticipatedCompetition,
   hasCurrentOrFuture,
   leaderboard,
   results,
@@ -806,6 +1032,26 @@ function PersonalHome({
   }
 
   if (!primaryCompetition || !hasCurrentOrFuture) {
+    const hasOpenCompetitions = publicCompetitions.some((competition) => competition.enrollment_open)
+    if (!hasOpenCompetitions) {
+      const finishedCompetitions = selectFinishedCompetitions([...publicCompetitions, ...myComps])
+      const participatedIds = new Set(
+        myComps
+          .filter((competition) => String(competition.enrollment_estado || '').toLowerCase() === 'confirmado')
+          .map((competition) => String(competition.id))
+      )
+      return (
+        <OffSeasonHome
+          isMobile={isMobile}
+          lastCompetition={lastParticipatedCompetition}
+          finishedCompetitions={finishedCompetitions}
+          participatedIds={participatedIds}
+          leaderboard={leaderboard}
+          detailsLoading={detailsLoading}
+        />
+      )
+    }
+
     return (
       <div style={{ display: 'grid', gap: 20 }}>
         <section className="fr-cut-card" style={{ border: `1px solid ${premium.border}`, background: 'linear-gradient(135deg, rgba(255,107,0,0.18), rgba(23,27,33,0.96))', padding: 22 }}>
@@ -1076,6 +1322,10 @@ export default function HomeVariants({ variant = 1 }) {
     () => selectPrimaryUserCompetition(myComps),
     [myComps]
   )
+  const lastParticipatedCompetition = useMemo(
+    () => selectLastParticipatedCompetition(myComps),
+    [myComps]
+  )
   const hasCurrentOrFuture = useMemo(
     () => hasCurrentOrFutureUserCompetition(myComps),
     [myComps]
@@ -1100,7 +1350,8 @@ export default function HomeVariants({ variant = 1 }) {
   }, [qrModalOpen])
 
   useEffect(() => {
-    if (!session || !isAthlete || !userId || !primaryCompetition?.id || !hasCurrentOrFuture) {
+    const detailCompetition = hasCurrentOrFuture ? primaryCompetition : lastParticipatedCompetition
+    if (!session || !isAthlete || !userId || !detailCompetition?.id) {
       personalDetailsKeyRef.current = ''
       personalDetailsLoadedRef.current = false
       setSchedulePayload(null)
@@ -1111,7 +1362,7 @@ export default function HomeVariants({ variant = 1 }) {
     }
 
     let active = true
-    const detailsKey = `${userId}:${primaryCompetition.id}`
+    const detailsKey = `${userId}:${detailCompetition.id}`
     if (personalDetailsKeyRef.current !== detailsKey) {
       personalDetailsKeyRef.current = detailsKey
       personalDetailsLoadedRef.current = false
@@ -1121,10 +1372,19 @@ export default function HomeVariants({ variant = 1 }) {
     }
     const shouldShowSkeleton = !personalDetailsLoadedRef.current
     if (shouldShowSkeleton) setDetailsLoading(true)
+    const scheduleRequest = hasCurrentOrFuture
+      ? api.get(`/competitions/${primaryCompetition.id}/my-schedule`).catch(() => ({ data: null }))
+      : Promise.resolve({ data: null })
+    const leaderboardRequest = hasCurrentOrFuture
+      ? api.get(`/leaderboard/${primaryCompetition.id}`).catch(() => ({ data: null }))
+      : api.get(`/leaderboard/${lastParticipatedCompetition.id}`).catch(() => ({ data: null }))
+    const resultsRequest = hasCurrentOrFuture
+      ? api.get(`/results?competition_id=${primaryCompetition.id}`).catch(() => ({ data: [] }))
+      : api.get(`/results?competition_id=${lastParticipatedCompetition.id}`).catch(() => ({ data: [] }))
     Promise.all([
-      api.get(`/competitions/${primaryCompetition.id}/my-schedule`).catch(() => ({ data: null })),
-      api.get(`/leaderboard/${primaryCompetition.id}`).catch(() => ({ data: null })),
-      api.get(`/results?competition_id=${primaryCompetition.id}`).catch(() => ({ data: [] })),
+      scheduleRequest,
+      leaderboardRequest,
+      resultsRequest,
     ])
       .then(([scheduleResponse, leaderboardResponse, resultsResponse]) => {
         if (!active) return
@@ -1141,7 +1401,7 @@ export default function HomeVariants({ variant = 1 }) {
     return () => {
       active = false
     }
-  }, [session, isAthlete, userId, primaryCompetition?.id, hasCurrentOrFuture])
+  }, [session, isAthlete, userId, primaryCompetition?.id, lastParticipatedCompetition?.id, hasCurrentOrFuture])
 
   const featuredCompetitions = useMemo(() => {
     return [...competitions]
@@ -1206,6 +1466,7 @@ export default function HomeVariants({ variant = 1 }) {
               myComps={myComps}
               publicCompetitions={featuredCompetitions}
               primaryCompetition={primaryCompetition}
+              lastParticipatedCompetition={lastParticipatedCompetition}
               hasCurrentOrFuture={hasCurrentOrFuture}
               leaderboard={leaderboardSummary}
               results={myResults}
