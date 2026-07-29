@@ -285,6 +285,33 @@ export function hasCurrentOrFutureUserCompetition(competitions = [], nowValue = 
   ))
 }
 
+export function isFinishedCompetition(competition, nowValue = Date.now()) {
+  const nowMs = typeof nowValue === 'number' ? nowValue : dateMs(nowValue) || Date.now()
+  const endMs = competitionEndMs(competition)
+  return Boolean(endMs && endMs < nowMs && !competition?.enrollment_open)
+}
+
+export function selectFinishedCompetitions(competitions = [], nowValue = Date.now(), limit = 6) {
+  const unique = new Map()
+  for (const competition of Array.isArray(competitions) ? competitions : []) {
+    if (!competition?.id || unique.has(String(competition.id))) continue
+    unique.set(String(competition.id), competition)
+  }
+
+  return [...unique.values()]
+    .filter((competition) => isFinishedCompetition(competition, nowValue))
+    .sort((a, b) => competitionEndMs(b) - competitionEndMs(a))
+    .slice(0, limit)
+}
+
+export function selectLastParticipatedCompetition(competitions = [], nowValue = Date.now()) {
+  return selectFinishedCompetitions(
+    (Array.isArray(competitions) ? competitions : []).filter(isConfirmedEnrollment),
+    nowValue,
+    1
+  )[0] || null
+}
+
 function flattenIndividualLeaderboard(individual = {}) {
   return Object.entries(individual || {}).flatMap(([category, rows]) => (
     Array.isArray(rows) ? rows.map((row) => ({ ...row, category })) : []
