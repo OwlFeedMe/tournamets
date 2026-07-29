@@ -1,4 +1,4 @@
-import { CreditCard, RefreshCw, Wallet } from 'lucide-react'
+import { CheckCircle2, CreditCard, RefreshCw, Settings2, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import api from '../api/axios'
 import { AdminToolsNav } from '../components/admin/AdminToolsNav'
@@ -41,23 +41,67 @@ function statusTone(status) {
   return colors.muted
 }
 
+function percentageFromRate(value) {
+  const percentage = Number(value || 0) * 100
+  return Number.isFinite(percentage) ? String(Number(percentage.toFixed(4))) : '0'
+}
+
 export default function AdminFinancePanel() {
   const [overview, setOverview] = useState({ totals: {}, competitions: [] })
   const [withdrawals, setWithdrawals] = useState([])
+  const [pricing, setPricing] = useState(null)
+  const [pricingForm, setPricingForm] = useState({
+    platformFeePercentage: '',
+    minPlatformFee: '',
+    processorPercentage: '',
+    processorFixedFee: '',
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
   const [savingId, setSavingId] = useState(null)
+  const [savingPricing, setSavingPricing] = useState(false)
 
   const loadFinance = async () => {
     setLoading(true)
     setError('')
     try {
-      const [overviewRes, withdrawalsRes] = await Promise.all([
+      const [overviewResult, withdrawalsResult, pricingResult] = await Promise.allSettled([
         api.get('/finance/overview'),
         api.get('/finance/withdrawals'),
+        api.get('/config/pricing'),
       ])
-      setOverview(overviewRes.data || { totals: {}, competitions: [] })
-      setWithdrawals(Array.isArray(withdrawalsRes.data) ? withdrawalsRes.data : [])
+      const failures = []
+
+      if (overviewResult.status === 'fulfilled') {
+        setOverview(overviewResult.value.data || { totals: {}, competitions: [] })
+      } else {
+        setOverview({ totals: {}, competitions: [] })
+        failures.push(overviewResult.reason?.response?.data?.detail || 'No se pudo cargar el resumen financiero.')
+      }
+
+      if (withdrawalsResult.status === 'fulfilled') {
+        const data = withdrawalsResult.value.data
+        setWithdrawals(Array.isArray(data) ? data : [])
+      } else {
+        setWithdrawals([])
+        failures.push(withdrawalsResult.reason?.response?.data?.detail || 'No se pudieron cargar los retiros.')
+      }
+
+      if (pricingResult.status === 'fulfilled') {
+        const nextPricing = pricingResult.value.data || {}
+        setPricing(nextPricing)
+        setPricingForm({
+          platformFeePercentage: percentageFromRate(nextPricing.default_platform_fee_rate),
+          minPlatformFee: String(nextPricing.min_platform_fee ?? 0),
+          processorPercentage: percentageFromRate(nextPricing.bold_processor_rate),
+          processorFixedFee: String(nextPricing.bold_processor_fixed_fee ?? 0),
+        })
+      } else {
+        failures.push(pricingResult.reason?.response?.data?.detail || 'No se pudo cargar la configuración de cobros.')
+      }
+
+      setError(failures[0] || '')
     } catch (err) {
       setError(err.response?.data?.detail || 'No se pudo cargar finanzas.')
       setOverview({ totals: {}, competitions: [] })
@@ -72,7 +116,17 @@ export default function AdminFinancePanel() {
   }, [])
 
   const pendingWithdrawals = useMemo(
-    () => withdrawals.filter((item) => ['pending', 'approved'].includes(item.status)),
+    () => withdrawals.filter((item) => item.status === 'pending'),
+    [withdrawals],
+  )
+
+  const approvedWithdrawals = useMemo(
+    () => withdrawals.filter((item) => item.status === 'approved'),
+    [withdrawals],
+  )
+
+  const completedWithdrawals = useMemo(
+    () => withdrawals.filter((item) => ['paid', 'rejected'].includes(item.status)).slice(0, 5),
     [withdrawals],
   )
 
@@ -84,11 +138,19 @@ export default function AdminFinancePanel() {
 
     setSavingId(item.id)
     setError('')
+    setSuccess('')
     try {
       await api.put(`/finance/withdrawals/${item.id}`, {
         status,
         payout_reference: payoutReference || item.payout_reference || '',
       })
+      setSuccess(
+        status === 'approved'
+          ? 'Solicitud aprobada. Ahora está en retiros por pagar.'
+          : status === 'paid'
+            ? 'Retiro marcado como pagado.'
+            : 'Solicitud rechazada.',
+      )
       await loadFinance()
     } catch (err) {
       setError(err.response?.data?.detail || 'No se pudo actualizar el retiro.')
@@ -97,8 +159,66 @@ export default function AdminFinancePanel() {
     }
   }
 
+  const updatePricingField = (field) => (event) => {
+    setPricingForm((current) => ({ ...current, [field]: event.target.value }))
+  }
+
+  const savePricing = async (event) => {
+    event.preventDefault()
+    const platformFeePercentage = Number(pricingForm.platformFeePercentage)
+    const minPlatformFee = Number(pricingForm.minPlatformFee)
+    const processorPercentage = Number(pricingForm.processorPercentage)
+    const processorFixedFee = Number(pricingForm.processorFixedFee)
+
+    if (
+      !Number.isFinite(platformFeePercentage)
+      || platformFeePercentage < 0
+      || platformFeePercentage > 100
+      || !Number.isInteger(minPlatformFee)
+      || minPlatformFee < 0
+      || !Number.isFinite(processorPercentage)
+      || processorPercentage < 0
+      || processorPercentage > 100
+      || !Number.isInteger(processorFixedFee)
+      || processorFixedFee < 0
+    ) {
+      setError('Revisa los valores: los porcentajes deben estar entre 0 y 100 y los cargos deben ser enteros no negativos.')
+      return
+    }
+
+    setSavingPricing(true)
+    setError('')
+    setSuccess('')
+    try {
+      const { data } = await api.put('/config/pricing', {
+        default_platform_fee_rate: platformFeePercentage / 100,
+        min_platform_fee: minPlatformFee,
+        bold_processor_rate: processorPercentage / 100,
+        bold_processor_fixed_fee: processorFixedFee,
+      })
+      const nextPricing = data?.config || {}
+      setPricing(nextPricing)
+      setPricingForm({
+        platformFeePercentage: percentageFromRate(nextPricing.default_platform_fee_rate),
+        minPlatformFee: String(nextPricing.min_platform_fee ?? 0),
+        processorPercentage: percentageFromRate(nextPricing.bold_processor_rate),
+        processorFixedFee: String(nextPricing.bold_processor_fixed_fee ?? 0),
+      })
+      setSuccess('Configuración de cobros actualizada.')
+    } catch (err) {
+      setError(err.response?.data?.detail || 'No se pudo guardar la configuración de cobros.')
+    } finally {
+      setSavingPricing(false)
+    }
+  }
+
   const totals = overview.totals || {}
   const competitions = Array.isArray(overview.competitions) ? overview.competitions : []
+  const exampleBase = 100000
+  const exampleFee = Math.max(
+    Math.round(exampleBase * (Number(pricingForm.platformFeePercentage || 0) / 100)),
+    Number(pricingForm.minPlatformFee || 0),
+  )
 
   return (
     <main style={{ minHeight: '100%', background: colors.bg, color: colors.text }}>
@@ -123,15 +243,69 @@ export default function AdminFinancePanel() {
             <Stat label="Recaudo" value={formatMoney(totals.total_collected)} tone={colors.primary} />
             <Stat label="Ingreso FinalRep" value={formatMoney(totals.platform_revenue_net)} tone={colors.accent} />
             <Stat label="Fees procesador" value={formatMoney(totals.processor_fees)} tone={colors.warning} />
-            <Stat label="Retiros pendientes" value={formatMoney(totals.pending_withdrawals)} tone={colors.warning} />
+            <Stat label="Saldo solicitado" value={formatMoney(totals.pending_withdrawals)} tone={colors.warning} />
           </div>
         </section>
 
         {error ? <div style={{ border: `1px solid ${colors.error}`, background: 'rgba(239,68,68,0.12)', color: '#FCA5A5', borderRadius: 8, padding: 10 }}>{error}</div> : null}
+        {success ? <div style={{ display: 'flex', alignItems: 'center', gap: 8, border: `1px solid ${colors.success}`, background: 'rgba(34,197,94,0.10)', color: '#86EFAC', borderRadius: 8, padding: 10 }}><CheckCircle2 size={16} /> {success}</div> : null}
         {loading ? <div style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 18, color: colors.secondary }}>Cargando finanzas...</div> : null}
 
         {!loading ? (
-          <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 14, alignItems: 'start' }} className="fr-admin-finance-grid">
+          <>
+            <section style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, overflow: 'hidden' }}>
+              <div style={{ padding: 14, borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', gap: 8, fontWeight: 950 }}>
+                <Settings2 size={17} color={colors.primary} />
+                Configuración de cobros
+              </div>
+              <form onSubmit={savePricing} style={{ padding: 14, display: 'grid', gap: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
+                  <PricingField
+                    label="Comisión FinalRep"
+                    suffix="%"
+                    value={pricingForm.platformFeePercentage}
+                    onChange={updatePricingField('platformFeePercentage')}
+                    step="0.01"
+                    max="100"
+                  />
+                  <PricingField
+                    label="Comisión mínima"
+                    prefix="$"
+                    suffix="COP"
+                    value={pricingForm.minPlatformFee}
+                    onChange={updatePricingField('minPlatformFee')}
+                    step="1"
+                  />
+                  <PricingField
+                    label="Comisión Bold"
+                    suffix="%"
+                    value={pricingForm.processorPercentage}
+                    onChange={updatePricingField('processorPercentage')}
+                    step="0.0001"
+                    max="100"
+                  />
+                  <PricingField
+                    label="Cargo fijo Bold"
+                    prefix="$"
+                    suffix="COP"
+                    value={pricingForm.processorFixedFee}
+                    onChange={updatePricingField('processorFixedFee')}
+                    step="1"
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ color: colors.secondary, fontSize: 13, lineHeight: 1.5 }}>
+                    Ejemplo sobre {formatMoney(exampleBase)}: comisión FinalRep <strong style={{ color: colors.primary }}>{formatMoney(exampleFee)}</strong>. Los cambios aplican a inscripciones y boletería nuevas.
+                  </div>
+                  <button type="submit" disabled={savingPricing} style={{ minHeight: 42, border: 0, borderRadius: 8, padding: '9px 16px', background: colors.primary, color: colors.text, fontWeight: 950, cursor: savingPricing ? 'wait' : 'pointer', opacity: savingPricing ? 0.65 : 1 }}>
+                    {savingPricing ? 'Guardando...' : 'Guardar configuración'}
+                  </button>
+                </div>
+                {pricing ? <div style={{ color: colors.muted, fontSize: 11 }}>Valores activos cargados desde la configuración global de FinalRep.</div> : null}
+              </form>
+            </section>
+
+            <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 380px', gap: 14, alignItems: 'start' }} className="fr-admin-finance-grid">
             <div style={{ border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface, overflow: 'hidden' }}>
               <div style={{ padding: 14, borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', gap: 8, fontWeight: 950 }}>
                 <CreditCard size={17} color={colors.accent} />
@@ -175,6 +349,7 @@ export default function AdminFinancePanel() {
                 Retiros
               </div>
               <div style={{ display: 'grid', gap: 10, padding: 12 }}>
+                <div style={{ color: colors.muted, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>Solicitudes pendientes</div>
                 {pendingWithdrawals.map((item) => (
                   <div key={item.id} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 9 }}>
                     <div>
@@ -185,16 +360,48 @@ export default function AdminFinancePanel() {
                       <button type="button" disabled={savingId === item.id} onClick={() => updateWithdrawal(item, 'approved')} style={{ borderRadius: 8, border: '1px solid rgba(0,194,168,0.32)', background: 'rgba(0,194,168,0.10)', color: colors.accent, fontWeight: 900 }}>
                         Aprobar
                       </button>
-                      <button type="button" disabled={savingId === item.id} onClick={() => updateWithdrawal(item, 'paid')} style={{ borderRadius: 8, border: '1px solid rgba(34,197,94,0.32)', background: 'rgba(34,197,94,0.10)', color: colors.success, fontWeight: 900 }}>
-                        Pagado
+                      <button type="button" disabled={savingId === item.id} onClick={() => updateWithdrawal(item, 'rejected')} style={{ borderRadius: 8, border: '1px solid rgba(239,68,68,0.32)', background: 'rgba(239,68,68,0.10)', color: '#FCA5A5', fontWeight: 900 }}>
+                        Rechazar
                       </button>
                     </div>
                   </div>
                 ))}
-                {!pendingWithdrawals.length ? <div style={{ color: colors.secondary, fontSize: 13 }}>No hay retiros pendientes.</div> : null}
+                {!pendingWithdrawals.length ? <div style={{ color: colors.secondary, fontSize: 13 }}>No hay solicitudes pendientes.</div> : null}
+
+                <div style={{ height: 1, background: colors.border, margin: '4px 0' }} />
+                <div style={{ color: colors.muted, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>Aprobados por pagar</div>
+                {approvedWithdrawals.map((item) => (
+                  <div key={item.id} style={{ border: '1px solid rgba(0,194,168,0.28)', background: 'rgba(0,194,168,0.07)', borderRadius: 8, padding: 12, display: 'grid', gap: 9 }}>
+                    <div>
+                      <div style={{ fontWeight: 900 }}>{item.competition_name}</div>
+                      <div style={{ color: colors.secondary, fontSize: 12 }}>{formatMoney(item.amount)} · Aprobado</div>
+                    </div>
+                    <button type="button" disabled={savingId === item.id} onClick={() => updateWithdrawal(item, 'paid')} style={{ minHeight: 38, borderRadius: 8, border: '1px solid rgba(34,197,94,0.32)', background: 'rgba(34,197,94,0.10)', color: colors.success, fontWeight: 900 }}>
+                      Registrar pago
+                    </button>
+                  </div>
+                ))}
+                {!approvedWithdrawals.length ? <div style={{ color: colors.secondary, fontSize: 13 }}>No hay retiros aprobados por pagar.</div> : null}
+
+                {completedWithdrawals.length ? (
+                  <>
+                    <div style={{ height: 1, background: colors.border, margin: '4px 0' }} />
+                    <div style={{ color: colors.muted, fontSize: 11, fontWeight: 900, textTransform: 'uppercase' }}>Historial reciente</div>
+                    {completedWithdrawals.map((item) => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '7px 2px' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: colors.text, fontSize: 13, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.competition_name}</div>
+                          <div style={{ color: colors.muted, fontSize: 11 }}>{formatMoney(item.amount)}</div>
+                        </div>
+                        <Badge tone={statusTone(item.status)}>{statusLabel(item.status)}</Badge>
+                      </div>
+                    ))}
+                  </>
+                ) : null}
               </div>
             </aside>
           </section>
+          </>
         ) : null}
       </div>
       <style>{`
@@ -249,6 +456,28 @@ export default function AdminFinancePanel() {
         }
       `}</style>
     </main>
+  )
+}
+
+function PricingField({ label, prefix, suffix, value, onChange, step, max }) {
+  return (
+    <label style={{ display: 'grid', gap: 7, color: colors.secondary, fontSize: 12, fontWeight: 900 }}>
+      {label}
+      <span style={{ display: 'flex', alignItems: 'center', minHeight: 42, border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.top, overflow: 'hidden' }}>
+        {prefix ? <span style={{ paddingLeft: 11, color: colors.muted }}>{prefix}</span> : null}
+        <input
+          type="number"
+          min="0"
+          max={max}
+          step={step}
+          required
+          value={value}
+          onChange={onChange}
+          style={{ width: '100%', minWidth: 0, border: 0, outline: 0, background: 'transparent', color: colors.text, padding: '10px 8px', font: 'inherit', fontSize: 14 }}
+        />
+        {suffix ? <span style={{ paddingRight: 11, color: colors.muted, whiteSpace: 'nowrap' }}>{suffix}</span> : null}
+      </span>
+    </label>
   )
 }
 
