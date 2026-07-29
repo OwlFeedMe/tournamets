@@ -123,6 +123,36 @@ function enrollmentStatusCopy(competition) {
   return ''
 }
 
+function eventStatusBadge(competition, now = Date.now()) {
+  if (competition?.enrollment_open) {
+    return { label: 'Inscripciones abiertas', color: '#22C55E' }
+  }
+
+  const parseDate = (value, endOfDay = false) => {
+    if (!value) return null
+    const raw = String(value).trim()
+    const parsed = Date.parse(raw)
+    if (!Number.isFinite(parsed)) return null
+    return endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(raw)
+      ? parsed + 86_399_999
+      : parsed
+  }
+
+  const start = parseDate(competition?.competition_start)
+  const end = parseDate(competition?.competition_end, true)
+
+  if (start && start <= now && (!end || end >= now)) {
+    return { label: 'En curso', color: '#00C2A8' }
+  }
+  if (end && end < now) {
+    return { label: 'Finalizada', color: '#6B7280' }
+  }
+  if (start && start > now) {
+    return { label: 'Próximamente', color: '#FF9A3D' }
+  }
+  return { label: 'Inscripciones cerradas', color: '#AAB2C0' }
+}
+
 function CheckinQrModal({ open, onClose, loading, payload, error, competitionName }) {
   if (!open) return null
   return (
@@ -194,7 +224,7 @@ export function EventsPage() {
         <TopBlock
           kicker="Eventos"
           title="Eventos para seguir, compartir y competir."
-          text="Revisa las competencias visibles, mira sus fechas principales y entra al leaderboard de cada una."
+          text="Consulta fechas, ubicación e inscripciones, y entra al leaderboard."
         />
         <SearchInput value={query} onChange={setQuery} placeholder="Buscar competencia por nombre, lugar o descripcion" />
 
@@ -205,6 +235,7 @@ export function EventsPage() {
         <div style={{ display: 'grid', gap: 14 }}>
           {filteredCompetitions.map((competition) => {
             const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
+            const eventStatus = eventStatusBadge(competition)
 
             return (
               <article key={competition.id} style={{ borderRadius: 22, border: '1px solid #252A33', background: '#171B21', padding: 18 }}>
@@ -233,9 +264,9 @@ export function EventsPage() {
                         <div style={{ fontSize: 22, fontWeight: 800 }}>{competition.nombre}</div>
                         <div style={{ color: '#AAB2C0', marginTop: 8, lineHeight: 1.6 }}>{truncate(competition.descripcion)}</div>
                       </div>
-                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: competition.enrollment_open ? '#22C55E' : 'var(--oa-primary)', fontWeight: 700, fontSize: 12 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: eventStatus.color, fontWeight: 700, fontSize: 12 }}>
                         <Flame size={14} />
-                        {competition.enrollment_open ? 'Abierta' : 'Visible'}
+                        {eventStatus.label}
                       </div>
                     </div>
 
