@@ -21,6 +21,16 @@ class JudgeMultipleCompetitionsContractTest(unittest.TestCase):
         self.assertIn("Esta competencia no tiene WODs configurados.", source)
         self.assertIn("No tienes una competencia activa como juez.", source)
 
+    def test_mobile_score_editor_uses_shared_modal_contract(self):
+        source = PAGE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("document.body.classList.add('fr-modal-open')", source)
+        self.assertIn("document.body.classList.remove('fr-modal-open')", source)
+        self.assertIn('role="dialog"', source)
+        self.assertIn('aria-modal="true"', source)
+        self.assertIn('aria-label={activeEditorExisting', source)
+        self.assertIn("position: 'sticky'", source)
+
 
 if __name__ == "__main__":
     unittest.main()

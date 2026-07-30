@@ -242,8 +242,10 @@ function ScoreTable({ assignment, phases, notify }) {
   useEffect(() => {
     if (!activeEditor) return undefined
     const previousOverflow = document.body.style.overflow
+    document.body.classList.add('fr-modal-open')
     document.body.style.overflow = 'hidden'
     return () => {
+      document.body.classList.remove('fr-modal-open')
       document.body.style.overflow = previousOverflow
     }
   }, [activeEditor])
@@ -740,7 +742,7 @@ function ScoreTable({ assignment, phases, notify }) {
       </div>
       {activeEditor ? (
         <div className="fr-judge-editor-backdrop" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={closeScoreEditor}>
-          <div className="fr-judge-editor-sheet" style={{ width: 'min(520px, 100%)', maxHeight: 'min(720px, calc(100vh - 32px))', overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 12, background: colors.surface, boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }} onClick={(event) => event.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={activeEditorExisting ? 'Editar resultado' : 'Cargar resultado'} className="fr-judge-editor-sheet" style={{ width: 'min(520px, 100%)', maxHeight: 'min(720px, calc(100vh - 32px))', overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 12, background: colors.surface, boxShadow: '0 24px 70px rgba(0,0,0,0.45)' }} onClick={(event) => event.stopPropagation()}>
             <div style={{ position: 'sticky', top: 0, zIndex: 1, background: colors.surface, borderBottom: `1px solid ${colors.border}`, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
               <div>
                 <div style={{ fontWeight: 950 }}>{activeEditorExisting ? 'Editar resultado' : 'Cargar resultado'}</div>
