@@ -341,7 +341,7 @@ export default function AthletePublicProfile() {
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '20px 12px 40px' }}>
         <div className="fr-cut-card" style={{ overflow: 'hidden', border: '1px solid #252A33', background: '#171B21', marginBottom: 18 }}>
           <div style={{ minHeight: 220, background: coverBackground, padding: 24, display: 'flex', alignItems: 'flex-end' }}>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', width: '100%', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', width: '100%', minWidth: 0, flexWrap: 'wrap' }}>
               {profile.avatar_url ? (
                 <button type="button" onClick={() => setPhotoModalOpen(true)} aria-label={`Ver foto de ${profile.display_name}`} style={{ width: 92, height: 92, borderRadius: '50%', border: '3px solid rgba(245,247,250,0.24)', background: 'rgba(13,15,18,0.5)', overflow: 'hidden', display: 'grid', placeItems: 'center', fontSize: 34, fontWeight: 800, padding: 0, cursor: 'zoom-in' }}>
                   <img src={profile.avatar_url} alt={profile.display_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -351,9 +351,9 @@ export default function AthletePublicProfile() {
                   <UserRound size={40} />
                 </div>
               )}
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ fontFamily: '"Bebas Neue", monospace', fontSize: 42, lineHeight: 1, letterSpacing: '0.03em' }}>{profile.display_name}</div>
+              <div style={{ flex: 1, minWidth: 0, maxWidth: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: 0, maxWidth: '100%', fontFamily: '"Bebas Neue", monospace', fontSize: 'clamp(30px, 10vw, 42px)', lineHeight: 1, letterSpacing: '0.03em', overflowWrap: 'anywhere' }}>{profile.display_name}</div>
                   {profile.verified_athlete ? <ShieldCheck size={18} color="#00C2A8" /> : null}
                 </div>
                 <div style={{ marginTop: 6, color: '#D7DEE8', fontSize: 14, fontWeight: 700 }}>@{profile.username}</div>

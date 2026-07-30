@@ -300,7 +300,7 @@ function SkeletonTable({ rows = 5 }) {
 // â”€â”€ Category badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CategoryBadge({ cat }) {
   const map = { Rx: 'badge-rx', Scaled: 'badge-scaled', Masters: 'badge-masters' }
-  return <span className={`badge ${map[cat] || 'badge-default'}`}>{cat}</span>
+  return <span className={`badge ${map[cat] || 'badge-default'}`} style={{ minWidth: 0, maxWidth: '100%', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{cat}</span>
 }
 
 // â”€â”€ Rank medal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -874,9 +874,9 @@ function IndividualTable({ data, prevData, showEventCount, isMobile, totalScoreM
         )
         return (
           <div key={cat} style={{ marginBottom: isMobile ? 20 : 32 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, minWidth: 0, flexWrap: 'wrap' }}>
               <CategoryBadge cat={cat} />
-              <span style={{ color: THEME.muted, fontSize: tvMode ? 18 : 13 }}>{data[cat].length} atletas</span>
+              <span style={{ color: THEME.muted, fontSize: tvMode ? 18 : 13, flexShrink: 0 }}>{data[cat].length} atletas</span>
             </div>
             {isMobile ? (
               <div style={{ display: 'grid', gap: 8 }}>

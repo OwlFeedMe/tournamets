@@ -142,7 +142,10 @@ export default function CompetitionInvitationEnrollPage() {
     return getMissingParticipantProfileFields(profileDraftWithLocation(profileDraft, countries))
   }, [countries, profileDraft])
 
-  const setP = (k, v) => setProfileDraft(prev => ({ ...prev, [k]: v }))
+  const setP = (k, v) => {
+    setSubmitErr('')
+    setProfileDraft(prev => ({ ...prev, [k]: v }))
+  }
 
   const handleProfileNext = () => {
     if (missingFields.length) { setSubmitErr(`Completa: ${missingFields.join(', ')}`); return }
@@ -368,7 +371,10 @@ export default function CompetitionInvitationEnrollPage() {
                       <textarea
                         style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
                         value={answers[q.id] || ''}
-                        onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                        onChange={e => {
+                          setSubmitErr('')
+                          setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))
+                        }}
                         placeholder={q.placeholder || ''}
                       />
                     ) : (
@@ -376,7 +382,10 @@ export default function CompetitionInvitationEnrollPage() {
                         style={inputStyle}
                         type={q.field_type === 'number' ? 'number' : 'text'}
                         value={answers[q.id] || ''}
-                        onChange={e => setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                        onChange={e => {
+                          setSubmitErr('')
+                          setAnswers(prev => ({ ...prev, [q.id]: e.target.value }))
+                        }}
                         placeholder={q.placeholder || ''}
                       />
                     )}
@@ -398,7 +407,7 @@ export default function CompetitionInvitationEnrollPage() {
                 <div style={{ fontSize: 13, color: '#7E8796' }}>Al completar tu inscripcion aceptas las condiciones del evento.</div>
               )}
               <label style={{ display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', padding: '12px 14px', background: termsAccepted ? 'rgba(94,234,212,0.06)' : 'rgba(13,15,18,0.6)', border: `1px solid ${termsAccepted ? 'rgba(94,234,212,0.28)' : '#252A33'}`, borderRadius: 12 }}>
-                <input type="checkbox" checked={termsAccepted} onChange={e => setTermsAccepted(e.target.checked)} style={{ width: 18, height: 18, accentColor: '#5EEAD4', cursor: 'pointer', flexShrink: 0 }} />
+                <input type="checkbox" checked={termsAccepted} onChange={e => { setSubmitErr(''); setTermsAccepted(e.target.checked) }} style={{ width: 18, height: 18, accentColor: '#5EEAD4', cursor: 'pointer', flexShrink: 0 }} />
                 <span style={{ fontSize: 13, color: '#F5F7FA', fontWeight: 700 }}>Acepto los terminos y condiciones</span>
               </label>
             </>

@@ -514,7 +514,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
   }
 
   return (
-    <div style={{
+    <div role="dialog" aria-modal="true" aria-label={`Detalle de ${comp.nombre}`} style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)',
       display: 'flex', alignItems: 'center',
       justifyContent: 'center', zIndex: 1000,
@@ -548,7 +548,7 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
                 )}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(9,11,14,0.24)', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#F5F7FA', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <button type="button" aria-label="Cerrar detalle de competencia" onClick={onClose} style={{ background: 'rgba(9,11,14,0.72)', border: '1px solid rgba(9,11,14,0.24)', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#F5F7FA', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               <X size={18} />
             </button>
           </div>
@@ -574,9 +574,9 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
               </div>
 
               {/* Team name + rename */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, marginBottom: 10 }}>
                 {showRename ? (
-                  <form onSubmit={handleRename} style={{ display: 'flex', gap: 6, flex: 1 }}>
+                  <form onSubmit={handleRename} style={{ display: 'flex', gap: 6, flex: 1, minWidth: 0 }}>
                     <input
                       value={renameValue}
                       onChange={e => setRenameValue(e.target.value)}
@@ -584,16 +584,16 @@ function CompetitionDetailModal({ comp, participantId, allResults, appealsByResu
                       placeholder="Nuevo nombre..."
                       autoFocus
                     />
-                    <button type="submit" className="btn-primary btn-sm" disabled={renameBusy}>
+                    <button type="submit" className="btn-primary btn-sm" aria-label="Guardar nombre del equipo" title="Guardar nombre del equipo" disabled={renameBusy}>
                       {renameBusy ? '...' : <Check size={14} />}
                     </button>
-                    <button type="button" className="btn-secondary btn-sm" onClick={() => { setShowRename(false); setRenameMsg(null) }}>
+                    <button type="button" className="btn-secondary btn-sm" aria-label="Cancelar cambio de nombre" title="Cancelar cambio de nombre" onClick={() => { setShowRename(false); setRenameMsg(null) }}>
                       <X size={14} />
                     </button>
                   </form>
                 ) : (
                   <>
-                    <span style={{ fontWeight: 800, fontSize: 16, color: modalColors.text }}>{team.nombre}</span>
+                    <span style={{ fontWeight: 800, fontSize: 16, color: modalColors.text, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>{team.nombre}</span>
                     {isCaptain && (
                       <button className="btn-secondary btn-sm" onClick={() => setShowRename(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <Pencil size={12} /> Renombrar
@@ -2413,7 +2413,7 @@ export default function ParticipantProfile() {
                 </button>
               ) : null}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 10, minWidth: 0, maxWidth: '100%' }}>
               {myEventCards.map(({ competition: c, results: eventResults, activeAppeals, latestResult, totalPoints }) => {
                 const badge = statusBadge(c.enrollment_estado)
                 const statusCopy = enrollmentStatusCopy(c)
@@ -2423,18 +2423,8 @@ export default function ParticipantProfile() {
                 const canCancel = !c.payment_reference || ['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
                 const canOpen = isConfirmed || eventResults.length > 0
                 return (
-                  <div
+                  <article
                     key={c.id}
-                    role={canOpen ? 'button' : undefined}
-                    tabIndex={canOpen ? 0 : undefined}
-                    onClick={() => canOpen && openModal(c)}
-                    onKeyDown={(event) => {
-                      if (!canOpen) return
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault()
-                        openModal(c)
-                      }
-                    }}
                     style={{
                       border: '1px solid var(--oa-border)',
                       borderRadius: 8,
@@ -2442,27 +2432,28 @@ export default function ParticipantProfile() {
                       padding: 12,
                       display: 'grid',
                       gap: 10,
-                      cursor: canOpen ? 'pointer' : 'default',
                       minHeight: 154,
+                      minWidth: 0,
+                      maxWidth: '100%',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 800, fontSize: 14, color: '#F5F7FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.nombre}</div>
-                        {c.enrollment_categoria ? <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 3 }}>{c.enrollment_categoria}</div> : null}
+                        {c.enrollment_categoria ? <div style={{ fontSize: 12, color: 'var(--oa-text-secondary)', marginTop: 3, overflowWrap: 'anywhere' }}>{c.enrollment_categoria}</div> : null}
                       </div>
                       <span className={`badge ${badge.cls}`} style={{ flexShrink: 0 }}>{badge.label}</span>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, minWidth: 0 }}>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px', minWidth: 0 }}>
                         <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Resultados</div>
                         <div style={{ color: '#F5F7FA', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{eventResults.length}</div>
                       </div>
-                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px', minWidth: 0 }}>
                         <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Puntos</div>
                         <div style={{ color: '#00C2A8', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{totalPoints}</div>
                       </div>
-                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px' }}>
+                      <div style={{ border: '1px solid #252A33', borderRadius: 8, background: '#090B0E', padding: '8px 9px', minWidth: 0 }}>
                         <div style={{ color: '#6B7280', fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Revision</div>
                         <div style={{ color: activeAppeals ? '#00C2A8' : '#AAB2C0', fontSize: 17, fontWeight: 850, marginTop: 2 }}>{activeAppeals}</div>
                       </div>
@@ -2489,7 +2480,7 @@ export default function ParticipantProfile() {
                         {isBusy ? 'Cancelando...' : 'Cancelar'}
                       </button>
                     </div>
-                  </div>
+                  </article>
                 )
               })}
             </div>

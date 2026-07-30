@@ -356,8 +356,8 @@ function enrollmentStateLabel(value, paymentStatus) {
 function Modal({ title, onClose, children, width = 760 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(18px + env(safe-area-inset-top, 0px)) 12px calc(18px + env(safe-area-inset-bottom, 0px))' }}>
-      <div style={{ width: '100%', maxWidth: width, maxHeight: '100%', overflow: 'hidden', borderRadius: 24, border: '1px solid #252A33', background: '#171B21', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '18px 20px', borderBottom: '1px solid #252A33' }}>
+      <div role="dialog" aria-modal="true" aria-label={title} style={{ width: '100%', maxWidth: width, maxHeight: '100%', overflow: 'hidden', borderRadius: 24, border: '1px solid #252A33', background: '#171B21', boxShadow: '0 24px 80px rgba(0,0,0,0.35)', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '18px 20px', borderBottom: '1px solid #252A33', background: '#171B21' }}>
           <div style={{ color: '#F5F7FA', fontSize: 18, fontWeight: 800 }}>{title}</div>
           <button type="button" className="btn-secondary btn-sm" onClick={onClose}>Cerrar</button>
         </div>
@@ -451,6 +451,16 @@ export default function CompetitionEnrollmentPage() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  useEffect(() => {
+    if (!showTermsModal || typeof document === 'undefined') return undefined
+    document.body.classList.add('fr-modal-open')
+    window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: true } }))
+    return () => {
+      document.body.classList.remove('fr-modal-open')
+      window.dispatchEvent(new CustomEvent('finalrep:overlay-visibility', { detail: { open: false } }))
+    }
+  }, [showTermsModal])
 
   useEffect(() => {
     api.get('/config/pricing').then(({ data }) => setPricingCfg(data)).catch(() => {})

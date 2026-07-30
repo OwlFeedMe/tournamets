@@ -435,23 +435,25 @@ function PrimaryCompetitionPanel({ competition, leaderboard, leaderboardLoading 
         gap: 18,
         minHeight: 330,
         alignContent: 'space-between',
+        minWidth: 0,
+        maxWidth: '100%',
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) auto', gap: 16, alignItems: 'start', minWidth: 0 }}>
         <div style={{ display: 'grid', gap: 18, minWidth: 0 }}>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.bg, color: badge.color, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'start', minWidth: 0 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: `1px solid ${badge.border}`, background: badge.bg, color: badge.color, padding: '8px 12px', fontSize: 12, fontWeight: 800, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
               <Flame size={14} />
               {badge.label}
             </span>
             {competition?.enrollment_categoria ? (
-              <span style={{ color: premium.text, border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.72)', borderRadius: 999, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+              <span style={{ color: premium.text, border: `1px solid ${premium.border}`, background: 'rgba(9,11,14,0.72)', borderRadius: 999, padding: '8px 12px', fontSize: 12, fontWeight: 800, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>
                 Categoria {competition.enrollment_categoria}
               </span>
             ) : null}
           </div>
 
-          <div style={{ maxWidth: 860 }}>
+          <div style={{ maxWidth: 860, minWidth: 0 }}>
             <div style={{ color: '#FF9A3D', fontSize: 12, fontWeight: 800, letterSpacing: 1.1, textTransform: 'uppercase' }}>Tu competencia</div>
             <h1 style={{ margin: '10px 0 10px', color: premium.text, fontSize: 'clamp(34px, 6vw, 64px)', lineHeight: 0.96, overflowWrap: 'anywhere' }}>
               {competition?.nombre || 'Tu proxima competencia'}
@@ -490,7 +492,7 @@ function PrimaryCompetitionPanel({ competition, leaderboard, leaderboardLoading 
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', minWidth: 0 }}>
         <Link to={`/competitions/${competition.id}/my-schedule`} style={primaryActionStyle()}>
           Mi cronograma
           <ArrowRight size={16} />
@@ -525,6 +527,8 @@ function primaryActionStyle() {
     padding: '11px 16px',
     fontWeight: 800,
     border: '1px solid rgba(255,154,61,0.72)',
+    maxWidth: '100%',
+    overflowWrap: 'anywhere',
   }
 }
 
@@ -542,6 +546,8 @@ function secondaryActionStyle() {
     padding: '11px 16px',
     fontWeight: 800,
     border: `1px solid ${premium.border}`,
+    maxWidth: '100%',
+    overflowWrap: 'anywhere',
   }
 }
 

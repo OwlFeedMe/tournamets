@@ -438,12 +438,12 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
           const wodB = catOverride?.part_b_descripcion ?? baseActivities[1]?.descripcion ?? null
 
           return (
-            <div key={phase.id} className="fr-cut-card" style={{ border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, background: hexToRgba(theme.background, 0.58), overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: isMobile ? '12px 14px' : '14px 18px' }}>
+            <div key={phase.id} className="fr-cut-card" style={{ border: `1px solid ${hexToRgba(theme.primary, 0.24)}`, background: hexToRgba(theme.background, 0.58), overflow: 'hidden', minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, minWidth: 0, padding: isMobile ? '12px 14px' : '14px 18px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
-                  <span style={{ color: '#F5F7FA', fontSize: isMobile ? 15 : 16, fontWeight: 800, lineHeight: 1.25 }}>{phase.nombre}</span>
+                  <span style={{ color: '#F5F7FA', fontSize: isMobile ? 15 : 16, fontWeight: 800, lineHeight: 1.25, minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>{phase.nombre}</span>
                   {categories.length > 0 && (
-                    <div style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
+                    <div style={{ position: 'relative', display: 'inline-block', flexShrink: isMobile ? 1 : 0, minWidth: 0, width: isMobile ? '100%' : 'auto', maxWidth: '100%' }}>
                       <select
                         value={catId ?? ''}
                         onChange={(event) => setSelectedCatId((prev) => ({ ...prev, [phase.id]: event.target.value === '' ? null : event.target.value }))}
@@ -458,7 +458,10 @@ function PhasesbyDay({ phases, categories, theme, hexToRgba, isMobile }) {
                           fontSize: 12,
                           fontWeight: 700,
                           cursor: 'pointer',
-                          width: 'auto',
+                          width: isMobile ? '100%' : 'auto',
+                          minWidth: 0,
+                          maxWidth: '100%',
+                          textOverflow: 'ellipsis',
                         }}
                       >
                         <option value="" style={{ background: '#171B21', color: '#F5F7FA' }}>Base</option>
