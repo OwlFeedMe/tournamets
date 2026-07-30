@@ -1,6 +1,7 @@
 import { CreditCard, Dumbbell, ShieldCheck, Trophy, Users } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 
 const adminItems = [
   { label: 'Competencias', icon: Trophy, to: '/admin' },
@@ -18,6 +19,8 @@ export function AdminToolsNav({ compact = false }) {
   const location = useLocation()
   const navigate = useNavigate()
   const activeItemRef = useRef(null)
+  const { adminEnabled } = useAuth()
+  const visibleItems = adminEnabled ? adminItems : adminItems.filter((item) => item.to === '/admin')
 
   useEffect(() => {
     activeItemRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
@@ -53,10 +56,10 @@ export function AdminToolsNav({ compact = false }) {
           }}
         >
           <ShieldCheck size={15} color="#FF6B00" />
-          Admin
+          {adminEnabled ? 'Admin' : 'Organización'}
         </span>
       ) : null}
-      {adminItems.map((item) => {
+      {visibleItems.map((item) => {
         const Icon = item.icon
         const active = isActive(location.pathname, item.to)
         return (

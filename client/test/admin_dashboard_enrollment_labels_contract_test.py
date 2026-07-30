@@ -2,36 +2,27 @@ from pathlib import Path
 import unittest
 
 
-ADMIN_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "AdminDashboard.jsx"
+ADMIN_WORKSPACE_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "AdminCompetitionCommandProposal.jsx"
 
 
-class AdminDashboardEnrollmentLabelsContractTest(unittest.TestCase):
-    def test_enrollment_list_separates_enrollment_and_checkin_labels(self):
-        source = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+class AdminWorkspaceEnrollmentContractTest(unittest.TestCase):
+    def test_enrollment_list_exposes_current_management_actions(self):
+        source = ADMIN_WORKSPACE_PATH.read_text(encoding="utf-8")
 
+        self.assertIn("function ParticipantsPanel", source)
         self.assertIn("Inscritos", source)
-        self.assertIn("check_in_done", source)
-        self.assertIn("Inscripcion:", source)
-        self.assertIn("<th>Inscripcion</th>", source)
-        self.assertIn("selectedParticipants.filter(item => item.check_in_done).length", source)
-        self.assertIn("realizados", source)
-        self.assertIn("pendientes", source)
+        self.assertIn("Confirmar reemplazo", source)
+        self.assertIn("Cambiar categoria", source)
+        self.assertIn("participants/export.xlsx", source)
+        self.assertIn("Eliminar inscripcion de", source)
 
-    def test_admin_sees_delete_competition_action(self):
-        source = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
-        competitions_tab_index = source.index("function CompetitionsTab()")
-        participants_tab_index = source.index("function ParticipantsTab()")
-        delete_modal_index = source.index("deleteCompetitionTarget && (")
+    def test_workspace_uses_the_current_competition_portfolio(self):
+        source = ADMIN_WORKSPACE_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("const isAdmin = role === 'admin'", source)
-        self.assertIn("const [deleteCompetitionTarget, setDeleteCompetitionTarget] = useState(null)", source)
-        self.assertIn("Eliminar competencia", source)
-        self.assertIn("onClick={() => setDeleteCompetitionTarget(c)}", source)
-        self.assertIn("onClick={() => setDeleteCompetitionTarget(selectedCompetition)}", source)
-        self.assertIn("deleteCompetitionTarget && (", source)
-        self.assertGreater(delete_modal_index, competitions_tab_index)
-        self.assertLess(delete_modal_index, participants_tab_index)
-        self.assertNotIn("confirm(`Eliminar competencia", source)
+        self.assertIn("export default function AdminCompetitionCommandProposal", source)
+        self.assertIn("Mis competencias", source)
+        self.assertIn("Crear competencia", source)
+        self.assertNotIn("AdminDashboard", source)
 
 
 if __name__ == "__main__":

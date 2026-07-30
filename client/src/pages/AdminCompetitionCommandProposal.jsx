@@ -32,6 +32,12 @@ import {
 import { Link } from 'react-router-dom'
 import { AdminToolsNav } from '../components/admin/AdminToolsNav'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import {
+  COMPETITION_TIMEZONE_OPTIONS,
+  competitionDateTimeInputToUtc,
+  competitionTimeZone,
+  utcToCompetitionDateTimeInput,
+} from '../utils/competitionTimeZone'
 
 const colors = {
   bg: '#0D0F12',
@@ -303,18 +309,12 @@ function formatCategoryCapacity(category) {
   return `${registered} / ${maxCapacity} inscritos - ${available} disponibles`
 }
 
-function dateTimeInput(value) {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16)
-  const pad = (item) => String(item).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+function dateTimeInput(value, timeZone) {
+  return utcToCompetitionDateTimeInput(value, competitionTimeZone(timeZone))
 }
 
-function toUtcOrNull(value) {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+function toUtcOrNull(value, timeZone) {
+  return competitionDateTimeInputToUtc(value, competitionTimeZone(timeZone))
 }
 
 function statusOf(competition, summary) {
@@ -732,10 +732,10 @@ function IdentityPanel({ bundle, reload, notify }) {
     website_url: item?.website_url || '',
     enrollment_intro_text: item?.enrollment_intro_text || '',
     enrollment_terms_text: item?.enrollment_terms_text || '',
-    enrollment_start: dateTimeInput(item?.enrollment_start),
-    enrollment_end: dateTimeInput(item?.enrollment_end),
-    competition_start: dateTimeInput(item?.competition_start),
-    competition_end: dateTimeInput(item?.competition_end),
+    enrollment_start: dateTimeInput(item?.enrollment_start, item?.timezone),
+    enrollment_end: dateTimeInput(item?.enrollment_end, item?.timezone),
+    competition_start: dateTimeInput(item?.competition_start, item?.timezone),
+    competition_end: dateTimeInput(item?.competition_end, item?.timezone),
     individual_enabled: item?.individual_enabled ? 1 : 0,
     team_enabled: item?.team_enabled ? 1 : 0,
     team_size: item?.team_size || 2,
@@ -817,10 +817,10 @@ function IdentityPanel({ bundle, reload, notify }) {
         method: 'PUT',
         body: JSON.stringify({
           ...draft,
-          enrollment_start: toUtcOrNull(draft.enrollment_start),
-          enrollment_end: toUtcOrNull(draft.enrollment_end),
-          competition_start: toUtcOrNull(draft.competition_start),
-          competition_end: toUtcOrNull(draft.competition_end),
+          enrollment_start: toUtcOrNull(draft.enrollment_start, draft.timezone),
+          enrollment_end: toUtcOrNull(draft.enrollment_end, draft.timezone),
+          competition_start: toUtcOrNull(draft.competition_start, draft.timezone),
+          competition_end: toUtcOrNull(draft.competition_end, draft.timezone),
           team_size: Number(draft.team_size || 2),
         }),
       })
@@ -873,6 +873,7 @@ function IdentityPanel({ bundle, reload, notify }) {
             <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
               <Field label="Nombre"><input style={inputStyle()} value={draft.nombre} onChange={(e) => setDraft('nombre', e.target.value)} /></Field>
               <Field label="Sede / ciudad"><input style={inputStyle()} value={draft.lugar} onChange={(e) => setDraft('lugar', e.target.value)} /></Field>
+              <Field label="Zona horaria"><select style={inputStyle()} value={draft.timezone} onChange={(e) => setDraft('timezone', e.target.value)}>{COMPETITION_TIMEZONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
               <Field label="Inicio inscripciones"><input type="datetime-local" style={inputStyle()} value={draft.enrollment_start} onChange={(e) => setDraft('enrollment_start', e.target.value)} /></Field>
               <Field label="Fin inscripciones"><input type="datetime-local" style={inputStyle()} value={draft.enrollment_end} onChange={(e) => setDraft('enrollment_end', e.target.value)} /></Field>
               <Field label="Inicio competencia"><input type="datetime-local" style={inputStyle()} value={draft.competition_start} onChange={(e) => setDraft('competition_start', e.target.value)} /></Field>
@@ -1927,7 +1928,7 @@ function HeatsPanel({ bundle, reload, notify }) {
         category_transition_seconds: Math.max(0, Number(draft.category_transition_minutes || 0)) * 60,
         delete_existing: true,
         is_published: !!draft.is_published,
-        first_heat_start_at: toUtcOrNull(draft.first_heat_start_at),
+        first_heat_start_at: toUtcOrNull(draft.first_heat_start_at, competition.timezone),
         location_name: draft.location_name,
         location_detail: selectedLocation?.detail || null,
       }
@@ -2131,7 +2132,7 @@ function HeatsPanel({ bundle, reload, notify }) {
       ...prev,
       phase_id: String(phaseId || ''),
       from_heat_id: String(fromHeatId || ''),
-      first_heat_start_at: dateTimeInput(firstHeat?.start_at || phase?.start_at),
+      first_heat_start_at: dateTimeInput(firstHeat?.start_at || phase?.start_at, competition.timezone),
       heat_duration_minutes: heatDurationMinutes,
       heat_gap_minutes: Math.max(0, Math.round(Number(phase?.heat_transition_seconds || firstHeat?.heat_transition_seconds || 0) / 60)),
       category_transition_minutes: Math.max(0, Math.round(Number(phase?.category_transition_seconds || firstHeat?.category_transition_seconds || 0) / 60)),
@@ -2144,7 +2145,7 @@ function HeatsPanel({ bundle, reload, notify }) {
     setTimingModal(true)
   }
   const timingPayload = () => ({
-    first_heat_start_at: toUtcOrNull(timingDraft.first_heat_start_at),
+    first_heat_start_at: toUtcOrNull(timingDraft.first_heat_start_at, competition.timezone),
     heat_duration_minutes: Number(timingDraft.heat_duration_minutes || 0),
     heat_gap_minutes: Number(timingDraft.heat_gap_minutes || 0),
     category_transition_minutes: Number(timingDraft.category_transition_minutes || 0),
@@ -2191,8 +2192,8 @@ function HeatsPanel({ bundle, reload, notify }) {
   const openSingleSchedule = (heat) => {
     setScheduleDraft((prev) => ({
       ...prev,
-      start_at: dateTimeInput(heat.start_at),
-      end_at: dateTimeInput(heat.end_at),
+      start_at: dateTimeInput(heat.start_at, competition.timezone),
+      end_at: dateTimeInput(heat.end_at, competition.timezone),
       location_name: heat.location_name || '',
       location_detail: heat.location_detail || '',
     }))
@@ -2215,8 +2216,8 @@ function HeatsPanel({ bundle, reload, notify }) {
   }
   const saveSingleSchedule = async () => {
     if (!scheduleModal?.heat) return
-    const nextStart = toUtcOrNull(scheduleDraft.start_at)
-    const nextEnd = toUtcOrNull(scheduleDraft.end_at)
+    const nextStart = toUtcOrNull(scheduleDraft.start_at, competition.timezone)
+    const nextEnd = toUtcOrNull(scheduleDraft.end_at, competition.timezone)
     const locationName = scheduleDraft.location_name.trim()
     const locationDetail = heatLocations.find((location) => location.name === locationName)?.detail || scheduleDraft.location_detail.trim()
     const conflicts = findLocationConflicts(scheduleModal.heat, { start_at: nextStart, end_at: nextEnd, location_name: locationName || null })
@@ -2613,7 +2614,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                 setDraft((p) => ({
                   ...p,
                   phase_id: e.target.value,
-                  first_heat_start_at: p.first_heat_start_at || dateTimeInput(nextPhase?.start_at),
+                  first_heat_start_at: p.first_heat_start_at || dateTimeInput(nextPhase?.start_at, competition.timezone),
                   heat_duration_minutes: Math.max(1, Math.round(Number(nextPhase?.heat_duration_seconds || 900) / 60)),
                   heat_gap_minutes: Math.max(0, Math.round(Number(nextPhase?.heat_transition_seconds || 0) / 60)),
                   category_transition_minutes: Math.max(0, Math.round(Number(nextPhase?.category_transition_seconds || 0) / 60)),
@@ -3069,7 +3070,7 @@ function HeatsPanel({ bundle, reload, notify }) {
                 </Field>
                 <Field label="Detalle"><input style={inputStyle()} value={scheduleDraft.location_detail} onChange={(event) => setScheduleDraft((prev) => ({ ...prev, location_detail: event.target.value }))} /></Field>
               </div>
-              {scheduleDraft.location_name && findLocationConflicts(scheduleModal.heat, { start_at: toUtcOrNull(scheduleDraft.start_at), end_at: toUtcOrNull(scheduleDraft.end_at), location_name: scheduleDraft.location_name }).length ? (
+              {scheduleDraft.location_name && findLocationConflicts(scheduleModal.heat, { start_at: toUtcOrNull(scheduleDraft.start_at, competition.timezone), end_at: toUtcOrNull(scheduleDraft.end_at, competition.timezone), location_name: scheduleDraft.location_name }).length ? (
                 <div style={{ border: `1px solid ${colors.error}`, background: 'rgba(239,68,68,0.10)', borderRadius: 8, padding: 12, color: '#FCA5A5', fontSize: 13, lineHeight: 1.5 }}>
                   Esta ubicacion ya tiene un heat en ese horario.
                 </div>
@@ -5701,7 +5702,7 @@ function WizardWorkspace({ selectedId, onBack }) {
 }
 
 function CreateCompetitionModal({ onClose, onCreated, notify }) {
-  const [draft, setDraft] = useState({ nombre: '', descripcion: '', lugar: '', competition_start: '', competition_end: '' })
+  const [draft, setDraft] = useState({ nombre: '', descripcion: '', lugar: '', competition_start: '', competition_end: '', timezone: 'America/Bogota' })
   const [busy, setBusy] = useState(false)
   const create = async () => {
     if (!draft.nombre.trim()) return notify('Nombre requerido', 'error')
@@ -5711,9 +5712,8 @@ function CreateCompetitionModal({ onClose, onCreated, notify }) {
         method: 'POST',
         body: JSON.stringify({
           ...draft,
-          competition_start: toUtcOrNull(draft.competition_start),
-          competition_end: toUtcOrNull(draft.competition_end),
-          timezone: 'America/Bogota',
+          competition_start: toUtcOrNull(draft.competition_start, draft.timezone),
+          competition_end: toUtcOrNull(draft.competition_end, draft.timezone),
           activa: 0,
         }),
       })
@@ -5730,6 +5730,7 @@ function CreateCompetitionModal({ onClose, onCreated, notify }) {
       <div style={{ display: 'grid', gap: 12 }}>
         <Field label="Nombre"><input style={inputStyle()} value={draft.nombre} onChange={(e) => setDraft((p) => ({ ...p, nombre: e.target.value }))} /></Field>
         <Field label="Descripcion"><textarea style={{ ...inputStyle(), minHeight: 90 }} value={draft.descripcion} onChange={(e) => setDraft((p) => ({ ...p, descripcion: e.target.value }))} /></Field>
+        <Field label="Zona horaria"><select style={inputStyle()} value={draft.timezone} onChange={(e) => setDraft((p) => ({ ...p, timezone: e.target.value }))}>{COMPETITION_TIMEZONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></Field>
         <Field label="Lugar"><input style={inputStyle()} value={draft.lugar} onChange={(e) => setDraft((p) => ({ ...p, lugar: e.target.value }))} /></Field>
         <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <Field label="Inicio"><input type="datetime-local" style={inputStyle()} value={draft.competition_start} onChange={(e) => setDraft((p) => ({ ...p, competition_start: e.target.value }))} /></Field>

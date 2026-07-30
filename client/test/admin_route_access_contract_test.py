@@ -15,15 +15,15 @@ class AdminRouteAccessContractTest(unittest.TestCase):
         self.assertIn("allowedRoles={['organizer', 'admin']}", source[admin_route_index:admin_wildcard_index])
         self.assertIn("allowedRoles={['organizer', 'admin']}", source[admin_wildcard_index:])
 
-    def test_legacy_admin_remains_admin_only(self):
+    def test_admin_only_tools_remain_admin_only(self):
         source = APP_PATH.read_text(encoding="utf-8")
 
-        legacy_route_index = source.index('path="/admin-legacy"')
-        legacy_wildcard_index = source.index('path="/admin-legacy/*"')
-        admin_route_index = source.index('path="/admin"')
+        for route in ("/admin/gyms", "/admin/finance", "/admin/users"):
+            route_index = source.index(f'path="{route}"')
+            route_block = source[route_index:route_index + 260]
+            self.assertIn("allowedRoles={['admin']}", route_block)
 
-        self.assertIn("allowedRoles={['admin']}", source[legacy_route_index:legacy_wildcard_index])
-        self.assertIn("allowedRoles={['admin']}", source[legacy_wildcard_index:admin_route_index])
+        self.assertNotIn('path="/admin-legacy"', source)
 
     def test_organizer_routes_redirect_to_admin_workspace(self):
         source = APP_PATH.read_text(encoding="utf-8")

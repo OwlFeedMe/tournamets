@@ -18,7 +18,7 @@ class ExplorePagesCompetitionDatesTest(unittest.TestCase):
         self.assertNotIn("Pagina publica", source)
         self.assertNotIn("function formatDate(value)", source)
         self.assertNotIn("function formatCompetitionWindow(competition)", source)
-        self.assertNotIn("Trophy", source)
+        self.assertIn("<Trophy size={18}", source)
 
 
 if __name__ == "__main__":

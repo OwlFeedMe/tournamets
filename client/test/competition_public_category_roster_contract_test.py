@@ -5,7 +5,7 @@ import unittest
 LANDING_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "CompetitionLanding.jsx"
 ROSTER_PAGE_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "CompetitionPublicRosterPage.jsx"
 ROSTER_PANEL_PATH = Path(__file__).resolve().parents[1] / "src" / "components" / "competition" / "CompetitionRosterPanel.jsx"
-ADMIN_DASHBOARD_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "AdminDashboard.jsx"
+ADMIN_WORKSPACE_PATH = Path(__file__).resolve().parents[1] / "src" / "pages" / "AdminCompetitionCommandProposal.jsx"
 APP_PATH = Path(__file__).resolve().parents[1] / "src" / "App.jsx"
 
 
@@ -60,14 +60,13 @@ class CompetitionPublicCategoryRosterContractTest(unittest.TestCase):
         self.assertIn("CompetitionPublicRosterPage", route_source)
         self.assertIn('path="/competitions/:competitionId/inscritos"', route_source)
 
-    def test_admin_dashboard_can_toggle_public_category_roster(self):
-        source = ADMIN_DASHBOARD_PATH.read_text(encoding="utf-8")
+    def test_admin_workspace_can_toggle_public_category_roster(self):
+        source = ADMIN_WORKSPACE_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("show_public_category_roster: 0", source)
-        self.assertIn("source.show_public_category_roster == null ? 0 : source.show_public_category_roster", source)
-        self.assertIn("show_public_category_roster: form.show_public_category_roster ? 1 : 0", source)
-        self.assertIn("Mostrar inscritos publicamente por categoria", source)
-        self.assertIn("Publica en la landing los atletas y equipos confirmados dentro de cada categoria.", source)
+        self.assertIn("show_public_category_roster: item?.show_public_category_roster ? 1 : 0", source)
+        self.assertIn("key: 'show_public_category_roster'", source)
+        self.assertIn("title: 'Roster publico por categoria'", source)
+        self.assertIn("Muestra al publico la lista de inscritos separada por categoria", source)
 
 
 if __name__ == "__main__":
