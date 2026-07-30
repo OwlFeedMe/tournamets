@@ -14,6 +14,7 @@ class AthleteMobileViewsContractTest(unittest.TestCase):
 
         self.assertIn("gridTemplateColumns: isMobile ? 'minmax(0, 1fr)'", source)
         self.assertIn("maxWidth: '100%', overflowWrap: 'anywhere'", source)
+        self.assertIn("<div style={{ display: 'grid', gap: 18, minWidth: 0, maxWidth: '100%' }}>", source)
 
     def test_profile_event_cards_are_shrinkable_and_not_nested_buttons(self):
         source = self.read_page("ParticipantProfile.jsx")

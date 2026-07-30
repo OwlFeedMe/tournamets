@@ -1075,10 +1075,10 @@ function PersonalHome({
   }
 
   return (
-    <div style={{ display: 'grid', gap: 18 }}>
+    <div style={{ display: 'grid', gap: 18, minWidth: 0, maxWidth: '100%' }}>
       <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} leaderboardLoading={detailsLoading} onOpenQr={onOpenQr} isMobile={isMobile} />
       {detailsLoading ? <SkeletonMetricGrid count={3} /> : null}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18, minWidth: 0 }}>
         {detailsLoading ? <SkeletonList count={2} /> : <NextHeatPanel heat={nextHeat} timeZone={primaryCompetition?.timezone} />}
         {detailsLoading ? <SkeletonList count={3} /> : <ScorePanel leaderboard={leaderboard} results={results} />}
       </div>
