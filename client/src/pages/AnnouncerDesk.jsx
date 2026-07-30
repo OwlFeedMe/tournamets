@@ -124,14 +124,20 @@ export default function AnnouncerDesk() {
 
   const activeAssignments = assignments.filter((item) => item.status === 'active')
   const pendingAssignments = assignments.filter((item) => item.status === 'pending')
-  const activeAssignment = activeAssignments[0] || null
+  const activeAssignment = activeAssignments.find(
+    (item) => String(item.competition_id) === String(competitionId),
+  ) || activeAssignments[0] || null
 
   const loadAssignments = async () => {
     const { data } = await api.get('/me/announcer-assignments')
     const items = Array.isArray(data) ? data : []
     setAssignments(items)
-    const active = items.find((item) => item.status === 'active')
-    setCompetitionId(active?.competition_id || '')
+    const active = items.filter((item) => item.status === 'active')
+    setCompetitionId((current) => (
+      active.some((item) => String(item.competition_id) === String(current))
+        ? current
+        : (active[0]?.competition_id || '')
+    ))
   }
 
   const loadLive = async (id = competitionId) => {
@@ -142,6 +148,7 @@ export default function AnnouncerDesk() {
       setLive(data)
       setMsg(null)
     } catch (error) {
+      setLive(null)
       setMsg({ type: 'error', text: error.response?.data?.detail || 'No se pudo cargar la vista en vivo.' })
     } finally {
       setLoading(false)
@@ -154,6 +161,9 @@ export default function AnnouncerDesk() {
 
   useEffect(() => {
     if (!competitionId) return undefined
+    setLive(null)
+    setManualHeatId('')
+    setLiveMode(true)
     loadLive(competitionId)
     const id = setInterval(() => loadLive(competitionId), 5000)
     return () => clearInterval(id)
@@ -225,6 +235,31 @@ export default function AnnouncerDesk() {
             <div style={{ color: colors.secondary, marginTop: 4, overflowWrap: 'anywhere' }}>{live?.competition?.nombre || activeAssignment?.competition_name || 'Sin competencia activa'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+            {activeAssignments.length > 1 ? (
+              <label style={{ display: 'grid', gap: 4, minWidth: 0, flex: isMobile ? '1 1 100%' : '0 1 360px', margin: 0 }}>
+                <span style={{ color: colors.muted, fontSize: 11, fontWeight: 850 }}>Competencia</span>
+                <select
+                  aria-label="Competencia de locución"
+                  value={competitionId}
+                  onChange={(event) => setCompetitionId(event.target.value)}
+                  style={{
+                    width: '100%',
+                    minWidth: 0,
+                    minHeight: 38,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 8,
+                    background: colors.top,
+                    color: colors.text,
+                    padding: '8px 10px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {activeAssignments.map((item) => (
+                    <option key={item.id} value={item.competition_id}>{item.competition_name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <Button onClick={() => loadLive()} disabled={!competitionId || loading}><RefreshCw size={15} />Actualizar</Button>
             {competitionId ? <Link to={`/leaderboard/${competitionId}`} target="_blank" style={{ textDecoration: 'none' }}><Button><Trophy size={15} />Leaderboard</Button></Link> : null}
           </div>

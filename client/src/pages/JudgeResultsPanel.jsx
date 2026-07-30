@@ -962,10 +962,17 @@ function AppealsPanel({ assignment, notify }) {
 }
 
 export default function JudgeResultsPanel() {
-  const [assignment, setAssignment] = useState(null)
+  const [assignments, setAssignments] = useState([])
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState('')
   const [phases, setPhases] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loadingAssignments, setLoadingAssignments] = useState(true)
+  const [loadingPhases, setLoadingPhases] = useState(false)
   const [toast, setToast] = useState(null)
+  const assignment = useMemo(
+    () => assignments.find((item) => String(item.id) === String(selectedAssignmentId)) || assignments[0] || null,
+    [assignments, selectedAssignmentId],
+  )
+  const loading = loadingAssignments || loadingPhases
   const notify = (text, type = 'ok') => {
     setToast({ text, type })
     window.setTimeout(() => setToast(null), 2800)
@@ -973,27 +980,52 @@ export default function JudgeResultsPanel() {
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    setLoadingAssignments(true)
     api.get('/me/judge-assignments')
-      .then(async ({ data }) => {
+      .then(({ data }) => {
         if (cancelled) return
-        const active = (Array.isArray(data) ? data : []).find((item) => item.status === 'active') || null
-        setAssignment(active)
-        if (!active?.competition_id) {
-          setPhases([])
-          return
-        }
-        const phasesRes = await api.get(`/judge/competitions/${active.competition_id}/score/phases`)
-        if (!cancelled) setPhases(Array.isArray(phasesRes.data) ? phasesRes.data : [])
+        const active = (Array.isArray(data) ? data : []).filter((item) => item.status === 'active')
+        setAssignments(active)
+        setSelectedAssignmentId((current) => (
+          active.some((item) => String(item.id) === String(current))
+            ? current
+            : (active[0]?.id ? String(active[0].id) : '')
+        ))
       })
       .catch((error) => {
+        if (!cancelled) setAssignments([])
         if (!cancelled) notify(error.response?.data?.detail || 'No se pudo cargar la asignacion de juez.', 'error')
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setLoadingAssignments(false)
       })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (!assignment?.competition_id) {
+      setPhases([])
+      setLoadingPhases(false)
+      return undefined
+    }
+    let cancelled = false
+    setLoadingPhases(true)
+    setPhases([])
+    api.get(`/judge/competitions/${assignment.competition_id}/score/phases`)
+      .then(({ data }) => {
+        if (!cancelled) setPhases(Array.isArray(data) ? data : [])
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPhases([])
+          notify(error.response?.data?.detail || 'No se pudieron cargar los WODs.', 'error')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPhases(false)
+      })
+    return () => { cancelled = true }
+  }, [assignment?.competition_id])
 
   return (
     <main style={{ minHeight: '100vh', background: colors.bg, color: colors.text, padding: 18 }}>
@@ -1006,6 +1038,31 @@ export default function JudgeResultsPanel() {
             <div style={{ color: colors.secondary, fontSize: 13, marginTop: 4 }}>{assignment?.competition_name || 'Competencia asignada'}</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {assignments.length > 1 ? (
+              <label style={{ display: 'grid', gap: 4, minWidth: 0, maxWidth: '100%', flex: '1 1 260px', margin: 0 }}>
+                <span style={{ color: colors.muted, fontSize: 11, fontWeight: 850 }}>Competencia</span>
+                <select
+                  aria-label="Competencia asignada"
+                  value={assignment?.id ? String(assignment.id) : ''}
+                  onChange={(event) => setSelectedAssignmentId(event.target.value)}
+                  style={{
+                    width: '100%',
+                    maxWidth: 360,
+                    minWidth: 0,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 8,
+                    background: colors.top,
+                    color: colors.text,
+                    padding: '9px 11px',
+                    fontWeight: 800,
+                  }}
+                >
+                  {assignments.map((item) => (
+                    <option key={item.id} value={item.id}>{item.competition_name}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             {assignment?.competition_id ? <Link target="_blank" to={`/leaderboard/${assignment.competition_id}`} style={{ textDecoration: 'none' }}><Button><Trophy size={16} />Leaderboard</Button></Link> : null}
           </div>
         </header>
@@ -1016,7 +1073,7 @@ export default function JudgeResultsPanel() {
             <span style={{ color: colors.secondary, fontSize: 13 }}>Selecciona WOD, categoria y heat para cargar resultados.</span>
           </section>
         ) : null}
-        {loading ? <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>Cargando...</section> : assignment && phases.length ? <><ScoreTable assignment={assignment} phases={phases} notify={notify} /><AppealsPanel assignment={assignment} notify={notify} /></> : <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>No tienes una competencia activa como juez.</section>}
+        {loading ? <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>Cargando...</section> : assignment && phases.length ? <><ScoreTable assignment={assignment} phases={phases} notify={notify} /><AppealsPanel assignment={assignment} notify={notify} /></> : <section style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 16, color: colors.secondary }}>{assignment ? 'Esta competencia no tiene WODs configurados.' : 'No tienes una competencia activa como juez.'}</section>}
       </div>
     </main>
   )

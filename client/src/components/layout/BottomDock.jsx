@@ -87,12 +87,13 @@ export function BottomDock() {
         padding: '8px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
+      <div className="fr-bottom-dock-items" style={{ display: 'flex', alignItems: 'stretch', gap: 8 }}>
         {items.map((item) => {
           const Icon = item.icon
           const active = isActivePath(location.pathname, item.to)
           return (
             <button
+              className="fr-bottom-dock-item"
               key={item.label}
               type="button"
               onClick={() => {
@@ -100,6 +101,7 @@ export function BottomDock() {
               }}
               style={{
                 flex: 1,
+                minWidth: 0,
                 minHeight: 56,
                 borderRadius: 16,
                 padding: '8px 10px',
@@ -116,7 +118,19 @@ export function BottomDock() {
               }}
             >
               <Icon size={18} />
-              <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1 }}>{item.label}</span>
+              <span
+                className="fr-bottom-dock-label"
+                style={{
+                  maxWidth: '100%',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  overflowWrap: 'anywhere',
+                  textAlign: 'center',
+                }}
+              >
+                {item.label}
+              </span>
             </button>
           )
         })}

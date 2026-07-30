@@ -76,6 +76,24 @@ body.fr-modal-open .fr-bottom-dock {
   display: none !important;
 }
 
+@media (max-width: 340px) {
+  .fr-bottom-dock {
+    padding: 6px !important;
+  }
+
+  .fr-bottom-dock-items {
+    gap: 2px !important;
+  }
+
+  .fr-bottom-dock-item {
+    padding: 7px 2px !important;
+  }
+
+  .fr-bottom-dock-label {
+    font-size: 9px !important;
+  }
+}
+
 .app-error-fallback {
   min-height: 100vh;
   display: grid;
