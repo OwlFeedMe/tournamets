@@ -706,18 +706,18 @@ function CompactEventList({ items, primaryId }) {
   const rows = (Array.isArray(items) ? items : []).filter((item) => String(item.id) !== String(primaryId)).slice(0, 3)
   if (!rows.length) return null
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
+    <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, minWidth: 0, maxWidth: '100%' }}>
       <h2 style={{ margin: 0, color: premium.text, fontSize: 22 }}>Tus otras competencias</h2>
-      <div style={{ display: 'grid', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10, minWidth: 0 }}>
         {rows.map((competition) => {
           const badge = enrollmentBadge(competition.enrollment_estado)
           return (
-            <Link key={competition.id} to={`/competitions/${competition.id}`} style={{ textDecoration: 'none', borderRadius: 6, border: `1px solid ${premium.border}`, background: premium.surface, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+            <Link key={competition.id} to={`/competitions/${competition.id}`} style={{ textDecoration: 'none', borderRadius: 6, border: `1px solid ${premium.border}`, background: premium.surface, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', minWidth: 0, maxWidth: '100%' }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ color: premium.text, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{competition.nombre}</div>
                 <div style={{ color: premium.textSoft, marginTop: 4, fontSize: 12 }}>{formatCompetitionWindow(competition, { includeYear: false, fallback: 'Fecha por confirmar' })}</div>
               </div>
-              <span style={{ color: badge.color, fontSize: 12, fontWeight: 800 }}>{badge.label}</span>
+              <span style={{ color: badge.color, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{badge.label}</span>
             </Link>
           )
         })}
