@@ -799,14 +799,14 @@ function FinishedCompetitionsPanel({ competitions, participatedIds, isMobile, ex
   if (!rows.length) return null
 
   return (
-    <section style={{ display: 'grid', gap: 14 }}>
+    <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 14, minWidth: 0 }}>
       <div>
         <h2 style={{ margin: 0, color: premium.text, fontSize: 26 }}>Competencias finalizadas</h2>
         <p style={{ margin: '7px 0 0', color: premium.textSoft, fontSize: 14, lineHeight: 1.55 }}>
           Consulta resultados, rankings y detalles de eventos anteriores.
         </p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 14, minWidth: 0 }}>
         {rows.map((competition) => (
           <FinishedCompetitionCard
             key={competition.id}
@@ -834,7 +834,9 @@ function LastCompetitionPanel({ competition, leaderboard, detailsLoading, isMobi
           : 'linear-gradient(135deg, rgba(255,107,0,0.14), rgba(23,27,33,0.98) 52%, rgba(0,194,168,0.10))',
         padding: isMobile ? 18 : 22,
         display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr)',
         gap: 18,
+        minWidth: 0,
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'start' }}>
@@ -896,7 +898,7 @@ function OffSeasonHome({
   detailsLoading,
 }) {
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 20, minWidth: 0 }}>
       <section
         className="fr-cut-card"
         style={{
@@ -907,6 +909,7 @@ function OffSeasonHome({
           gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
           gap: 18,
           alignItems: 'end',
+          minWidth: 0,
         }}
       >
         <div>
