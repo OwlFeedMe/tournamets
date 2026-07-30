@@ -992,7 +992,7 @@ function IdentityPanel({ bundle, reload, notify }) {
             ['profile', 'Imagen perfil', profileUrl, 'Cuadrada para tarjetas y encabezados.'],
             ['banner', 'Banner', bannerUrl, 'Imagen ancha para landing y portada.'],
           ].map(([type, label, url, help]) => (
-            <div className="fr-image-card" key={type} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10, minWidth: 0, overflow: 'hidden' }}>
+            <div className="fr-image-card" key={type} style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 10, minWidth: 0, overflow: 'hidden', alignContent: 'space-between' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 900 }}>{label}</div>
