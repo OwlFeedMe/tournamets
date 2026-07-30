@@ -32,11 +32,14 @@ const mobileRankCardStyle = {
   borderRadius: 10,
   padding: '10px 12px',
   boxShadow: '0 12px 28px rgba(0,0,0,0.22)',
+  minWidth: 0,
+  maxWidth: '100%',
 }
 
 function mobileScoreChipStyle(active = false) {
   return {
     flex: 1,
+    minWidth: 0,
     background: active ? 'rgba(0,194,168,0.10)' : 'rgba(9,11,14,0.72)',
     borderRadius: 7,
     padding: '6px 8px',
@@ -1062,7 +1065,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
     return members.length === 1 ? firstName : `${members.length} integrantes · ${firstName} +${members.length - 1}`
   }
   const memberPreview = (members) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, maxWidth: '100%', flex: 1, overflow: 'hidden' }}>
       <span style={{ border: `1px solid rgba(0,194,168,0.34)`, background: 'rgba(0,194,168,0.10)', color: THEME.ink, borderRadius: 999, padding: '5px 8px', fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap', flexShrink: 0 }}>
         {members.length || 0} integrantes
       </span>
@@ -1087,13 +1090,13 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
           <span style={{ color: THEME.soft, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>+{members.length - 3}</span>
         ) : null}
       </div>
-      <span style={{ color: THEME.muted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{memberSummary(members)}</span>
+      <span style={{ color: THEME.muted, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{memberSummary(members)}</span>
     </div>
   )
 
   if (isMobile) {
     return (
-      <div style={{ display: 'grid', gap: 8 }}>
+      <div className="fr-team-mobile-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, minWidth: 0 }}>
         {data.map((t, idx) => {
           const visibleRank = t.rank ?? (idx + 1)
           const prev = prevMap.current[t.id]
@@ -1111,7 +1114,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
               {/* Header: rank + team name + movement */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: visibleRank <= 3 ? 22 : 16, fontWeight: 700, minWidth: 26, color: visibleRank <= 3 ? '#FF9A3D' : THEME.muted }}>#{visibleRank}</span>
-                <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, fontSize: 14, color: THEME.ink }}>{teamName}</span>
+                <span style={{ fontWeight: visibleRank <= 3 ? 700 : 500, flex: 1, minWidth: 0, overflowWrap: 'anywhere', fontSize: 14, color: THEME.ink }}>{teamName}</span>
                 {t.has_active_appeal ? <ReviewBadge /> : null}
                 <MoveBadge delta={delta} />
               </div>
@@ -1147,7 +1150,7 @@ function TeamsTable({ data, prevData, phaseMode, isMobile, totalScoreMap, phaseI
 
               {/* Members */}
               <div style={{ borderTop: '1px solid rgba(214,217,224,0.12)', paddingTop: 8, display: 'grid', gap: 8 }}>
-                <button type="button" onClick={() => toggleTeam(t.id)} style={{ border: 'none', background: 'transparent', color: THEME.ink, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}>
+                <button type="button" onClick={() => toggleTeam(t.id)} style={{ width: '100%', minWidth: 0, border: 'none', background: 'transparent', color: THEME.ink, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textAlign: 'left' }}>
                   {memberPreview(members)}
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: THEME.accent, fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
                     {expanded ? 'Ocultar' : 'Ver'}

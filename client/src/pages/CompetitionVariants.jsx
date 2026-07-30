@@ -328,9 +328,9 @@ function CompetitionHero({ variant, competition, bannerUrl, profileImageUrl, sta
 
   if (variant === 4) {
     return (
-      <section className="fr-cut-card" style={{ border: '1px solid rgba(214,217,224,0.16)', background: '#171A20', padding: isMobile ? 18 : 24 }}>
-        <div style={{ display: 'grid', gap: 18 }}>
-          <div>
+      <section className="fr-cut-card" style={{ border: '1px solid rgba(214,217,224,0.16)', background: '#171A20', padding: isMobile ? 18 : 24, minWidth: 0 }}>
+        <div className="fr-competition-v4-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 18, minWidth: 0 }}>
+          <div style={{ minWidth: 0 }}>
             <div style={{ ...chipStyle(), width: 'fit-content', marginBottom: 12 }}>
               <ShieldCheck size={14} color={status.tone} />
               {status.label}
@@ -339,7 +339,7 @@ function CompetitionHero({ variant, competition, bannerUrl, profileImageUrl, sta
             <p style={{ margin: '14px 0 0', maxWidth: 760, color: 'var(--oa-text-secondary)', fontSize: 15, lineHeight: 1.7 }}>{description}</p>
             <HeroActions competitionId={competition.id} />
           </div>
-          <div className="fr-cut-card" style={{ minHeight: isMobile ? 220 : 360, aspectRatio: isMobile ? '16 / 10' : '16 / 9', border: '1px solid rgba(214,217,224,0.16)', ...bannerFillStyle(bannerBackground, bannerFallback) }} />
+          <div className="fr-cut-card" style={{ minHeight: isMobile ? 220 : 360, minWidth: 0, maxWidth: '100%', aspectRatio: isMobile ? '16 / 10' : '16 / 9', border: '1px solid rgba(214,217,224,0.16)', ...bannerFillStyle(bannerBackground, bannerFallback) }} />
         </div>
       </section>
     )
