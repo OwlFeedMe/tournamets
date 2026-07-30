@@ -663,7 +663,7 @@ function Modal({ title, onClose, children }) {
   }, [])
   return (
     <div className="fr-command-modal-overlay" style={{ position: 'fixed', inset: 0, zIndex: 10000, background: 'rgba(0,0,0,0.74)', display: 'grid', placeItems: 'center', padding: 16 }} onClick={onClose}>
-      <div className="fr-command-modal" style={{ width: 'min(760px, 100%)', maxHeight: '88vh', overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface }} onClick={(event) => event.stopPropagation()}>
+      <div className="fr-command-modal" role="dialog" aria-modal="true" aria-label={title} style={{ width: 'min(760px, 100%)', maxHeight: '88vh', overflowY: 'auto', border: `1px solid ${colors.border}`, borderRadius: 8, background: colors.surface }} onClick={(event) => event.stopPropagation()}>
         <div className="fr-command-modal-header" style={{ position: 'sticky', top: 0, zIndex: 1, background: colors.surface, borderBottom: `1px solid ${colors.border}`, padding: 14, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
           <div className="fr-command-modal-title" style={{ fontSize: 18, fontWeight: 950 }}>{title}</div>
           <Button onClick={onClose}>Cerrar</Button>
@@ -1358,8 +1358,8 @@ function InvitationsPanel({ bundle, reload, notify }) {
         </Modal>
       ) : null}
       {(bundle.invitations || []).map((item) => (
-        <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10 }}>
-          <div><strong>{item.invited_email}</strong><div style={{ color: colors.secondary, fontSize: 12 }}>{item.categoria || 'Sin categoria'} - {item.status}</div></div>
+        <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: 10, alignItems: 'center', border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 10, minWidth: 0 }}>
+          <div style={{ minWidth: 0 }}><strong style={{ overflowWrap: 'anywhere' }}>{item.invited_email}</strong><div style={{ color: colors.secondary, fontSize: 12, overflowWrap: 'anywhere' }}>{item.categoria || 'Sin categoria'} - {item.status}</div></div>
           <Pill tone={item.status === 'accepted' ? colors.success : item.status === 'revoked' ? colors.error : colors.warning}>{item.status}</Pill>
           <Button tone="danger" onClick={() => revoke(item)} disabled={item.status === 'accepted'}>Revocar</Button>
         </div>
@@ -4643,7 +4643,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   if (resultParts.length) {
     return (
       <Panel title="Resultados" subtitle="Carga los puntajes del WOD por atleta y heat." action={<Button tone="primary" onClick={() => saveMultiPartChanges()}><Save size={16} />Guardar heat</Button>}>
-        <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+        <div className="fr-results-editor-shell" style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, minWidth: 0 }}>
           <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
             <Field label="WOD">
               <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setMarks({}); setEditingRows({}); setResultSearch(''); }}>
@@ -4759,7 +4759,7 @@ function ResultsPanel({ bundle, reload, notify }) {
   }
   return (
     <Panel title="Resultados" subtitle="Carga por categoria y heat con guardado por atleta." action={<Pill tone={colors.accent}>{resultCountForPhase} cargados</Pill>}>
-      <div style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gap: 12 }}>
+      <div className="fr-results-editor-shell" style={{ border: `1px solid ${colors.border}`, background: colors.top, borderRadius: 8, padding: 12, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12, minWidth: 0 }}>
         <div className="fr-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 10 }}>
           <Field label="WOD">
             <select style={inputStyle()} value={scoreDraft.phase_id} onChange={(event) => { setScoreDraft((prev) => ({ ...prev, phase_id: event.target.value, heat_id: '', category: '' })); setActiveScorePartId(''); setMarks({}); setResultSearch(''); }}>
