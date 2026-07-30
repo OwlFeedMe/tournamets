@@ -59,11 +59,16 @@ function normalizeExtraRoles(value) {
 }
 
 function getEffectiveRole(baseRole, extraRoles = []) {
+  const normalizedBaseRole = normalizeRole(baseRole) || 'user'
   if (extraRoles.includes('admin')) return 'admin'
-  if (extraRoles.includes('organizer')) return 'organizer'
+  if (normalizedBaseRole === 'user' && extraRoles.includes('organizer')) {
+    if (extraRoles.includes('judge')) return 'judge'
+    if (extraRoles.includes('announcer')) return 'announcer'
+    return 'user'
+  }
   if (extraRoles.includes('judge')) return 'judge'
   if (extraRoles.includes('announcer')) return 'announcer'
-  return normalizeRole(baseRole) || 'user'
+  return normalizedBaseRole
 }
 
 function decodeBase64Url(input) {
@@ -156,9 +161,7 @@ export function readStoredSession() {
     ...(adminEnabled ? ['admin'] : []),
   ]))
 
-  const payloadRole = normalizeRole(payload?.role)
-  const storedRole = normalizeRole(window.localStorage.getItem(STORAGE_KEYS.role))
-  const role = payloadRole || storedRole || getEffectiveRole(baseRole, extraRoles)
+  const role = getEffectiveRole(baseRole, extraRoles)
   if (!role) return null
 
   const userId = toNumber(

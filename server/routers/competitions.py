@@ -17,7 +17,15 @@ from sqlalchemy import text, func
 from sqlmodel import Session, select
 
 from access import get_owned_competition_ids, is_organizer_user, require_competition_access
-from auth import get_current_user_id, get_current_user_optional, has_admin_access, has_organizer_access, require_staff
+from auth import (
+    get_current_user_id,
+    get_current_user_optional,
+    has_admin_access,
+    has_organizer_access,
+    invalidate_user,
+    require_auth,
+    require_staff,
+)
 from competition_rules import filter_visible_phases, normalize_phase_measurement_method, normalize_phase_visibility, normalize_rm_unit, type_from_measurement_method
 from database import MAX_TEAM_SIZE, get_session
 from models import (
@@ -1035,7 +1043,7 @@ def get_leaderboard_qr(competition_id: int, session: Session = Depends(get_sessi
 
 
 @router.post("", response_model=Competition, status_code=201)
-def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), user=Depends(require_staff)):
+def create_competition(body: CompetitionCreate, session: Session = Depends(get_session), user=Depends(require_auth)):
     payload = body.model_dump()
     _normalize_competition_scoring(payload)
     if payload.get("scoring_mode") not in COMP_SCORING_VALIDOS:
@@ -1071,13 +1079,24 @@ def create_competition(body: CompetitionCreate, session: Session = Depends(get_s
     _serialize_landing_sections(payload)
     _serialize_social_links(payload)
     _serialize_enrollment_questions(payload)
-    if is_organizer_user(user):
-        payload["organizer_user_id"] = get_current_user_id(user)
+    owner_user_id = get_current_user_id(user)
+    if not has_admin_access(user):
+        if owner_user_id is None:
+            raise HTTPException(403, "No se pudo identificar tu cuenta")
+        owner = session.get(Participant, int(owner_user_id))
+        if not owner or int(owner.is_active or 0) != 1:
+            raise HTTPException(403, "La cuenta no puede crear competencias")
+        payload["organizer_user_id"] = int(owner_user_id)
+        if not int(owner.organizer_enabled or 0):
+            owner.organizer_enabled = 1
+            session.add(owner)
     payload["slug"] = _generate_slug(payload["nombre"], session)
     competition = Competition.model_validate(payload)
     session.add(competition)
     session.commit()
     session.refresh(competition)
+    if owner_user_id is not None and not has_admin_access(user):
+        invalidate_user(int(owner_user_id))
     return competition
 
 

@@ -11,6 +11,7 @@ const CompetitionPaymentResultPage = lazy(() => import('./pages/CompetitionPayme
 const CompetitionTicketsPage = lazy(() => import('./pages/CompetitionTicketsPage'))
 const CompetitionTicketsPaymentResultPage = lazy(() => import('./pages/CompetitionTicketsPaymentResultPage'))
 const CompetitionSchedule = lazy(() => import('./pages/CompetitionSchedule'))
+const CreateCompetitionPage = lazy(() => import('./pages/CreateCompetitionPage'))
 const CompetitionVariants = lazy(() => import('./pages/CompetitionVariants'))
 const EventsPage = lazy(() => import('./pages/ExplorePages').then((module) => ({ default: module.EventsPage })))
 const HomeVariants = lazy(() => import('./pages/HomeVariants'))
@@ -215,6 +216,14 @@ export default function App() {
                   element={
                     <RoleGate allowedRoles={['admin']}>
                       <AdminFinancePanel />
+                    </RoleGate>
+                  }
+                />
+                <Route
+                  path="/competitions/new"
+                  element={
+                    <RoleGate allowedRoles={['user', 'organizer', 'admin']}>
+                      <CreateCompetitionPage />
                     </RoleGate>
                   }
                 />

@@ -151,7 +151,15 @@ def decode_token(token: str) -> dict:
 def _effective_role(base_role: str, user: User) -> str:
     if int(user.admin_enabled or 0):
         return Role.ADMIN
-    if int(user.organizer_enabled or 0):
+    # A regular user can organize competitions without ceasing to be an
+    # athlete. Organizer access is checked through organizer_enabled.
+    if base_role == Role.USER and int(user.organizer_enabled or 0):
+        if int(user.judge_enabled or 0):
+            return Role.JUDGE
+        if int(user.announcer_enabled or 0):
+            return Role.ANNOUNCER
+        return Role.USER
+    if base_role == Role.ORGANIZER:
         return Role.ORGANIZER
     if int(user.judge_enabled or 0):
         return Role.JUDGE

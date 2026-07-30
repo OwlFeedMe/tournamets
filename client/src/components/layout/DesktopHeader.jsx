@@ -32,7 +32,7 @@ function buildNavItems(session) {
     items.push({ label: 'Mis eventos', icon: CalendarDays, to: '/my-events' })
   }
   if (session.organizerEnabled) {
-    items.push({ label: 'Panel', icon: UserCircle2, to: '/organizer' })
+    items.push({ label: 'Mis competencias', icon: UserCircle2, to: '/organizer' })
   }
   if (session.judgeEnabled) {
     items.push({ label: 'Juez', icon: Gavel, to: '/judge' })

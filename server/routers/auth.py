@@ -46,8 +46,14 @@ def _user_extra_roles(user: User | None) -> list[str]:
 def _effective_role(base_role: str, extra_roles: list[str]) -> str:
     if Role.ADMIN in extra_roles:
         return Role.ADMIN
-    if Role.ORGANIZER in extra_roles:
-        return Role.ORGANIZER
+    # Organizing is an optional capability for regular users. It must not
+    # replace the athlete experience or change their default home.
+    if base_role == Role.USER and Role.ORGANIZER in extra_roles:
+        if Role.JUDGE in extra_roles:
+            return Role.JUDGE
+        if Role.ANNOUNCER in extra_roles:
+            return Role.ANNOUNCER
+        return Role.USER
     if Role.JUDGE in extra_roles:
         return Role.JUDGE
     if Role.ANNOUNCER in extra_roles:

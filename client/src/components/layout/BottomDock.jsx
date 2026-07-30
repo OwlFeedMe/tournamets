@@ -36,7 +36,7 @@ function buildDockItems(session) {
     items.push({ label: 'Eventos', icon: CalendarDays, to: '/events' })
   }
   if (session.organizerEnabled) {
-    items.push({ label: 'Panel', icon: UserCircle2, to: '/organizer' })
+    items.push({ label: 'Organizar', icon: UserCircle2, to: '/organizer' })
   }
   if (session.judgeEnabled) {
     items.push({ label: 'Juez', icon: Gavel, to: '/judge' })

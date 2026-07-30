@@ -6296,8 +6296,9 @@ function ResponsiveStyles() {
 }
 
 export default function AdminCompetitionCommandProposal() {
-  const [view, setView] = useState('portfolio')
-  const [selectedId, setSelectedId] = useState(null)
+  const initialCompetitionId = Number(new URLSearchParams(window.location.search).get('competition')) || null
+  const [view, setView] = useState(initialCompetitionId ? 'wizard' : 'portfolio')
+  const [selectedId, setSelectedId] = useState(initialCompetitionId)
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -6313,7 +6314,7 @@ export default function AdminCompetitionCommandProposal() {
     setLoading(true)
     setError('')
     try {
-      const competitions = await api('/competitions')
+      const competitions = await api('/competitions?scope=owned')
       const summaries = await Promise.all(
         competitions.map(async (competition) => {
           const bundle = await loadCompetitionBundle(competition.id).catch(() => ({ competition, participants: [], categories: [], phases: [], heats: { items: [] }, results: [], judges: [] }))

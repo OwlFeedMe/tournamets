@@ -2499,32 +2499,25 @@ export default function ParticipantProfile() {
         <div className="card" style={{ marginBottom: 16, padding: isMobile ? 14 : 18, border: '1px dashed rgba(170,178,192,0.22)', background: 'rgba(23,27,33,0.78)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ color: '#6B7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Acceso especial</div>
-              <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, marginTop: 6 }}>Crear competencia</div>
-              <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, marginTop: 6 }}>
-                Si quieres organizar un evento dentro de FinalRep, envia una solicitud con tu perfil completo y el contexto del evento.
+              <div style={{ color: '#6B7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>Para organizadores</div>
+              <div style={{ color: '#F5F7FA', fontSize: 14, fontWeight: 700, marginTop: 6 }}>
+                {organizerEnabled ? 'Mis competencias' : 'Crea una competencia'}
               </div>
-              {organizerBadge && (
-                <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 999, border: `1px solid ${organizerBadge.border}`, background: organizerBadge.background, color: organizerBadge.color, fontSize: 12, fontWeight: 800 }}>
-                  <Clock3 size={13} />
-                  Solicitud {organizerBadge.label.toLowerCase()}
-                </div>
-              )}
-              {organizerApplication?.review_note ? (
-                <div style={{ marginTop: 10, color: '#D7DEE8', fontSize: 13, lineHeight: 1.55 }}>
-                  Nota de revision: {organizerApplication.review_note}
-                </div>
-              ) : null}
+              <div style={{ color: '#AAB2C0', fontSize: 13, lineHeight: 1.55, marginTop: 6 }}>
+                {organizerEnabled
+                  ? 'Configura tus eventos sin salir de tu cuenta de atleta.'
+                  : 'Si tambien organizas eventos, crea un borrador y configuralo a tu ritmo.'}
+              </div>
             </div>
             {organizerEnabled ? (
               <Link to="/organizer" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
-                Ir al panel
+                Ver mis competencias
               </Link>
-            ) : canOpenOrganizerRequest ? (
-              <button type="button" className="btn-secondary btn-sm" onClick={() => { setOrganizerRequestMsg(null); setOrganizerRequestOpen(true) }}>
+            ) : (
+              <Link to="/competitions/new" className="btn-secondary btn-sm" style={{ textDecoration: 'none' }}>
                 Crear competencia
-              </button>
-            ) : null}
+              </Link>
+            )}
           </div>
         </div>
 
