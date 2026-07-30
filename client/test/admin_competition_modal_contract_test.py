@@ -27,6 +27,9 @@ class AdminCompetitionModalContractTest(unittest.TestCase):
 
         self.assertEqual(source.count('className="fr-results-editor-shell"'), 2)
         self.assertIn("gridTemplateColumns: 'minmax(0, 1fr)'", source)
+        self.assertIn("function Pill({ children, tone = colors.border, filled = false, wrap = false })", source)
+        self.assertIn("whiteSpace: wrap ? 'normal' : 'nowrap'", source)
+        self.assertIn("<Pill key={part.id} tone={colors.accent} wrap>", source)
 
 
 if __name__ == "__main__":

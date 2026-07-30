@@ -406,7 +406,7 @@ async function loadCompetitionBundle(competitionId) {
   return { competition, participants, categories, phases, scoring, discounts, invitations, ticketConfig, ticketOrders, heats, results, teams, judges, announcers, judgeAudit, appeals, finance, leaderboard }
 }
 
-function Pill({ children, tone = colors.border, filled = false }) {
+function Pill({ children, tone = colors.border, filled = false, wrap = false }) {
   return (
     <span style={{
       display: 'inline-flex',
@@ -420,7 +420,9 @@ function Pill({ children, tone = colors.border, filled = false }) {
       color: filled ? colors.bg : colors.text,
       fontSize: 11,
       fontWeight: 800,
-      whiteSpace: 'nowrap',
+      whiteSpace: wrap ? 'normal' : 'nowrap',
+      overflowWrap: wrap ? 'anywhere' : undefined,
+      maxWidth: wrap ? '100%' : undefined,
     }}>
       {children}
     </span>
@@ -4679,7 +4681,7 @@ function ResultsPanel({ bundle, reload, notify }) {
             {resultParts.map((part) => {
               const cap = partTimeCap(part)
               return (
-                <Pill key={part.id} tone={colors.accent}>
+                <Pill key={part.id} tone={colors.accent} wrap>
                   {part.score_key || ''} · {partLabel(part)}{cap ? ` · Cap ${formatSeconds(cap)}` : ''} · {partLowerIsBetter(part) ? 'menor gana' : 'mayor gana'}{partTieBreakActive(part) ? ` · ${partTieBreakLabel(part)}` : ''} · 100%
                 </Pill>
               )
@@ -4798,11 +4800,11 @@ function ResultsPanel({ bundle, reload, notify }) {
           </div>
         ) : null}
         <div className="fr-result-rules" style={{ border: `1px solid ${colors.border}`, background: colors.surface, borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Pill tone={colors.primary}>Formato {phaseFormatLabel}</Pill>
+          <Pill tone={colors.primary} wrap>Formato {phaseFormatLabel}</Pill>
           {timeCapSeconds ? <Pill tone={colors.primary}>Cap {timeCapLabel}</Pill> : null}
-          <Pill tone={colors.accent}>{markRuleLabel}</Pill>
-          {tieBreakActive ? <Pill tone={colors.secondary}>{tiebreakRuleLabel}</Pill> : null}
-          <Pill tone={colors.secondary}>{scoringRuleLabel}</Pill>
+          <Pill tone={colors.accent} wrap>{markRuleLabel}</Pill>
+          {tieBreakActive ? <Pill tone={colors.secondary} wrap>{tiebreakRuleLabel}</Pill> : null}
+          <Pill tone={colors.secondary} wrap>{scoringRuleLabel}</Pill>
           <span style={{ color: colors.secondary, fontSize: 12 }}>{isTimePhase ? (timeCapSeconds ? 'Tiempo es el valor por defecto. CAP coloca el time cap y habilita reps faltantes.' : 'Configura un cap para usar reps faltantes.') : (tieBreakActive ? 'El tiebreak desempata solo cuando la marca esta empatada y todos los empatados tienen tiebreak.' : 'Carga la marca y guarda el resultado del atleta.')}</span>
         </div>
         <div className="fr-results-table" style={{ border: `1px solid ${colors.border}`, borderRadius: 8, overflow: 'hidden', background: colors.surface }}>
