@@ -1075,7 +1075,7 @@ function PersonalHome({
   }
 
   return (
-    <div style={{ display: 'grid', gap: 18, minWidth: 0, maxWidth: '100%' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 18, minWidth: 0, maxWidth: '100%' }}>
       <PrimaryCompetitionPanel competition={primaryCompetition} leaderboard={leaderboard} leaderboardLoading={detailsLoading} onOpenQr={onOpenQr} isMobile={isMobile} />
       {detailsLoading ? <SkeletonMetricGrid count={3} /> : null}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 0.9fr) minmax(0, 1.1fr)', gap: 18, minWidth: 0 }}>
