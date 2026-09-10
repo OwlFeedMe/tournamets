@@ -398,6 +398,7 @@ class PasswordResetCode(SQLModel, table=True):
 
 
 class CompetitionInterestNotification(SQLModel, table=True):
+    sent_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     __tablename__ = "competition_interest_notifications"
     __table_args__ = (
         UniqueConstraint("competition_id", "notification_type", "user_id", name="uq_comp_interest_user"),

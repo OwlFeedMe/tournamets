@@ -1,12 +1,30 @@
 import { Link } from 'react-router-dom'
-import { openFinalPaymentLabel, openRegistrationState } from '../../utils/openQualifier'
+import { openFinalPaymentLabel, openRegistrationState, openLandingAction } from '../../utils/openQualifier'
 import './OpenQualifier.css'
 
 const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value || 0)
 
-export default function OpenPublicSummary({ competition, config, categories, pricing, showLink = true }) {
+export default function OpenPublicSummary({ competition, config, categories, pricing, showLink = true, compact = false, entry = null, entryLoading = false, onNotify, notificationBusy = false, notificationMessage = null }) {
   const status = openRegistrationState(competition, config, categories)
   const fee = pricing ? Math.max(pricing.min_platform_fee, Math.round(config.price * pricing.default_platform_fee_rate)) : null
+  const action = openLandingAction(status, entry)
+  if (compact) return <section className="fr-open" id="open-clasificatorio" aria-label="Inscripción al Open" style={{ marginBottom: 18, padding: 0, background: 'transparent' }}>
+    <div className="fr-open-card" style={{ borderTop: '4px solid #FF6B00' }}>
+      <div className="fr-open-status">OPEN CLASIFICATORIO</div>
+      <div className="fr-open-grid" style={{ alignItems: 'center' }}>
+        <div><h2>{entry ? 'Tu participación en el Open' : 'Clasifica a la competencia'}</h2>
+          <p>{entry ? 'Consulta tu entrega y el estado de tu clasificación.' : 'Participa en el Open para competir por un cupo.'}</p>
+        </div>
+        <div><strong style={{ fontSize: 30, color: '#FF6B00' }}>{money(config.price)}</strong><p>{fee === null ? '+ cargo de servicio' : `+ ${money(fee)} de servicio · Total: ${money(config.price + fee)}`}</p></div>
+      </div>
+      <div className="fr-open-actions">
+        {entryLoading ? <button disabled>Consultando inscripción…</button> : action.mode === 'notify' ? <button disabled={notificationBusy || notificationMessage?.type === 'success'} onClick={onNotify}>{notificationBusy ? 'Guardando…' : notificationMessage?.type === 'success' ? 'Aviso activado' : action.label}</button> : action.mode === 'closed' ? <p>{action.label}</p> : <Link className="fr-open-button" to={`/competitions/${competition.id}/open`}>{action.label}</Link>}
+        <Link to={`/competitions/${competition.id}/schedule`}>Ver cronograma</Link>
+        <Link to={`/leaderboard/${competition.id}`}>Ver leaderboard</Link>
+      </div>
+      {notificationMessage && <p role="status">{notificationMessage.text}</p>}
+    </div>
+  </section>
   return <section id="open-clasificatorio" className="fr-open" aria-label="Open clasificatorio" style={{ marginBottom: 18, padding: 0, background: 'transparent' }}>
     <div className="fr-open-card" style={{ borderTop: '4px solid #FF6B00' }}>
       <div className="fr-open-status">OPEN CLASIFICATORIO · {status.label}</div>

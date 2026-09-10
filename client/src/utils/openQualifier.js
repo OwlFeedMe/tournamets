@@ -1,11 +1,18 @@
 export function openRegistrationState(competition, config, categories = [], now = Date.now()) {
   if (!competition.activa) return { available: false, label: 'Open pendiente de publicación' }
-  if (now >= Date.parse(config.deadline)) return { available: false, label: 'Plazo del Open finalizado' }
-  if (competition.enrollment_end && now > Date.parse(competition.enrollment_end)) return { available: false, label: 'Registro al Open cerrado' }
+  if (now >= Date.parse(config.deadline)) return { available: false, closed: true, label: 'Plazo del Open finalizado' }
+  if (competition.enrollment_end && now > Date.parse(competition.enrollment_end)) return { available: false, closed: true, label: 'Registro al Open cerrado' }
   if (competition.enrollment_start && now < Date.parse(competition.enrollment_start)) return { available: false, label: 'Registro al Open próximamente' }
   if (!competition.enrollment_open) return { available: false, label: 'Registro al Open no habilitado' }
   if (!categories.some(c => c.registration_enabled && (c.modality || 'individual') === 'individual')) return { available: false, label: 'Categorías del Open por publicar' }
   return { available: true, label: 'Registro al Open abierto' }
+}
+
+export function openLandingAction(registration, entry) {
+  if (entry) return { mode: 'entry', label: entry.status === 'qualified' ? 'Confirmar mi cupo' : 'Ver mi Open' }
+  if (registration.closed) return { mode: 'closed', label: 'Registro al Open cerrado' }
+  if (registration.available) return { mode: 'register', label: 'Participar en el Open' }
+  return { mode: 'notify', label: 'Notificarme cuando abra el Open' }
 }
 
 export function openFinalPaymentLabel(config) {

@@ -233,6 +233,8 @@ def _worker_loop(poll_seconds: int) -> None:
         try:
             with Session(engine) as session:
                 send_due_event_start_reminders(session, poll_seconds=poll_seconds)
+                from services.open_interest_notifications import send_due_open_notices
+                send_due_open_notices(session)
         except Exception:
             logger.exception("Event start reminder worker failed")
         time.sleep(poll_seconds)

@@ -313,7 +313,7 @@ function getContactChipStyle(theme) {
   }
 }
 
-function InterestNotificationModal({ open, onClose, onSubmit, email, onEmailChange, busy, theme }) {
+function InterestNotificationModal({ open, onClose, onSubmit, email, onEmailChange, busy, theme, openQualifier = false, message }) {
   if (!open) return null
 
   return (
@@ -359,7 +359,7 @@ function InterestNotificationModal({ open, onClose, onSubmit, email, onEmailChan
           <div>
             <div style={{ color: theme.text, fontSize: 18, fontWeight: 800 }}>Activa el aviso</div>
             <div style={{ marginTop: 6, color: theme.textSecondary, fontSize: 13, lineHeight: 1.5 }}>
-              Te escribiremos cuando abran las inscripciones.
+              {openQualifier ? 'Te avisaremos por correo cuando puedas inscribirte al Open.' : 'Te escribiremos cuando abran las inscripciones.'}
             </div>
           </div>
           <button type="button" className="btn-secondary btn-sm" onClick={onClose} disabled={busy}>
@@ -367,10 +367,12 @@ function InterestNotificationModal({ open, onClose, onSubmit, email, onEmailChan
           </button>
         </div>
         <form onSubmit={onSubmit} style={{ padding: 20, overflowY: 'auto', display: 'grid', gap: 14 }}>
+          {message?.type === "error" && <p role="alert">{message.text}</p>}
           <label style={{ display: 'grid', gap: 8 }}>
             <span style={{ color: theme.text, fontSize: 13, fontWeight: 700 }}>Correo</span>
             <input
               type="email"
+              required
               autoFocus
               value={email}
               onChange={(event) => onEmailChange(event.target.value)}
@@ -514,6 +516,8 @@ export default function CompetitionLanding() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [myEnrollmentState, setMyEnrollmentState] = useState('')
+  const [myOpenEntry, setMyOpenEntry] = useState(null)
+  const [openEntryLoading, setOpenEntryLoading] = useState(false)
   const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth <= 768 : false))
   const [expandedCategoryKey, setExpandedCategoryKey] = useState('')
   const [interestBusy, setInterestBusy] = useState(false)
@@ -610,6 +614,22 @@ export default function CompetitionLanding() {
       active = false
     }
   }, [competitionId, isAthlete, userId, role, session])
+
+  useEffect(() => {
+    let active = true
+    setMyOpenEntry(null)
+    setInterestMsg(null)
+    if (!session || !userId || !JSON.parse(payload?.competition?.open_config || '{}').enabled) {
+      setOpenEntryLoading(false)
+      return () => { active = false }
+    }
+    setOpenEntryLoading(true)
+    api.get(`/competitions/${competitionId}/open/me`)
+      .then(({ data }) => { if (active) setMyOpenEntry(data) })
+      .catch(() => { if (active) setMyOpenEntry(null) })
+      .finally(() => { if (active) setOpenEntryLoading(false) })
+    return () => { active = false }
+  }, [competitionId, userId, session, payload?.competition?.open_config])
 
   const competition = payload?.competition || null
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])
@@ -721,8 +741,8 @@ export default function CompetitionLanding() {
     `${stats.categorias_total || categories.length || 0} categorias`,
     competitionMode.label,
   ]
-  const interestNotificationType = engagementCta.mode === 'notify_open' ? 'open_enrollment' : 'organizer_updates'
-  const interestSuccessText = engagementCta.mode === 'notify_open'
+  const interestNotificationType = openConfig.enabled ? 'open_qualifier' : engagementCta.mode === 'notify_open' ? 'open_enrollment' : 'organizer_updates'
+  const interestSuccessText = openConfig.enabled ? 'Aviso activado. Te avisaremos por correo cuando abra el Open.' : engagementCta.mode === 'notify_open'
     ? 'Aviso guardado. Te escribiremos cuando abran las inscripciones.'
     : 'Aviso guardado. Te escribiremos cuando publiquen novedades de esta competencia.'
 
@@ -995,7 +1015,7 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
-            {openConfig.enabled ? <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} /> : (
+            {openConfig.enabled ? <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} compact entry={myOpenEntry} entryLoading={openEntryLoading} onNotify={handleInterestNotificationClick} notificationBusy={interestBusy} notificationMessage={interestMsg} /> : (
             <section
               className="fr-cut-card"
               style={{
@@ -1467,6 +1487,8 @@ export default function CompetitionLanding() {
       </div>
       <InterestNotificationModal
         open={interestModalOpen}
+        openQualifier={!!openConfig.enabled}
+        message={interestMsg}
         onClose={() => {
           if (interestBusy) return
           setInterestModalOpen(false)

@@ -12,7 +12,7 @@ from models import Competition, CompetitionInterestNotification, Participant
 router = APIRouter(prefix="/api/competitions", tags=["interest_notifications"])
 
 EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-VALID_NOTIFICATION_TYPES = {"open_enrollment", "organizer_updates"}
+VALID_NOTIFICATION_TYPES = {"open_enrollment", "organizer_updates", "open_qualifier"}
 
 
 def _with_user_id(payload: dict, user_id: int | None) -> dict:
@@ -61,6 +61,15 @@ def create_interest_notification(
 
     if user_id is None and not email:
         raise HTTPException(status_code=400, detail="Necesitamos un email para guardar el aviso")
+
+    if notification_type == "open_qualifier":
+        from services.open_qualifier import config_for, utc
+        from datetime import datetime, timezone
+        cfg = config_for(competition)
+        if not cfg.get("enabled") or datetime.now(timezone.utc) >= utc(cfg["deadline"]):
+            raise HTTPException(409, "Este Open no tiene una apertura pendiente")
+        if not email:
+            raise HTTPException(400, "Agrega un correo en tu perfil para recibir el aviso")
 
     existing = None
     if user_id is not None:
