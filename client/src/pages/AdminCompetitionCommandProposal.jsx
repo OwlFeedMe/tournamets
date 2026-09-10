@@ -1,3 +1,4 @@
+import OpenAdminPanel from '../components/competition/OpenAdminPanel'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
@@ -5658,7 +5659,7 @@ function WizardWorkspace({ selectedId, onBack }) {
             </Panel>
 
             {activeStep.id === 'identity' && <IdentityPanel bundle={bundle} reload={reload} notify={notify} />}
-            {activeStep.id === 'registration' && <RegistrationPanel bundle={bundle} reload={reload} notify={notify} />}
+            {activeStep.id === 'registration' && <><OpenAdminPanel competition={bundle.competition} reload={reload} /><RegistrationPanel bundle={bundle} reload={reload} notify={notify} /></>}
             {activeStep.id === 'prepare' && <PreparePanel bundle={bundle} reload={reload} notify={notify} />}
             {activeStep.id === 'live' && <LivePanel bundle={bundle} reload={reload} notify={notify} />}
             {activeStep.id === 'close' && <ClosePanel bundle={bundle} reload={reload} notify={notify} />}

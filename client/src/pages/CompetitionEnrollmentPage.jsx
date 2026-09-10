@@ -1,6 +1,7 @@
+import BoldPaymentButton from '../components/enrollment/BoldPaymentButton'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronUp, Copy, ExternalLink, Lock, MapPin, Medal, ShieldCheck, Upload } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import api from '../api/axios'
 import { getHomePath, useAuth } from '../context/AuthContext'
 import { COMPETITION_PAGE_MAX_WIDTH } from '../utils/competitionLayout'
@@ -101,8 +102,6 @@ function getCategoryCapacityBadgeStyle(category, isOpen) {
   return { background: 'rgba(0,194,168,0.14)', color: '#8DF1E4' }
 }
 
-const BOLD_BUTTON_LIBRARY_SRC = 'https://checkout.bold.co/library/boldPaymentButton.js'
-const BOLD_BUTTON_LIBRARY_ID = 'bold-payment-button-library'
 const ENROLLMENT_INTRO_COPY = 'Selecciona tu categoria, completa tu informacion y finaliza el pago para confirmar tu inscripcion.'
 const PROFILE_FIELD_CONFIG = [
   { key: 'nombre', label: 'Nombre', type: 'text', requiredMessage: 'Completa tu nombre para continuar.' },
@@ -150,119 +149,10 @@ function isProfileDraftFieldComplete(fieldKey, profileDraft) {
   return true
 }
 
-function ensureBoldButtonLibrary({ reload = false } = {}) {
-  return new Promise((resolve, reject) => {
-    const existing = document.getElementById(BOLD_BUTTON_LIBRARY_ID)
-    if (reload && existing) existing.remove()
-    if (!reload && document.getElementById(BOLD_BUTTON_LIBRARY_ID)) {
-      resolve()
-      return
-    }
-    const script = document.createElement('script')
-    script.id = BOLD_BUTTON_LIBRARY_ID
-    script.src = BOLD_BUTTON_LIBRARY_SRC
-    script.async = true
-    script.onload = () => resolve()
-    script.onerror = () => reject(new Error('No se pudo cargar el boton de Bold'))
-    document.head.appendChild(script)
-  })
-}
-
 function isSocialInAppBrowser() {
   if (typeof navigator === 'undefined') return false
   const ua = `${navigator.userAgent || ''} ${navigator.vendor || ''}`.toLowerCase()
   return /instagram|fbav|fb_iab|fban|messenger|line\/|tiktok|musical_ly/.test(ua)
-}
-
-function BoldPaymentButton({ config, onError, onPaymentClick }) {
-  const containerRef = useRef(null)
-
-  useEffect(() => {
-    if (!config || !containerRef.current) return undefined
-    const containerNode = containerRef.current
-    let active = true
-    let observer = null
-    const boundNodes = new Set()
-    let clickReported = false
-    const handlePaymentClick = () => {
-      if (clickReported) return
-      clickReported = true
-      onPaymentClick?.(config.order_id)
-    }
-    const bindContainerInteractionHandler = () => {
-      if (!containerNode) return
-      containerNode.addEventListener('pointerdown', handlePaymentClick, true)
-      containerNode.addEventListener('mousedown', handlePaymentClick, true)
-      containerNode.addEventListener('click', handlePaymentClick, true)
-    }
-    const unbindContainerInteractionHandler = () => {
-      if (!containerNode) return
-      containerNode.removeEventListener('pointerdown', handlePaymentClick, true)
-      containerNode.removeEventListener('mousedown', handlePaymentClick, true)
-      containerNode.removeEventListener('click', handlePaymentClick, true)
-    }
-    const bindClickHandler = () => {
-      if (!containerRef.current) return false
-      const nodes = containerRef.current.querySelectorAll('button, a, [role="button"], iframe')
-      if (!nodes.length) return false
-      nodes.forEach((node) => {
-        if (boundNodes.has(node)) return
-        node.addEventListener('pointerdown', handlePaymentClick, { once: true })
-        node.addEventListener('mousedown', handlePaymentClick, { once: true })
-        node.addEventListener('click', handlePaymentClick, { once: true })
-        boundNodes.add(node)
-      })
-      return true
-    }
-    const render = async () => {
-      try {
-        if (!active || !containerRef.current) return
-        containerRef.current.innerHTML = ''
-        const script = document.createElement('script')
-        script.setAttribute('data-bold-button', 'dark-L')
-        script.setAttribute('data-api-key', config.api_key)
-        script.setAttribute('data-order-id', config.order_id)
-        script.setAttribute('data-currency', config.currency)
-        script.setAttribute('data-amount', config.amount)
-        script.setAttribute('data-integrity-signature', config.integrity_signature)
-        script.setAttribute('data-description', config.description)
-        script.setAttribute('data-redirection-url', config.redirection_url)
-        script.setAttribute('data-render-mode', 'embedded')
-        if (config.customer_data) {
-          script.setAttribute('data-customer-data', JSON.stringify(config.customer_data))
-        }
-        containerRef.current.appendChild(script)
-        await new Promise((resolve) => window.requestAnimationFrame(resolve))
-        await ensureBoldButtonLibrary({ reload: true })
-        if (bindClickHandler()) return
-        observer = new MutationObserver(() => {
-          if (bindClickHandler() && observer) {
-            observer.disconnect()
-            observer = null
-          }
-        })
-        observer.observe(containerRef.current, { childList: true, subtree: true })
-      } catch (err) {
-        onError?.(err)
-      }
-    }
-    bindContainerInteractionHandler()
-    render()
-    return () => {
-      active = false
-      if (observer) observer.disconnect()
-      unbindContainerInteractionHandler()
-      boundNodes.forEach((node) => {
-        node.removeEventListener('pointerdown', handlePaymentClick)
-        node.removeEventListener('mousedown', handlePaymentClick)
-        node.removeEventListener('click', handlePaymentClick)
-      })
-      boundNodes.clear()
-      if (containerRef.current) containerRef.current.innerHTML = ''
-    }
-  }, [config, onError, onPaymentClick])
-
-  return <div ref={containerRef} />
 }
 
 function ExternalBrowserPaymentPrompt({ url, copied, onOpen, onCopy }) {
@@ -951,6 +841,8 @@ export default function CompetitionEnrollmentPage() {
     setMsg(null)
     setCurrentStep(step => Math.min(4, step + 1))
   }
+
+  if (competition?.open_config && JSON.parse(competition.open_config).enabled) return <Navigate to={`/competitions/${competition.id}/open`} replace />
 
   if (loading) {
     return (

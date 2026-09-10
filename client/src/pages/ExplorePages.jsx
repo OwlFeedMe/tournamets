@@ -1,3 +1,4 @@
+import { openStatus } from '../components/competition/OpenAdminPanel'
 import { useEffect, useMemo, useState } from 'react'
 import { Bell, CalendarDays, CheckCircle2, ChevronRight, Clock3, Flame, Lock, MapPin, Medal, QrCode, Trash2, TrendingDown, TrendingUp, Trophy, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -104,6 +105,7 @@ function TopBlock({ kicker, title, text }) {
 }
 
 function enrollmentBadge(status) {
+  if (status?.startsWith('open_')) return { label: openStatus[status.slice(5)] || 'Open', color: '#00C2A8', border: '#252A33', background: '#171B21' }
   if (status === 'confirmado') return { label: 'Confirmado', color: '#22C55E', border: 'rgba(34,197,94,0.28)', background: 'rgba(34,197,94,0.12)' }
   if (status === 'pago_en_verificacion') return { label: 'Pago en verificacion', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
   if (status === 'pendiente') return { label: 'En proceso', color: '#F59E0B', border: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.12)' }
@@ -526,6 +528,7 @@ export function MyEventsPage() {
                         Ver competencia
                         <ChevronRight size={16} />
                       </Link>
+                      {competition.open_status && <Link to={`/competitions/${competition.id}/open`}>Ver mi Open</Link>}
                       <Link to={`/leaderboard/${competition.id}`} style={{ color: '#5EEAD4', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Ver leaderboard
                         <ChevronRight size={16} />

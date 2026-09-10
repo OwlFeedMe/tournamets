@@ -260,6 +260,10 @@ def _active_category_enrollment_count(session: Session, competition_id: int, cat
 
 
 def _active_competition_enrollment_count(session: Session, competition_id: int) -> int:
+    from models import CompetitionPaymentIntent
+    open_payment = session.exec(select(CompetitionPaymentIntent.id).where(CompetitionPaymentIntent.competition_id == competition_id, CompetitionPaymentIntent.purpose == "open")).first()
+    if open_payment:
+        return 1
     return int(session.exec(
         select(func.count())
         .select_from(CompetitionParticipant)

@@ -759,6 +759,9 @@ def import_participants(
     session: Session = Depends(get_session),
     _=Depends(require_admin),
 ):
+    if competition_id:
+        from services.open_qualifier import require_direct_registration
+        require_direct_registration(session.get(Competition, competition_id))
     content = file.file.read()
     filename = file.filename.lower()
 

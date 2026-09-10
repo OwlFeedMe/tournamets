@@ -1,3 +1,4 @@
+const CompetitionOpenPage = lazy(() => import('./pages/CompetitionOpenPage'))
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider, getHomePath, useAuth } from './context/AuthContext'
@@ -97,6 +98,7 @@ export default function App() {
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
               <Route path="/competitions/:competitionId/inscritos" element={<CompetitionPublicRosterPage />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
+              <Route path="/competitions/:competitionId/open" element={<CompetitionOpenPage />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/register/team/:teamToken" element={<CompetitionEnrollmentPage />} />
               <Route path="/competitions/:competitionId/payment-result" element={<CompetitionPaymentResultPage />} />

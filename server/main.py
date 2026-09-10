@@ -14,6 +14,7 @@ from routers import (
     leaderboard,
     teams,
     enrollments,
+    open_qualifier,
     categories_phases,
     schedule,
     finance,
@@ -59,6 +60,7 @@ app.include_router(results.router)
 app.include_router(leaderboard.router)
 app.include_router(teams.router)
 app.include_router(enrollments.router)
+app.include_router(open_qualifier.router)
 app.include_router(categories_phases.router)
 app.include_router(schedule.router)
 app.include_router(finance.router)

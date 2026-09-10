@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List
 
 from sqlalchemy import Index, UniqueConstraint, Column, Integer, String, Text, ForeignKey, DateTime, Date, func
@@ -128,6 +128,7 @@ class OrganizerApplication(SQLModel, table=True):
 
 
 class Competition(SQLModel, table=True):
+    open_config: Optional[str] = None
     __tablename__ = "competitions"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -882,7 +883,26 @@ class CompetitionJudgeActionAudit(SQLModel, table=True):
     )
 
 
+class OpenEntry(SQLModel, table=True):
+    __tablename__ = "competition_open_entries"
+    competition_id: int = Field(foreign_key="competitions.id", primary_key=True)
+    user_id: int = Field(foreign_key="participants.id", primary_key=True)
+    categoria: str
+    status: str = "paid"
+    open_price: int
+    final_amount: int
+    terms_snapshot: str
+    enrollment_answers: Optional[str] = None
+    video_url: Optional[str] = None
+    answers: str = "{}"
+    submitted_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    reviewed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
+    reviewed_by: Optional[int] = None
+    paid_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
 class CompetitionPaymentIntent(SQLModel, table=True):
+    purpose: str = Field(default="competition")
     __tablename__ = "competition_payment_intents"
 
     id: Optional[int] = Field(default=None, primary_key=True)

@@ -646,11 +646,12 @@ export default function CompetitionLanding() {
   const profileImageUrl = resolveCompetitionAsset(competition, 'profile')
   const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
+  const openConfig = JSON.parse(competition?.open_config || "{}")
   const categoryPricingSummary = useMemo(() => {
     const valid = categories
       .map(category => ({
         category,
-        pricing: calculateEnrollmentPricing(category?.enrollment_price, platformFeeRate, minPlatformFee),
+        pricing: calculateEnrollmentPricing(openConfig.enabled ? openConfig.price : category?.enrollment_price, platformFeeRate, minPlatformFee),
       }))
       .filter(item => item.pricing.organizerPrice > 0)
     if (!valid.length) return null
@@ -659,9 +660,9 @@ export default function CompetitionLanding() {
       min: Math.min(...totals),
       max: Math.max(...totals),
     }
-  }, [categories, platformFeeRate])
+  }, [categories, platformFeeRate, minPlatformFee, competition?.open_config])
   const overviewText = (competition?.general_info_text || competition?.descripcion || '').trim()
-  const registerHref = competition ? `/competitions/${competition.id}/register` : '/login'
+  const registerHref = competition ? `/competitions/${competition.id}/${competition.open_config && JSON.parse(competition.open_config).enabled ? "open" : "register"}` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
   const canShowPublicRoster = !!competition?.show_public_category_roster
@@ -821,6 +822,11 @@ export default function CompetitionLanding() {
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
       <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 24px 72px' }}>
+        {openConfig.enabled && <section style={{ background: '#171B21', border: '1px solid #252A33', padding: 18, marginBottom: 18, borderRadius: 10 }}>
+          <strong style={{ color: '#FF6B00' }}>Open clasificatorio</strong>
+          <p style={{ color: '#AAB2C0', marginTop: 8 }}>Participa en el Open por {formatCop(openConfig.price)} + servicio. Envía tu video dentro del plazo y compite por un cupo.</p>
+          <Link to={registerHref} style={{ color: '#00C2A8', display: 'inline-block', marginTop: 10 }}>Ver requisitos y pago al clasificar</Link>
+        </section>}
         {loading ? (
           <div style={{ display: 'grid', gap: 18 }}>
             <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.72fr 1.28fr', gap: 14 }}>

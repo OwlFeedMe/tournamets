@@ -73,10 +73,15 @@ def _competition_summary(session: Session, competition: Competition) -> dict:
         text(_REVENUE_SQL.format(table="spectator_ticket_orders")), params,
     ).mappings().first()
 
+    open_rows = session.execute(
+        text(_REVENUE_SQL.format(table="competition_payment_intents") + " AND purpose = 'open'"), params,
+    ).mappings().first()
+
     def _sum_field(field: str) -> int:
         a = (enrollment_rows.get(field) if enrollment_rows else 0) or 0
         b = (ticketing_rows.get(field) if ticketing_rows else 0) or 0
-        return int(a) + int(b)
+        c = (open_rows.get(field) if open_rows else 0) or 0
+        return int(a) + int(b) + int(c)
 
     total_collected = _normalize_amount(_sum_field("total_collected"))
     organizer_revenue = _normalize_amount(_sum_field("organizer_revenue"))

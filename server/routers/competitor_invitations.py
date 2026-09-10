@@ -323,6 +323,9 @@ def complete_competitor_invitation(
     if not competition:
         raise HTTPException(404, "Competencia no encontrada")
 
+    from services.open_qualifier import require_direct_registration
+    require_direct_registration(competition)
+
     terms_accepted = int(body.get("terms_accepted") or 0)
     if not terms_accepted:
         raise HTTPException(400, "Debes aceptar los terminos para completar la inscripcion")

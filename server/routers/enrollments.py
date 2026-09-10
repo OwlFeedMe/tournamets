@@ -28,13 +28,14 @@ from auth import get_current_user, get_current_user_id, is_end_user, require_adm
 from constants import GymMembershipStatus
 from database import get_session
 from models import (
-    Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent,
+    Competition, Participant, CompetitionParticipant, CompetitionCategory, CompetitionPaymentIntent, OpenEntry,
     CompetitionCheckinPhase, CompetitionCheckinUsage, EnrollBody, SelfEnrollRequest, EnrollStatusUpdate,
     EnrollCategoriaUpdate, EnrollmentReplaceRequest, CompetitionPaymentIntentActivateRequest, CompetitionDiscountUsage,
     CompetitionHeat, CompetitionHeatAssignment, Gym, GymMembership, Result, Team, TeamJoinLink, TeamMember,
 )
 from routers.discounts import validate_discount_for_checkout
 from routers.config import get_pricing_config
+from services.open_qualifier import require_direct_registration
 from services.emailer import send_email
 from services.email_templates import (
     render_payment_approved,
@@ -847,6 +848,11 @@ def _apply_bold_notification(session: Session, payload: dict) -> dict:
     if not reference:
         return {"matched": False, "reason": "missing_reference", "payment_status": payment_status}
 
+    open_intent = session.exec(select(CompetitionPaymentIntent).where(CompetitionPaymentIntent.payment_reference == reference)).first()
+    if open_intent and open_intent.purpose in {"open", "open_final"}:
+        from routers.open_qualifier import apply_open_payment
+        return apply_open_payment(session, open_intent, payment_status, transaction_id, total_amount)
+
     pricing_cfg = get_pricing_config(session)
     proc_rate = pricing_cfg["bold_processor_rate"]
     proc_fixed = pricing_cfg["bold_processor_fixed_fee"]
@@ -1341,7 +1347,7 @@ def set_enrolled(
     session: Session = Depends(get_session),
     user=Depends(require_admin),
 ):
-    require_competition_access(session, competition_id, user)
+    require_direct_registration(require_competition_access(session, competition_id, user))
 
     existing_confirmed = session.exec(
         select(CompetitionParticipant)
@@ -1382,7 +1388,7 @@ def update_enrollment_status(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    require_competition_access(session, competition_id, user)
+    require_direct_registration(require_competition_access(session, competition_id, user))
     if body.estado != "confirmado":
         raise HTTPException(400, "Solo se permite confirmar la inscripcion")
     cp = session.get(CompetitionParticipant, (competition_id, user_id))
@@ -1438,7 +1444,7 @@ def unenroll(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    require_competition_access(session, competition_id, user)
+    require_direct_registration(require_competition_access(session, competition_id, user))
     cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if cp:
         session.delete(cp)
@@ -1454,7 +1460,7 @@ def replace_enrolled_participant(
     session: Session = Depends(get_session),
     user=Depends(require_staff),
 ):
-    require_competition_access(session, competition_id, user)
+    require_direct_registration(require_competition_access(session, competition_id, user))
     source_enrollment = session.get(CompetitionParticipant, (competition_id, user_id))
     if not source_enrollment:
         raise HTTPException(404, "Inscripcion no encontrada")
@@ -1607,6 +1613,7 @@ def free_enroll(
     comp = session.get(Competition, competition_id)
     if not comp:
         raise HTTPException(404, "Competencia no encontrada")
+    require_direct_registration(comp)
     _ensure_competition_open(comp)
 
     if not getattr(comp, "allow_free_categories", 0):
@@ -1729,6 +1736,7 @@ def stage_test_payment_enroll(
     comp = session.get(Competition, competition_id)
     if not comp:
         raise HTTPException(404, "Competencia no encontrada")
+    require_direct_registration(comp)
     _ensure_competition_open(comp)
 
     category = _category_for_enrollment(
@@ -1873,6 +1881,7 @@ def self_enroll(
     comp = session.get(Competition, competition_id)
     if not comp:
         raise HTTPException(404, "Competencia no encontrada")
+    require_direct_registration(comp)
     _ensure_competition_open(comp)
 
     existing = session.get(CompetitionParticipant, (competition_id, user_id))
@@ -1938,6 +1947,7 @@ def create_bold_checkout(
     comp = session.get(Competition, competition_id)
     if not comp:
         raise HTTPException(404, "Competencia no encontrada")
+    require_direct_registration(comp)
     _ensure_competition_open(comp)
 
     category = _category_for_enrollment(
@@ -2149,7 +2159,8 @@ def activate_bold_intent(
     ).first()
     if not category:
         raise HTTPException(404, "Categoria no encontrada")
-    ensure_category_registration_available(session, competition_id, category, user_id=user_id)
+    if intent.purpose == "competition":
+        ensure_category_registration_available(session, competition_id, category, user_id=user_id)
     if getattr(intent, "team_join_token", None):
         _ensure_team_join_link_available(session, intent.team_join_token, user_id=user_id)
 
@@ -2268,6 +2279,7 @@ def cancel_self_enroll(
     user_id = get_current_user_id(user)
     if not is_end_user(user) or user_id is None:
         raise HTTPException(403, "Solo usuarios")
+    require_direct_registration(session.get(Competition, competition_id))
     cp = session.get(CompetitionParticipant, (competition_id, user_id))
     if not cp:
         return
@@ -2342,5 +2354,13 @@ def participant_competitions(
             c.id DESC
     """), {"uid": user_id, "pending_state": PENDING_VERIFICATION_STATE}).mappings().all()
     merged_rows = _merge_participant_competition_rows([dict(r) for r in rows], [dict(r) for r in intent_rows])
+    from services.open_qualifier import config_for, entry_state
+    opens = session.exec(select(OpenEntry, Competition).join(Competition, Competition.id == OpenEntry.competition_id).where(OpenEntry.user_id == user_id)).all()
+    for entry, comp in opens:
+        if entry.status == "confirmed":
+            continue
+        merged_rows = [row for row in merged_rows if row["id"] != comp.id]
+        merged_rows.append({**comp.model_dump(), "enrollment_estado": "open_" + entry_state(entry, config_for(comp)),
+                            "enrollment_categoria": entry.categoria, "open_status": entry_state(entry, config_for(comp)), "payment_status": "approved"})
     return [_with_user_id(row, user_id) for row in merged_rows]
 

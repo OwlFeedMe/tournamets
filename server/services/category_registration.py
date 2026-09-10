@@ -83,6 +83,8 @@ def get_category_usage(session: Session, competition_id: int) -> dict[str, dict[
         select(CompetitionPaymentIntent).where(CompetitionPaymentIntent.competition_id == competition_id)
     ).all()
     for intent in intents:
+        if getattr(intent, "purpose", "competition") == "open":
+            continue
         if not _intent_is_active(intent, now):
             continue
         user_id = int(getattr(intent, "user_id", 0) or 0)
