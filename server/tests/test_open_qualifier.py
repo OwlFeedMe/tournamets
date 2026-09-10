@@ -73,6 +73,14 @@ class OpenQualifierTests(unittest.TestCase):
         self.assertEqual(self.db.get(OpenEntry, (1, 1)).status, 'paid')
         self.assertEqual(len(self.db.exec(select(CompetitionPaymentIntent)).all()), 1)
 
+    def test_organizer_can_list_paid_entries_and_scores(self):
+        from routers.open_qualifier import list_entries
+        self.pay(); self.deliver()
+        rows = list_entries(1, self.db, self.admin)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], 'Test Athlete')
+        self.assertEqual(rows[0]['answers']['score'], '42')
+
     def test_qualification_requires_separate_full_payment(self):
         self.pay(); self.deliver()
         decision = decide(1, 1, Decision(qualify=True), self.db, self.admin)

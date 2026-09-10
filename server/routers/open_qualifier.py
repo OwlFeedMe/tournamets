@@ -118,7 +118,7 @@ def my_open(competition_id: int, session: Session = Depends(get_session), user=D
 def list_entries(competition_id: int, session: Session = Depends(get_session), user=Depends(require_staff)):
     comp = require_competition_access(session, competition_id, user)
     cfg = enabled_config(comp)
-    rows = session.exec(select(OpenEntry, Participant, EnrollmentAnswerItem).join(Participant, OpenEntry.user_id == Participant.id).where(OpenEntry.competition_id == competition_id).order_by(OpenEntry.paid_at)).all()
+    rows = session.exec(select(OpenEntry, Participant).join(Participant, OpenEntry.user_id == Participant.id).where(OpenEntry.competition_id == competition_id).order_by(OpenEntry.paid_at)).all()
     return [{**serialize_entry(entry, cfg), "name": f"{athlete.nombre or ''} {athlete.apellido or ''}".strip()} for entry, athlete in rows]
 
 
