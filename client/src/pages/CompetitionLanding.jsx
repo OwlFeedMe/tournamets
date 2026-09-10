@@ -1,3 +1,4 @@
+import OpenPublicSummary from '../components/competition/OpenPublicSummary'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Clock, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -822,11 +823,8 @@ export default function CompetitionLanding() {
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
       <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 24px 72px' }}>
-        {openConfig.enabled && <section style={{ background: '#171B21', border: '1px solid #252A33', padding: 18, marginBottom: 18, borderRadius: 10 }}>
-          <strong style={{ color: '#FF6B00' }}>Open clasificatorio</strong>
-          <p style={{ color: '#AAB2C0', marginTop: 8 }}>Participa en el Open por {formatCop(openConfig.price)} + servicio. Envía tu video dentro del plazo y compite por un cupo.</p>
-          <Link to={registerHref} style={{ color: '#00C2A8', display: 'inline-block', marginTop: 10 }}>Ver requisitos y pago al clasificar</Link>
-        </section>}
+        {openConfig.enabled && <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} />}
+
         {loading ? (
           <div style={{ display: 'grid', gap: 18 }}>
             <section style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '0.72fr 1.28fr', gap: 14 }}>
@@ -998,6 +996,7 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
+            {!openConfig.enabled && (
             <section
               className="fr-cut-card"
               style={{
@@ -1220,6 +1219,7 @@ export default function CompetitionLanding() {
                 </div>
               </div>
             </section>
+            )}
 
             {ticketingActive ? (
               <section

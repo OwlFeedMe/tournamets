@@ -1,3 +1,5 @@
+import OpenPublicSummary from '../components/competition/OpenPublicSummary'
+import { openRegistrationState } from '../utils/openQualifier'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
@@ -48,6 +50,7 @@ export default function CompetitionOpenPage() {
   const cfg = data.config
   if (!cfg.enabled) return <main className="fr-open"><h1>Esta competencia no tiene Open</h1><Link to={`/competitions/${competitionId}/register`}>Ir a inscripción</Link></main>
   const closed = Date.now() > Date.parse(cfg.deadline)
+  const registration = openRegistrationState(data, cfg, data.categories)
   const canSubmit = entry && ['paid', 'submitted'].includes(entry.status) && !closed
   const full = Number(data.categories.find(c => c.nombre === category)?.enrollment_price || 0)
   const finalAmount = entry?.final_amount ?? (cfg.final_payment === 'none' ? 0 : cfg.final_payment === 'difference' ? Math.max(0, full - cfg.price) : cfg.final_payment === 'discount' ? Math.round(full * (100 - cfg.discount_percent) / 100) : full)
@@ -69,16 +72,14 @@ export default function CompetitionOpenPage() {
     <Link to={`/competitions/${competitionId}`}>← {data.nombre}</Link>
     <header className="fr-open-card" style={{ background: 'linear-gradient(135deg, #FF6B00 0%, #FF9A3D 100%)', color: '#090B0E' }}><h1>Open clasificatorio</h1><strong>Entrega hasta el {new Date(cfg.deadline).toLocaleString('es-CO', { timeZone: data.timezone || 'America/Bogota' })} ({data.timezone || 'America/Bogota'})</strong></header>
     {message && <div role="status" className="fr-open-message">{message}</div>}
-    <section className="fr-open-card"><h2>Tu reto</h2><p style={{ whiteSpace: 'pre-wrap' }}>{cfg.instructions}</p>
-      <p>Envía tu video o enlace y completa los resultados dentro del plazo. El pago no garantiza clasificar. Si no entregas, quedarás sin entrega y no avanzarás; no se genera un reembolso automático por no enviar el Open.</p>
-    </section>
+    <OpenPublicSummary competition={data} config={cfg} categories={data.categories} pricing={pricing} showLink={false} />
     {entry && <section className="fr-open-card"><h2 className="fr-open-status">{openStatus[entry.status]}</h2><p>{entry.categoria} · Open pagado: {money(entry.open_price)}</p>
       {entry.status === 'qualified' && <p>Fuiste seleccionado. Completa el pago para confirmar tu cupo.</p>}
       {entry.status === 'missing' && <p>El plazo terminó sin una entrega. No clasificaste a la competencia.</p>}
       {entry.status === 'confirmed' && <Link to="/my-events">Ver mi competencia</Link>}
       {entry.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver mi video</a>}
     </section>}
-    {!session ? <Link className="fr-open-button" to="/login">Iniciar sesión para participar</Link> : ((!entry && !closed) || entry?.status === 'qualified') && <form className="fr-open-card" onSubmit={pay}>
+    {!session ? <Link className="fr-open-button" to="/login">Iniciar sesión para participar</Link> : ((!entry && registration.available) || entry?.status === 'qualified') && <form className="fr-open-card" onSubmit={pay}>
       <h2>{entry ? 'Confirma tu cupo' : 'Inscríbete al Open'}</h2>
       {!entry && <label>Categoría<select required disabled={busy || !!bold} value={category} onChange={e => setCategory(e.target.value)}><option value="">Selecciona tu categoría</option>{data.categories.filter(c => c.registration_enabled && c.modality === 'individual').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>}
       <div className="fr-open-grid"><p>{entry ? 'Clasificación' : 'Open'}: <strong>{money(base)}</strong><br />Servicio: {money(fee)}<br /><strong>Total: {money(base + fee)}</strong></p>
@@ -90,7 +91,7 @@ export default function CompetitionOpenPage() {
       {bold && <BoldPaymentButton config={bold} onError={onBoldError} onPaymentClick={onBoldClick} />}
       {isStageEnvironment && <p>Pago simulado de stage. No se cobra dinero real.</p>}
     </form>}
-    {!entry && closed && <p>El plazo del Open terminó. No se aceptan nuevos registros.</p>}
+    {!entry && !registration.available && <p role="status">{closed ? 'El plazo del Open terminó. No se aceptan nuevos registros.' : `${registration.label}. Puedes consultar los requisitos; el pago estará disponible cuando el registro esté habilitado y haya categorías abiertas dentro del plazo.`}</p>}
     {canSubmit && <form className="fr-open-card" onSubmit={e => { e.preventDefault(); act(async () => { await api.put(`/competitions/${competitionId}/open/submission`, { video_url: video, answers }); await reload(); setMessage('Entrega guardada. Puedes editarla mientras el plazo siga abierto y no haya sido revisada.') }) }}>
       <h2>{entry.status === 'submitted' ? 'Editar mi entrega' : 'Enviar mi Open'}</h2>
       <label>Enlace del video<input required value={video} onChange={e => setVideo(e.target.value)} placeholder="https://…" /></label>
