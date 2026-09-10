@@ -22,7 +22,11 @@ export default function OpenPublicSummary({ competition, config, categories, pri
       <p style={{ whiteSpace: 'pre-wrap' }}>{config.instructions}</p>
       <p><strong>Video o enlace del video (obligatorio)</strong>{config.fields?.length > 0 && ` · ${config.fields.map(f => `${f.label}${f.required ? ' (obligatorio)' : ' (opcional)'}`).join(' · ')}`}</p>
       <p>Tu inscripción se confirma únicamente con el pago aprobado. Pagar el Open no garantiza clasificar. Si no entregas dentro del plazo, no avanzas y no se genera un reembolso automático.</p>
-      {showLink && <div><Link className="fr-open-button" to={`/competitions/${competition.id}/open`}>{status.available ? 'Participar en el Open' : 'Ver mi Open y requisitos'}</Link></div>}
+      {showLink && <div className="fr-open-actions">
+        <Link className="fr-open-button" to={`/competitions/${competition.id}/open`}>{status.available ? 'Participar en el Open' : 'Ver mi Open y requisitos'}</Link>
+        <Link to={`/competitions/${competition.id}/schedule`}>Ver cronograma</Link>
+        <Link to={`/leaderboard/${competition.id}`}>Ver leaderboard</Link>
+      </div>}
     </div>
   </section>
 }
