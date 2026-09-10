@@ -70,7 +70,9 @@ def enabled_config(comp):
 def serialize_entry(entry, cfg):
     if not entry:
         return None
-    return {**entry.model_dump(), "status": entry_state(entry, cfg), "answers": json.loads(entry.answers)}
+    # Access mapped attributes first: commit may have expired the ORM instance.
+    state = entry_state(entry, cfg)
+    return {**entry.model_dump(), "status": state, "answers": json.loads(entry.answers)}
 
 
 @router.get("/competitions/{competition_id}/open")

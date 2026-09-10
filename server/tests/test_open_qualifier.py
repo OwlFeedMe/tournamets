@@ -75,7 +75,9 @@ class OpenQualifierTests(unittest.TestCase):
 
     def test_qualification_requires_separate_full_payment(self):
         self.pay(); self.deliver()
-        decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        decision = decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        self.assertEqual(decision['final_amount'], 200000)
+        self.assertEqual(decision['user_id'], 1)
         self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
         self.assertEqual(self.db.get(OpenEntry, (1, 1)).status, 'qualified')
         result = self.pay(final=True)
