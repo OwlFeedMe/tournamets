@@ -823,7 +823,6 @@ export default function CompetitionLanding() {
   return (
     <div style={{ minHeight: '100vh', background: pageBg, color: theme.text }}>
       <div style={{ maxWidth: COMPETITION_PAGE_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '16px 14px 56px' : '24px 24px 72px' }}>
-        {openConfig.enabled && <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} />}
 
         {loading ? (
           <div style={{ display: 'grid', gap: 18 }}>
@@ -996,7 +995,7 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
-            {!openConfig.enabled && (
+            {openConfig.enabled ? <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} /> : (
             <section
               className="fr-cut-card"
               style={{

@@ -1,8 +1,9 @@
-const CompetitionOpenPage = lazy(() => import('./pages/CompetitionOpenPage'))
 import { Suspense, lazy } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AuthProvider, getHomePath, useAuth } from './context/AuthContext'
 import { AuthenticatedShell } from './components/layout/AuthenticatedShell'
+
+const CompetitionOpenPage = lazy(() => import('./pages/CompetitionOpenPage'))
 
 const AdminCompetitionCommandProposal = lazy(() => import('./pages/AdminCompetitionCommandProposal'))
 const CompetitionEnrollmentPage = lazy(() => import('./pages/CompetitionEnrollmentPage'))

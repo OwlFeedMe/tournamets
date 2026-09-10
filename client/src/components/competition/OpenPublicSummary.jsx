@@ -7,7 +7,7 @@ const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', curre
 export default function OpenPublicSummary({ competition, config, categories, pricing, showLink = true }) {
   const status = openRegistrationState(competition, config, categories)
   const fee = pricing ? Math.max(pricing.min_platform_fee, Math.round(config.price * pricing.default_platform_fee_rate)) : null
-  return <section id="open-clasificatorio" className="fr-open" aria-label="Open clasificatorio" style={{ marginBottom: 18 }}>
+  return <section id="open-clasificatorio" className="fr-open" aria-label="Open clasificatorio" style={{ marginBottom: 18, padding: 0, background: 'transparent' }}>
     <div className="fr-open-card" style={{ borderTop: '4px solid #FF6B00' }}>
       <div className="fr-open-status">OPEN CLASIFICATORIO · {status.label}</div>
       <h2>Tu camino a {competition.nombre}</h2>
