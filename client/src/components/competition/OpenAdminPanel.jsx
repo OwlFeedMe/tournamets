@@ -3,9 +3,9 @@ import api from '../../api/axios'
 import { competitionDateTimeInputToUtc, utcToCompetitionDateTimeInput, competitionTimeZone } from '../../utils/competitionTimeZone'
 import './OpenQualifier.css'
 
-export const openStatus = { paid: 'Open pagado · Entrega pendiente', submitted: 'Entrega recibida · En revisión', missing: 'Sin entrega', qualified: 'Clasificado · Pago pendiente', rejected: 'No clasificado', confirmed: 'Cupo confirmado' }
+export const openStatus = { preregistered: 'Preinscrito · Open pendiente de pago', paid: 'Open pagado · Entrega pendiente', submitted: 'Entrega recibida · En revisión', missing: 'Sin entrega', qualified: 'Clasificado · Pago pendiente', rejected: 'No clasificado', confirmed: 'Cupo confirmado' }
 export const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value || 0)
-const defaults = { enabled: false, price: 0, deadline: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [] }
+const defaults = { enabled: false, price: 0, deadline: '', submissions_open_at: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [] }
 
 export default function OpenAdminPanel({ competition, reload }) {
   const [config, setConfig] = useState(defaults)
@@ -30,7 +30,7 @@ export default function OpenAdminPanel({ competition, reload }) {
   const save = event => {
     event.preventDefault()
     act(async () => {
-      await api.put(`/competitions/${competition.id}/open`, { ...config, deadline: config.deadline || null })
+      await api.put(`/competitions/${competition.id}/open`, { ...config, deadline: config.deadline || null, submissions_open_at: config.submissions_open_at || null })
       await reload(); setMessage('Configuración del Open guardada')
     })
   }
@@ -43,11 +43,12 @@ export default function OpenAdminPanel({ competition, reload }) {
     {message && <div role="status" className="fr-open-message">{message}</div>}
     <form className="fr-open-card" onSubmit={save}>
       <label className="fr-open-check"><input type="checkbox" checked={config.enabled} disabled={entries.length > 0} onChange={e => change('enabled', e.target.checked)} />Activar Open para esta competencia</label>
-      <p>El registro requiere pago aprobado. Solo quienes clasifiquen y completen el pago final tendrán un cupo en la competencia.</p>
-      <p>Disponible para categorías individuales. Configura el Open antes de recibir inscripciones; las condiciones se bloquean al iniciar el primer pago.</p>
+      <p>La preinscripción es gratuita y queda visible aquí. El pago habilita la participación en el Open. Solo quienes clasifiquen y completen el pago final tendrán un cupo en la competencia.</p>
+      <p>Disponible para categorías individuales. Configura el Open antes de recibir inscripciones; las condiciones se bloquean con la primera preinscripción o intento de pago.</p>
       {config.enabled && <>
         <div className="fr-open-grid">
           <label>Precio del Open (COP)<input type="number" min="1" max="100000000" required value={config.price} onChange={e => change('price', Number(e.target.value))} /></label>
+          <label>Apertura de entregas ({tz})<input type="datetime-local" value={utcToCompetitionDateTimeInput(config.submissions_open_at, tz)} onChange={e => change('submissions_open_at', competitionDateTimeInputToUtc(e.target.value, tz))} /><small>Sin fecha: se puede entregar desde el pago aprobado.</small></label>
           <label>Fecha límite de entrega ({tz})<input type="datetime-local" required value={utcToCompetitionDateTimeInput(config.deadline, tz)} onChange={e => change('deadline', competitionDateTimeInputToUtc(e.target.value, tz))} /></label>
           <label>Pago al clasificar<select value={config.final_payment} onChange={e => change('final_payment', e.target.value)}>
             <option value="full">Precio completo de la categoría</option><option value="difference">Diferencia: precio completo menos Open</option><option value="discount">Precio completo con descuento</option><option value="none">Sin pago adicional</option>
@@ -66,12 +67,13 @@ export default function OpenAdminPanel({ competition, reload }) {
       <div><button disabled={busy || entries.length > 0}>Guardar Open</button></div>
     </form>
     {config.enabled && <div className="fr-open-card">
-      <div className="fr-open-actions"><h3>Entregas ({entries.length})</h3><button className="secondary" disabled={busy} onClick={() => act(load)}>Actualizar</button><a href={`/competitions/${competition.id}/open`}>Ver Open</a></div>
+      <div className="fr-open-actions"><h3>Inscripciones al Open ({entries.length})</h3><button className="secondary" disabled={busy} onClick={() => act(load)}>Actualizar</button><a href={`/competitions/${competition.id}/open`}>Ver Open</a></div>
       <label>Estado<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">Todos</option>{Object.entries(openStatus).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-      {!entries.length && <p>Aún no hay inscripciones pagadas al Open.</p>}
+      {!entries.length && <p>Aún no hay preinscripciones al Open.</p>}
       {entries.filter(e => !filter || e.status === filter).map(entry => <article className="fr-open-card" key={entry.user_id}>
         <h3>{entry.name} · {entry.categoria}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
-        <p>Open: {money(entry.open_price)} · Pago al clasificar: {money(entry.final_amount)}</p>
+        <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {money(entry.final_amount)}</p>
+        {entry.registered_at && <p>Preinscripción: {new Date(entry.registered_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.submitted_at && <p>Entregado: {new Date(entry.submitted_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver video</a>}
         {config.fields.map(field => <p key={field.id}><strong>{field.label}:</strong> {entry.answers[field.id] || '—'}</p>)}

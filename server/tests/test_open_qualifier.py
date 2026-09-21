@@ -13,7 +13,8 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from models import (Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent,
                     OpenEntry, Participant, PlatformConfig, EnrollmentAnswerItem)
 from routers.open_qualifier import (Checkout, Decision, OpenConfig, Submission, apply_open_payment,
-                                    checkout, configure_open, decide, my_open, submit, upload_video)
+                                    checkout, configure_open, decide, my_open, submit, upload_video,
+                                    preregister, Preregistration, list_entries)
 from routers.enrollments import _apply_bold_notification, free_enroll, self_enroll, stage_test_payment_enroll, set_enrolled
 from services.open_qualifier import final_price, entry_state, config_for
 
@@ -61,6 +62,95 @@ class OpenQualifierTests(unittest.TestCase):
         cfg['deadline'] = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
         self.comp.open_config = json.dumps(cfg)
         self.db.add(self.comp); self.db.commit()
+
+    def preregister(self):
+        return preregister(1, Preregistration(categoria='RX', terms_accepted=True), self.db, self.user)
+
+    def test_free_preregistration_visible_to_admin_without_payment_or_final_slot(self):
+        first = self.preregister()
+        self.assertEqual(first['status'], 'preregistered')
+        self.assertIsNone(first['paid_at'])
+        self.assertIsNotNone(first['registered_at'])
+        self.assertEqual(self.preregister()['registered_at'], first['registered_at'])
+        rows = list_entries(1, self.db, self.admin)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['status'], 'preregistered')
+        self.assertEqual(self.db.exec(select(CompetitionPaymentIntent)).all(), [])
+        self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
+        with self.assertRaises(HTTPException) as caught:
+            self.deliver()
+        self.assertEqual(caught.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as caught:
+            upload_video(1, UploadFile(filename='v.mp4', file=io.BytesIO(b'0000ftypvideo')), self.db, self.user)
+        self.assertEqual(caught.exception.status_code, 403)
+
+    def test_preregistration_can_pay_later_after_new_registration_closes(self):
+        first = self.preregister()
+        self.comp.enrollment_open = 0
+        self.db.add(self.comp); self.db.commit()
+        self.pay()
+        entry = self.db.get(OpenEntry, (1, 1))
+        self.assertEqual(entry.status, 'paid')
+        self.assertIsNotNone(entry.paid_at)
+        self.assertEqual(entry.registered_at, first['registered_at'])
+        self.assertEqual(len(self.db.exec(select(OpenEntry)).all()), 1)
+        self.deliver()
+
+    def test_preregistration_preserves_answers_and_price_when_paying_later(self):
+        self.comp.enrollment_questions = json.dumps([{'id': 'box', 'label': 'Box', 'field_type': 'text', 'required': True}])
+        self.db.add(self.comp); self.db.commit()
+        preregister(1, Preregistration(categoria='RX', terms_accepted=True,
+                    answers=[EnrollmentAnswerItem(question_id='box', answer='My box')]), self.db, self.user)
+        category = self.db.get(CompetitionCategory, 1)
+        category.enrollment_price = 300000
+        self.db.add(category); self.db.commit()
+        self.pay()
+        entry = self.db.get(OpenEntry, (1, 1))
+        self.assertEqual(entry.final_amount, 200000)
+        self.assertEqual(json.loads(entry.enrollment_answers)[0]['answer'], 'My box')
+
+    def test_preregistration_requires_terms_athlete_and_open_registration(self):
+        for body, user in [(Preregistration(categoria='RX'), self.user),
+                           (Preregistration(categoria='RX', terms_accepted=True), {'role': 'unknown', 'sub': '9'}),
+                           (Preregistration(categoria='unknown', terms_accepted=True), self.user)]:
+            with self.assertRaises(HTTPException):
+                preregister(1, body, self.db, user)
+        self.comp.enrollment_open = 0
+        self.db.add(self.comp); self.db.commit()
+        with self.assertRaises(HTTPException):
+            self.preregister()
+
+    def test_unpaid_entry_survives_failed_payment_and_cannot_pay_after_deadline(self):
+        self.preregister()
+        with patch.dict(os.environ, {'APP_ENV': 'production', 'BOLD_ENABLED': 'true', 'BOLD_IDENTITY_KEY': 'test', 'BOLD_SECRET_KEY': 'test'}), patch('routers.enrollments._ensure_bold_payments_enabled'):
+            checkout(1, Checkout(categoria='RX', terms_accepted=True), self.db, self.user)
+        intent = self.db.exec(select(CompetitionPaymentIntent)).first()
+        apply_open_payment(self.db, intent, 'rejected', 'test', intent.payment_amount_total)
+        self.db.commit()
+        self.assertEqual(my_open(1, self.db, self.user)['status'], 'preregistered')
+        self.assertIsNone(my_open(1, self.db, self.user)['paid_at'])
+        self.expires()
+        with self.assertRaises(HTTPException):
+            self.pay()
+
+    def test_future_submission_opening_allows_registration_and_payment_but_not_delivery(self):
+        opening = datetime.now(timezone.utc) + timedelta(hours=1)
+        self.configure(submissions_open_at=opening)
+        self.preregister(); self.pay()
+        with self.assertRaises(HTTPException) as caught:
+            self.deliver()
+        self.assertEqual(caught.exception.status_code, 409)
+        with self.assertRaises(HTTPException) as caught:
+            upload_video(1, UploadFile(filename='v.mp4', file=io.BytesIO(b'0000ftypvideo')), self.db, self.user)
+        self.assertEqual(caught.exception.status_code, 409)
+        with patch('routers.open_qualifier.datetime', wraps=datetime) as clock:
+            clock.now.return_value = opening
+            self.assertEqual(self.deliver()['status'], 'submitted')
+
+    def test_submission_opening_must_have_timezone_and_precede_deadline(self):
+        for opening in [datetime.now() + timedelta(hours=1), datetime.now(timezone.utc) + timedelta(days=2)]:
+            with self.assertRaises(HTTPException):
+                self.configure(submissions_open_at=opening)
 
     def test_four_payment_modes(self):
         for mode, expected in [('full', 200000), ('difference', 150000), ('discount', 150000), ('none', 0)]:

@@ -32,6 +32,6 @@ def final_price(full_price, open_price, mode, discount):
 
 
 def entry_state(entry, config):
-    if entry.status == "paid" and datetime.now(timezone.utc) > utc(config["deadline"]):
+    if entry.status == "paid" and datetime.now(timezone.utc) >= utc(config["deadline"]):
         return "missing"
     return entry.status

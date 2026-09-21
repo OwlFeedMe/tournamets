@@ -2361,6 +2361,6 @@ def participant_competitions(
             continue
         merged_rows = [row for row in merged_rows if row["id"] != comp.id]
         merged_rows.append({**comp.model_dump(), "enrollment_estado": "open_" + entry_state(entry, config_for(comp)),
-                            "enrollment_categoria": entry.categoria, "open_status": entry_state(entry, config_for(comp)), "payment_status": "approved"})
+                            "enrollment_categoria": entry.categoria, "open_status": entry_state(entry, config_for(comp)), "payment_status": "unpaid" if entry.status == "preregistered" else "approved"})
     return [_with_user_id(row, user_id) for row in merged_rows]
 

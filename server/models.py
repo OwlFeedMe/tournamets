@@ -899,7 +899,8 @@ class OpenEntry(SQLModel, table=True):
     submitted_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     reviewed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     reviewed_by: Optional[int] = None
-    paid_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True), nullable=False))
+    registered_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True), nullable=False))
+    paid_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc), sa_column=Column(DateTime(timezone=True), nullable=True))
 
 
 class CompetitionPaymentIntent(SQLModel, table=True):

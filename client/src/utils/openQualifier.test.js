@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { openLandingAction, openRegistrationState } from './openQualifier.js'
+import { openLandingAction, openRegistrationState, openSubmissionState } from './openQualifier.js'
 
 test('visitor or administrator without an entry never sees ownership language', () => {
   assert.deepEqual(openLandingAction({ available: false }, null), { mode: 'notify', label: 'Notificarme cuando abra el Open' })
@@ -20,4 +20,16 @@ test('registration needs an enabled category and an open window', () => {
   const now = Date.parse('2026-09-10T00:00:00Z')
   assert.equal(openRegistrationState(comp, cfg, [], now).available, false)
   assert.equal(openRegistrationState(comp, cfg, [{ modality: 'individual', registration_enabled: 1 }], now).available, true)
+})
+
+test('submission window opens at the configured instant and closes at the deadline', () => {
+  const config = { submissions_open_at: '2026-10-01T05:00:00Z', deadline: '2026-10-10T05:00:00Z' }
+  assert.equal(openSubmissionState(config, Date.parse('2026-10-01T04:59:59Z')), 'upcoming')
+  assert.equal(openSubmissionState(config, Date.parse(config.submissions_open_at)), 'open')
+  assert.equal(openSubmissionState(config, Date.parse(config.deadline)), 'closed')
+  assert.equal(openSubmissionState({ deadline: config.deadline }, Date.parse(config.submissions_open_at)), 'open')
+})
+
+test('unpaid preregistration stays accessible after new registrations close', () => {
+  assert.equal(openLandingAction({ available: false, closed: true }, { status: 'preregistered' }).mode, 'entry')
 })

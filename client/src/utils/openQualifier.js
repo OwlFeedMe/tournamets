@@ -15,6 +15,12 @@ export function openLandingAction(registration, entry) {
   return { mode: 'notify', label: 'Notificarme cuando abra el Open' }
 }
 
+export function openSubmissionState(config, now = Date.now()) {
+  if (now >= Date.parse(config.deadline)) return 'closed'
+  if (config.submissions_open_at && now < Date.parse(config.submissions_open_at)) return 'upcoming'
+  return 'open'
+}
+
 export function openFinalPaymentLabel(config) {
   return ({ full: 'Al clasificar pagas el precio completo de tu categoría.', difference: 'Al clasificar pagas la diferencia entre tu categoría y el Open, sin descontar cargos de servicio.', discount: `Al clasificar tienes ${config.discount_percent}% de descuento sobre el precio completo de tu categoría.`, none: 'Si clasificas, no tienes que pagar un valor adicional.' })[config.final_payment]
 }
