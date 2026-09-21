@@ -25,3 +25,12 @@ export function openFinalPaymentLabel(config) {
   if (config.final_payment === 'pending') return config.final_prices ? 'El valor adicional está publicado por categoría. Consúltalo antes de confirmar tu cupo.' : 'Valor adicional por confirmar. El organizador publicará el precio antes de habilitar el pago del Qualifier.'
   return ({ full: 'Al clasificar pagas el precio completo de tu categoría.', difference: 'Al clasificar pagas la diferencia entre tu categoría y el Open, sin descontar cargos de servicio.', discount: `Al clasificar tienes ${config.discount_percent}% de descuento sobre el precio completo de tu categoría.`, none: 'Si clasificas, no tienes que pagar un valor adicional.' })[config.final_payment]
 }
+export const openProfileStates = {
+  open_preregistered: { label: 'Preinscrito al Open', copy: 'Tu preinscripción está guardada. Puedes pagar y enviar tu Open dentro del plazo.' },
+  open_paid: { label: 'Open pagado', copy: 'Consulta los requisitos y envía tu Open dentro del período de entregas.' },
+  open_submitted: { label: 'Open en revisión', copy: 'La organización está revisando tu entrega.' },
+  open_missing: { label: 'Open sin entrega', copy: 'El plazo del Open terminó sin una entrega.' },
+  open_qualified: { label: 'Clasificado', copy: 'Consulta tu clasificación y las condiciones para confirmar tu cupo.' },
+  open_rejected: { label: 'No clasificado', copy: 'Consulta el estado de tu participación en el Open.' },
+  open_confirmed: { label: 'Cupo confirmado', copy: 'Tu cupo está confirmado. Consulta los detalles de la competencia.' },
+}

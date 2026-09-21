@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import { buildCityCountry, loadCitiesByCountry, loadCountries, parseCityCountry } from '../utils/locations'
 import { APP_CONTENT_MAX_WIDTH } from '../utils/competitionLayout'
+import { openProfileStates } from '../utils/openQualifier'
 import { useAuth } from '../context/AuthContext'
 import { cedulaInputValue, formatCedula, formatMissingParticipantProfileFields } from '../utils/participantProfile'
 import GymSelector from '../components/gyms/GymSelector'
@@ -15,6 +16,7 @@ import {
 // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function statusBadge(estado) {
+  if (openProfileStates[estado]) return { label: openProfileStates[estado].label, cls: 'badge-default' }
   if (estado === 'confirmado') return { label: 'Confirmado', cls: 'badge-confirmado' }
   if (estado === 'pago_en_verificacion') return { label: 'Pago en verificacion', cls: 'badge-pendiente' }
   if (estado === 'pendiente') return { label: 'En proceso', cls: 'badge-pendiente' }
@@ -25,6 +27,7 @@ function statusBadge(estado) {
 function enrollmentStatusCopy(comp) {
   const status = String(comp?.enrollment_estado || '').trim().toLowerCase()
   const paymentStatus = String(comp?.payment_status || '').trim().toLowerCase()
+  if (openProfileStates[status]) return openProfileStates[status].copy
   if (status === 'pago_en_verificacion') {
     if (paymentStatus === 'approved') return 'Pago confirmado. Estamos activando tu inscripcion.'
     return 'Estamos validando tu pago con Bold. Tu cupo se activara cuando quede confirmado.'
@@ -2418,10 +2421,11 @@ export default function ParticipantProfile() {
                 const badge = statusBadge(c.enrollment_estado)
                 const statusCopy = enrollmentStatusCopy(c)
                 const isConfirmed = c.enrollment_estado === 'confirmado'
+                const isOpenEntry = !!openProfileStates[c.enrollment_estado]
                 const isBusy = cancelEnrollmentBusy === c.id
                 const paymentStatus = String(c.payment_status || '').trim().toLowerCase()
                 const canCancel = !c.payment_reference || ['', 'rejected', 'failed', 'voided', 'void_rejected'].includes(paymentStatus)
-                const canOpen = isConfirmed || eventResults.length > 0
+                const canOpen = isOpenEntry || isConfirmed || eventResults.length > 0
                 return (
                   <article
                     key={c.id}
@@ -2467,10 +2471,10 @@ export default function ParticipantProfile() {
                       ) : statusCopy ? statusCopy : 'Abre el evento para ver cronograma y detalles.'}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button type="button" className="btn-secondary btn-sm" onClick={(event) => { event.stopPropagation(); openModal(c) }} disabled={!canOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <button type="button" className="btn-secondary btn-sm" onClick={(event) => { event.stopPropagation(); isOpenEntry ? navigate(`/competitions/${c.id}`) : openModal(c) }} disabled={!canOpen} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         Ver evento <ChevronRight size={13} />
                       </button>
-                      <button
+                      {isOpenEntry ? <Link className="btn-primary btn-sm" to={`/competitions/${c.id}/open`}>Ver mi Open</Link> : <button
                         type="button"
                         className="btn-secondary btn-sm"
                         onClick={(event) => { event.stopPropagation(); setCancelEnrollmentTarget(c) }}
@@ -2478,7 +2482,7 @@ export default function ParticipantProfile() {
                         title={canCancel ? 'Cancelar inscripcion' : 'Debes solicitar la devolucion al organizador despues del cierre de inscripciones'}
                       >
                         {isBusy ? 'Cancelando...' : 'Cancelar'}
-                      </button>
+                      </button>}
                     </div>
                   </article>
                 )
