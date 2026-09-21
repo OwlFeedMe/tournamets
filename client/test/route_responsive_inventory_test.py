@@ -23,6 +23,7 @@ class RouteResponsiveInventoryTest(unittest.TestCase):
             "/competitions/:competitionId/inscritos",
             "/competitions/:competitionId/schedule",
             "/competitions/:competitionId/register",
+            "/competitions/:competitionId/open",
             "/competitions/:competitionId/register/team/:teamToken",
             "/competitions/:competitionId/payment-result",
             "/competitions/:competitionId/tickets",
