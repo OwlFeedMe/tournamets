@@ -113,7 +113,7 @@ export default function CompetitionOpenPage() {
       <div className="fr-open-actions">{entry?.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver mi video</a>}{entry?.status === 'confirmed' && <Link to="/my-events">Ver mi competencia</Link>}</div>
     </header>
     {message && <div role="status" className="fr-open-message">{message}</div>}
-    {!session ? <Link className="fr-open-button" to="/login">Crear cuenta o iniciar sesión para preinscribirme</Link> : ((!entry && registration.available) || (preregistered && !closed && !!data.activa) || (finalPayment && entry.final_amount != null)) && <form className="fr-open-card" onSubmit={!entry ? preregister : pay}>
+    {!session ? <Link className="fr-open-button" to="/login">Crear cuenta o ingresar</Link> : ((!entry && registration.available) || (preregistered && !closed && !!data.activa) || (finalPayment && entry.final_amount != null)) && <form className="fr-open-card" onSubmit={!entry ? preregister : pay}>
       <div className="fr-open-form-heading"><span className="fr-open-form-icon" aria-hidden="true">{entry ? <CreditCard size={22} /> : <ClipboardCheck size={22} />}</span><div><small>{finalPayment ? 'CLASIFICACIÓN' : entry ? 'PASO 02 · PAGO' : 'PASO 01 · REGISTRO'}</small><h2>{finalPayment ? 'Confirma tu cupo' : preregistered ? 'Paga tu Open' : 'Reserva tu registro'}</h2></div></div>
       {preregistered && <p>{submissionState === 'upcoming' ? 'Puedes pagar ahora y entregar a partir de la fecha indicada.' : 'Paga para habilitar tu entrega antes del cierre.'}</p>}
       {!entry && organizerAssignsCategory && <p>La organización asignará tu nivel según el resultado del Open.</p>}
