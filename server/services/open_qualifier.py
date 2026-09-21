@@ -22,6 +22,8 @@ def utc(value):
 
 
 def final_price(full_price, open_price, mode, discount):
+    if mode == "pending":
+        return None
     if mode == "none":
         return 0
     if mode == "difference":
@@ -29,6 +31,12 @@ def final_price(full_price, open_price, mode, discount):
     if mode == "discount":
         return int((Decimal(full_price) * (100 - Decimal(str(discount))) / 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     return full_price
+
+
+def category_final_price(config, category):
+    if config["final_payment"] == "pending":
+        return config.get("final_prices", {}).get(category.nombre)
+    return final_price(category.enrollment_price, config["price"], config["final_payment"], config["discount_percent"])
 
 
 def entry_state(entry, config):

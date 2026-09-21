@@ -891,7 +891,7 @@ class OpenEntry(SQLModel, table=True):
     categoria: str
     status: str = "paid"
     open_price: int
-    final_amount: int
+    final_amount: Optional[int] = None
     terms_snapshot: str
     enrollment_answers: Optional[str] = None
     video_url: Optional[str] = None

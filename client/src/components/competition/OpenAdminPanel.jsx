@@ -13,10 +13,13 @@ export default function OpenAdminPanel({ competition, reload }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [filter, setFilter] = useState('')
+  const [categories, setCategories] = useState([])
+  const [finalPrices, setFinalPrices] = useState({})
   const tz = competitionTimeZone(competition.timezone)
   const load = async () => {
     const cfg = JSON.parse(competition.open_config || '{}')
     setConfig({ ...defaults, ...cfg })
+    setCategories((await api.get(`/competitions/${competition.id}/categories`)).data.filter(c => c.modality === 'individual'))
     if (cfg.enabled) setEntries((await api.get(`/competitions/${competition.id}/open/entries`)).data)
     else setEntries([])
   }
@@ -51,7 +54,7 @@ export default function OpenAdminPanel({ competition, reload }) {
           <label>Apertura de entregas ({tz})<input type="datetime-local" value={utcToCompetitionDateTimeInput(config.submissions_open_at, tz)} onChange={e => change('submissions_open_at', competitionDateTimeInputToUtc(e.target.value, tz))} /><small>Sin fecha: se puede entregar desde el pago aprobado.</small></label>
           <label>Fecha límite de entrega ({tz})<input type="datetime-local" required value={utcToCompetitionDateTimeInput(config.deadline, tz)} onChange={e => change('deadline', competitionDateTimeInputToUtc(e.target.value, tz))} /></label>
           <label>Pago al clasificar<select value={config.final_payment} onChange={e => change('final_payment', e.target.value)}>
-            <option value="full">Precio completo de la categoría</option><option value="difference">Diferencia: precio completo menos Open</option><option value="discount">Precio completo con descuento</option><option value="none">Sin pago adicional</option>
+            <option value="pending">Precio por confirmar</option><option value="full">Precio completo de la categoría</option><option value="difference">Diferencia: precio completo menos Open</option><option value="discount">Precio completo con descuento</option><option value="none">Sin pago adicional</option>
           </select></label>
           {config.final_payment === 'discount' && <label>Descuento (%)<input type="number" min="0" max="100" step="0.01" value={config.discount_percent} onChange={e => change('discount_percent', Number(e.target.value))} /></label>}
         </div>
@@ -64,15 +67,23 @@ export default function OpenAdminPanel({ competition, reload }) {
         </div>)}
         <div><button type="button" className="secondary" disabled={config.fields.length >= 30} onClick={() => change('fields', [...config.fields, { id: `f_${crypto.randomUUID().replaceAll('-', '')}`, label: '', field_type: 'number', required: true }])}>Agregar dato</button></div>
       </>}
-      <div><button disabled={busy || entries.length > 0}>Guardar Open</button></div>
+      <div><button disabled={busy || entries.length > 0 || !!config.final_prices}>Guardar Open</button></div>
     </form>
+    {config.enabled && config.final_payment === 'pending' && !config.final_prices && <form className="fr-open-card" onSubmit={e => { e.preventDefault(); act(async () => {
+      await api.post(`/competitions/${competition.id}/open/final-prices`, { prices: Object.fromEntries(categories.map(c => [c.nombre, Number(finalPrices[c.nombre])])) })
+      await load(); await reload(); setMessage('Precios finales publicados. Los clasificados ya pueden confirmar su cupo.')
+    }) }}>
+      <h3>Publicar precio del Qualifier</h3><p>Completa el valor adicional por categoría, sin cargo de servicio. Publica cuando los precios sean definitivos: después quedarán bloqueados. Un valor de cero confirma sin pago adicional a quienes ya clasificaron.</p>
+      <div className="fr-open-grid">{categories.map(c => <label key={c.id}>{c.nombre} (COP)<input required type="number" min="0" max="100000000" step="1" value={finalPrices[c.nombre] ?? ''} onChange={e => setFinalPrices(old => ({ ...old, [c.nombre]: e.target.value }))} /></label>)}</div>
+      <button disabled={busy || !categories.length}>Publicar precios definitivos</button>
+    </form>}
     {config.enabled && <div className="fr-open-card">
       <div className="fr-open-actions"><h3>Inscripciones al Open ({entries.length})</h3><button className="secondary" disabled={busy} onClick={() => act(load)}>Actualizar</button><a href={`/competitions/${competition.id}/open`}>Ver Open</a></div>
       <label>Estado<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">Todos</option>{Object.entries(openStatus).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       {!entries.length && <p>Aún no hay preinscripciones al Open.</p>}
       {entries.filter(e => !filter || e.status === filter).map(entry => <article className="fr-open-card" key={entry.user_id}>
         <h3>{entry.name} · {entry.categoria}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
-        <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {money(entry.final_amount)}</p>
+        <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {entry.final_amount == null ? 'Por confirmar' : money(entry.final_amount)}</p>
         {entry.registered_at && <p>Preinscripción: {new Date(entry.registered_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.submitted_at && <p>Entregado: {new Date(entry.submitted_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver video</a>}

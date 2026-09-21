@@ -9,7 +9,7 @@ si la entrega y la clasificación serán por atleta o por equipo.
 - Apertura opcional de entregas y fecha límite en la zona horaria de la competencia, instrucciones y campos
   de texto/número. Video por enlace HTTP(S) o archivo MP4/MOV/WebM hasta 100 MB.
 - Pago final: precio completo de la categoría, diferencia sin incluir servicio,
-  porcentaje de descuento o sin pago adicional. Se aplica el servicio habitual
+  porcentaje de descuento, sin pago adicional o precio por confirmar. Se aplica el servicio habitual
   a cada cobro mayor a cero.
 - Las condiciones se congelan con la primera preinscripción o intento de pago. Cada pago
   inicial conserva precio final, reglas, términos y aceptación en su snapshot.
@@ -33,6 +33,15 @@ El organizador clasifica o rechaza entregas recibidas. Al clasificar se reserva
 el cupo de la categoría; `CompetitionParticipant` se crea únicamente al
 aprobar el segundo pago o inmediatamente si el monto adicional es cero.
 Las decisiones revisadas quedan bloqueadas y conservan autor y fecha.
+
+Con precio por confirmar, `final_amount` permanece nulo: se puede pagar y
+entregar el Open, pero clasificar no confirma un cupo gratuito ni habilita un
+cobro final. El organizador publica una vez los importes adicionales de todas
+las categorías en `/open/final-prices`; quedan registrados autor y fecha.
+Los atletas aceptan ese valor al iniciar el pago final. La publicación actualiza
+las entradas pendientes y los pagos del Open aprobados después también toman
+ese precio, sin reescribir el snapshot del intento original. Publicar cero
+confirma explícitamente sin cobro adicional a los atletas ya clasificados.
 
 Los intentos `open` y `open_final` conservan ambos movimientos. Finanzas suma
 el Open desde los intentos y el pago final desde la inscripción confirmada,

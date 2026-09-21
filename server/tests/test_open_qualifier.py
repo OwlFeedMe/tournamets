@@ -14,7 +14,7 @@ from models import (Competition, CompetitionCategory, CompetitionParticipant, Co
                     OpenEntry, Participant, PlatformConfig, EnrollmentAnswerItem)
 from routers.open_qualifier import (Checkout, Decision, OpenConfig, Submission, apply_open_payment,
                                     checkout, configure_open, decide, my_open, submit, upload_video,
-                                    preregister, Preregistration, list_entries)
+                                    preregister, Preregistration, list_entries, FinalPrices, publish_final_prices)
 from routers.enrollments import _apply_bold_notification, free_enroll, self_enroll, stage_test_payment_enroll, set_enrolled
 from services.open_qualifier import final_price, entry_state, config_for
 
@@ -156,6 +156,59 @@ class OpenQualifierTests(unittest.TestCase):
         for mode, expected in [('full', 200000), ('difference', 150000), ('discount', 150000), ('none', 0)]:
             self.assertEqual(final_price(200000, 50000, mode, 25), expected)
         self.assertEqual(final_price(100, 200, 'difference', 0), 0)
+
+    def test_unpublished_final_price_allows_open_but_never_confirms_for_free(self):
+        self.configure(mode='pending')
+        self.assertIsNone(self.preregister()['final_amount'])
+        self.pay(); self.deliver()
+        result = decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        self.assertEqual(result['status'], 'qualified')
+        self.assertIsNone(result['final_amount'])
+        self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
+        with self.assertRaises(HTTPException):
+            self.pay(final=True)
+        publish_final_prices(1, FinalPrices(prices={'RX': 125000}), self.db, self.admin)
+        self.assertEqual(my_open(1, self.db, self.user)['final_amount'], 125000)
+        self.pay(final=True)
+        self.assertEqual(my_open(1, self.db, self.user)['status'], 'confirmed')
+
+    def test_published_prices_apply_to_future_entries_and_are_immutable(self):
+        self.configure(mode='pending')
+        publish_final_prices(1, FinalPrices(prices={'RX': 125000}), self.db, self.admin)
+        self.assertEqual(self.preregister()['final_amount'], 125000)
+        self.pay()
+        self.assertEqual(my_open(1, self.db, self.user)['final_amount'], 125000)
+        with self.assertRaises(HTTPException):
+            publish_final_prices(1, FinalPrices(prices={'RX': 99000}), self.db, self.admin)
+        with self.assertRaises(HTTPException):
+            self.configure(mode='pending')
+
+    def test_publishing_final_prices_requires_all_categories_and_access(self):
+        self.configure(mode='pending')
+        for prices in [{}, {'RX': -1}, {'RX': 100000001}, {'RX': 1000, 'unknown': 1000}]:
+            with self.assertRaises(HTTPException):
+                publish_final_prices(1, FinalPrices(prices=prices), self.db, self.admin)
+        with self.assertRaises(HTTPException):
+            publish_final_prices(1, FinalPrices(prices={'RX': 1000}), self.db, {'role': 'organizer', 'sub': '999'})
+
+    def test_explicit_zero_publication_confirms_already_qualified_entry(self):
+        self.configure(mode='pending')
+        self.pay(); self.deliver()
+        decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        publish_final_prices(1, FinalPrices(prices={'RX': 0}), self.db, self.admin)
+        self.assertEqual(my_open(1, self.db, self.user)['status'], 'confirmed')
+
+    def test_late_open_approval_uses_published_price_without_rewriting_payment_snapshot(self):
+        self.configure(mode='pending')
+        with patch.dict(os.environ, {'APP_ENV': 'production', 'BOLD_IDENTITY_KEY': 'test', 'BOLD_SECRET_KEY': 'test'}), patch('routers.enrollments._ensure_bold_payments_enabled'):
+            checkout(1, Checkout(categoria='RX', terms_accepted=True), self.db, self.user)
+        intent = self.db.exec(select(CompetitionPaymentIntent)).first()
+        original_snapshot = intent.enrollment_answers
+        publish_final_prices(1, FinalPrices(prices={'RX': 125000}), self.db, self.admin)
+        apply_open_payment(self.db, intent, 'approved', 'test', intent.payment_amount_total)
+        self.db.commit()
+        self.assertEqual(my_open(1, self.db, self.user)['final_amount'], 125000)
+        self.assertEqual(intent.enrollment_answers, original_snapshot)
 
     def test_paid_open_does_not_enroll_in_competition(self):
         self.pay()

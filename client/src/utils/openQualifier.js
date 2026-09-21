@@ -22,5 +22,6 @@ export function openSubmissionState(config, now = Date.now()) {
 }
 
 export function openFinalPaymentLabel(config) {
+  if (config.final_payment === 'pending') return config.final_prices ? 'El valor adicional está publicado por categoría. Consúltalo antes de confirmar tu cupo.' : 'Valor adicional por confirmar. El organizador publicará el precio antes de habilitar el pago del Qualifier.'
   return ({ full: 'Al clasificar pagas el precio completo de tu categoría.', difference: 'Al clasificar pagas la diferencia entre tu categoría y el Open, sin descontar cargos de servicio.', discount: `Al clasificar tienes ${config.discount_percent}% de descuento sobre el precio completo de tu categoría.`, none: 'Si clasificas, no tienes que pagar un valor adicional.' })[config.final_payment]
 }

@@ -652,6 +652,7 @@ export default function CompetitionLanding() {
     [competition, phases]
   )
   const nextMilestone = useMemo(() => getNextMilestone(scheduleItems), [scheduleItems])
+  const landingSections = useMemo(() => parseLandingSections(competition?.landing_sections), [competition?.landing_sections])
   const stats = payload?.stats || {}
   const status = getStatusLabel(competition, theme)
   const socialLinks = useMemo(() => {
@@ -1239,6 +1240,19 @@ export default function CompetitionLanding() {
               </div>
             </section>
             )}
+
+            {landingSections && Object.entries(landingSections).filter(([, section]) => section.title || section.intro || section.items.length).map(([key, section]) => (
+              <section key={key} aria-label={section.title || 'Información de la competencia'} className="fr-cut-card" style={{ border: `1px solid ${theme.border}`, background: theme.surface, padding: isMobile ? 18 : 24, marginBottom: 18, minWidth: 0 }}>
+                {section.title && <h2 style={{ margin: '0 0 12px', fontSize: isMobile ? 24 : 30, overflowWrap: 'anywhere' }}>{section.title}</h2>}
+                {section.intro && <p style={{ color: theme.textSecondary, lineHeight: 1.7, whiteSpace: 'pre-wrap', margin: '0 0 18px' }}>{section.intro}</p>}
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(2, minmax(0, 1fr))', gap: 14 }}>
+                  {section.items.map(item => <article key={item.id} style={{ background: theme.background, border: `1px solid ${theme.border}`, borderRadius: 6, padding: 18, minWidth: 0, overflowWrap: 'anywhere' }}>
+                    <h3 style={{ margin: '0 0 10px', color: theme.accent, fontSize: 18 }}>{item.title}</h3>
+                    {item.body && <p style={{ margin: 0, color: theme.textSecondary, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{item.body}</p>}
+                  </article>)}
+                </div>
+              </section>
+            ))}
 
             {ticketingActive ? (
               <section
