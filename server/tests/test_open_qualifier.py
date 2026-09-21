@@ -81,9 +81,50 @@ class OpenQualifierTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             self.deliver()
         self.assertEqual(caught.exception.status_code, 403)
+
         with self.assertRaises(HTTPException) as caught:
             upload_video(1, UploadFile(filename='v.mp4', file=io.BytesIO(b'0000ftypvideo')), self.db, self.user)
         self.assertEqual(caught.exception.status_code, 403)
+
+    def test_organizer_assigns_category_only_after_open_review(self):
+        self.db.add(CompetitionCategory(competition_id=1, nombre='Male', enrollment_price=200000))
+        self.db.commit()
+        self.configure(mode='pending', category_assignment='organizer', category_divisions={'RX': 'Femenino', 'Male': 'Masculino'})
+        with self.assertRaises(HTTPException):
+            checkout(1, Checkout(terms_accepted=True, stage_test=True), self.db, self.user)
+        for body in [Preregistration(terms_accepted=True), Preregistration(categoria='RX', division='Femenino', terms_accepted=True)]:
+            with self.assertRaises(HTTPException):
+                preregister(1, body, self.db, self.user)
+        result = preregister(1, Preregistration(division='Femenino', terms_accepted=True), self.db, self.user)
+        self.assertIsNone(result['categoria'])
+        self.assertEqual(result['division'], 'Femenino')
+        checkout(1, Checkout(terms_accepted=True, stage_test=True), self.db, self.user)
+        self.assertIsNone(my_open(1, self.db, self.user)['categoria'])
+        self.deliver()
+        for category in [None, 'Male']:
+            with self.assertRaises(HTTPException):
+                decide(1, 1, Decision(qualify=True, categoria=category), self.db, self.admin)
+        publish_final_prices(1, FinalPrices(prices={'RX': 150000, 'Male': 180000}), self.db, self.admin)
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)).final_amount)
+        decide(1, 1, Decision(qualify=True, categoria='RX'), self.db, self.admin)
+        entry = self.db.get(OpenEntry, (1, 1))
+        self.assertEqual((entry.categoria, entry.final_amount, entry.status), ('RX', 150000, 'qualified'))
+        self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
+        checkout(1, Checkout(final=True, terms_accepted=True, stage_test=True), self.db, self.user)
+        self.assertEqual(self.db.get(CompetitionParticipant, (1, 1)).categoria, 'RX')
+        with self.assertRaises(HTTPException):
+            decide(1, 1, Decision(qualify=True, categoria='Male'), self.db, self.admin)
+
+    def test_organizer_assignment_keeps_unknown_qualifier_price_pending(self):
+        self.configure(mode='pending', category_assignment='organizer', category_divisions={'RX': 'Femenino'})
+        preregister(1, Preregistration(division='Femenino', terms_accepted=True), self.db, self.user)
+        checkout(1, Checkout(terms_accepted=True, stage_test=True), self.db, self.user)
+        self.deliver()
+        decide(1, 1, Decision(qualify=True, categoria='RX'), self.db, self.admin)
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)).final_amount)
+        self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
+        publish_final_prices(1, FinalPrices(prices={'RX': 100000}), self.db, self.admin)
+        self.assertEqual(self.db.get(OpenEntry, (1, 1)).final_amount, 100000)
 
     def test_preregistration_can_pay_later_after_new_registration_closes(self):
         first = self.preregister()

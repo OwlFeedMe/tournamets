@@ -63,3 +63,7 @@ permite `paid_at` nulo y conserva la fecha de las entradas existentes en `regist
 Pruebas: `python -m unittest discover -s server/tests -q` con `PYTHONPATH=server`
 y una `DATABASE_URL` PostgreSQL de prueba para importar el módulo de conexión.
 Los casos del Open usan una base SQLite aislada; nunca conectan a esa URL.
+
+## Categoria asignada por organizacion
+
+OpenConfig.category_assignment=organizer permite preinscripcion solo con division Femenino o Masculino. category_divisions vincula cada categoria individual a su rama. La categoria y el precio final quedan pendientes hasta la revision del Open. Al clasificar, el organizador debe asignar una categoria de la misma rama; el servidor valida la asignacion y los cupos. El modo athlete sigue siendo el predeterminado para otras competencias. La migracion 0046 agrega division y permite categoria nula en OpenEntry.

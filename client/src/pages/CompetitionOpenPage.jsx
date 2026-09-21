@@ -15,6 +15,7 @@ export default function CompetitionOpenPage() {
   const [data, setData] = useState(null)
   const [entry, setEntry] = useState(null)
   const [category, setCategory] = useState('')
+  const [division, setDivision] = useState('')
   const [video, setVideo] = useState('')
   const [answers, setAnswers] = useState({})
   const [registrationAnswers, setRegistrationAnswers] = useState({})
@@ -38,7 +39,7 @@ export default function CompetitionOpenPage() {
     if (session && config.enabled) {
       const mine = (await api.get(`/competitions/${competitionId}/open/me`)).data
       setEntry(mine)
-      if (mine) { setVideo(mine.video_url || ''); setAnswers(mine.answers || {}); setCategory(mine.categoria) }
+      if (mine) { setVideo(mine.video_url || ''); setAnswers(mine.answers || {}); setCategory(mine.categoria || ''); setDivision(mine.division || '') }
     }
   }, [competitionId, session])
   useEffect(() => { reload().catch(err => setMessage(err.response?.data?.detail || 'No se pudo cargar el Open')) }, [reload])
@@ -53,6 +54,7 @@ export default function CompetitionOpenPage() {
   }, [competitionId])
   if (!data) return <main className="fr-open"><p>{message || 'Cargando Open…'}</p></main>
   const cfg = data.config
+  const organizerAssignsCategory = cfg.category_assignment === 'organizer'
   if (!cfg.enabled) return <main className="fr-open"><h1>Esta competencia no tiene Open</h1><Link to={`/competitions/${competitionId}/register`}>Ir a inscripción</Link></main>
   const submissionState = openSubmissionState(cfg, now)
   const closed = submissionState === 'closed'
@@ -61,7 +63,7 @@ export default function CompetitionOpenPage() {
   const registration = openRegistrationState(data, cfg, data.categories)
   const canSubmit = entry && ['paid', 'submitted'].includes(entry.status) && submissionState === 'open'
   const full = Number(data.categories.find(c => c.nombre === category)?.enrollment_price || 0)
-  const finalAmount = entry ? entry.final_amount : cfg.final_payment === 'pending' ? (cfg.final_prices?.[category] ?? null) : (cfg.final_payment === 'none' ? 0 : cfg.final_payment === 'difference' ? Math.max(0, full - cfg.price) : cfg.final_payment === 'discount' ? Math.round(full * (100 - cfg.discount_percent) / 100) : full)
+  const finalAmount = entry ? entry.final_amount : organizerAssignsCategory ? null : cfg.final_payment === 'pending' ? (cfg.final_prices?.[category] ?? null) : (cfg.final_payment === 'none' ? 0 : cfg.final_payment === 'difference' ? Math.max(0, full - cfg.price) : cfg.final_payment === 'discount' ? Math.round(full * (100 - cfg.discount_percent) / 100) : full)
   const base = finalPayment ? entry.final_amount : cfg.price
   const fee = base > 0 ? Math.max(Number(pricing.min_platform_fee), Math.round(base * Number(pricing.default_platform_fee_rate))) : 0
   const questions = JSON.parse(data.enrollment_questions || '[]')
@@ -69,7 +71,7 @@ export default function CompetitionOpenPage() {
     event.preventDefault()
     act(async () => {
       const result = (await api.post(`/competitions/${competitionId}/open/checkout`, {
-        categoria: category, terms_accepted: accepted, final: finalPayment, stage_test: isStageEnvironment,
+        categoria: organizerAssignsCategory ? '' : category, terms_accepted: accepted, final: finalPayment, stage_test: isStageEnvironment,
         answers: questions.map(q => ({ question_id: q.id, answer: registrationAnswers[q.id] || '' })),
       })).data
       if (result.stage_test) { await reload(); setMessage('Pago de prueba aprobado en stage.'); setAccepted(false) }
@@ -80,7 +82,7 @@ export default function CompetitionOpenPage() {
     event.preventDefault()
     act(async () => {
       await api.post(`/competitions/${competitionId}/open/preregister`, {
-        categoria: category, terms_accepted: accepted,
+        ...(organizerAssignsCategory ? { division } : { categoria: category }), terms_accepted: accepted,
         answers: questions.map(q => ({ question_id: q.id, answer: registrationAnswers[q.id] || '' })),
       })
       await reload(); setAccepted(false)
@@ -93,7 +95,7 @@ export default function CompetitionOpenPage() {
     {message && <div role="status" className="fr-open-message">{message}</div>}
     <OpenPublicSummary competition={data} config={cfg} categories={data.categories} pricing={pricing} showLink={false} />
     {submissionState === 'upcoming' && <p role="status">Podrás enviar tu Open desde el {new Date(cfg.submissions_open_at).toLocaleString('es-CO', { timeZone: data.timezone || 'America/Bogota' })} ({data.timezone || 'America/Bogota'}). Puedes preinscribirte y pagar antes de esa fecha.</p>}
-    {entry && <section className="fr-open-card"><h2 className="fr-open-status">{openStatus[entry.status]}</h2><p>{entry.categoria} · {preregistered ? 'Open pendiente de pago' : `Open pagado: ${money(entry.open_price)}`}</p>
+    {entry && <section className="fr-open-card"><h2 className="fr-open-status">{openStatus[entry.status]}</h2><p>{entry.categoria || `${entry.division} · Categoría por asignar según el Open`} · {preregistered ? 'Open pendiente de pago' : `Open pagado: ${money(entry.open_price)}`}</p>
       {preregistered && <p>Tu preinscripción está guardada. Paga el Open antes del cierre de entregas para participar.</p>}
       {entry.status === 'qualified' && <p>{entry.final_amount == null ? 'Fuiste seleccionado. El precio del Qualifier está por confirmar; el pago aún no está habilitado.' : 'Fuiste seleccionado. Completa el pago para confirmar tu cupo.'}</p>}
       {entry.status === 'missing' && <p>El plazo terminó sin una entrega. No clasificaste a la competencia.</p>}
@@ -103,13 +105,14 @@ export default function CompetitionOpenPage() {
     {!session ? <Link className="fr-open-button" to="/login">Crear cuenta o iniciar sesión para preinscribirme</Link> : ((!entry && registration.available) || (preregistered && !closed && !!data.activa) || (finalPayment && entry.final_amount != null)) && <form className="fr-open-card" onSubmit={!entry ? preregister : pay}>
       <h2>{finalPayment ? 'Confirma tu cupo' : preregistered ? 'Paga tu Open' : 'Preinscríbete gratis'}</h2>
       {!entry && <p>Quedarás registrado en esta competencia sin pagar. Cuando decidas participar, vuelve para pagar y enviar tu Open dentro del plazo.</p>}
-      {!entry && <label>Categoría<select required disabled={busy || !!bold} value={category} onChange={e => setCategory(e.target.value)}><option value="">Selecciona tu categoría</option>{data.categories.filter(c => c.registration_enabled && c.modality === 'individual').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>}
+      {organizerAssignsCategory && <p>No eliges tu nivel. La organización asignará tu categoría según el resultado del Open.</p>}
+      {!entry && (organizerAssignsCategory ? <label>Rama<select required disabled={busy} value={division} onChange={e => setDivision(e.target.value)}><option value="">Selecciona femenino o masculino</option>{['Femenino', 'Masculino'].filter(group => data.categories.some(c => c.registration_enabled && cfg.category_divisions?.[c.nombre] === group)).map(group => <option key={group} value={group}>{group}</option>)}</select></label> : <label>Categoría<select required disabled={busy || !!bold} value={category} onChange={e => setCategory(e.target.value)}><option value="">Selecciona tu categoría</option>{data.categories.filter(c => c.registration_enabled && c.modality === 'individual').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>)}
       <div className="fr-open-grid"><p>{finalPayment ? 'Clasificación' : 'Open'}: <strong>{money(base)}</strong><br />Servicio: {money(fee)}<br /><strong>{!entry ? 'Total cuando pagues' : 'Total'}: {money(base + fee)}</strong></p>
         <p>Al clasificar: <strong>{finalAmount == null ? 'Por confirmar' : category ? money(finalAmount) : 'Selecciona una categoría'}</strong>{finalAmount > 0 && ' + servicio'}<br />{({ full: 'Precio completo de la categoría.', difference: 'Se descuenta lo pagado por el Open (sin cargos de servicio).', discount: `${cfg.discount_percent}% de descuento sobre el precio completo.`, none: 'Sin pago adicional.', pending: finalAmount == null ? 'El precio del Qualifier se publicará antes de habilitar su pago.' : 'Valor adicional publicado para tu categoría.' })[cfg.final_payment]}</p></div>
       {!entry && questions.map(q => <label key={q.id}>{q.label}{q.required ? ' *' : ''}{q.field_type === 'image' ? <input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; act(async () => { const form = new FormData(); form.append('file', file); const result = await api.post('/enrollment-answers/upload', form); setRegistrationAnswers(old => ({ ...old, [q.id]: result.data.url })) }) }} /> : <input required={!!q.required} value={registrationAnswers[q.id] || ''} onChange={e => setRegistrationAnswers(old => ({ ...old, [q.id]: e.target.value }))} />}</label>)}
       {data.enrollment_terms_text && <details><summary>Condiciones de la competencia</summary><p style={{ whiteSpace: 'pre-wrap' }}>{data.enrollment_terms_text}</p></details>}
       <label className="fr-open-check"><input type="checkbox" required checked={accepted} disabled={!!bold} onChange={e => setAccepted(e.target.checked)} />{cfg.final_payment === 'pending' && finalAmount == null ? 'Acepto las condiciones y el plazo del Open. Entiendo que el precio del Qualifier está por confirmar y se aceptará por separado antes de pagarlo.' : 'Acepto las condiciones de la competencia, el plazo del Open, la responsabilidad de entregar y el valor adicional al clasificar.'}</label>
-      {!bold && <button disabled={busy || !accepted || (!category && !entry) || (!!entry && paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : !entry ? 'Preinscribirme gratis' : isStageEnvironment ? 'Pagar con prueba de stage' : `Continuar al pago · ${money(base + fee)}`}</button>}
+      {!bold && <button disabled={busy || !accepted || (!(organizerAssignsCategory ? division : category) && !entry) || (!!entry && paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : !entry ? 'Preinscribirme gratis' : isStageEnvironment ? 'Pagar con prueba de stage' : `Continuar al pago · ${money(base + fee)}`}</button>}
       {bold && <BoldPaymentButton config={bold} onError={onBoldError} onPaymentClick={onBoldClick} />}
       {isStageEnvironment && <p>Pago simulado de stage. No se cobra dinero real.</p>}
     </form>}

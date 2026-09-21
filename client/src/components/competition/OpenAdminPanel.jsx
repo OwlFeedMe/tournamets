@@ -5,7 +5,7 @@ import './OpenQualifier.css'
 
 export const openStatus = { preregistered: 'Preinscrito · Open pendiente de pago', paid: 'Open pagado · Entrega pendiente', submitted: 'Entrega recibida · En revisión', missing: 'Sin entrega', qualified: 'Clasificado · Pago pendiente', rejected: 'No clasificado', confirmed: 'Cupo confirmado' }
 export const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value || 0)
-const defaults = { enabled: false, price: 0, deadline: '', submissions_open_at: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [] }
+const defaults = { enabled: false, price: 0, deadline: '', submissions_open_at: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [], category_assignment: 'athlete', category_divisions: {} }
 
 export default function OpenAdminPanel({ competition, reload }) {
   const [config, setConfig] = useState(defaults)
@@ -15,6 +15,7 @@ export default function OpenAdminPanel({ competition, reload }) {
   const [filter, setFilter] = useState('')
   const [categories, setCategories] = useState([])
   const [finalPrices, setFinalPrices] = useState({})
+  const [assignments, setAssignments] = useState({})
   const tz = competitionTimeZone(competition.timezone)
   const load = async () => {
     const cfg = JSON.parse(competition.open_config || '{}')
@@ -38,7 +39,7 @@ export default function OpenAdminPanel({ competition, reload }) {
     })
   }
   const decision = (entry, qualify) => act(async () => {
-    await api.post(`/competitions/${competition.id}/open/entries/${entry.user_id}/decision`, { qualify })
+    await api.post(`/competitions/${competition.id}/open/entries/${entry.user_id}/decision`, { qualify, categoria: config.category_assignment === 'organizer' ? assignments[entry.user_id] || null : null })
     await load(); await reload(); setMessage(qualify ? 'Clasificación registrada' : 'Entrega marcada como no clasificada')
   })
   return <section className="fr-open">
@@ -49,6 +50,8 @@ export default function OpenAdminPanel({ competition, reload }) {
       <p>La preinscripción es gratuita y queda visible aquí. El pago habilita la participación en el Open. Solo quienes clasifiquen y completen el pago final tendrán un cupo en la competencia.</p>
       <p>Disponible para categorías individuales. Configura el Open antes de recibir inscripciones; las condiciones se bloquean con la primera preinscripción o intento de pago.</p>
       {config.enabled && <>
+        <label>Asignación de categoría<select disabled={entries.length > 0} value={config.category_assignment} onChange={e => change('category_assignment', e.target.value)}><option value="athlete">El atleta elige al registrarse</option><option value="organizer">El organizador asigna después del Open</option></select></label>
+        {config.category_assignment === 'organizer' && <div className="fr-open-grid">{categories.map(c => <label key={c.id}>{c.nombre}<select required disabled={entries.length > 0} value={config.category_divisions?.[c.nombre] || ''} onChange={e => change('category_divisions', { ...config.category_divisions, [c.nombre]: e.target.value })}><option value="">Selecciona rama</option><option>Femenino</option><option>Masculino</option></select></label>)}</div>}
         <div className="fr-open-grid">
           <label>Precio del Open (COP)<input type="number" min="1" max="100000000" required value={config.price} onChange={e => change('price', Number(e.target.value))} /></label>
           <label>Apertura de entregas ({tz})<input type="datetime-local" value={utcToCompetitionDateTimeInput(config.submissions_open_at, tz)} onChange={e => change('submissions_open_at', competitionDateTimeInputToUtc(e.target.value, tz))} /><small>Sin fecha: se puede entregar desde el pago aprobado.</small></label>
@@ -87,13 +90,14 @@ export default function OpenAdminPanel({ competition, reload }) {
       <label>Estado<select value={filter} onChange={e => setFilter(e.target.value)}><option value="">Todos</option>{Object.entries(openStatus).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       {!entries.length && <p>Aún no hay preinscripciones al Open.</p>}
       {entries.filter(e => !filter || e.status === filter).map(entry => <article className="fr-open-card" key={entry.user_id}>
-        <h3>{entry.name} · {entry.categoria}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
+        <h3>{entry.name} · {entry.categoria || `${entry.division} · Categoría por asignar`}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
         <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {entry.final_amount == null ? 'Por confirmar' : money(entry.final_amount)}</p>
         {entry.registered_at && <p>Preinscripción: {new Date(entry.registered_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.submitted_at && <p>Entregado: {new Date(entry.submitted_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver video</a>}
         {config.fields.map(field => <p key={field.id}><strong>{field.label}:</strong> {entry.answers[field.id] || '—'}</p>)}
-        {entry.status === 'submitted' && <div className="fr-open-actions"><button disabled={busy} onClick={() => decision(entry, true)}>Clasificar</button><button disabled={busy} className="secondary" onClick={() => decision(entry, false)}>No clasifica</button></div>}
+        {entry.status === 'submitted' && config.category_assignment === 'organizer' && <label>Asignar categoría según el Open<select required value={assignments[entry.user_id] || ''} onChange={e => setAssignments(old => ({ ...old, [entry.user_id]: e.target.value }))}><option value="">Selecciona la categoría evaluada</option>{categories.filter(c => config.category_divisions?.[c.nombre] === entry.division).map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>}
+        {entry.status === 'submitted' && <div className="fr-open-actions"><button disabled={busy || (config.category_assignment === 'organizer' && !assignments[entry.user_id])} onClick={() => decision(entry, true)}>Clasificar</button><button disabled={busy} className="secondary" onClick={() => decision(entry, false)}>No clasifica</button></div>}
       </article>)}
     </div>}
   </section>

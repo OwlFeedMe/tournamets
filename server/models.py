@@ -888,7 +888,8 @@ class OpenEntry(SQLModel, table=True):
     __tablename__ = "competition_open_entries"
     competition_id: int = Field(foreign_key="competitions.id", primary_key=True)
     user_id: int = Field(foreign_key="participants.id", primary_key=True)
-    categoria: str
+    categoria: Optional[str] = None
+    division: Optional[str] = None
     status: str = "paid"
     open_price: int
     final_amount: Optional[int] = None

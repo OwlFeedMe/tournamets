@@ -30,6 +30,7 @@ export default function OpenPublicSummary({ competition, config, categories, pri
       <div className="fr-open-status">OPEN CLASIFICATORIO · {status.label}</div>
       <h2>Tu camino a {competition.nombre}</h2>
       <p>Preinscríbete gratis y paga el Open cuando decidas participar. Envía tu video y tus resultados dentro del plazo; el organizador elegirá quiénes avanzan a la competencia.</p>
+      {config.category_assignment === 'organizer' && <p>Solo seleccionas femenino o masculino. La organización asigna tu categoría según tu resultado del Open.</p>}
       <div className="fr-open-grid">
         <div><h3>Inscripción al Open</h3><strong style={{ fontSize: 30, color: '#FF6B00' }}>{money(config.price)}</strong><p>{fee === null ? '+ cargo de servicio' : `Servicio: ${money(fee)} · Total: ${money(config.price + fee)}`}</p></div>
         {config.submissions_open_at && <div><h3>Apertura de entregas</h3><p>{new Date(config.submissions_open_at).toLocaleString('es-CO', { timeZone: competition.timezone || 'America/Bogota', dateStyle: 'long', timeStyle: 'short' })}<br />{competition.timezone || 'America/Bogota'}</p></div>}
