@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext'
 import { isStageEnvironment, paymentsDisabled } from '../utils/environment'
 import { money } from '../components/competition/OpenAdminPanel'
 import BoldPaymentButton from '../components/enrollment/BoldPaymentButton'
+import OpenConsent from '../components/competition/OpenConsent'
+import { ArrowRight, Check, CalendarDays, ClipboardCheck, CreditCard, Upload } from 'lucide-react'
 import '../components/competition/OpenQualifier.css'
 
 export default function CompetitionOpenPage() {
@@ -92,6 +94,8 @@ export default function CompetitionOpenPage() {
   const date = value => new Date(value).toLocaleDateString('es-CO', { timeZone: tz, day: 'numeric', month: 'long' })
   const dateTime = value => new Date(value).toLocaleString('es-CO', { timeZone: tz, dateStyle: 'long', timeStyle: 'short' })
   const stateLabel = entry ? openProfileStates[`open_${entry.status}`]?.label : 'Open clasificatorio'
+  const progress = !entry ? 0 : preregistered ? 1 : ['paid', 'missing'].includes(entry.status) ? 2 : 3
+  const steps = [{ label: 'Registro', icon: ClipboardCheck }, { label: 'Pago del Open', icon: CreditCard }, { label: 'Entrega', icon: Upload }]
   return <main className="fr-open fr-open-workspace">
     <Link to={`/competitions/${competitionId}`}>← {data.nombre}</Link>
     <header className="fr-open-hero">
@@ -99,8 +103,9 @@ export default function CompetitionOpenPage() {
       <div className="fr-open-hero-title"><h1>{entry ? 'Mi Open' : 'Participa en el Open'}</h1><span className="fr-open-pill">{stateLabel}</span></div>
       <p>{preregistered ? 'Ya estás registrado. El pago del Open sigue pendiente.' : entry ? openProfileStates[`open_${entry.status}`]?.copy : 'Regístrate gratis. Paga cuando decidas participar.'}</p>
       {entry && <small>{entry.categoria || `${entry.division || ''} · Categoría por asignar según tu resultado`}</small>}
+      <ol className="fr-open-steps" aria-label="Tu avance en el Open">{steps.map((step, index) => <li key={step.label} className={index < progress ? 'complete' : index === progress ? 'current' : ''} aria-current={index === progress ? 'step' : undefined}><span className="fr-open-step-icon" aria-hidden="true">{index < progress ? <Check size={16} /> : <step.icon size={16} />}</span><span>{step.label}<small>{index < progress ? 'Completado' : index === progress ? (closed ? 'Plazo cerrado' : 'Siguiente paso') : 'Pendiente'}</small></span></li>)}</ol>
       <div className={`fr-open-window ${submissionState}`} role="status">
-        <span>{submissionState === 'upcoming' ? 'ENTREGAS PRÓXIMAMENTE' : closed ? 'ENTREGAS CERRADAS' : 'ENTREGAS ABIERTAS'}</span>
+        <span><CalendarDays size={14} aria-hidden="true" />{submissionState === 'upcoming' ? 'ENTREGAS PRÓXIMAMENTE' : closed ? 'ENTREGAS CERRADAS' : 'ENTREGAS ABIERTAS'}</span>
         <strong>{submissionState === 'upcoming' ? `Podrás enviar tu Open desde el ${date(cfg.submissions_open_at)}` : closed ? 'El plazo de entrega terminó' : `Envía tu Open antes del ${date(cfg.deadline)}`}</strong>
         <small>{submissionState === 'upcoming' ? `${dateTime(cfg.submissions_open_at)} · ` : ''}Cierre: {dateTime(cfg.deadline)} · {tz}</small>
       </div>
@@ -109,16 +114,16 @@ export default function CompetitionOpenPage() {
     </header>
     {message && <div role="status" className="fr-open-message">{message}</div>}
     {!session ? <Link className="fr-open-button" to="/login">Crear cuenta o iniciar sesión para preinscribirme</Link> : ((!entry && registration.available) || (preregistered && !closed && !!data.activa) || (finalPayment && entry.final_amount != null)) && <form className="fr-open-card" onSubmit={!entry ? preregister : pay}>
-      <h2>{finalPayment ? 'Confirma tu cupo' : preregistered ? 'Paga tu Open' : 'Preinscríbete gratis'}</h2>
+      <div className="fr-open-form-heading"><span className="fr-open-form-icon" aria-hidden="true">{entry ? <CreditCard size={22} /> : <ClipboardCheck size={22} />}</span><div><small>{finalPayment ? 'CLASIFICACIÓN' : entry ? 'PASO 02 · PAGO' : 'PASO 01 · REGISTRO'}</small><h2>{finalPayment ? 'Confirma tu cupo' : preregistered ? 'Paga tu Open' : 'Reserva tu registro'}</h2></div></div>
       {preregistered && <p>{submissionState === 'upcoming' ? 'Puedes pagar ahora y entregar a partir de la fecha indicada.' : 'Paga para habilitar tu entrega antes del cierre.'}</p>}
       {!entry && organizerAssignsCategory && <p>La organización asignará tu nivel según el resultado del Open.</p>}
       {!entry && (organizerAssignsCategory ? <label>Rama<select required disabled={busy} value={division} onChange={e => setDivision(e.target.value)}><option value="">Selecciona femenino o masculino</option>{['Femenino', 'Masculino'].filter(group => data.categories.some(c => c.registration_enabled && cfg.category_divisions?.[c.nombre] === group)).map(group => <option key={group} value={group}>{group}</option>)}</select></label> : <label>Categoría<select required disabled={busy || !!bold} value={category} onChange={e => setCategory(e.target.value)}><option value="">Selecciona tu categoría</option>{data.categories.filter(c => c.registration_enabled && c.modality === 'individual').map(c => <option key={c.id} value={c.nombre}>{c.nombre}</option>)}</select></label>)}
-      <div className="fr-open-price"><p>{finalPayment ? 'Clasificación' : 'Open'}: <strong>{money(base)}</strong><br />Servicio: {money(fee)}<br /><strong>{!entry ? 'Total cuando pagues' : 'Total'}: {money(base + fee)}</strong></p>
+      <div className="fr-open-price"><div className="fr-open-total"><span>{!entry ? 'Registro gratuito' : 'Total a pagar'}<small>{!entry ? 'Paga el Open cuando decidas participar' : 'Pesos colombianos · COP'}</small></span><strong>{money(!entry ? 0 : base + fee)}</strong></div><dl className="fr-open-breakdown"><div><dt>{finalPayment ? 'Clasificación' : 'Open'}</dt><dd>{money(base)}</dd></div><div><dt>Cargo de servicio</dt><dd>{money(fee)}</dd></div>{!entry && <div><dt>Total cuando pagues el Open</dt><dd>{money(base + fee)}</dd></div>}</dl>
         <details><summary>Pago al clasificar · {finalAmount == null ? 'Por confirmar' : money(finalAmount)}</summary><p>Al clasificar: <strong>{finalAmount == null ? 'Por confirmar' : category ? money(finalAmount) : 'Selecciona una categoría'}</strong>{finalAmount > 0 && ' + servicio'}<br />{({ full: 'Precio completo de la categoría.', difference: 'Se descuenta lo pagado por el Open (sin cargos de servicio).', discount: `${cfg.discount_percent}% de descuento sobre el precio completo.`, none: 'Sin pago adicional.', pending: finalAmount == null ? 'El precio del Qualifier se publicará antes de habilitar su pago.' : 'Valor adicional publicado para tu categoría.' })[cfg.final_payment]}</p></details></div>
       {!entry && questions.map(q => <label key={q.id}>{q.label}{q.required ? ' *' : ''}{q.field_type === 'image' ? <input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; act(async () => { const form = new FormData(); form.append('file', file); const result = await api.post('/enrollment-answers/upload', form); setRegistrationAnswers(old => ({ ...old, [q.id]: result.data.url })) }) }} /> : <input required={!!q.required} value={registrationAnswers[q.id] || ''} onChange={e => setRegistrationAnswers(old => ({ ...old, [q.id]: e.target.value }))} />}</label>)}
       {data.enrollment_terms_text && <details><summary>Condiciones de la competencia</summary><p style={{ whiteSpace: 'pre-wrap' }}>{data.enrollment_terms_text}</p></details>}
-      <label className="fr-open-check"><input type="checkbox" required checked={accepted} disabled={!!bold} onChange={e => setAccepted(e.target.checked)} />{cfg.final_payment === 'pending' && finalAmount == null ? 'Acepto las condiciones y el plazo del Open. Entiendo que el precio del Qualifier está por confirmar y se aceptará por separado antes de pagarlo.' : 'Acepto las condiciones de la competencia, el plazo del Open, la responsabilidad de entregar y el valor adicional al clasificar.'}</label>
-      {!bold && <button disabled={busy || !accepted || (!(organizerAssignsCategory ? division : category) && !entry) || (!!entry && paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : !entry ? 'Preinscribirme gratis' : isStageEnvironment ? 'Pagar con prueba de stage' : `Continuar al pago · ${money(base + fee)}`}</button>}
+      <OpenConsent accepted={accepted} onChange={setAccepted} disabled={busy || !!bold} pendingPrice={cfg.final_payment === 'pending' && finalAmount == null} registering={!entry} />
+      {!bold && <div className="fr-open-submit"><button disabled={busy || !accepted || (!(organizerAssignsCategory ? division : category) && !entry) || (!!entry && paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : !entry ? 'Registrarme gratis' : isStageEnvironment ? `Probar pago · ${money(base + fee)}` : `Continuar al pago · ${money(base + fee)}`}<ArrowRight size={18} aria-hidden="true" /></button>{!accepted && <small>Acepta las condiciones para continuar.</small>}</div>}
       {bold && <BoldPaymentButton config={bold} onError={onBoldError} onPaymentClick={onBoldClick} />}
       {isStageEnvironment && !!entry && <small className="fr-open-stage">Entorno de prueba · Este pago no cobra dinero real.</small>}
     </form>}
