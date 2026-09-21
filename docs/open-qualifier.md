@@ -29,6 +29,10 @@ editarse hasta la fecha límite o hasta que el organizador revise la entrega.
 Una entrega ausente se muestra como `missing` al vencer el plazo, sin alterar
 el pago ni iniciar reembolsos.
 
+Antes de la apertura programada, `/open/workout` permite completar instrucciones
+y campos del WOD aun con preinscripciones o pagos. No cambia precios ni fechas;
+estos campos se bloquean al abrir las entregas.
+
 El organizador clasifica o rechaza entregas recibidas. Al clasificar se reserva
 el cupo de la categoría; `CompetitionParticipant` se crea únicamente al
 aprobar el segundo pago o inmediatamente si el monto adicional es cero.

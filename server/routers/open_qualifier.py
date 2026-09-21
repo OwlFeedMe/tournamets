@@ -330,6 +330,27 @@ class FinalPrices(BaseModel):
     prices: dict[str, int]
 
 
+class WorkoutDetails(BaseModel):
+    instructions: str = Field(min_length=1, max_length=10000)
+    fields: list[OpenField] = Field(default_factory=list, max_length=30)
+
+
+@router.put("/competitions/{competition_id}/open/workout")
+def update_workout(competition_id: int, body: WorkoutDetails, session: Session = Depends(get_session), user=Depends(require_staff)):
+    require_competition_access(session, competition_id, user)
+    comp = locked_comp(session, competition_id)
+    cfg = enabled_config(comp)
+    if not cfg.get("submissions_open_at") or datetime.now(timezone.utc) >= utc(cfg["submissions_open_at"]):
+        raise HTTPException(409, "Las instrucciones y campos se bloquean al abrir las entregas")
+    if not body.instructions.strip() or len({field.id for field in body.fields}) != len(body.fields):
+        raise HTTPException(400, "Completa las instrucciones y usa identificadores unicos")
+    cfg.update(body.model_dump())
+    comp.open_config = json.dumps(cfg)
+    session.add(comp)
+    session.commit()
+    return cfg
+
+
 @router.post("/competitions/{competition_id}/open/final-prices")
 def publish_final_prices(competition_id: int, body: FinalPrices, session: Session = Depends(get_session), user=Depends(require_staff)):
     require_competition_access(session, competition_id, user)

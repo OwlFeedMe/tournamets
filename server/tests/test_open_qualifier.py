@@ -14,7 +14,8 @@ from models import (Competition, CompetitionCategory, CompetitionParticipant, Co
                     OpenEntry, Participant, PlatformConfig, EnrollmentAnswerItem)
 from routers.open_qualifier import (Checkout, Decision, OpenConfig, Submission, apply_open_payment,
                                     checkout, configure_open, decide, my_open, submit, upload_video,
-                                    preregister, Preregistration, list_entries, FinalPrices, publish_final_prices)
+                                    preregister, Preregistration, list_entries, FinalPrices, publish_final_prices,
+                                    WorkoutDetails, update_workout)
 from routers.enrollments import _apply_bold_notification, free_enroll, self_enroll, stage_test_payment_enroll, set_enrolled
 from services.open_qualifier import final_price, entry_state, config_for
 
@@ -171,6 +172,21 @@ class OpenQualifierTests(unittest.TestCase):
         self.assertEqual(my_open(1, self.db, self.user)['final_amount'], 125000)
         self.pay(final=True)
         self.assertEqual(my_open(1, self.db, self.user)['status'], 'confirmed')
+
+    def test_workout_can_be_completed_after_registration_only_before_delivery_opens(self):
+        opening = datetime.now(timezone.utc) + timedelta(hours=1)
+        self.configure(submissions_open_at=opening)
+        self.preregister(); self.pay()
+        original = config_for(self.comp)
+        details = WorkoutDetails(instructions='Official WOD', fields=[{'id': 'reps', 'label': 'Repeticiones', 'field_type': 'number', 'required': True}])
+        updated = update_workout(1, details, self.db, self.admin)
+        self.assertEqual(updated['instructions'], 'Official WOD')
+        for key in ['price', 'final_payment', 'deadline', 'submissions_open_at']:
+            self.assertEqual(updated[key], original[key])
+        with patch('routers.open_qualifier.datetime', wraps=datetime) as clock:
+            clock.now.return_value = opening
+            with self.assertRaises(HTTPException):
+                update_workout(1, details, self.db, self.admin)
 
     def test_published_prices_apply_to_future_entries_and_are_immutable(self):
         self.configure(mode='pending')

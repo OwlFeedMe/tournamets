@@ -67,7 +67,12 @@ export default function OpenAdminPanel({ competition, reload }) {
         </div>)}
         <div><button type="button" className="secondary" disabled={config.fields.length >= 30} onClick={() => change('fields', [...config.fields, { id: `f_${crypto.randomUUID().replaceAll('-', '')}`, label: '', field_type: 'number', required: true }])}>Agregar dato</button></div>
       </>}
-      <div><button disabled={busy || entries.length > 0 || !!config.final_prices}>Guardar Open</button></div>
+      <div className="fr-open-actions"><button disabled={busy || entries.length > 0 || !!config.final_prices}>Guardar Open</button>
+        {config.enabled && config.submissions_open_at && Date.now() < Date.parse(config.submissions_open_at) && <button type="button" className="secondary" disabled={busy} onClick={() => act(async () => {
+          await api.put(`/competitions/${competition.id}/open/workout`, { instructions: config.instructions, fields: config.fields })
+          await reload(); setMessage('Instrucciones y campos guardados. Los precios y fechas se conservan.')
+        })}>Guardar instrucciones y campos del WOD</button>}
+      </div>
     </form>
     {config.enabled && config.final_payment === 'pending' && !config.final_prices && <form className="fr-open-card" onSubmit={e => { e.preventDefault(); act(async () => {
       await api.post(`/competitions/${competition.id}/open/final-prices`, { prices: Object.fromEntries(categories.map(c => [c.nombre, Number(finalPrices[c.nombre])])) })
