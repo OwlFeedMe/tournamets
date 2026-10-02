@@ -7,7 +7,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session, select
 
 from access import require_competition_access
@@ -24,8 +24,18 @@ UPLOADS = Path(__file__).resolve().parents[1] / "uploads" / "open_videos"
 class OpenField(BaseModel):
     id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,50}$")
     label: str = Field(min_length=1, max_length=150)
-    field_type: str = Field(default="text", pattern="^(text|number)$")
+    field_type: str = Field(default="text", pattern="^(text|number|select)$")
     required: bool = True
+    options: list[str] = Field(default_factory=list, max_length=30)
+    minimum: float | None = None
+    integer: bool = False
+
+    @model_validator(mode="after")
+    def valid_options(self):
+        self.options = [option.strip() for option in self.options]
+        if self.field_type == "select" and (not self.options or any(not option or len(option) > 150 for option in self.options) or len(set(self.options)) != len(self.options)):
+            raise ValueError("Define opciones unicas y no vacias para la seleccion")
+        return self
 
 
 class OpenConfig(BaseModel):
@@ -399,10 +409,16 @@ def submit(competition_id: int, body: Submission, session: Session = Depends(get
             raise HTTPException(400, f"Completa: {field['label']}")
         if len(value) > 2000:
             raise HTTPException(400, "El resultado es demasiado largo")
+        if value and field["field_type"] == "select" and value not in field.get("options", []):
+            raise HTTPException(400, f"Selecciona una opcion valida: {field['label']}")
         if value and field["field_type"] == "number":
             import math
             try:
                 if not math.isfinite(float(value)):
+                    raise ValueError()
+                if field.get("minimum") is not None and float(value) < field["minimum"]:
+                    raise ValueError()
+                if field.get("integer") and not float(value).is_integer():
                     raise ValueError()
             except ValueError:
                 raise HTTPException(400, f"Ingresa un numero valido: {field['label']}")

@@ -413,6 +413,29 @@ class OpenQualifierTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 submit(1, Submission(video_url=url, answers={'score': score}), self.db, self.user)
 
+    def test_workout_variant_and_three_scores_are_required_and_validated(self):
+        self.configure(fields=[
+            {'id': 'version', 'label': 'Version', 'field_type': 'select', 'options': ['Rookie/Scaled', 'Intermediate/Advanced']},
+            {'id': 'amrap_1', 'label': 'AMRAP 1', 'field_type': 'number', 'minimum': 0, 'integer': True},
+            {'id': 'amrap_2', 'label': 'AMRAP 2', 'field_type': 'number', 'minimum': 0, 'integer': True},
+            {'id': 'rm', 'label': '1RM', 'field_type': 'number', 'minimum': 0},
+        ])
+        self.pay()
+        scores = {'version': 'Rookie/Scaled', 'amrap_1': 42, 'amrap_2': 0, 'rm': 125.5}
+        for field, invalid in [('version', ''), ('version', 'Other'), ('amrap_1', -1), ('amrap_1', 1.5), ('amrap_2', ''), ('rm', -1), ('rm', 'Infinity')]:
+            with self.subTest(field=field, value=invalid), self.assertRaises(HTTPException):
+                submit(1, Submission(video_url='https://example.com/video', answers={**scores, field: invalid}), self.db, self.user)
+        for version in ['Rookie/Scaled', 'Intermediate/Advanced']:
+            entry = submit(1, Submission(video_url='https://example.com/video', answers={**scores, 'version': version}), self.db, self.user)
+            self.assertEqual(entry['answers']['version'], version)
+            self.assertEqual(entry['answers']['amrap_2'], '0')
+            self.assertEqual(entry['categoria'], 'RX')
+
+    def test_workout_selection_requires_valid_options(self):
+        for options in [[], [''], ['A', 'A'], ['A', ' A ']]:
+            with self.assertRaises(ValueError):
+                WorkoutDetails(instructions='WOD', fields=[{'id': 'version', 'label': 'Version', 'field_type': 'select', 'options': options}])
+
     def test_edit_until_review_then_locked(self):
         self.pay(); self.deliver(); self.deliver()
         decide(1, 1, Decision(qualify=False), self.db, self.admin)
