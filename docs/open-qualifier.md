@@ -67,3 +67,23 @@ Los casos del Open usan una base SQLite aislada; nunca conectan a esa URL.
 ## Categoria asignada por organizacion
 
 OpenConfig.category_assignment=organizer permite preinscripcion solo con division Femenino o Masculino. category_divisions vincula cada categoria individual a su rama. La categoria y el precio final quedan pendientes hasta la revision del Open. Al clasificar, el organizador debe asignar una categoria de la misma rama; el servidor valida la asignacion y los cupos. El modo athlete sigue siendo el predeterminado para otras competencias. La migracion 0046 agrega division y permite categoria nula en OpenEntry.
+
+
+## Inscripción confirmada con pago
+
+`registration_requires_payment=true` deshabilita la preinscripción gratuita. El
+checkout exige las preguntas de inscripción actuales y guarda sus respuestas y
+la rama en el intento de pago. Solo una aprobación verificada crea la entrada
+pagada; los intentos rechazados o pendientes no confirman una inscripción.
+Las preinscripciones anteriores se conservan pendientes y completan sus datos
+al pagar. La autoevaluación de nivel no asigna la categoría oficial.
+
+`require_box=true` exige una afiliación activa a un box publicado del directorio
+(declarada, pendiente de aprobación o aprobada). El nombre escrito libremente
+en un perfil antiguo no basta. El box queda guardado con el pago para consulta
+del organizador, junto con las respuestas del cuestionario.
+
+Un pago anterior conserva su validez. Si le faltan los nuevos datos, el atleta
+los completa en `/open/registration-answers` antes de enviar su Open, sin otro
+cobro. `/open/registration-requirements` informa los requisitos de su cuenta.
+Ambas opciones están desactivadas por defecto para otras competencias.

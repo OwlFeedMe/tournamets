@@ -13,7 +13,8 @@ from sqlmodel import Session, select
 from access import require_competition_access
 from auth import get_current_user_id, require_auth, require_staff, is_end_user, get_current_user_optional
 from database import get_session
-from models import Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent, OpenEntry, Participant, EnrollmentAnswerItem
+from models import Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent, OpenEntry, Participant, EnrollmentAnswerItem, Gym, GymMembership
+from constants import GymMembershipStatus, GymStatus
 from services.open_qualifier import config_for, entry_state, final_price, category_final_price, utc
 
 router = APIRouter(prefix="/api", tags=["open"])
@@ -35,6 +36,8 @@ class OpenConfig(BaseModel):
     instructions: str = Field(default="", max_length=10000)
     final_payment: str = Field(default="full", pattern="^(full|difference|discount|none|pending)$")
     category_assignment: Literal["athlete", "organizer"] = "athlete"
+    registration_requires_payment: bool = False
+    require_box: bool = False
     category_divisions: dict[str, Literal["Femenino", "Masculino"]] = Field(default_factory=dict)
     discount_percent: float = Field(default=0, ge=0, le=100)
     fields: list[OpenField] = Field(default_factory=list, max_length=30)
@@ -42,6 +45,7 @@ class OpenConfig(BaseModel):
 
 class Checkout(BaseModel):
     categoria: str = ""
+    division: Literal["Femenino", "Masculino"] | None = None
     terms_accepted: bool = False
     final: bool = False
     stage_test: bool = False
@@ -130,7 +134,55 @@ def list_entries(competition_id: int, session: Session = Depends(get_session), u
     comp = require_competition_access(session, competition_id, user)
     cfg = enabled_config(comp)
     rows = session.exec(select(OpenEntry, Participant).join(Participant, OpenEntry.user_id == Participant.id).where(OpenEntry.competition_id == competition_id).order_by(OpenEntry.registered_at)).all()
-    return [{**serialize_entry(entry, cfg), "name": f"{athlete.nombre or ''} {athlete.apellido or ''}".strip()} for entry, athlete in rows]
+    return [{**serialize_entry(entry, cfg), "name": f"{athlete.nombre or ''} {athlete.apellido or ''}".strip(),
+             "registration_answers": json.loads(entry.enrollment_answers or "[]"),
+             "box": json.loads(entry.terms_snapshot or "{}").get("registration_box", {}).get("name") or athlete.box} for entry, athlete in rows]
+
+
+def registered_box(session, uid):
+    row = session.exec(select(GymMembership, Gym).join(Gym, Gym.id == GymMembership.gym_id).where(
+        GymMembership.user_id == uid, GymMembership.status.in_(list(GymMembershipStatus.ACTIVE)),
+        Gym.status == GymStatus.PUBLISHED).order_by(GymMembership.is_primary.desc(), GymMembership.id.desc())).first()
+    return {"id": row[1].id, "name": row[1].display_name} if row else None
+
+
+def missing_registration_answers(comp, entry):
+    from routers.enrollments import _parse_enrollment_questions
+    answers = {a["question_id"]: str(a.get("answer") or "").strip() for a in json.loads(entry.enrollment_answers or "[]")} if entry else {}
+    return [q["label"] for q in _parse_enrollment_questions(comp.enrollment_questions) if q.get("required") and not answers.get(q["id"])]
+
+
+@router.get("/competitions/{competition_id}/open/registration-requirements")
+def registration_requirements(competition_id: int, session: Session = Depends(get_session), user=Depends(require_auth)):
+    comp = locked_comp(session, competition_id)
+    cfg = enabled_config(comp)
+    uid = get_current_user_id(user)
+    entry = session.get(OpenEntry, (competition_id, uid))
+    box = registered_box(session, uid) if cfg.get("require_box") else None
+    saved_box = json.loads(entry.terms_snapshot or "{}").get("registration_box") if entry else None
+    return {"box": box, "needs_box": bool(cfg.get("require_box") and not (saved_box or box)),
+            "needs_answers": bool(cfg.get("registration_requires_payment") and (missing_registration_answers(comp, entry) or (entry and entry.status != "preregistered" and cfg.get("require_box") and not saved_box)))}
+
+
+@router.put("/competitions/{competition_id}/open/registration-answers")
+def update_registration_answers(competition_id: int, body: list[EnrollmentAnswerItem], session: Session = Depends(get_session), user=Depends(require_auth)):
+    from routers.enrollments import _serialize_enrollment_answers, _parse_enrollment_questions
+    comp = locked_comp(session, competition_id)
+    cfg = enabled_config(comp)
+    uid = get_current_user_id(user)
+    entry = session.get(OpenEntry, (competition_id, uid))
+    if not entry or entry.status not in {"paid", "submitted"}:
+        raise HTTPException(409, "No tienes una inscripcion pagada pendiente de revision")
+    box = registered_box(session, uid) if cfg.get("require_box") else None
+    if cfg.get("require_box") and not box:
+        raise HTTPException(400, "Registra tu box en tu perfil antes de continuar")
+    entry.enrollment_answers = _serialize_enrollment_answers(_parse_enrollment_questions(comp.enrollment_questions), body)
+    terms = json.loads(entry.terms_snapshot or "{}")
+    if box:
+        terms["registration_box"] = box
+    entry.terms_snapshot = json.dumps(terms)
+    session.add(entry); session.commit()
+    return serialize_entry(entry, cfg)
 
 
 def confirm_final(session, entry, intent=None):
@@ -167,11 +219,12 @@ def apply_open_payment(session, intent, payment_status, transaction_id, total_am
             if not entry:
                 entry = OpenEntry(competition_id=intent.competition_id, user_id=intent.user_id)
             entry.categoria = intent.categoria
+            entry.division = snapshot.get("division") or entry.division
             entry.open_price = intent.payment_base_amount
             entry.final_amount = snapshot["final_amount"]
             if entry.final_amount is None:
                 entry.final_amount = config_for(comp).get("final_prices", {}).get(intent.categoria)
-            entry.terms_snapshot = json.dumps(snapshot["config"])
+            entry.terms_snapshot = json.dumps({**snapshot["config"], "registration_box": snapshot.get("box") or {}})
             entry.enrollment_answers = snapshot.get("answers")
             entry.status = "paid"
             entry.paid_at = intent.payment_processed_at
@@ -219,11 +272,15 @@ def preregister(competition_id: int, body: Preregistration, session: Session = D
     comp = locked_comp(session, competition_id)
     cfg = enabled_config(comp)
     uid = get_current_user_id(user)
+    if cfg.get("registration_requires_payment"):
+        raise HTTPException(409, "La inscripcion al Open se confirma unicamente con el pago aprobado")
     existing = session.get(OpenEntry, (competition_id, uid))
     if existing:
         return serialize_entry(existing, cfg)
     if not body.terms_accepted:
         raise HTTPException(400, "Debes aceptar las condiciones del Open y de la competencia")
+    if cfg.get("require_box") and not registered_box(session, uid):
+        raise HTTPException(400, "Registra tu box en tu perfil antes de continuar")
     category = registration_category(session, comp, cfg, body.categoria, division=body.division)
     answers = _serialize_enrollment_answers(_parse_enrollment_questions(comp.enrollment_questions), body.answers)
     entry = OpenEntry(competition_id=competition_id, user_id=uid, categoria=category.nombre if category else None,
@@ -265,12 +322,19 @@ def checkout(competition_id: int, body: Checkout, session: Session = Depends(get
     else:
         if entry and entry.status != "preregistered":
             raise HTTPException(409, "Ya tienes una inscripcion al Open")
-        if cfg.get("category_assignment") == "organizer" and (not entry or body.categoria):
+        paid_registration = cfg.get("registration_requires_payment")
+        box = registered_box(session, uid) if cfg.get("require_box") else None
+        if cfg.get("require_box") and not box:
+            raise HTTPException(400, "Registra tu box en tu perfil antes de pagar el Open")
+        if cfg.get("category_assignment") == "organizer" and ((not entry and not paid_registration) or body.categoria):
             raise HTTPException(400, "Preinscribete sin categoria antes de pagar el Open")
-        category = registration_category(session, comp, cfg, entry.categoria if entry else body.categoria, already_registered=bool(entry), division=entry.division if entry else None)
+        division = entry.division if entry else body.division
+        category = registration_category(session, comp, cfg, entry.categoria if entry else body.categoria, already_registered=bool(entry), division=division)
         base, category_name = cfg["price"], category.nombre if category else None
-        snapshot = json.dumps({"config": cfg, "final_amount": entry.final_amount if entry else category_final_price(cfg, category),
-                               "accepted_at": datetime.now(timezone.utc).isoformat(), "competition_terms": comp.enrollment_terms_text, "answers": entry.enrollment_answers if entry else _serialize_enrollment_answers(_parse_enrollment_questions(comp.enrollment_questions), body.answers)})
+        answers = entry.enrollment_answers if entry and not paid_registration else _serialize_enrollment_answers(_parse_enrollment_questions(comp.enrollment_questions), body.answers)
+        snapshot = json.dumps({"config": cfg, "division": division, "box": box,
+                               "final_amount": entry.final_amount if entry else category_final_price(cfg, category) if category else None,
+                               "accepted_at": datetime.now(timezone.utc).isoformat(), "competition_terms": comp.enrollment_terms_text, "answers": answers})
     latest = session.exec(select(CompetitionPaymentIntent).where(CompetitionPaymentIntent.competition_id == competition_id, CompetitionPaymentIntent.user_id == uid, CompetitionPaymentIntent.purpose == purpose).order_by(CompetitionPaymentIntent.id.desc())).first()
     if _is_payment_intent_blocking(latest):
         raise HTTPException(409, "Ya tienes un pago en proceso. Consulta su estado antes de intentar otra vez")
@@ -307,6 +371,10 @@ def editable_entry(session, competition_id, user):
     entry = session.get(OpenEntry, (competition_id, get_current_user_id(user)))
     if not entry or entry.status == "preregistered":
         raise HTTPException(403, "Primero debes pagar el Open")
+    if cfg.get("registration_requires_payment") and missing_registration_answers(comp, entry):
+        raise HTTPException(400, "Completa las preguntas de inscripcion antes de entregar tu Open")
+    if cfg.get("require_box") and not json.loads(entry.terms_snapshot or "{}").get("registration_box"):
+        raise HTTPException(400, "Completa los datos de inscripcion con tu box antes de entregar tu Open")
     if cfg.get("submissions_open_at") and datetime.now(timezone.utc) < utc(cfg["submissions_open_at"]):
         raise HTTPException(409, "Las entregas del Open aun no estan abiertas")
     if entry.status not in {"paid", "submitted"} or datetime.now(timezone.utc) >= utc(cfg["deadline"]):

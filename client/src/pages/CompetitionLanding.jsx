@@ -624,12 +624,12 @@ export default function CompetitionLanding() {
       return () => { active = false }
     }
     setOpenEntryLoading(true)
-    api.get(`/competitions/${competitionId}/open/me`)
+    api.get(`/competitions/${payload.competition.id}/open/me`)
       .then(({ data }) => { if (active) setMyOpenEntry(data) })
       .catch(() => { if (active) setMyOpenEntry(null) })
       .finally(() => { if (active) setOpenEntryLoading(false) })
     return () => { active = false }
-  }, [competitionId, userId, session, payload?.competition?.open_config])
+  }, [competitionId, userId, session, payload?.competition?.id, payload?.competition?.open_config])
 
   const competition = payload?.competition || null
   const theme = useMemo(() => resolveCompetitionTheme(competition), [competition])

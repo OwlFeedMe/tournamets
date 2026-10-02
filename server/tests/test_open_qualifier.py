@@ -8,14 +8,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
+from sqlalchemy.schema import CreateTable
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from models import (Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent,
-                    OpenEntry, Participant, PlatformConfig, EnrollmentAnswerItem)
+                    OpenEntry, Participant, PlatformConfig, EnrollmentAnswerItem, Gym, GymMembership)
 from routers.open_qualifier import (Checkout, Decision, OpenConfig, Submission, apply_open_payment,
                                     checkout, configure_open, decide, my_open, submit, upload_video,
                                     preregister, Preregistration, list_entries, FinalPrices, publish_final_prices,
-                                    WorkoutDetails, update_workout)
+                                    WorkoutDetails, update_workout, registration_requirements, update_registration_answers)
 from routers.enrollments import _apply_bold_notification, free_enroll, self_enroll, stage_test_payment_enroll, set_enrolled
 from services.open_qualifier import final_price, entry_state, config_for
 
@@ -25,6 +26,10 @@ class OpenQualifierTests(unittest.TestCase):
         self.engine = create_engine('sqlite://')
         SQLModel.metadata.create_all(self.engine, tables=[m.__table__ for m in (
             Participant, Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent, OpenEntry, PlatformConfig)])
+        with self.engine.begin() as connection:
+            # Gym models duplicate index declarations; table-only fixtures avoid unrelated SQLite index collisions.
+            connection.execute(CreateTable(Gym.__table__))
+            connection.execute(CreateTable(GymMembership.__table__))
         self.db = Session(self.engine)
         self.admin = {'role': 'admin', 'sub': '9'}
         self.user = {'role': 'user', 'sub': '1'}
@@ -66,6 +71,74 @@ class OpenQualifierTests(unittest.TestCase):
 
     def preregister(self):
         return preregister(1, Preregistration(categoria='RX', terms_accepted=True), self.db, self.user)
+
+    def setup_paid_registration(self):
+        self.configure(mode='pending', category_assignment='organizer', category_divisions={'RX': 'Femenino'}, registration_requires_payment=True, require_box=True)
+        self.comp.enrollment_questions = json.dumps([{'id': 'experience', 'label': 'Experiencia', 'field_type': 'text', 'required': True}])
+        self.db.add(self.comp); self.db.commit()
+
+    def add_box(self, status='declared'):
+        self.db.add(Gym(id=1, display_name='Test Box', slug='test-box', status='published'))
+        self.db.add(GymMembership(gym_id=1, user_id=1, status=status))
+        self.db.commit()
+
+    def paid_registration_body(self, **kwargs):
+        return Checkout(division='Femenino', terms_accepted=True, answers=[EnrollmentAnswerItem(question_id='experience', answer='2 años')], **kwargs)
+
+    def test_paid_registration_requires_box_and_answers_and_blocks_free_endpoint(self):
+        self.setup_paid_registration()
+        with self.assertRaises(HTTPException):
+            preregister(1, Preregistration(division='Femenino', terms_accepted=True), self.db, self.user)
+        # A legacy free-text box does not count as a registered gym.
+        athlete = self.db.get(Participant, 1); athlete.box = 'Unlinked box'; self.db.add(athlete); self.db.commit()
+        with self.assertRaises(HTTPException):
+            checkout(1, self.paid_registration_body(stage_test=True), self.db, self.user)
+        self.add_box(status='removed')
+        with self.assertRaises(HTTPException):
+            checkout(1, self.paid_registration_body(stage_test=True), self.db, self.user)
+        membership = self.db.exec(select(GymMembership)).one(); membership.status = 'declared'; self.db.add(membership); self.db.commit()
+        with self.assertRaises(HTTPException):
+            checkout(1, Checkout(division='Femenino', terms_accepted=True, stage_test=True), self.db, self.user)
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)))
+        checkout(1, self.paid_registration_body(stage_test=True), self.db, self.user)
+        entry = self.db.get(OpenEntry, (1, 1))
+        self.assertEqual(entry.status, 'paid')
+        self.assertIsNone(entry.categoria)
+        self.assertEqual(entry.division, 'Femenino')
+        self.assertEqual(json.loads(entry.terms_snapshot)['registration_box']['name'], 'Test Box')
+        self.assertFalse(registration_requirements(1, self.db, self.user)['needs_answers'])
+        self.assertEqual(list_entries(1, self.db, self.admin)[0]['registration_answers'][0]['answer'], '2 años')
+        self.deliver()
+
+    def test_real_payment_intent_does_not_register_until_approval(self):
+        self.setup_paid_registration(); self.add_box()
+        with patch.dict(os.environ, {'BOLD_IDENTITY_KEY': 'test', 'BOLD_SECRET_KEY': 'test'}), patch('routers.enrollments._ensure_bold_payments_enabled'):
+            checkout(1, self.paid_registration_body(), self.db, self.user)
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)))
+        intent = self.db.exec(select(CompetitionPaymentIntent)).one()
+        apply_open_payment(self.db, intent, 'rejected', 'test', intent.payment_amount_total); self.db.commit()
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)))
+        apply_open_payment(self.db, intent, 'approved', 'test', intent.payment_amount_total); self.db.commit()
+        entry = self.db.get(OpenEntry, (1, 1))
+        self.assertEqual((entry.status, entry.division), ('paid', 'Femenino'))
+        self.assertEqual(json.loads(entry.enrollment_answers)[0]['answer'], '2 años')
+        apply_open_payment(self.db, intent, 'approved', 'test', intent.payment_amount_total); self.db.commit()
+        self.assertEqual(len(self.db.exec(select(OpenEntry)).all()), 1)
+
+    def test_previous_paid_entry_can_complete_new_requirements_without_repaying(self):
+        self.pay()
+        cfg = config_for(self.comp); cfg.update(registration_requires_payment=True, require_box=True)
+        self.comp.open_config = json.dumps(cfg)
+        self.comp.enrollment_questions = json.dumps([{'id': 'experience', 'label': 'Experiencia', 'field_type': 'text', 'required': True}])
+        self.db.add(self.comp); self.db.commit()
+        self.assertTrue(registration_requirements(1, self.db, self.user)['needs_answers'])
+        with self.assertRaises(HTTPException):
+            self.deliver()
+        self.add_box()
+        update_registration_answers(1, [EnrollmentAnswerItem(question_id='experience', answer='3 años')], self.db, self.user)
+        self.assertFalse(registration_requirements(1, self.db, self.user)['needs_answers'])
+        self.assertEqual(len(self.db.exec(select(CompetitionPaymentIntent)).all()), 1)
+        self.deliver()
 
     def test_free_preregistration_visible_to_admin_without_payment_or_final_slot(self):
         first = self.preregister()

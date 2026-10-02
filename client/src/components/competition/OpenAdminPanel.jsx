@@ -5,7 +5,7 @@ import './OpenQualifier.css'
 
 export const openStatus = { preregistered: 'Preinscrito · Open pendiente de pago', paid: 'Open pagado · Entrega pendiente', submitted: 'Entrega recibida · En revisión', missing: 'Sin entrega', qualified: 'Clasificado · Pago pendiente', rejected: 'No clasificado', confirmed: 'Cupo confirmado' }
 export const money = value => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value || 0)
-const defaults = { enabled: false, price: 0, deadline: '', submissions_open_at: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [], category_assignment: 'athlete', category_divisions: {} }
+const defaults = { enabled: false, price: 0, deadline: '', submissions_open_at: '', instructions: '', final_payment: 'full', discount_percent: 0, fields: [], registration_requires_payment: false, require_box: false, category_assignment: 'athlete', category_divisions: {} }
 
 export default function OpenAdminPanel({ competition, reload }) {
   const [config, setConfig] = useState(defaults)
@@ -47,9 +47,10 @@ export default function OpenAdminPanel({ competition, reload }) {
     {message && <div role="status" className="fr-open-message">{message}</div>}
     <form className="fr-open-card" onSubmit={save}>
       <label className="fr-open-check"><input type="checkbox" checked={config.enabled} disabled={entries.length > 0} onChange={e => change('enabled', e.target.checked)} />Activar Open para esta competencia</label>
-      <p>La preinscripción es gratuita y queda visible aquí. El pago habilita la participación en el Open. Solo quienes clasifiquen y completen el pago final tendrán un cupo en la competencia.</p>
+      <p>{config.registration_requires_payment ? 'La inscripción al Open solo se confirma con el pago aprobado.' : 'La preinscripción es gratuita; el pago habilita la participación en el Open.'} Los preinscritos anteriores conservan el estado pendiente de pago.</p>
       <p>Disponible para categorías individuales. Configura el Open antes de recibir inscripciones; las condiciones se bloquean con la primera preinscripción o intento de pago.</p>
       {config.enabled && <>
+        <label className="fr-open-check"><input type="checkbox" disabled={entries.length > 0} checked={config.registration_requires_payment} onChange={e => change('registration_requires_payment', e.target.checked)} />Confirmar inscripción solo con pago</label><label className="fr-open-check"><input type="checkbox" disabled={entries.length > 0} checked={config.require_box} onChange={e => change('require_box', e.target.checked)} />Exigir box registrado en el perfil</label>
         <label>Asignación de categoría<select disabled={entries.length > 0} value={config.category_assignment} onChange={e => change('category_assignment', e.target.value)}><option value="athlete">El atleta elige al registrarse</option><option value="organizer">El organizador asigna después del Open</option></select></label>
         {config.category_assignment === 'organizer' && <div className="fr-open-grid">{categories.map(c => <label key={c.id}>{c.nombre}<select required disabled={entries.length > 0} value={config.category_divisions?.[c.nombre] || ''} onChange={e => change('category_divisions', { ...config.category_divisions, [c.nombre]: e.target.value })}><option value="">Selecciona rama</option><option>Femenino</option><option>Masculino</option></select></label>)}</div>}
         <div className="fr-open-grid">
@@ -93,6 +94,8 @@ export default function OpenAdminPanel({ competition, reload }) {
         <h3>{entry.name} · {entry.categoria || `${entry.division} · Categoría por asignar`}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
         <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {entry.final_amount == null ? 'Por confirmar' : money(entry.final_amount)}</p>
         {entry.registered_at && <p>Preinscripción: {new Date(entry.registered_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
+        {entry.box && <p><strong>Box:</strong> {entry.box}</p>}
+        {entry.registration_answers?.length > 0 && <details><summary>Respuestas de inscripción</summary>{entry.registration_answers.map(a => <p key={a.question_id}><strong>{a.question_label}:</strong> {a.answer || '—'}</p>)}</details>}
         {entry.submitted_at && <p>Entregado: {new Date(entry.submitted_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver video</a>}
         {config.fields.map(field => <p key={field.id}><strong>{field.label}:</strong> {entry.answers[field.id] || '—'}</p>)}
