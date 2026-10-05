@@ -1,6 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { openLandingAction, openRegistrationState, openSubmissionState } from './openQualifier.js'
+import { openLandingAction, openRegistrationState, openSubmissionState, openFieldLabel } from './openQualifier.js'
+
+test('RM label follows the selected workout and falls back before selection', () => {
+  const field = { label: '1RM según versión (lb)', label_source: 'workout_version', label_options: { 'Rookie/Scaled': '1RM de back squat (lb)', 'Intermediate/Advanced': '1RM de clean (lb)' } }
+  assert.equal(openFieldLabel(field), field.label)
+  assert.equal(openFieldLabel(field, { workout_version: 'Rookie/Scaled' }), '1RM de back squat (lb)')
+  assert.equal(openFieldLabel(field, { workout_version: 'Intermediate/Advanced' }), '1RM de clean (lb)')
+  assert.equal(openFieldLabel({ label: 'AMRAP 1' }), 'AMRAP 1')
+})
 
 test('visitor or administrator without an entry never sees ownership language', () => {
   assert.deepEqual(openLandingAction({ available: false }, null), { mode: 'notify', label: 'Notificarme cuando abra el Open' })

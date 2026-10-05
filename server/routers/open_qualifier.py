@@ -29,6 +29,8 @@ class OpenField(BaseModel):
     options: list[str] = Field(default_factory=list, max_length=30)
     minimum: float | None = None
     integer: bool = False
+    label_source: str | None = None
+    label_options: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_options(self):

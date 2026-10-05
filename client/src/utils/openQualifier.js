@@ -1,3 +1,7 @@
+export function openFieldLabel(field, answers = {}) {
+  return field.label_options?.[answers[field.label_source]] || field.label
+}
+
 export function openRegistrationState(competition, config, categories = [], now = Date.now()) {
   if (!competition.activa) return { available: false, label: 'Open pendiente de publicación' }
   if (now >= Date.parse(config.deadline)) return { available: false, closed: true, label: 'Plazo del Open finalizado' }
