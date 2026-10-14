@@ -2,6 +2,7 @@ import { openRegistrationState, openSubmissionState, openProfileStates, openFiel
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
+import axios from 'axios'
 import { useAuth } from '../context/AuthContext'
 import { isStageEnvironment, paymentsDisabled } from '../utils/environment'
 import { money } from '../components/competition/OpenAdminPanel'
@@ -18,6 +19,8 @@ export default function CompetitionOpenPage() {
   const [category, setCategory] = useState('')
   const [division, setDivision] = useState('')
   const [video, setVideo] = useState('')
+  const [videoKey, setVideoKey] = useState(null)
+  const [uploadProgress, setUploadProgress] = useState(null)
   const [answers, setAnswers] = useState({})
   const [registrationAnswers, setRegistrationAnswers] = useState({})
   const [accepted, setAccepted] = useState(false)
@@ -43,7 +46,7 @@ export default function CompetitionOpenPage() {
       const checks = (config.require_box || config.registration_requires_payment) ? (await api.get(`/competitions/${result.data.id}/open/registration-requirements`)).data : null
       setRequirements(checks)
       if (mine?.enrollment_answers) setRegistrationAnswers(old => ({ ...Object.fromEntries(JSON.parse(mine.enrollment_answers).map(a => [a.question_id, a.answer])), ...old }))
-      if (mine) { setVideo(mine.video_url || ''); setAnswers(mine.answers || {}); setCategory(mine.categoria || ''); setDivision(mine.division || '') }
+      if (mine) { setVideo(mine.video_url || ''); setVideoKey(mine.video_object_key || null); setAnswers(mine.answers || {}); setCategory(mine.categoria || ''); setDivision(mine.division || '') }
     } else setEntry(null)
     setData({ ...result.data, config, categories: cats.data })
   }, [competitionId, session])
@@ -119,7 +122,7 @@ export default function CompetitionOpenPage() {
         <small>{submissionState === 'upcoming' ? `${dateTime(cfg.submissions_open_at)} · ` : ''}Cierre: {dateTime(cfg.deadline)} · {tz}</small>
       </div>
       {entry?.status === 'qualified' && <p>{entry.final_amount == null ? 'El precio del Qualifier está por confirmar. Te mostraremos aquí el valor cuando esté publicado.' : 'Completa el pago para confirmar tu cupo.'}</p>}
-      <div className="fr-open-actions">{entry?.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Ver mi video</a>}{entry?.status === 'confirmed' && <Link to="/my-events">Ver mi competencia</Link>}</div>
+      <div className="fr-open-actions">{entry?.video_url && <a href={entry.video_url} target="_blank" rel="noopener noreferrer">Abrir enlace del video</a>}{entry?.uploaded_video_url && <a href={entry.uploaded_video_url} target="_blank" rel="noopener noreferrer">Ver video cargado</a>}{entry?.status === 'confirmed' && <Link to="/my-events">Ver mi competencia</Link>}</div>
     </header>
     {message && <div role="status" className="fr-open-message">{message}</div>}
     {!session ? <Link className="fr-open-button" to="/login">Crear cuenta o ingresar</Link> : ((!entry && registration.available) || (preregistered && !closed && !!data.activa) || (finalPayment && entry.final_amount != null)) && <form className="fr-open-card" onSubmit={freeRegistration ? preregister : pay}>
@@ -145,20 +148,36 @@ export default function CompetitionOpenPage() {
       {questions.map(q => <label key={q.id}>{q.label}{q.required ? ' *' : ''}<textarea required={!!q.required} placeholder={q.placeholder || ''} value={registrationAnswers[q.id] || ''} onChange={e => setRegistrationAnswers(old => ({ ...old, [q.id]: e.target.value }))} /></label>)}
       <button disabled={busy}>Guardar datos</button>
     </form>}
-    {canSubmit && <form className="fr-open-card" onSubmit={e => { e.preventDefault(); act(async () => { await api.put(`/competitions/${competitionId}/open/submission`, { video_url: video, answers }); await reload(); setMessage('Entrega guardada. Puedes editarla mientras el plazo siga abierto y no haya sido revisada.') }) }}>
+    {canSubmit && <form className="fr-open-card" onSubmit={e => { e.preventDefault(); if (busy) return; act(async () => { await api.put(`/competitions/${competitionId}/open/submission`, { video_url: video, video_object_key: videoKey, answers }); await reload(); setMessage('Entrega guardada. Puedes editarla mientras el plazo siga abierto y no haya sido revisada.') }) }}>
       <h2>{entry.status === 'submitted' ? 'Editar mi entrega' : 'Enviar mi Open'}</h2>
-      <label>Enlace del video<input required value={video} onChange={e => setVideo(e.target.value)} placeholder="https://…" /></label>
-      <label>O sube tu video (MP4, MOV o WebM, máximo 100 MB)<input type="file" accept="video/mp4,video/quicktime,video/webm" disabled={busy} onChange={e => {
+      <p>Puedes agregar un enlace, cargar el video o incluir ambos. Luego guarda tu entrega con los resultados.</p>
+      <label>Enlace del video<input required={!videoKey} disabled={busy} value={video} onChange={e => setVideo(e.target.value)} placeholder="https://…" /></label>
+      <label>Cargar video (MP4, MOV o WebM, máximo 1 GB)<input type="file" accept="video/mp4,video/quicktime,video/webm" disabled={busy} onChange={e => {
         const file = e.target.files?.[0]; if (!file) return
-        if (file.size > 100 * 1024 * 1024) { setMessage('Máximo 100 MB. Para videos más grandes, comparte un enlace.'); return }
-        act(async () => { const form = new FormData(); form.append('file', file); const result = await api.post(`/competitions/${competitionId}/open/video`, form); setVideo(result.data.url); setMessage('Video cargado. Completa los resultados y guarda tu entrega.') })
+        e.target.value = ''
+        if (!file.size || file.size > 1024 * 1024 * 1024) { setMessage('El video debe pesar entre 1 byte y 1 GB. Para videos más grandes, comparte un enlace.'); return }
+        act(async () => {
+          setUploadProgress(0)
+          try {
+            const { data } = await api.post(`/competitions/${competitionId}/open/video-upload`, { filename: file.name, size: file.size })
+            const form = new FormData()
+            Object.entries(data.upload.fields).forEach(([key, value]) => form.append(key, value))
+            form.append('file', file)
+            // Separate client: never send the FinalRep bearer token to Spaces.
+            await axios.post(data.upload.url, form, { withCredentials: false, onUploadProgress: e => setUploadProgress(Math.min(99, Math.round(e.loaded * 100 / (e.total || file.size)))) })
+            setVideoKey(data.key)
+            setMessage('Video cargado. Completa los resultados y guarda tu entrega. Tu enlace se conserva.')
+          } finally { setUploadProgress(null) }
+        })
       }} /></label>
+      {uploadProgress !== null && <div role="status"><progress value={uploadProgress} max="100" /> {uploadProgress}% · Mantén esta página abierta mientras se carga el video.</div>}
+      {videoKey && <div className="fr-open-actions"><span>{videoKey === entry?.video_object_key ? 'Video guardado con tu entrega.' : 'Video cargado, pendiente de guardar la entrega.'}</span><button type="button" className="secondary" disabled={busy} onClick={() => setVideoKey(null)}>Quitar video de la entrega</button></div>}
       {cfg.fields.map(field => <label key={field.id}>{openFieldLabel(field, answers)}{field.required ? ' *' : ''}{field.field_type === 'select' ? <select required={field.required} value={answers[field.id] ?? ''} onChange={e => setAnswers(old => ({ ...old, [field.id]: e.target.value }))}><option value="">Selecciona una opción</option>{field.options.map(option => <option key={option} value={option}>{option}</option>)}</select> : <input required={field.required} type={field.field_type === 'number' ? 'number' : 'text'} min={field.minimum ?? undefined} step={field.integer ? '1' : 'any'} maxLength={2000} value={answers[field.id] ?? ''} onChange={e => setAnswers(old => ({ ...old, [field.id]: e.target.value }))} />}</label>)}
-      <button disabled={busy}>{busy ? 'Guardando…' : 'Guardar entrega'}</button>
+      <button disabled={busy || (!video.trim() && !videoKey)}>{busy ? 'Procesando…' : 'Guardar entrega'}</button>
     </form>}
     {!isStageEnvironment && (paidRegistration || bold || preregistered || (finalPayment && entry.final_amount != null)) && <div className="fr-open-payment-help"><span>¿Ya pagaste y aún no aparece?</span><button className="secondary" disabled={busy} onClick={() => act(async () => { await api.post(`/competitions/${competitionId}/payment-status/sync`).catch(err => { if (err.response?.status !== 404) throw err }); await reload(); setMessage('Estado del pago actualizado') })}>Verificar mi pago</button></div>}
     <section className="fr-open-card fr-open-details" aria-label="Información del Open">
-      <details open={canSubmit || undefined}><summary>WOD y requisitos de entrega</summary><div><p style={{ whiteSpace: 'pre-wrap' }}>{cfg.instructions}</p><p>Envía el video completo o su enlace junto con tu resultado. Archivos MP4, MOV o WebM de hasta 100 MB.</p>{cfg.fields?.length > 0 && <ul>{cfg.fields.map(field => <li key={field.id}>{openFieldLabel(field, answers)}{field.required ? ' · Obligatorio' : ' · Opcional'}</li>)}</ul>}</div></details>
+      <details open={canSubmit || undefined}><summary>WOD y requisitos de entrega</summary><div><p style={{ whiteSpace: 'pre-wrap' }}>{cfg.instructions}</p><p>Envía el video completo, su enlace o ambos junto con tus resultados. Archivos MP4, MOV o WebM de hasta 1 GB.</p>{cfg.fields?.length > 0 && <ul>{cfg.fields.map(field => <li key={field.id}>{openFieldLabel(field, answers)}{field.required ? ' · Obligatorio' : ' · Opcional'}</li>)}</ul>}</div></details>
       <details><summary>Cómo funciona la clasificación</summary><div><p>El organizador revisa tu video y resultados para determinar quiénes clasifican.{organizerAssignsCategory && ' Tu categoría la asigna la organización según tu desempeño.'}</p><p>Pagar el Open no garantiza un cupo en la competencia. {cfg.final_payment === 'pending' ? 'El precio adicional del Qualifier se publicará antes de habilitar su pago.' : 'Consulta el valor al clasificar antes de confirmar tu cupo.'}</p></div></details>
       <Link to={`/competitions/${competitionId}`}>Ver información y cronograma del evento →</Link>
     </section>

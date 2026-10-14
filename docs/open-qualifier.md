@@ -87,3 +87,22 @@ Un pago anterior conserva su validez. Si le faltan los nuevos datos, el atleta
 los completa en `/open/registration-answers` antes de enviar su Open, sin otro
 cobro. `/open/registration-requirements` informa los requisitos de su cuenta.
 Ambas opciones están desactivadas por defecto para otras competencias.
+
+## Videos privados en Spaces
+
+La entrega admite un enlace, un archivo o ambos. El archivo se carga directamente
+al bucket mediante POST firmado (una hora), con progreso y límite de 1 GB.
+Formatos: MP4, MOV y WebM. Se valida tamaño, tipo y cabecera antes de congelar
+una copia privada de la entrega. Los enlaces de consulta expiran en 30 minutos;
+recargar la página genera uno nuevo para el atleta o administrador autorizado.
+
+Configurar en el entorno del backend: `SPACES_BUCKET`, `SPACES_REGION`,
+`SPACES_ACCESS_KEY_ID` y `SPACES_SECRET_ACCESS_KEY`. Nunca versionar credenciales.
+La clave debe limitarse al bucket dedicado. CORS permite GET, HEAD y POST desde
+el origen de cada entorno, con Content-Type. Los objetos se separan por APP_ENV,
+competencia y atleta. La migración `0047_open_video_storage` añade una referencia
+nullable; conserva enlaces y archivos locales de entregas anteriores.
+
+Los objetos temporales bajo `pending/` y las copias sustituidas no se eliminan
+al editar una entrega; requieren una política de retención operativa antes de
+una limpieza. No aplicar expiración a `submitted/` sin revisar las entregas.

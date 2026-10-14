@@ -493,6 +493,40 @@ class OpenQualifierTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 upload_video(1, UploadFile(filename='open.mp4', file=io.BytesIO(b'not a video')), self.db, self.user)
 
+    def test_link_and_space_video_can_be_saved_independently_or_together(self):
+        self.pay()
+        with patch('services.open_video_storage.finalize', return_value='private-submitted-key') as finalize:
+            entry = submit(1, Submission(video_url='https://example.com/video', video_object_key='pending-key', answers={'score': 42}), self.db, self.user)
+            self.assertEqual(entry['video_url'], 'https://example.com/video')
+            self.assertEqual(entry['video_object_key'], 'private-submitted-key')
+            entry = submit(1, Submission(video_object_key='private-submitted-key', answers={'score': 43}), self.db, self.user)
+            self.assertIsNone(entry['video_url'])
+            self.assertEqual(finalize.call_count, 1)
+            with self.assertRaises(HTTPException):
+                submit(1, Submission(answers={'score': 44}), self.db, self.user)
+            self.assertEqual(self.db.get(OpenEntry, (1, 1)).video_object_key, 'private-submitted-key')
+            entry = submit(1, Submission(video_url='https://example.com/new', video_object_key=None, answers={'score': 44}), self.db, self.user)
+            self.assertIsNone(entry['video_object_key'])
+
+    def test_invalid_score_does_not_finalize_new_video(self):
+        self.pay()
+        with patch('services.open_video_storage.finalize') as finalize:
+            with self.assertRaises(HTTPException):
+                submit(1, Submission(video_object_key='pending-key', answers={}), self.db, self.user)
+            finalize.assert_not_called()
+
+    def test_presigning_requires_paid_entry_and_open_submission_window(self):
+        from routers.open_qualifier import prepare_video_upload, VideoUploadRequest
+        body = VideoUploadRequest(filename='test.mp4', size=100)
+        with patch('services.open_video_storage.prepare') as prepare:
+            with self.assertRaises(HTTPException): prepare_video_upload(1, body, self.db, self.user)
+            prepare.assert_not_called()
+            self.pay()
+            prepare_video_upload(1, body, self.db, self.user)
+            prepare.assert_called_once_with(1, 1, 'test.mp4', 100)
+            self.expires()
+            with self.assertRaises(HTTPException): prepare_video_upload(1, body, self.db, self.user)
+
     def prepared_payment(self):
         with patch.dict(os.environ, {'APP_ENV': 'production', 'PAYMENTS_ENABLED': '1', 'PAYMENT_PROVIDER': 'bold', 'BOLD_IDENTITY_KEY': 'test', 'BOLD_SECRET_KEY': 'test'}):
             result = checkout(1, Checkout(categoria='RX', terms_accepted=True), self.db, self.user)

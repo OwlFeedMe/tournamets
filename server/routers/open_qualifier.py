@@ -16,6 +16,7 @@ from database import get_session
 from models import Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent, OpenEntry, Participant, EnrollmentAnswerItem, Gym, GymMembership
 from constants import GymMembershipStatus, GymStatus
 from services.open_qualifier import config_for, entry_state, final_price, category_final_price, utc
+from services import open_video_storage
 
 router = APIRouter(prefix="/api", tags=["open"])
 UPLOADS = Path(__file__).resolve().parents[1] / "uploads" / "open_videos"
@@ -65,7 +66,8 @@ class Checkout(BaseModel):
 
 
 class Submission(BaseModel):
-    video_url: str = Field(min_length=1, max_length=2000)
+    video_url: str = Field(default="", max_length=2000)
+    video_object_key: str | None = Field(default=None, max_length=500)
     answers: dict[str, str | int | float] = Field(default_factory=dict)
 
 
@@ -93,7 +95,8 @@ def serialize_entry(entry, cfg):
         return None
     # Access mapped attributes first: commit may have expired the ORM instance.
     state = entry_state(entry, cfg)
-    return {**entry.model_dump(), "status": state, "answers": json.loads(entry.answers)}
+    return {**entry.model_dump(), "status": state, "answers": json.loads(entry.answers),
+            "uploaded_video_url": open_video_storage.playback_url(entry.video_object_key)}
 
 
 @router.get("/competitions/{competition_id}/open")
@@ -397,10 +400,13 @@ def editable_entry(session, competition_id, user):
 @router.put("/competitions/{competition_id}/open/submission")
 def submit(competition_id: int, body: Submission, session: Session = Depends(get_session), user=Depends(require_auth)):
     entry, cfg = editable_entry(session, competition_id, user)
+    body.video_url = body.video_url.strip()
+    if not body.video_url and not body.video_object_key:
+        raise HTTPException(400, "Agrega el enlace, carga un video o incluye ambos")
     parsed = urlparse(body.video_url)
     prefix = f"/uploads/open_videos/{competition_id}_{entry.user_id}_"
     local = body.video_url.startswith(prefix) and "/" not in body.video_url[len(prefix):] and ".." not in body.video_url
-    if not local and (parsed.scheme not in {"https", "http"} or not parsed.netloc):
+    if body.video_url and not local and (parsed.scheme not in {"https", "http"} or not parsed.netloc):
         raise HTTPException(400, "Agrega un enlace http/https o sube tu video")
     if local and not (UPLOADS / Path(body.video_url).name).is_file():
         raise HTTPException(400, "El video no existe")
@@ -425,7 +431,13 @@ def submit(competition_id: int, body: Submission, session: Session = Depends(get
             except ValueError:
                 raise HTTPException(400, f"Ingresa un numero valido: {field['label']}")
         answers[field["id"]] = value
-    entry.video_url, entry.answers = body.video_url, json.dumps(answers)
+    key = body.video_object_key
+    if key and key != entry.video_object_key:
+        key = open_video_storage.finalize(competition_id, entry.user_id, key)
+    # Omitted field from older clients preserves the existing upload.
+    if 'video_object_key' in body.model_fields_set:
+        entry.video_object_key = key
+    entry.video_url, entry.answers = body.video_url or None, json.dumps(answers)
     entry.status, entry.submitted_at = "submitted", datetime.now(timezone.utc)
     session.add(entry)
     session.commit()
@@ -484,6 +496,17 @@ def publish_final_prices(competition_id: int, body: FinalPrices, session: Sessio
             session.add(entry)
     session.commit()
     return cfg
+
+
+class VideoUploadRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    size: int = Field(gt=0, le=open_video_storage.MAX_BYTES)
+
+
+@router.post("/competitions/{competition_id}/open/video-upload")
+def prepare_video_upload(competition_id: int, body: VideoUploadRequest, session: Session = Depends(get_session), user=Depends(require_auth)):
+    entry, cfg = editable_entry(session, competition_id, user)
+    return open_video_storage.prepare(competition_id, entry.user_id, body.filename, body.size)
 
 
 @router.post("/competitions/{competition_id}/open/video")
