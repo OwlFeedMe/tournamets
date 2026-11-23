@@ -962,7 +962,7 @@ export function CompetitionRosterPanel({
                 }}>
                   <div style={{ display: 'grid', gap: 8 }}>
                     <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 11, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#FF6B00' }}>
-                      Inscritos confirmados
+                      Participantes
                     </div>
                     <div style={{ fontFamily: '"Bebas Neue", sans-serif', fontSize: embedded ? (isMobile ? 30 : 42) : 30, lineHeight: 1, letterSpacing: '0.04em', color: '#F5F7FA' }}>
                       {competition?.nombre || 'FinalRep'}
@@ -1117,7 +1117,7 @@ export function CompetitionRosterPanel({
                         renderRosterCollection(visibleItems, selectedCategoryKey)
                       ) : (
                         <div style={{ borderRadius: 12, border: '1px solid #252A33', background: 'rgba(255,255,255,0.03)', color: '#6B7280', textAlign: 'center', padding: '60px 24px', fontFamily: '"Barlow Condensed", sans-serif', fontSize: 16, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                          {searchQuery.trim() ? 'No se encontraron atletas' : 'Aun no hay inscritos confirmados en esta categoria'}
+                          {searchQuery.trim() ? 'No se encontraron atletas' : 'Aún no hay participantes en esta categoría'}
                         </div>
                       )}
                       {canLoadMore ? (
