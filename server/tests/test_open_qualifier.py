@@ -16,8 +16,10 @@ from models import (Competition, CompetitionCategory, CompetitionParticipant, Co
 from routers.open_qualifier import (Checkout, Decision, OpenConfig, Submission, apply_open_payment,
                                     checkout, configure_open, decide, my_open, submit, upload_video,
                                     preregister, Preregistration, list_entries, FinalPrices, publish_final_prices,
-                                    WorkoutDetails, update_workout, registration_requirements, update_registration_answers)
+                                    WorkoutDetails, update_workout, registration_requirements, update_registration_answers,
+                                    upload_avatar_photo)
 from routers.enrollments import _apply_bold_notification, free_enroll, self_enroll, stage_test_payment_enroll, set_enrolled
+from routers.enrollments import participant_competitions
 from services.open_qualifier import final_price, entry_state, config_for
 
 
@@ -77,6 +79,47 @@ class OpenQualifierTests(unittest.TestCase):
         self.assertIn('nuevos registros', error.exception.detail)
         self.pay(final=True)
         self.assertEqual(my_open(1, self.db, self.user)['status'], 'confirmed')
+
+    def test_avatar_photo_is_private_and_independent_of_final_payment(self):
+        self.pay(); self.deliver()
+        decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        cfg = config_for(self.comp); cfg['collect_avatar_photo'] = True
+        self.comp.open_config = json.dumps(cfg)
+        entry = self.db.get(OpenEntry, (1, 1)); entry.final_amount = 50000
+        self.db.add(entry); self.db.add(self.comp); self.db.commit()
+        key = 'athlete-photos/stage/1/1/' + 'a' * 32 + '.jpg'
+        file = UploadFile(filename='photo.jpg', file=io.BytesIO(b'photo'))
+        with patch('services.athlete_photo_storage.save', return_value=key) as save, patch('services.athlete_photo_storage.photo_url', return_value='https://signed.example/photo'):
+            with self.assertRaises(HTTPException) as error:
+                upload_avatar_photo(1, file, self.db, {'sub': '2', 'role': 'user'})
+            self.assertEqual(error.exception.status_code, 403)
+            save.assert_not_called()
+            result = upload_avatar_photo(1, file, self.db, self.user)
+            self.assertEqual(result['avatar_photo_url'], 'https://signed.example/photo')
+            self.assertEqual(result['status'], 'qualified')
+        rows = participant_competitions(1, self.db, self.user)
+        self.assertTrue(rows[0]['avatar_photo_uploaded'])
+        self.assertTrue(rows[0]['avatar_photo_required'])
+        self.assertEqual(rows[0]['open_final_total'], 55000)
+        self.assertNotIn('avatar_photo_object_key', rows[0])
+        self.assertIsNone(self.db.get(Participant, 1).profile_photo_url)
+        self.assertIsNone(self.db.get(CompetitionParticipant, (1, 1)))
+        self.pay(final=True)
+        self.assertTrue(participant_competitions(1, self.db, self.user)[0]['avatar_photo_uploaded'])
+
+    def test_unqualified_athlete_cannot_upload_and_storage_failure_does_not_change_state(self):
+        self.pay(); self.deliver()
+        cfg = config_for(self.comp); cfg['collect_avatar_photo'] = True
+        self.comp.open_config = json.dumps(cfg); self.db.add(self.comp); self.db.commit()
+        file = UploadFile(filename='photo.jpg', file=io.BytesIO(b'photo'))
+        with patch('services.athlete_photo_storage.save', side_effect=HTTPException(503, 'offline')) as save:
+            with self.assertRaises(HTTPException) as error: upload_avatar_photo(1, file, self.db, self.user)
+            self.assertEqual(error.exception.status_code, 403)
+            save.assert_not_called()
+            decide(1, 1, Decision(qualify=True), self.db, self.admin)
+            with self.assertRaises(HTTPException) as error: upload_avatar_photo(1, file, self.db, self.user)
+            self.assertEqual(error.exception.status_code, 503)
+        self.assertIsNone(self.db.get(OpenEntry, (1, 1)).avatar_photo_object_key)
 
     def pay(self, final=False, **kwargs):
         return checkout(1, Checkout(categoria='RX', terms_accepted=True, stage_test=True, final=final, **kwargs), self.db, self.user)

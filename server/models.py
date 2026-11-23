@@ -897,6 +897,8 @@ class OpenEntry(SQLModel, table=True):
     enrollment_answers: Optional[str] = None
     video_url: Optional[str] = None
     video_object_key: Optional[str] = None
+    avatar_photo_object_key: Optional[str] = None
+    avatar_photo_uploaded_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     answers: str = "{}"
     submitted_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     reviewed_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True)))

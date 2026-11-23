@@ -66,6 +66,21 @@ Al cambiar la etapa, actualizar también descripción, secciones de la página,
 calendario, categorías y condiciones vigentes; conservar los snapshots de las
 condiciones y las entregas anteriores.
 
+`collect_avatar_photo=true` habilita una foto privada por atleta clasificado o
+confirmado. En Inicio aparecen acciones independientes para pagar el saldo y
+subir la foto, también después del pago si falta la imagen. El enlace
+`/competitions/:id/participation#avatar-photo` requiere iniciar sesión; cada
+cuenta solo carga su propia foto. La organización puede verla en el panel del
+Open, junto a cada atleta. No reemplaza ni publica la foto de perfil.
+
+La carga autenticada admite JPG/PNG/WebP de hasta 10 MB y 40 megapíxeles. Se
+conservan las dimensiones, se corrige la orientación y se elimina metadata al
+guardar un JPEG privado en Spaces. Los enlaces de consulta duran cinco minutos;
+se generan solo en respuestas privadas del atleta o del organizador. La
+migración `0048_athlete_avatar_photo` añade dos campos nullable sin modificar
+pagos ni entregas. Las versiones sustituidas se conservan privadas y requieren
+una política de retención antes de limpiar objetos.
+
 ## Stage
 
 `stage_test=true` en `/api/competitions/:id/open/checkout` simula aprobación

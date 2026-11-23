@@ -2357,10 +2357,20 @@ def participant_competitions(
     from services.open_qualifier import config_for, entry_state
     opens = session.exec(select(OpenEntry, Competition).join(Competition, Competition.id == OpenEntry.competition_id).where(OpenEntry.user_id == user_id)).all()
     for entry, comp in opens:
+        cfg = config_for(comp)
+        photo_fields = {"avatar_photo_required": bool(cfg.get("collect_avatar_photo")),
+                        "avatar_photo_uploaded": bool(entry.avatar_photo_object_key)}
         if entry.status == "confirmed":
+            for row in merged_rows:
+                if row["id"] == comp.id:
+                    row.update(photo_fields)
+                    row["open_status"] = "confirmed"
             continue
         merged_rows = [row for row in merged_rows if row["id"] != comp.id]
+        pricing = get_pricing_config(session)
+        final_total = _price_breakdown(entry.final_amount, pricing["default_platform_fee_rate"], pricing["bold_processor_rate"], pricing["bold_processor_fixed_fee"], pricing["min_platform_fee"])["total_price"] if entry.final_amount is not None else None
         merged_rows.append({**comp.model_dump(), "enrollment_estado": "open_" + entry_state(entry, config_for(comp)),
-                            "enrollment_categoria": entry.categoria, "open_status": entry_state(entry, config_for(comp)), "payment_status": "unpaid" if entry.status == "preregistered" else "approved"})
+                            **photo_fields, "open_final_total": final_total,
+                            "enrollment_categoria": entry.categoria, "open_status": entry_state(entry, cfg), "payment_status": "unpaid" if entry.status == "preregistered" else "approved"})
     return [_with_user_id(row, user_id) for row in merged_rows]
 

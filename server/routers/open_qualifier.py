@@ -16,7 +16,7 @@ from database import get_session
 from models import Competition, CompetitionCategory, CompetitionParticipant, CompetitionPaymentIntent, OpenEntry, Participant, EnrollmentAnswerItem, Gym, GymMembership
 from constants import GymMembershipStatus, GymStatus
 from services.open_qualifier import config_for, entry_state, final_price, category_final_price, utc
-from services import open_video_storage
+from services import open_video_storage, athlete_photo_storage
 
 router = APIRouter(prefix="/api", tags=["open"])
 UPLOADS = Path(__file__).resolve().parents[1] / "uploads" / "open_videos"
@@ -44,6 +44,7 @@ class OpenField(BaseModel):
 class OpenConfig(BaseModel):
     enabled: bool = False
     public_phase: Literal["open", "competition"] = "open"
+    collect_avatar_photo: bool = False
     price: int = Field(default=0, ge=0, le=100000000)
     deadline: datetime | None = None
     submissions_open_at: datetime | None = None
@@ -97,6 +98,7 @@ def serialize_entry(entry, cfg):
     # Access mapped attributes first: commit may have expired the ORM instance.
     state = entry_state(entry, cfg)
     return {**entry.model_dump(), "status": state, "answers": json.loads(entry.answers),
+            "avatar_photo_url": athlete_photo_storage.photo_url(entry.competition_id, entry.user_id, entry.avatar_photo_object_key),
             "uploaded_video_url": open_video_storage.playback_url(entry.video_object_key)}
 
 
@@ -153,6 +155,27 @@ def list_entries(competition_id: int, session: Session = Depends(get_session), u
     return [{**serialize_entry(entry, cfg), "name": f"{athlete.nombre or ''} {athlete.apellido or ''}".strip(),
              "registration_answers": json.loads(entry.enrollment_answers or "[]"),
              "box": json.loads(entry.terms_snapshot or "{}").get("registration_box", {}).get("name") or athlete.box} for entry, athlete in rows]
+
+
+@router.post("/competitions/{competition_id}/avatar-photo")
+def upload_avatar_photo(competition_id: int, file: UploadFile = File(...),
+                        session: Session = Depends(get_session), user=Depends(require_auth)):
+    uid = get_current_user_id(user)
+    comp = session.get(Competition, competition_id)
+    if not comp:
+        raise HTTPException(404, "Competencia no encontrada")
+    cfg = enabled_config(comp)
+    if not cfg.get("collect_avatar_photo"):
+        raise HTTPException(409, "Esta competencia no está recibiendo fotos para avatar")
+    entry = session.exec(select(OpenEntry).where(OpenEntry.competition_id == competition_id, OpenEntry.user_id == uid).with_for_update()).first()
+    if not entry or entry.status not in {"qualified", "confirmed"}:
+        raise HTTPException(403, "La foto está disponible para atletas clasificados")
+    key = athlete_photo_storage.save(competition_id, uid, file.file)
+    entry.avatar_photo_object_key = key
+    entry.avatar_photo_uploaded_at = datetime.now(timezone.utc)
+    session.add(entry)
+    session.commit()
+    return serialize_entry(entry, cfg)
 
 
 def registered_box(session, uid):

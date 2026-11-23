@@ -8,6 +8,7 @@ import { isStageEnvironment, paymentsDisabled } from '../utils/environment'
 import { money } from '../components/competition/OpenAdminPanel'
 import BoldPaymentButton from '../components/enrollment/BoldPaymentButton'
 import OpenConsent from '../components/competition/OpenConsent'
+import AvatarPhotoUpload from '../components/competition/AvatarPhotoUpload'
 import { ArrowRight, Check, CalendarDays, ClipboardCheck, CreditCard, Upload } from 'lucide-react'
 import '../components/competition/OpenQualifier.css'
 
@@ -51,6 +52,11 @@ export default function CompetitionOpenPage() {
     setData({ ...result.data, config, categories: cats.data })
   }, [competitionId, session])
   useEffect(() => { reload().catch(err => setMessage(err.response?.data?.detail || 'No se pudo cargar el Open')) }, [reload])
+  useEffect(() => {
+    if (data?.config?.collect_avatar_photo && window.location.hash === '#avatar-photo') {
+      document.getElementById('avatar-photo')?.scrollIntoView({ block: 'start' })
+    }
+  }, [data?.id, data?.config?.collect_avatar_photo])
   const act = async fn => {
     setBusy(true); setMessage('')
     try { await fn() } catch (err) { setMessage(typeof err.response?.data?.detail === 'string' ? err.response.data.detail : 'Revisa los datos e intenta nuevamente') }
@@ -127,6 +133,7 @@ export default function CompetitionOpenPage() {
       {isStageEnvironment && <small className="fr-open-stage">Entorno de prueba · Este pago no cobra dinero real.</small>}
     </form>}
     {!isStageEnvironment && finalPayment && <div className="fr-open-payment-help"><span>¿Ya pagaste y aún no aparece?</span><button className="secondary" disabled={busy} onClick={() => act(async () => { await api.post(`/competitions/${data.id}/payment-status/sync`); await reload(); setMessage('Estado del pago actualizado') })}>Verificar mi pago</button></div>}
+    {cfg.collect_avatar_photo && ['qualified', 'confirmed'].includes(entry?.status) && <AvatarPhotoUpload competitionId={data.id} entry={entry} onUploaded={setEntry} />}
   </main>
   const tz = data.timezone || 'America/Bogota'
   const date = value => new Date(value).toLocaleDateString('es-CO', { timeZone: tz, day: 'numeric', month: 'long' })

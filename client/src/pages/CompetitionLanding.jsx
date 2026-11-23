@@ -686,7 +686,7 @@ export default function CompetitionLanding() {
     }
   }, [categories, platformFeeRate, minPlatformFee, competition?.open_config])
   const overviewText = (competition?.general_info_text || competition?.descripcion || '').trim()
-  const registerHref = competition ? `/competitions/${competition.id}/${competition.open_config && JSON.parse(competition.open_config).enabled ? "open" : "register"}` : '/login'
+  const registerHref = competition ? `/competitions/${competition.id}/${competitionPhase ? 'participation' : openConfig.enabled ? 'open' : 'register'}` : '/login'
   const scheduleHref = competition ? `/competitions/${competition.id}/schedule` : '/login'
   const myScheduleHref = competition ? `/competitions/${competition.id}/my-schedule` : '/login'
   const canShowPublicRoster = !!competition?.show_public_category_roster

@@ -95,6 +95,7 @@ export default function OpenAdminPanel({ competition, reload }) {
       {entries.filter(e => !filter || e.status === filter).map(entry => <article className="fr-open-card" key={entry.user_id}>
         <h3>{entry.name} · {entry.categoria || `${entry.division} · Categoría por asignar`}</h3><div className="fr-open-status">{openStatus[entry.status]}</div>
         <p>{entry.status === 'preregistered' ? 'Open pendiente' : 'Open pagado'}: {money(entry.open_price)} · Pago al clasificar: {entry.final_amount == null ? 'Por confirmar' : money(entry.final_amount)}</p>
+        {config.collect_avatar_photo && <p>Foto para avatar: {entry.avatar_photo_object_key ? entry.avatar_photo_url ? <a href={entry.avatar_photo_url} target="_blank" rel="noreferrer">Ver foto recibida</a> : 'Recibida · Vista temporalmente no disponible' : 'Pendiente'}</p>}
         {entry.registered_at && <p>Preinscripción: {new Date(entry.registered_at).toLocaleString('es-CO', { timeZone: tz })}</p>}
         {entry.box && <p><strong>Box:</strong> {entry.box}</p>}
         {entry.registration_answers?.length > 0 && <details><summary>Respuestas de inscripción</summary>{entry.registration_answers.map(a => <p key={a.question_id}><strong>{a.question_label}:</strong> {a.answer || '—'}</p>)}</details>}

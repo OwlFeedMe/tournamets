@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import ParticipationTasks from '../components/home/ParticipationTasks'
 import { useNavigate } from 'react-router-dom'
 import api from '../api/axios'
 import {
@@ -107,6 +108,7 @@ export default function Home() {
   return (
     <div style={{ minHeight: '100vh', background: homePageBg, color: '#F5F7FA' }}>
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: '24px 18px 72px' }}>
+        {session && isAthlete && <ParticipationTasks competitions={myComps} />}
         <HomeHero
           isMobile={isMobile}
           session={session}

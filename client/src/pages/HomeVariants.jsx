@@ -1,4 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
+import ParticipationTasks from '../components/home/ParticipationTasks'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, Bell, CalendarDays, CheckCircle2, Clock3, Flame, MapPin, Medal, QrCode, TrendingDown, TrendingUp, Trash2, X } from 'lucide-react'
 import api from '../api/axios'
@@ -296,6 +297,7 @@ function formatDateTime(value, timeZone) {
 
 function enrollmentBadge(status) {
   const normalized = String(status || '').toLowerCase()
+  if (normalized === 'open_qualified') return { label: 'Clasificado · Pago pendiente', color: '#00C2A8', bg: 'rgba(0,194,168,0.12)', border: 'rgba(0,194,168,0.32)' }
   if (normalized === 'confirmado') return { label: 'Cupo confirmado', color: '#22C55E', bg: 'rgba(34,197,94,0.12)', border: 'rgba(34,197,94,0.32)' }
   if (normalized === 'pago_en_verificacion') return { label: 'Pago en verificacion', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.32)' }
   if (normalized === 'pendiente') return { label: 'Inscripcion en proceso', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.32)' }
@@ -1470,6 +1472,7 @@ export default function HomeVariants({ variant = 1 }) {
       <div style={{ maxWidth: APP_CONTENT_MAX_WIDTH, margin: '0 auto', padding: isMobile ? '18px 14px 112px' : '24px 18px 72px' }}>
         {session && isAthlete && userId ? (
           <>
+            <ParticipationTasks competitions={myComps} />
             <PersonalHome
               isMobile={isMobile}
               myComps={myComps}

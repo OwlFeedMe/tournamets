@@ -134,7 +134,7 @@ class QualifiedPublicRosterTests(unittest.TestCase):
         self.assertEqual({p['id'] for p in people}, {1, 2})
         self.assertEqual(len(people), 2)
         for person in people:
-            self.assertTrue({'email', 'cedula', 'status', 'final_amount', 'terms_snapshot', 'payment_status'}.isdisjoint(person))
+            self.assertTrue({'email', 'cedula', 'status', 'final_amount', 'terms_snapshot', 'payment_status', 'avatar_photo_url', 'avatar_photo_object_key'}.isdisjoint(person))
 
     def test_open_phase_keeps_only_confirmed_and_respects_roster_switch(self):
         self.comp.open_config = json.dumps({'enabled': True})

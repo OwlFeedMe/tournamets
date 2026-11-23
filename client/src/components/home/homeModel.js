@@ -142,6 +142,7 @@ export function filterCompetitionsByQuery(items, query) {
 }
 
 export function buttonStateForCompetition(competition, isAthlete, enrollmentState) {
+  if (enrollmentState === 'open_qualified') return { label: 'Confirmar participación', tone: 'primary', disabled: false }
   if (!isAthlete) return { label: 'Quiero participar', tone: 'secondary', disabled: false }
   if (enrollmentState === 'confirmado') return { label: 'Ya inscrito', tone: 'muted', disabled: true }
   if (enrollmentState === 'pendiente') return { label: 'Inscripcion en proceso', tone: 'muted', disabled: true }

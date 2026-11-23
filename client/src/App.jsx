@@ -98,6 +98,7 @@ export default function App() {
               <Route path="/admin-command-proposal" element={<AdminCompetitionCommandProposal />} />
               <Route path="/competitions/:competitionId" element={<CompetitionLanding />} />
               <Route path="/competitions/:competitionId/inscritos" element={<CompetitionPublicRosterPage />} />
+              <Route path="/competitions/:competitionId/participation" element={<CompetitionOpenPage />} />
               <Route path="/competitions/:competitionId/schedule" element={<CompetitionSchedule scope="public" />} />
               <Route path="/competitions/:competitionId/open" element={<CompetitionOpenPage />} />
               <Route path="/competitions/:competitionId/register" element={<CompetitionEnrollmentPage />} />
