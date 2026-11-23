@@ -43,6 +43,7 @@ class OpenField(BaseModel):
 
 class OpenConfig(BaseModel):
     enabled: bool = False
+    public_phase: Literal["open", "competition"] = "open"
     price: int = Field(default=0, ge=0, le=100000000)
     deadline: datetime | None = None
     submissions_open_at: datetime | None = None
@@ -252,6 +253,8 @@ def apply_open_payment(session, intent, payment_status, transaction_id, total_am
 
 def registration_category(session, comp, cfg, category_name, already_registered=False, division=None):
     from routers.enrollments import _ensure_competition_open
+    if cfg.get("public_phase") == "competition":
+        raise HTTPException(409, "La clasificacion termino; no se aceptan nuevos registros")
     if not comp.activa or (not already_registered and not comp.enrollment_open) or datetime.now(timezone.utc) >= utc(cfg["deadline"]):
         raise HTTPException(409, "El registro al Open esta cerrado")
     if not already_registered:
@@ -383,6 +386,8 @@ def checkout(competition_id: int, body: Checkout, session: Session = Depends(get
 def editable_entry(session, competition_id, user):
     comp = locked_comp(session, competition_id)
     cfg = enabled_config(comp)
+    if cfg.get("public_phase") == "competition":
+        raise HTTPException(409, "La clasificacion termino; las entregas estan cerradas")
     entry = session.get(OpenEntry, (competition_id, get_current_user_id(user)))
     if not entry or entry.status == "preregistered":
         raise HTTPException(403, "Primero debes pagar el Open")

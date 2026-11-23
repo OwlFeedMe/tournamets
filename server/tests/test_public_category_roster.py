@@ -1,10 +1,14 @@
 from pathlib import Path
 import sys
 import unittest
+import json
+
+from sqlmodel import SQLModel, Session, create_engine
+from models import Competition, CompetitionCategory, CompetitionParticipant, OpenEntry, Participant, Team, TeamMember
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from routers.competitions import _build_public_category_roster_payload, _build_public_team_entries
+from routers.competitions import _build_public_category_roster_payload, _build_public_team_entries, get_public_competition_roster
 
 
 class PublicCategoryRosterTests(unittest.TestCase):
@@ -101,6 +105,47 @@ class PublicCategoryRosterTests(unittest.TestCase):
         self.assertNotIn("payment_reference", payload["individual"][1]["participants"][0])
         self.assertEqual(payload["teams"][0]["teams"][0]["nombre"], "Storm")
         self.assertNotIn("phone", payload["teams"][0]["teams"][0]["members"][0])
+
+
+class QualifiedPublicRosterTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine('sqlite://')
+        SQLModel.metadata.create_all(self.engine, tables=[m.__table__ for m in (
+            Participant, Competition, CompetitionCategory, CompetitionParticipant, OpenEntry, Team, TeamMember)])
+        self.db = Session(self.engine)
+        self.comp = Competition(id=1, nombre='League', activa=1, show_public_category_roster=1,
+                                open_config=json.dumps({'enabled': True, 'public_phase': 'competition'}))
+        self.db.add(self.comp)
+        self.db.add(CompetitionCategory(id=1, competition_id=1, nombre='Rookie Femenino'))
+        for uid, status in [(1, 'qualified'), (2, 'qualified'), (3, 'submitted'), (4, 'rejected'), (5, 'preregistered')]:
+            self.db.add(Participant(id=uid, cedula=str(uid), nombre=f'Athlete {uid}', apellido='Test', email='private@example.com'))
+            self.db.add(OpenEntry(competition_id=1, user_id=uid, categoria='Rookie Femenino', status=status,
+                                  open_price=50000, final_amount=50000, terms_snapshot='{}'))
+        self.db.add(CompetitionParticipant(competition_id=1, user_id=2, categoria='Rookie Femenino', estado='confirmado'))
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def test_qualified_are_public_without_duplicates_or_payment_details(self):
+        payload = get_public_competition_roster('1', self.db, None)
+        people = payload['individual'][0]['participants']
+        self.assertEqual({p['id'] for p in people}, {1, 2})
+        self.assertEqual(len(people), 2)
+        for person in people:
+            self.assertTrue({'email', 'cedula', 'status', 'final_amount', 'terms_snapshot', 'payment_status'}.isdisjoint(person))
+
+    def test_open_phase_keeps_only_confirmed_and_respects_roster_switch(self):
+        self.comp.open_config = json.dumps({'enabled': True})
+        self.db.add(self.comp); self.db.commit()
+        payload = get_public_competition_roster('1', self.db, None)
+        self.assertEqual([p['id'] for p in payload['individual'][0]['participants']], [2])
+        self.comp.show_public_category_roster = 0
+        self.db.add(self.comp); self.db.commit()
+        payload = get_public_competition_roster('1', self.db, None)
+        self.assertFalse(payload['enabled'])
+        self.assertEqual(payload['individual'][0]['participants'], [])
 
 
 if __name__ == "__main__":

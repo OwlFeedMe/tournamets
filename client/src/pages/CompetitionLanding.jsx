@@ -1,4 +1,5 @@
 import OpenPublicSummary from '../components/competition/OpenPublicSummary'
+import { isCompetitionPhase } from '../utils/openQualifier'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, ChevronDown, ChevronRight, Clock, Globe, Info, Instagram, MapPin, Medal, MessageCircle, Phone, ShieldCheck, Ticket, Users, Youtube } from 'lucide-react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -669,11 +670,12 @@ export default function CompetitionLanding() {
   const platformFeeRate = Number(pricingCfg?.default_platform_fee_rate || 0.05)
   const minPlatformFee = pricingCfg?.min_platform_fee ?? 5000
   const openConfig = JSON.parse(competition?.open_config || "{}")
+  const competitionPhase = isCompetitionPhase(openConfig)
   const categoryPricingSummary = useMemo(() => {
     const valid = categories
       .map(category => ({
         category,
-        pricing: calculateEnrollmentPricing(openConfig.enabled ? openConfig.price : category?.enrollment_price, platformFeeRate, minPlatformFee),
+        pricing: calculateEnrollmentPricing(openConfig.enabled && !competitionPhase ? openConfig.price : category?.enrollment_price, platformFeeRate, minPlatformFee),
       }))
       .filter(item => item.pricing.organizerPrice > 0)
     if (!valid.length) return null
@@ -1016,7 +1018,21 @@ export default function CompetitionLanding() {
               </div>
             </section>
 
-            {openConfig.enabled ? <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} compact entry={myOpenEntry} entryLoading={openEntryLoading} onNotify={handleInterestNotificationClick} notificationBusy={interestBusy} notificationMessage={interestMsg} /> : (
+            {competitionPhase ? (
+              <section className="fr-open" style={{ padding: 0, marginBottom: 18 }}>
+                <div className="fr-open-card" style={{ borderTop: '4px solid #FF6B00' }}>
+                  <div className="fr-open-status">CLASIFICADOS</div>
+                  <h2>Conoce a los clasificados</h2>
+                  <p>Consulta los participantes por categoría y prepárate para la competencia.</p>
+                  <div className="fr-open-actions">
+                    {canShowPublicRoster && <Link className="fr-open-button" to={`/competitions/${competition.id}?view=inscritos`}>Ver participantes</Link>}
+                    <Link to={scheduleHref}>Ver cronograma</Link>
+                    {myOpenEntry?.status === 'qualified' && <Link to={registerHref}>Confirmar mi participación</Link>}
+                    {myOpenEntry?.status === 'confirmed' && <Link to="/my-events">Ver mi participación</Link>}
+                  </div>
+                </div>
+              </section>
+            ) : openConfig.enabled ? <OpenPublicSummary competition={competition} config={openConfig} categories={categories} pricing={pricingCfg} compact entry={myOpenEntry} entryLoading={openEntryLoading} onNotify={handleInterestNotificationClick} notificationBusy={interestBusy} notificationMessage={interestMsg} /> : (
             <section
               className="fr-cut-card"
               style={{
@@ -1358,7 +1374,7 @@ export default function CompetitionLanding() {
                     cursor: 'pointer',
                   }}
                 >
-                  Ver inscritos
+                  {competitionPhase ? 'Ver participantes' : 'Ver inscritos'}
                 </button>
               </section>
             ) : null}
@@ -1430,8 +1446,8 @@ export default function CompetitionLanding() {
                               const pricing = calculateEnrollmentPricing(category.enrollment_price, platformFeeRate, minPlatformFee)
                               const { shortDescription, longDescription } = splitCategoryDescription(category.descripcion)
                               const hasAnyDescription = !!(shortDescription || longDescription)
-                              const hasPricing = pricing.totalPrice > 0
-                              const capacityLabel = categoryCapacityLabel(category)
+                              const hasPricing = !competitionPhase && pricing.totalPrice > 0
+                              const capacityLabel = competitionPhase ? 'Categoría oficial' : categoryCapacityLabel(category)
                               const capacityTone = categoryCapacityTone(category, theme)
                               const canExpand = hasAnyDescription || hasPricing
                               const CardTag = canExpand ? 'button' : 'div'
@@ -1501,7 +1517,7 @@ export default function CompetitionLanding() {
       </div>
       <InterestNotificationModal
         open={interestModalOpen}
-        openQualifier={!!openConfig.enabled}
+        openQualifier={!!openConfig.enabled && !competitionPhase}
         message={interestMsg}
         onClose={() => {
           if (interestBusy) return

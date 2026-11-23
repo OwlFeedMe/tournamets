@@ -57,6 +57,27 @@ class OpenQualifierTests(unittest.TestCase):
         values.update(kwargs)
         configure_open(1, OpenConfig(**values), self.db, self.admin)
 
+    def test_competition_phase_blocks_open_but_preserves_final_checkout(self):
+        self.pay()
+        self.deliver()
+        decide(1, 1, Decision(qualify=True), self.db, self.admin)
+        cfg = config_for(self.comp)
+        cfg['public_phase'] = 'competition'
+        self.comp.open_config = json.dumps(cfg)
+        self.db.add(self.comp); self.db.commit()
+        with self.assertRaises(HTTPException) as error:
+            self.deliver()
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn('entregas', error.exception.detail)
+        self.db.add(Participant(id=2, cedula='222222', nombre='New', apellido='Athlete'))
+        self.db.commit()
+        with self.assertRaises(HTTPException) as error:
+            checkout(1, Checkout(categoria='RX', terms_accepted=True, stage_test=True), self.db, {'role': 'user', 'sub': '2'})
+        self.assertEqual(error.exception.status_code, 409)
+        self.assertIn('nuevos registros', error.exception.detail)
+        self.pay(final=True)
+        self.assertEqual(my_open(1, self.db, self.user)['status'], 'confirmed')
+
     def pay(self, final=False, **kwargs):
         return checkout(1, Checkout(categoria='RX', terms_accepted=True, stage_test=True, final=final, **kwargs), self.db, self.user)
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { openLandingAction, openRegistrationState, openSubmissionState, openFieldLabel } from './openQualifier.js'
+import { isCompetitionPhase, openLandingAction, openRegistrationState, openSubmissionState, openFieldLabel } from './openQualifier.js'
 
 test('RM label follows the selected workout and falls back before selection', () => {
   const field = { label: '1RM según versión (lb)', label_source: 'workout_version', label_options: { 'Rookie/Scaled': '1RM de back squat (lb)', 'Intermediate/Advanced': '1RM de clean (lb)' } }
@@ -40,4 +40,14 @@ test('submission window opens at the configured instant and closes at the deadli
 
 test('unpaid preregistration stays accessible after new registrations close', () => {
   assert.equal(openLandingAction({ available: false, closed: true }, { status: 'preregistered' }).mode, 'entry')
+})
+
+test('competition phase closes the Open even before its original deadline', () => {
+  const cfg = { enabled: true, public_phase: 'competition', deadline: '2026-12-31T00:00:00Z' }
+  const now = Date.parse('2026-11-23T00:00:00Z')
+  assert.equal(isCompetitionPhase(cfg), true)
+  assert.equal(isCompetitionPhase({ enabled: true }), false)
+  assert.equal(isCompetitionPhase({ enabled: false, public_phase: 'competition' }), false)
+  assert.equal(openRegistrationState({ activa: 1, enrollment_open: 1 }, cfg, [{ registration_enabled: 1 }], now).available, false)
+  assert.equal(openSubmissionState(cfg, now), 'closed')
 })

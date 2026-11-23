@@ -2,7 +2,12 @@ export function openFieldLabel(field, answers = {}) {
   return field.label_options?.[answers[field.label_source]] || field.label
 }
 
+export function isCompetitionPhase(config) {
+  return !!config?.enabled && config.public_phase === 'competition'
+}
+
 export function openRegistrationState(competition, config, categories = [], now = Date.now()) {
+  if (isCompetitionPhase(config)) return { available: false, closed: true, label: 'Clasificación finalizada' }
   if (!competition.activa) return { available: false, label: 'Open pendiente de publicación' }
   if (now >= Date.parse(config.deadline)) return { available: false, closed: true, label: 'Plazo del Open finalizado' }
   if (competition.enrollment_end && now > Date.parse(competition.enrollment_end)) return { available: false, closed: true, label: 'Registro al Open cerrado' }
@@ -20,6 +25,7 @@ export function openLandingAction(registration, entry) {
 }
 
 export function openSubmissionState(config, now = Date.now()) {
+  if (isCompetitionPhase(config)) return 'closed'
   if (now >= Date.parse(config.deadline)) return 'closed'
   if (config.submissions_open_at && now < Date.parse(config.submissions_open_at)) return 'upcoming'
   return 'open'

@@ -34,6 +34,7 @@ from models import (
     CompetitionPhase,
     CompetitionCreate,
     CompetitionParticipant,
+    OpenEntry,
     CompetitionUpdate,
     Participant,
     Result,
@@ -959,6 +960,31 @@ def get_public_competition_roster(
             "categoria": enrollment.categoria,
             "category_name": enrollment.categoria,
         })
+
+    # Qualified athletes are public participants without implying a paid final place.
+    open_config = json.loads(competition.open_config or "{}")
+    if open_config.get("enabled") and open_config.get("public_phase") == "competition":
+        listed_ids = {row["id"] for row in individual_rows}
+        qualified = session.exec(
+            select(OpenEntry, Participant)
+            .join(Participant, Participant.id == OpenEntry.user_id)
+            .where(OpenEntry.competition_id == competition.id, OpenEntry.status == "qualified")
+        ).all()
+        for entry, participant in qualified:
+            if participant.id in listed_ids:
+                continue
+            individual_rows.append({
+                "id": participant.id,
+                "nombre": participant.nombre,
+                "apellido": participant.apellido,
+                "username": participant.username,
+                "profile_photo_url": participant.profile_photo_url,
+                "ciudad_pais": participant.ciudad_pais,
+                "box": participant.box,
+                "categoria": entry.categoria,
+                "category_name": entry.categoria,
+            })
+            listed_ids.add(participant.id)
 
     team_rows = session.exec(
         select(

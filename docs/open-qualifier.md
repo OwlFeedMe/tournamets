@@ -51,6 +51,21 @@ Los intentos `open` y `open_final` conservan ambos movimientos. Finanzas suma
 el Open desde los intentos y el pago final desde la inscripción confirmada,
 sin duplicar cobros. Las notificaciones repetidas no retroceden un pago aprobado.
 
+## Página pública después de la clasificación
+
+`open_config.public_phase="competition"` retira la promoción y las entregas del
+Open de la experiencia pública y cierra nuevos registros y entregas. Conserva
+`enabled=true`, el historial y el checkout final de los clasificados. No usar
+`enabled=false` para cerrar esta etapa: el pago restante depende del Open.
+
+Con `show_public_category_roster=1`, el listado público incluye también las
+entradas `qualified`, sin duplicar atletas ya confirmados ni exponer pagos,
+correos, documentos o entregas. Figurar en el listado no confirma el pago final.
+
+Al cambiar la etapa, actualizar también descripción, secciones de la página,
+calendario, categorías y condiciones vigentes; conservar los snapshots de las
+condiciones y las entregas anteriores.
+
 ## Stage
 
 `stage_test=true` en `/api/competitions/:id/open/checkout` simula aprobación

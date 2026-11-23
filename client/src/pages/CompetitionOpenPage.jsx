@@ -1,4 +1,4 @@
-import { openRegistrationState, openSubmissionState, openProfileStates, openFieldLabel } from '../utils/openQualifier'
+import { isCompetitionPhase, openRegistrationState, openSubmissionState, openProfileStates, openFieldLabel } from '../utils/openQualifier'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '../api/axios'
@@ -60,7 +60,7 @@ export default function CompetitionOpenPage() {
   const onBoldClick = useCallback(reference => {
     api.post(`/competitions/${competitionId}/bold-intent/activate`, { reference }).catch(() => setMessage('Consulta el estado del pago antes de intentar otra vez.'))
   }, [competitionId])
-  if (!data) return <main className="fr-open"><p>{message || 'Cargando Open…'}</p></main>
+  if (!data) return <main className="fr-open"><p>{message || 'Cargando participación…'}</p></main>
   const cfg = data.config
   const organizerAssignsCategory = cfg.category_assignment === 'organizer'
   if (!cfg.enabled) return <main className="fr-open"><h1>Esta competencia no tiene Open</h1><Link to={`/competitions/${competitionId}/register`}>Ir a inscripción</Link></main>
@@ -102,6 +102,32 @@ export default function CompetitionOpenPage() {
       setMessage('Preinscripción guardada. Puedes pagar más adelante.')
     })
   }
+  if (isCompetitionPhase(cfg)) return <main className="fr-open fr-open-workspace">
+    <Link to={`/competitions/${data.id}`}>← {data.nombre}</Link>
+    <header className="fr-open-hero">
+      <div className="fr-open-eyebrow">{data.nombre}</div>
+      <h1>{finalPayment ? 'Confirma tu participación' : 'Tu participación'}</h1>
+      {entry?.categoria && <strong>{entry.categoria}</strong>}
+      <p>{finalPayment ? '¡Clasificaste! Completa el pago restante para confirmar tu cupo.' : entry?.status === 'confirmed' ? 'Tu cupo está confirmado. Prepárate para competir.' : 'Consulta los participantes y el cronograma de la competencia.'}</p>
+      <div className="fr-open-actions"><Link to={`/competitions/${data.id}?view=inscritos`}>Ver participantes</Link><Link to={`/competitions/${data.id}/schedule`}>Ver cronograma</Link></div>
+    </header>
+    {message && <div role="status" className="fr-open-message">{message}</div>}
+    {!session && <Link className="fr-open-button" to="/login">Ingresa para consultar tu participación</Link>}
+    {finalPayment && entry.final_amount == null && <p>El saldo de tu categoría está por confirmar.</p>}
+    {finalPayment && entry.final_amount != null && <form className="fr-open-card" onSubmit={pay}>
+      <h2>Confirma tu cupo</h2>
+      <div className="fr-open-price">
+        <div className="fr-open-total"><span>Total a pagar<small>Pesos colombianos · COP</small></span><strong>{money(base + fee)}</strong></div>
+        <dl className="fr-open-breakdown"><div><dt>Abono reconocido</dt><dd>{money(entry.open_price)}</dd></div><div><dt>Saldo de competencia</dt><dd>{money(base)}</dd></div><div><dt>Cargo de servicio</dt><dd>{money(fee)}</dd></div></dl>
+      </div>
+      {data.enrollment_terms_text && <details><summary>Condiciones de participación</summary><p style={{ whiteSpace: 'pre-wrap' }}>{data.enrollment_terms_text}</p></details>}
+      <OpenConsent finalPayment accepted={accepted} onChange={setAccepted} disabled={busy || !!bold} />
+      {!bold && <div className="fr-open-submit"><button disabled={busy || !accepted || (paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : isStageEnvironment ? `Probar pago · ${money(base + fee)}` : `Continuar al pago · ${money(base + fee)}`}<ArrowRight size={18} aria-hidden="true" /></button></div>}
+      {bold && <BoldPaymentButton config={bold} onError={onBoldError} onPaymentClick={onBoldClick} />}
+      {isStageEnvironment && <small className="fr-open-stage">Entorno de prueba · Este pago no cobra dinero real.</small>}
+    </form>}
+    {!isStageEnvironment && finalPayment && <div className="fr-open-payment-help"><span>¿Ya pagaste y aún no aparece?</span><button className="secondary" disabled={busy} onClick={() => act(async () => { await api.post(`/competitions/${data.id}/payment-status/sync`); await reload(); setMessage('Estado del pago actualizado') })}>Verificar mi pago</button></div>}
+  </main>
   const tz = data.timezone || 'America/Bogota'
   const date = value => new Date(value).toLocaleDateString('es-CO', { timeZone: tz, day: 'numeric', month: 'long' })
   const dateTime = value => new Date(value).toLocaleString('es-CO', { timeZone: tz, dateStyle: 'long', timeStyle: 'short' })
@@ -136,7 +162,7 @@ export default function CompetitionOpenPage() {
       {collectRegistration && questions.length > 0 && <h3>Cuéntanos tu experiencia</h3>}
       {collectRegistration && questions.map(q => <label key={q.id}>{q.label}{q.required ? ' *' : ''}{q.field_type === 'image' ? <input type="file" accept="image/*" onChange={e => { const file = e.target.files?.[0]; if (!file) return; act(async () => { const form = new FormData(); form.append('file', file); const result = await api.post('/enrollment-answers/upload', form); setRegistrationAnswers(old => ({ ...old, [q.id]: result.data.url })) }) }} /> : <textarea placeholder={q.placeholder || ''} disabled={busy || !!bold} required={!!q.required} value={registrationAnswers[q.id] || ''} onChange={e => setRegistrationAnswers(old => ({ ...old, [q.id]: e.target.value }))} />}</label>)}
       {data.enrollment_terms_text && <details><summary>Condiciones de la competencia</summary><p style={{ whiteSpace: 'pre-wrap' }}>{data.enrollment_terms_text}</p></details>}
-      <OpenConsent accepted={accepted} onChange={setAccepted} disabled={busy || !!bold} pendingPrice={cfg.final_payment === 'pending' && finalAmount == null} registering={freeRegistration} />
+      <OpenConsent accepted={accepted} onChange={setAccepted} disabled={busy || !!bold} pendingPrice={cfg.final_payment === 'pending' && finalAmount == null} registering={freeRegistration} finalPayment={finalPayment} />
       {!bold && <div className="fr-open-submit"><button disabled={busy || boxMissing || !accepted || (!(organizerAssignsCategory ? division : category) && !entry) || (!freeRegistration && paymentsDisabled && !isStageEnvironment)}>{busy ? 'Procesando…' : freeRegistration ? 'Registrarme gratis' : isStageEnvironment ? `Probar pago · ${money(base + fee)}` : `Continuar al pago · ${money(base + fee)}`}<ArrowRight size={18} aria-hidden="true" /></button>{!accepted && <small>Acepta las condiciones para continuar.</small>}</div>}
       {bold && <BoldPaymentButton config={bold} onError={onBoldError} onPaymentClick={onBoldClick} />}
       {isStageEnvironment && (entry || paidRegistration) && <small className="fr-open-stage">Entorno de prueba · Este pago no cobra dinero real.</small>}

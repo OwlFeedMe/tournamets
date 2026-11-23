@@ -528,7 +528,7 @@ export function MyEventsPage() {
                         Ver competencia
                         <ChevronRight size={16} />
                       </Link>
-                      {competition.open_status && <Link to={`/competitions/${competition.id}/open`}>Ver mi Open</Link>}
+                      {competition.open_status && <Link to={`/competitions/${competition.id}/open`}>{competition.open_status === 'qualified' ? 'Confirmar mi participación' : competition.open_status === 'confirmed' || JSON.parse(competition.open_config || '{}').public_phase === 'competition' ? 'Ver mi participación' : 'Ver mi Open'}</Link>}
                       <Link to={`/leaderboard/${competition.id}`} style={{ color: '#5EEAD4', textDecoration: 'none', fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         Ver leaderboard
                         <ChevronRight size={16} />
